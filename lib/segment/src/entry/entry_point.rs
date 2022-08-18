@@ -155,6 +155,16 @@ pub trait SegmentEntry {
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
+    fn search_batch(
+        &self,
+        vectors: &[&[VectorElementType]],
+        with_payload: &WithPayload,
+        with_vector: bool,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
+
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,

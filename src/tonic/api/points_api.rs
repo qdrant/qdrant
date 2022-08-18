@@ -5,14 +5,15 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, GetPoints, GetResponse,
     PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
-    SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
+    SearchBatchPoints, SearchBatchResponse, SearchPoints, SearchResponse, SetPayloadPoints,
+    UpsertPoints,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    recommend, scroll, search, set_payload, upsert,
+    recommend, scroll, search, search_batch, set_payload, upsert,
 };
 
 pub struct PointsService {
@@ -85,6 +86,17 @@ impl Points for PointsService {
         request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         search(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
+    async fn search_batch(
+        &self,
+        request: Request<SearchBatchPoints>,
+    ) -> Result<Response<SearchBatchResponse>, Status> {
+        let SearchBatchPoints {
+            collection_name,
+            search_points,
+        } = request.into_inner();
+        search_batch(self.toc.as_ref(), collection_name, search_points, None).await
     }
 
     async fn scroll(

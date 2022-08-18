@@ -27,7 +27,7 @@ use crate::types::{
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
     SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
-use crate::vector_storage::VectorStorageSS;
+use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -278,44 +278,16 @@ impl Segment {
             false
         }
     }
-}
 
-/// This is a basic implementation of `SegmentEntry`,
-/// meaning that it implements the _actual_ operations with data and not any kind of proxy or wrapping
-impl SegmentEntry for Segment {
-    fn version(&self) -> SeqNumberType {
-        self.version
-    }
-
-    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
-        self.id_tracker.borrow().version(point_id)
-    }
-
-    fn search(
+    /// Converts raw ScoredPointOffset search result into ScoredPoint result
+    fn process_search_result(
         &self,
-        vector: &[VectorElementType],
+        internal_result: &[ScoredPointOffset],
         with_payload: &WithPayload,
         with_vector: bool,
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
-        if expected_vector_dim != vector.len() {
-            return Err(OperationError::WrongVector {
-                expected_dim: expected_vector_dim,
-                received_dim: vector.len(),
-            });
-        }
-
-        let internal_result = self
-            .vector_index
-            .borrow()
-            .search(vector, filter, top, params);
-
         let id_tracker = self.id_tracker.borrow();
-
-        let res: OperationResult<Vec<ScoredPoint>> = internal_result
+        internal_result
             .iter()
             .map(|&scored_point_offset| {
                 let point_offset = scored_point_offset.idx;
@@ -357,7 +329,77 @@ impl SegmentEntry for Segment {
                     vector,
                 })
             })
+            .collect()
+    }
+}
+
+/// This is a basic implementation of `SegmentEntry`,
+/// meaning that it implements the _actual_ operations with data and not any kind of proxy or wrapping
+impl SegmentEntry for Segment {
+    fn version(&self) -> SeqNumberType {
+        self.version
+    }
+
+    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+        self.id_tracker.borrow().version(point_id)
+    }
+
+    fn search(
+        &self,
+        vector: &[VectorElementType],
+        with_payload: &WithPayload,
+        with_vector: bool,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
+        if vector.len() != expected_vector_dim {
+            return Err(OperationError::WrongVector {
+                expected_dim: expected_vector_dim,
+                received_dim: vector.len(),
+            });
+        }
+
+        let internal_result = &self
+            .vector_index
+            .borrow()
+            .search(&[vector], filter, top, params)[0];
+
+        self.process_search_result(internal_result, with_payload, with_vector)
+    }
+
+    fn search_batch(
+        &self,
+        vectors: &[&[VectorElementType]],
+        with_payload: &WithPayload,
+        with_vector: bool,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
+        for vector in vectors {
+            if vector.len() != expected_vector_dim {
+                return Err(OperationError::WrongVector {
+                    expected_dim: expected_vector_dim,
+                    received_dim: vector.len(),
+                });
+            }
+        }
+
+        let internal_results = self
+            .vector_index
+            .borrow()
+            .search(vectors, filter, top, params);
+
+        let res = internal_results
+            .iter()
+            .map(|internal_result| {
+                self.process_search_result(internal_result, with_payload, with_vector)
+            })
             .collect();
+
         res
     }
 
@@ -892,6 +934,54 @@ mod tests {
     //     let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
     //     assert!(result2.is_err());
     // }
+
+    #[test]
+    fn test_search_batch_equivalence_single() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 4;
+        let config = SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config).unwrap();
+
+        let vec4 = vec![1.1, 1.0, 0.0, 1.0];
+        segment.upsert_point(100, 4.into(), &vec4).unwrap();
+        let vec6 = vec![1.0, 1.0, 0.5, 1.0];
+        segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        segment.delete_point(102, 1.into()).unwrap();
+
+        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let search_result = segment
+            .search(
+                &query_vector,
+                &WithPayload::default(),
+                false,
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+        eprintln!("search_result = {:#?}", search_result);
+
+        let search_batch_result = segment
+            .search_batch(
+                &[&query_vector],
+                &WithPayload::default(),
+                false,
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+        eprintln!("search_batch_result = {:#?}", search_batch_result);
+
+        assert!(!search_result.is_empty());
+        assert_eq!(search_result, search_batch_result[0].clone())
+    }
 
     #[test]
     fn test_from_filter_attributes() {

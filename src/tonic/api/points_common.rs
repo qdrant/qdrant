@@ -2,15 +2,16 @@ use std::time::Instant;
 
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::{
-    ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
+    BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints,
     GetResponse, PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints,
-    ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
+    ScrollResponse, SearchBatchResponse, SearchPoints, SearchResponse, SetPayloadPoints,
+    UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::PointInsertOperations;
 use collection::operations::types::{
-    default_exact_count, PointRequest, ScrollRequest, SearchRequest,
+    default_exact_count, PointRequest, ScrollRequest, SearchRequest, SearchRequestBatch,
 };
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;
@@ -20,8 +21,8 @@ use tonic::{Response, Status};
 
 use crate::common::points::{
     do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
-    do_delete_points, do_get_points, do_scroll_points, do_search_points, do_set_payload,
-    do_upsert_points, CreateFieldIndex,
+    do_delete_points, do_get_points, do_scroll_points, do_search_batch_points, do_search_points,
+    do_set_payload, do_upsert_points, CreateFieldIndex,
 };
 
 pub fn points_operation_response(
@@ -304,6 +305,39 @@ pub async fn search(
         result: scored_points
             .into_iter()
             .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn search_batch(
+    toc: &TableOfContent,
+    collection_name: String,
+    search_points: Vec<SearchPoints>,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<SearchBatchResponse>, Status> {
+    let searches: Result<Vec<_>, Status> = search_points
+        .into_iter()
+        .map(|search_point| search_point.try_into())
+        .collect();
+    let search_requests = SearchRequestBatch {
+        searches: searches?,
+    };
+
+    let timing = Instant::now();
+    let scored_points =
+        do_search_batch_points(toc, &collection_name, search_requests, shard_selection)
+            .await
+            .map_err(error_to_status)?;
+
+    let response = SearchBatchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| BatchResult {
+                result: points.into_iter().map(|p| p.into()).collect(),
+            })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
     };

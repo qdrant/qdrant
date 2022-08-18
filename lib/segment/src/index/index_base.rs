@@ -19,11 +19,11 @@ pub trait VectorIndex {
     /// Return list of Ids with fitting
     fn search(
         &self,
-        vector: &[VectorElementType],
+        vectors: &[&[VectorElementType]],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-    ) -> Vec<ScoredPointOffset>;
+    ) -> Vec<Vec<ScoredPointOffset>>;
 
     /// Force internal index rebuild.
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;

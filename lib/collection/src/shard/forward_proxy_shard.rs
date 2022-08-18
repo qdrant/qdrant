@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-    SearchRequest, UpdateResult,
+    SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shard::local_shard::LocalShard;
@@ -165,9 +165,9 @@ impl ShardOperation for ForwardProxyShard {
 
     async fn search(
         &self,
-        request: Arc<SearchRequest>,
+        request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard.search(request, search_runtime_handle).await
     }

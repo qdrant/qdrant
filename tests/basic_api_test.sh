@@ -93,6 +93,24 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" 
         "top": 3
     }' | jq
 
+# search points batch
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search-batch" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{
+    "searches": [
+      {
+        "vector": [0.2,0.1,0.9,0.7],
+        "top": 3
+      },
+      {
+        "vector": [0.2,0.1,0.9,0.7],
+        "top": 3
+      }
+    ]
+  }' | jq
+
+
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" \
   --fail -s \
   -H 'Content-Type: application/json' \

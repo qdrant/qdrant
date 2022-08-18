@@ -1,3 +1,5 @@
+mod prof;
+
 use collection::hash_ring::HashRing;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::Rng;

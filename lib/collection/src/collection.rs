@@ -28,7 +28,8 @@ use crate::operations::snapshot_ops::{
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
     CountResult, LocalShardInfo, PointRequest, RecommendRequest, Record, RemoteShardInfo,
-    ScrollRequest, ScrollResult, SearchRequest, ShardTransferInfo, UpdateResult,
+    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, ShardTransferInfo,
+    UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -642,38 +643,131 @@ impl Collection {
             .await
     }
 
-    async fn _search(
+    pub async fn search_batch(
         &self,
-        request: SearchRequest,
+        request: SearchRequestBatch,
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // A factor which determines if we need to use the 2-step search or not
+        // Should be adjusted based on usage statistics.
+        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
+
+        let is_payload_required = request.searches.iter().all(|s| {
+            s.with_payload
+                .clone()
+                .map(|p| p.is_required())
+                .unwrap_or_default()
+        });
+        let with_vectors = request.searches.iter().all(|s| s.with_vector);
+
+        let metadata_required = is_payload_required || with_vectors;
+
+        let sum_limits: usize = request.searches.iter().map(|s| s.limit).sum();
+        let sum_offsets: usize = request.searches.iter().map(|s| s.offset).sum();
+
+        // Number of records we need to retrieve to fill the search result.
+        let require_transfers = self.shards_holder.read().await.len() * (sum_limits + sum_offsets);
+        // Actually used number of records.
+        let used_transfers = sum_limits;
+
+        let is_required_transfer_large_enough =
+            require_transfers > used_transfers * PAYLOAD_TRANSFERS_FACTOR_THRESHOLD;
+
+        if metadata_required && is_required_transfer_large_enough {
+            // If there is a significant offset, we need to retrieve the whole result
+            // set without payload first and then retrieve the payload.
+            // It is required to do this because the payload might be too large to send over the
+            // network.
+            let mut without_payload_requests = Vec::with_capacity(request.searches.len());
+            for search in &request.searches {
+                let mut without_payload_request = search.clone();
+                without_payload_request.with_payload = None;
+                without_payload_request.with_vector = false;
+                without_payload_requests.push(without_payload_request);
+            }
+            let without_payload_batch = SearchRequestBatch {
+                searches: without_payload_requests,
+            };
+            let without_payload_results = self
+                ._search_batch(
+                    without_payload_batch,
+                    search_runtime_handle,
+                    shard_selection,
+                )
+                .await?;
+            let filled_results = without_payload_results
+                .into_iter()
+                .zip(request.clone().searches.into_iter())
+                .map(|(without_payload_result, req)| {
+                    self.fill_search_result_with_payload(
+                        without_payload_result,
+                        req.with_payload.clone(),
+                        req.with_vector,
+                        shard_selection,
+                    )
+                });
+            try_join_all(filled_results).await
+        } else {
+            let result = self
+                ._search_batch(request, search_runtime_handle, shard_selection)
+                .await?;
+            Ok(result)
+        }
+    }
+
+    pub async fn _search_batch(
+        &self,
+        request: SearchRequestBatch,
+        search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
-        let all_searches_res = {
+        // query all shards concurrently
+        let mut all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shards(shard_selection)?;
             let all_searches = target_shards
                 .iter()
                 .map(|shard| shard.get().search(request.clone(), search_runtime_handle));
-            try_join_all(all_searches).await?.into_iter().flatten()
+            try_join_all(all_searches).await?
         };
 
-        let distance = self.config.read().await.params.distance;
-        let mut top_result = match distance.distance_order() {
-            Order::LargeBetter => {
-                peek_top_largest_scores_iterable(all_searches_res, request.limit + request.offset)
+        // merge results from shards in order
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.searches.len()];
+        for shard_searches_results in all_searches_res.iter_mut() {
+            for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
+                merged_results[index].append(shard_searches_result)
             }
-            Order::SmallBetter => {
-                peek_top_smallest_scores_iterable(all_searches_res, request.limit + request.offset)
-            }
-        };
-
-        if request.offset > 0 {
-            // Remove offset from top result.
-            top_result.drain(..request.offset);
         }
-        Ok(top_result)
+        let distance = self.config.read().await.params.distance;
+        let top_results: Vec<Vec<ScoredPoint>> = merged_results
+            .into_iter()
+            .zip(request.searches.iter())
+            .map(|(res, request)| {
+                let mut top_res = match distance.distance_order() {
+                    Order::LargeBetter => {
+                        peek_top_largest_scores_iterable(res, request.limit + request.offset)
+                    }
+                    Order::SmallBetter => {
+                        peek_top_smallest_scores_iterable(res, request.limit + request.offset)
+                    }
+                };
+                // Remove offset from top result.
+                if request.offset > 0 {
+                    if top_res.len() >= request.offset {
+                        // Panics if the end point > length of the vector.
+                        top_res.drain(..request.offset);
+                    } else {
+                        top_res.clear()
+                    }
+                }
+                top_res
+            })
+            .collect();
+
+        Ok(top_results)
     }
 
     async fn fill_search_result_with_payload(
@@ -715,57 +809,14 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        // A factor which determines if we need to use the 2-step search or not
-        // Should be adjusted based on usage statistics.
-        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
-
-        let is_payload_required = if let Some(with_payload) = &request.with_payload {
-            with_payload.is_required()
-        } else {
-            false
+        // search is a special case of search_batch with a single batch
+        let request_batch = SearchRequestBatch {
+            searches: vec![request],
         };
-
-        let metadata_required = is_payload_required || request.with_vector;
-
-        // Number of records we need to retrieve to fill the search result.
-        let require_transfers =
-            self.shards_holder.read().await.len() * (request.limit + request.offset);
-        // Actually used number of records.
-        let used_transfers = request.limit;
-
-        let is_required_transfer_large_enough =
-            require_transfers > used_transfers * PAYLOAD_TRANSFERS_FACTOR_THRESHOLD;
-
-        if metadata_required && is_required_transfer_large_enough {
-            // If there is an significant offset, we need to retrieve the whole result
-            // set without payload first and then retrieve the payload.
-            // It is required to do this because the payload might be too large to send over the
-            // network.
-            let mut without_payload_request = request.clone();
-            without_payload_request.with_payload = None;
-            without_payload_request.with_vector = false;
-            let without_payload_result = self
-                ._search(
-                    without_payload_request,
-                    search_runtime_handle,
-                    shard_selection,
-                )
-                .await?;
-            let filled_result = self
-                .fill_search_result_with_payload(
-                    without_payload_result,
-                    request.with_payload.clone(),
-                    request.with_vector,
-                    shard_selection,
-                )
-                .await?;
-            Ok(filled_result)
-        } else {
-            let result = self
-                ._search(request, search_runtime_handle, shard_selection)
-                .await?;
-            Ok(result)
-        }
+        let results = self
+            ._search_batch(request_batch, search_runtime_handle, shard_selection)
+            .await?;
+        Ok(results.into_iter().next().unwrap())
     }
 
     pub async fn scroll_by(

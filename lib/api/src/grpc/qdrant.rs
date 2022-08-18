@@ -1461,6 +1461,14 @@ pub struct SearchPoints {
     pub offset: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchBatchPoints {
+    /// Name of the collection
+    #[prost(string, tag="1")]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="2")]
+    pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
@@ -1568,6 +1576,19 @@ pub struct ScoredPoint {
 pub struct SearchResponse {
     #[prost(message, repeated, tag="1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Time spent to process
+    #[prost(double, tag="2")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BatchResult {
+    #[prost(message, repeated, tag="1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchBatchResponse {
+    #[prost(message, repeated, tag="1")]
+    pub result: ::prost::alloc::vec::Vec<BatchResult>,
     /// Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
@@ -2051,6 +2072,27 @@ pub mod points_client {
             self.inner.unary(request.into_request(), path, codec).await
         }
         ///
+        ///Retrieve closest points based on vector similarity and given filtering conditions
+        pub async fn search_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchBatchPoints>,
+        ) -> Result<tonic::Response<super::SearchBatchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/SearchBatch",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        ///
         ///Iterate over all or filtered points points
         pub async fn scroll(
             &mut self,
@@ -2170,6 +2212,12 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::SearchPoints>,
         ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        ///
+        ///Retrieve closest points based on vector similarity and given filtering conditions
+        async fn search_batch(
+            &self,
+            request: tonic::Request<super::SearchBatchPoints>,
+        ) -> Result<tonic::Response<super::SearchBatchResponse>, tonic::Status>;
         ///
         ///Iterate over all or filtered points points
         async fn scroll(
@@ -2576,6 +2624,44 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/SearchBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchBatchSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::SearchBatchPoints>
+                    for SearchBatchSvc<T> {
+                        type Response = super::SearchBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchBatchPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).search_batch(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/qdrant.Points/Scroll" => {
                     #[allow(non_camel_case_types)]
                     struct ScrollSvc<T: Points>(pub Arc<T>);
@@ -2777,6 +2863,15 @@ pub struct SearchPointsInternal {
     #[prost(message, optional, tag="1")]
     pub search_points: ::core::option::Option<SearchPoints>,
     #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchBatchPointsInternal {
+    #[prost(string, tag="1")]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="2")]
+    pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
+    #[prost(uint32, tag="3")]
     pub shard_id: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3023,6 +3118,25 @@ pub mod points_internal_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn search_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchBatchPointsInternal>,
+        ) -> Result<tonic::Response<super::SearchBatchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/SearchBatch",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPointsInternal>,
@@ -3140,6 +3254,10 @@ pub mod points_internal_server {
             &self,
             request: tonic::Request<super::SearchPointsInternal>,
         ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        async fn search_batch(
+            &self,
+            request: tonic::Request<super::SearchBatchPointsInternal>,
+        ) -> Result<tonic::Response<super::SearchBatchResponse>, tonic::Status>;
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPointsInternal>,
@@ -3511,6 +3629,46 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = SearchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/SearchBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchBatchSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::SearchBatchPointsInternal>
+                    for SearchBatchSvc<T> {
+                        type Response = super::SearchBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchBatchPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).search_batch(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

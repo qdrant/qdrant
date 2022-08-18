@@ -15,7 +15,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CollectionStatus, CountRequest, CountResult,
-    OptimizersStatus, PointRequest, Record, SearchRequest, UpdateResult, UpdateStatus,
+    OptimizersStatus, PointRequest, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
@@ -164,25 +164,33 @@ impl ShardOperation for LocalShard {
 
     async fn search(
         &self,
-        request: Arc<SearchRequest>,
+        request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
             .await?;
         let distance = self.config.read().await.params.distance;
-        let processed_res = res.into_iter().map(|mut scored_point| {
-            scored_point.score = distance.postprocess_score(scored_point.score);
-            scored_point
-        });
+        let top_results = res
+            .into_iter()
+            .zip(request.searches.iter())
+            .map(|(vector_res, req)| {
+                let processed_res = vector_res.into_iter().map(|mut scored_point| {
+                    scored_point.score = distance.postprocess_score(scored_point.score);
+                    scored_point
+                });
 
-        let top_result = if let Some(threshold) = request.score_threshold {
-            processed_res
-                .take_while(|scored_point| distance.check_threshold(scored_point.score, threshold))
-                .collect()
-        } else {
-            processed_res.collect()
-        };
-        Ok(top_result)
+                if let Some(threshold) = req.score_threshold {
+                    processed_res
+                        .take_while(|scored_point| {
+                            distance.check_threshold(scored_point.score, threshold)
+                        })
+                        .collect()
+                } else {
+                    processed_res.collect()
+                }
+            })
+            .collect();
+        Ok(top_results)
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {

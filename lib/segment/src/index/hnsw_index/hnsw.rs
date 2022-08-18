@@ -190,18 +190,31 @@ impl HNSWIndex {
 
         self.graph.search(top, ef, points_scorer)
     }
+
+    fn search_vectors_with_graph(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        vectors
+            .iter()
+            .map(|vector| self.search_with_graph(vector, filter, top, params))
+            .collect()
+    }
 }
 
 impl VectorIndex for HNSWIndex {
     fn search(
         &self,
-        vector: &[VectorElementType],
+        vectors: &[&[VectorElementType]],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-    ) -> Vec<ScoredPointOffset> {
+    ) -> Vec<Vec<ScoredPointOffset>> {
         match filter {
-            None => self.search_with_graph(vector, None, top, params),
+            None => self.search_vectors_with_graph(vectors, None, top, params),
             Some(query_filter) => {
                 // depending on the amount of filtered-out points the optimal strategy could be
                 // - to retrieve possible points and score them after
@@ -218,15 +231,25 @@ impl VectorIndex for HNSWIndex {
                     // if cardinality is small - use plain index
                     let _timer =
                         TelemetryOperationTimer::new(&self.small_cardinality_search_telemetry);
-                    let mut filtered_ids = payload_index.query_points(query_filter);
-                    return vector_storage.score_points(vector, &mut filtered_ids, top);
+                    let filtered_ids: Vec<_> = payload_index.query_points(query_filter).collect();
+
+                    return vectors
+                        .iter()
+                        .map(|vector| {
+                            vector_storage.score_points(
+                                vector,
+                                &mut filtered_ids.iter().copied(),
+                                top,
+                            )
+                        })
+                        .collect();
                 }
 
                 if query_cardinality.min > self.config.indexing_threshold {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         TelemetryOperationTimer::new(&self.large_cardinality_search_telemetry);
-                    return self.search_with_graph(vector, filter, top, params);
+                    return self.search_vectors_with_graph(vectors, filter, top, params);
                 }
 
                 let filter_context = payload_index.filter_context(query_filter);
@@ -243,14 +266,24 @@ impl VectorIndex for HNSWIndex {
                     let _timer = TelemetryOperationTimer::new(
                         &self.positive_check_cardinality_search_telemetry,
                     );
-                    self.search_with_graph(vector, filter, top, params)
+                    self.search_vectors_with_graph(vectors, filter, top, params)
                 } else {
                     // if cardinality is small - use plain index
                     let _timer = TelemetryOperationTimer::new(
                         &self.negative_check_cardinality_search_telemetry,
                     );
-                    let mut filtered_ids = payload_index.query_points(query_filter);
-                    vector_storage.score_points(vector, &mut filtered_ids, top)
+                    let filtered_ids: Vec<_> = payload_index.query_points(query_filter).collect();
+                    vectors
+                        .iter()
+                        .map(|vector| {
+                            vector_storage.score_points(
+                                vector,
+                                &mut filtered_ids.iter().copied(),
+                                top,
+                            )
+                        })
+                        .collect()
+                    // vector_storage.score_points(vector, &mut filtered_ids, top)
                 };
             }
         }

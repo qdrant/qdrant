@@ -6,11 +6,14 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::OperationError;
 use segment::spaces::tools::peek_top_largest_scores_iterable;
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload, WithPayloadInterface};
+use segment::types::{
+    Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, VectorElementType, WithPayload,
+    WithPayloadInterface,
+};
 use tokio::runtime::Handle;
 
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
-use crate::operations::types::{CollectionResult, Record, SearchRequest};
+use crate::operations::types::{CollectionResult, Record, SearchRequestBatch};
 
 /// Simple implementation of segment manager
 ///  - rebuild segment for memory optimization purposes
@@ -20,9 +23,9 @@ pub struct SegmentsSearcher {}
 impl SegmentsSearcher {
     pub async fn search(
         segments: &RwLock<SegmentHolder>,
-        request: Arc<SearchRequest>,
+        request: Arc<SearchRequestBatch>,
         runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
         // does not impl Send trait
@@ -42,8 +45,9 @@ impl SegmentsSearcher {
                 .collect()
         };
 
+        // perform search on all segments concurrently
         let all_searches = try_join_all(searches);
-        let all_search_results = all_searches.await?;
+        let all_search_results: Vec<CollectionResult<Vec<Vec<ScoredPoint>>>> = all_searches.await?;
 
         match all_search_results
             .iter()
@@ -54,21 +58,33 @@ impl SegmentsSearcher {
             Some(error) => return Err(error),
         }
 
-        let mut seen_idx: HashSet<PointIdType> = HashSet::new();
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.searches.len()];
+        for segment_result in all_search_results {
+            let segment_result = segment_result.unwrap();
+            for (idx, query_res) in segment_result.into_iter().enumerate() {
+                merged_results[idx].extend(query_res);
+            }
+        }
 
-        let top_scores = peek_top_largest_scores_iterable(
-            all_search_results
-                .into_iter()
-                .flat_map(Result::unwrap) // already checked for errors
-                .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
-                .dedup_by(|a, b| a.id == b.id) // Keep only highest version
-                .filter(|scored| {
-                    let res = seen_idx.contains(&scored.id);
-                    seen_idx.insert(scored.id);
-                    !res
-                }),
-            request.limit + request.offset,
-        );
+        let top_scores = merged_results
+            .into_iter()
+            .zip(request.searches.iter())
+            .map(|(all_search_results_per_vector, req)| {
+                let mut seen_idx: HashSet<PointIdType> = HashSet::new();
+                peek_top_largest_scores_iterable(
+                    all_search_results_per_vector
+                        .into_iter()
+                        .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
+                        .dedup_by(|a, b| a.id == b.id) // Keep only highest version
+                        .filter(|scored| {
+                            let res = seen_idx.contains(&scored.id);
+                            seen_idx.insert(scored.id);
+                            !res
+                        }),
+                    req.limit + req.offset,
+                )
+            })
+            .collect();
 
         Ok(top_scores)
     }
@@ -116,27 +132,77 @@ impl SegmentsSearcher {
     }
 }
 
+#[derive(PartialEq, Default)]
+struct BatchSearchParams<'a> {
+    pub filter: Option<&'a Filter>,
+    pub with_payload: WithPayload,
+    pub with_vector: bool,
+    pub top: usize,
+    pub params: Option<&'a SearchParams>,
+}
+
+/// Process sequentially contiguous batches
 async fn search_in_segment(
     segment: LockedSegment,
-    request: Arc<SearchRequest>,
-) -> CollectionResult<Vec<ScoredPoint>> {
-    let with_payload_interface = request
-        .with_payload
-        .as_ref()
-        .unwrap_or(&WithPayloadInterface::Bool(false));
-    let with_payload = WithPayload::from(with_payload_interface);
-    let with_vector = request.with_vector;
+    request: Arc<SearchRequestBatch>,
+) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+    let mut result: Vec<Vec<ScoredPoint>> = vec![];
+    let mut vectors_batch: Vec<&[VectorElementType]> = vec![];
+    let mut prev_params = BatchSearchParams::default();
 
-    let res = segment.get().read().search(
-        &request.vector,
-        &with_payload,
-        with_vector,
-        request.filter.as_ref(),
-        request.limit + request.offset,
-        request.params.as_ref(),
-    )?;
+    for search_query in &request.searches {
+        let with_payload_interface = search_query
+            .with_payload
+            .as_ref()
+            .unwrap_or(&WithPayloadInterface::Bool(false));
 
-    Ok(res)
+        let params = BatchSearchParams {
+            filter: search_query.filter.as_ref(),
+            with_payload: WithPayload::from(with_payload_interface),
+            with_vector: search_query.with_vector,
+            top: search_query.limit + search_query.offset,
+            params: search_query.params.as_ref(),
+        };
+
+        // same params enables batching
+        if params == prev_params {
+            vectors_batch.push(search_query.vector.as_ref());
+        } else {
+            // different params means different batches
+            // execute what has been batched so far
+            if !vectors_batch.is_empty() {
+                let mut res = segment.get().read().search_batch(
+                    &vectors_batch,
+                    &prev_params.with_payload,
+                    prev_params.with_vector,
+                    prev_params.filter,
+                    prev_params.top,
+                    prev_params.params,
+                )?;
+                result.append(&mut res);
+                // clear current batch
+                vectors_batch.clear();
+            }
+            // start new batch for current search query
+            vectors_batch.push(search_query.vector.as_ref());
+            prev_params = params;
+        }
+    }
+
+    // run last batch if any
+    if !vectors_batch.is_empty() {
+        let mut res = segment.get().read().search_batch(
+            &vectors_batch,
+            &prev_params.with_payload,
+            prev_params.with_vector,
+            prev_params.filter,
+            prev_params.top,
+            prev_params.params,
+        )?;
+        result.append(&mut res);
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -145,6 +211,7 @@ mod tests {
 
     use super::*;
     use crate::collection_manager::fixtures::build_test_holder;
+    use crate::operations::types::SearchRequest;
 
     #[tokio::test]
     async fn test_segments_search() {
@@ -154,7 +221,7 @@ mod tests {
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
-        let req = Arc::new(SearchRequest {
+        let req = SearchRequest {
             vector: query,
             with_payload: None,
             with_vector: false,
@@ -163,11 +230,19 @@ mod tests {
             limit: 5,
             score_threshold: None,
             offset: 0,
-        });
+        };
 
-        let result = SegmentsSearcher::search(&segment_holder, req, &Handle::current())
-            .await
-            .unwrap();
+        let batch_request = SearchRequestBatch {
+            searches: vec![req],
+        };
+
+        let result =
+            SegmentsSearcher::search(&segment_holder, Arc::new(batch_request), &Handle::current())
+                .await
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap();
 
         // eprintln!("result = {:?}", &result);
 

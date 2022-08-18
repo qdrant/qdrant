@@ -936,7 +936,7 @@ impl From<&WithPayloadInterface> for WithPayload {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct PayloadSelectorInclude {
@@ -950,7 +950,7 @@ impl PayloadSelectorInclude {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct PayloadSelectorExclude {
@@ -965,7 +965,7 @@ impl PayloadSelectorExclude {
 }
 
 /// Specifies how to treat payload selector
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadSelector {
@@ -1009,7 +1009,7 @@ impl PayloadSelector {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct WithPayload {

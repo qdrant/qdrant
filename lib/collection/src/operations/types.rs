@@ -219,6 +219,12 @@ pub struct SearchRequest {
     pub score_threshold: Option<ScoreType>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchRequestBatch {
+    pub searches: Vec<SearchRequest>,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct PointRequest {

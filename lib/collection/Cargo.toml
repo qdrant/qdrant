@@ -9,6 +9,7 @@ edition = "2021"
 [dev-dependencies]
 tempfile = "3.3.0"
 criterion = "0.3"
+pprof = { version = "0.10", features = ["flamegraph", "prost-codec"] }
 
 [dependencies]
 
@@ -50,4 +51,8 @@ semver = "1.0.13"
 
 [[bench]]
 name = "hash_ring_bench"
+harness = false
+
+[[bench]]
+name = "batch_search_bench"
 harness = false

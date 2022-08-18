@@ -5,7 +5,8 @@ use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     CollectionClusterInfo, CollectionInfo, CountRequest, CountResult, PointRequest,
-    RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+    RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
+    UpdateResult,
 };
 use schemars::{schema_for, JsonSchema};
 use segment::types::ScoredPoint;
@@ -51,6 +52,7 @@ struct AllDefinitions {
     ap: CollectionClusterInfo,
     aq: TelemetryData,
     ar: ClusterOperations,
+    at: SearchRequestBatch,
 }
 
 fn save_schema<T: JsonSchema>() {
