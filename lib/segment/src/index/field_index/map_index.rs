@@ -6,10 +6,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use rocksdb::{IteratorMode, DB};
+use rocksdb::DB;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{
@@ -28,19 +28,19 @@ pub struct MapIndex<N: Hash + Eq + Clone + Display> {
     /// Amount of point which have at least one indexed payload value
     indexed_points: usize,
     values_count: usize,
-    store_cf_name: String,
-    db: Arc<RwLock<DB>>,
+    db_wrapper: DatabaseColumnWrapper,
 }
 
 impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndex<N> {
+        let store_cf_name = Self::storage_cf_name(field_name);
+        let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
         MapIndex {
             map: Default::default(),
             point_to_values: Vec::new(),
             indexed_points: 0,
             values_count: 0,
-            store_cf_name: Self::storage_cf_name(field_name),
-            db,
+            db_wrapper,
         }
     }
 
@@ -49,19 +49,15 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+        self.db_wrapper.recreate_column_family()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        let db_ref = self.db.read();
-        let cf_handle = if let Some(cf_handle) = db_ref.cf_handle(&self.store_cf_name) {
-            cf_handle
-        } else {
+        if !self.db_wrapper.has_column_family()? {
             return Ok(false);
-        };
+        }
         self.indexed_points = 0;
-        for item in db_ref.iterator_cf(cf_handle, IteratorMode::Start) {
-            let (record, _) = item?;
+        for (record, _) in self.db_wrapper.lock_db().iter()? {
             let record = std::str::from_utf8(&record).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;
@@ -80,18 +76,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let db = self.db.clone();
-        let store_cf_name = self.store_cf_name.clone();
-        Box::new(move || {
-            let store_ref = db.read();
-            let cf_handle = store_ref.cf_handle(&store_cf_name).ok_or_else(|| {
-                OperationError::service_error(&format!(
-                    "Index flush error: column family {} not found",
-                    store_cf_name
-                ))
-            })?;
-            Ok(store_ref.flush_cf(cf_handle)?)
-        })
+        self.db_wrapper.flusher()
     }
 
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
@@ -131,14 +116,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             return Ok(());
         }
 
-        let store_ref = self.db.read();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index add error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         self.values_count += values.len();
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
@@ -149,11 +126,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             entry.insert(idx);
 
             let db_record = Self::encode_db_record(value, idx);
-            store_ref
-                .put_cf_opt(cf_handle, &db_record, &[], &db_write_options())
-                .map_err(|e| {
-                    OperationError::service_error(&format!("Index db update error: {}", e))
-                })?;
+            self.db_wrapper.put(&db_record, &[])?;
         }
         self.indexed_points += 1;
         Ok(())
@@ -188,15 +161,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.db.read();
-
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "point remove error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             return Ok(());
         }
@@ -213,7 +177,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
                 vals.remove(&idx);
             }
             let key = MapIndex::encode_db_record(value, idx);
-            store_ref.delete_cf(cf_handle, key)?;
+            self.db_wrapper.remove(&key)?;
         }
 
         Ok(())
@@ -230,7 +194,7 @@ impl PayloadFieldIndex for MapIndex<String> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.write().drop_cf(&self.store_cf_name)?)
+        self.db_wrapper.recreate_column_family()
     }
 
     fn flusher(&self) -> Flusher {
@@ -295,7 +259,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.write().drop_cf(&self.store_cf_name)?)
+        self.db_wrapper.recreate_column_family()
     }
 
     fn flusher(&self) -> Flusher {
@@ -398,7 +362,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
+    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 
     const FIELD_NAME: &str = "test";
 

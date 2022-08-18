@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use rocksdb::{IteratorMode, DB};
+use rocksdb::DB;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_options, db_write_options, DB_PAYLOAD_CF};
+use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::payload_storage::PayloadStorage;
@@ -13,21 +13,18 @@ use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 /// On-disk implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, does not keep payload in memory
 pub struct OnDiskPayloadStorage {
-    store: Arc<RwLock<DB>>,
+    db_wrapper: DatabaseColumnWrapper,
 }
 
 impl OnDiskPayloadStorage {
-    pub fn open(store: Arc<RwLock<DB>>) -> OperationResult<Self> {
-        Ok(OnDiskPayloadStorage { store })
+    pub fn open(database: Arc<RwLock<DB>>) -> OperationResult<Self> {
+        let db_wrapper = DatabaseColumnWrapper::new(database, DB_PAYLOAD_CF);
+        Ok(OnDiskPayloadStorage { db_wrapper })
     }
 
     pub fn remove_from_storage(&self, point_id: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.store.read();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        store_ref.delete_cf(cf_handle, serde_cbor::to_vec(&point_id).unwrap())?;
-        Ok(())
+        self.db_wrapper
+            .remove(&serde_cbor::to_vec(&point_id).unwrap())
     }
 
     pub fn update_storage(
@@ -35,43 +32,25 @@ impl OnDiskPayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
     ) -> OperationResult<()> {
-        let store_ref = self.store.read();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        store_ref.put_cf_opt(
-            cf_handle,
-            serde_cbor::to_vec(&point_id).unwrap(),
-            serde_cbor::to_vec(payload).unwrap(),
-            &db_write_options(),
-        )?;
-        Ok(())
+        self.db_wrapper.put(
+            &serde_cbor::to_vec(&point_id).unwrap(),
+            &serde_cbor::to_vec(payload).unwrap(),
+        )
     }
 
     pub fn read_payload(&self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let key = serde_cbor::to_vec(&point_id).unwrap();
-        let store_ref = self.store.read();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        let payload = store_ref
-            .get_pinned_cf(cf_handle, key)?
-            .map(|raw| serde_cbor::from_slice(raw.as_ref()))
-            .transpose()?;
-        Ok(payload)
+        self.db_wrapper
+            .get_pinned(&key, |raw| serde_cbor::from_slice(raw))?
+            .transpose()
+            .map_err(OperationError::from)
     }
 
     pub fn iter<F>(&self, mut callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        let store_ref = self.store.read();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        let iterator = store_ref.iterator_cf(cf_handle, IteratorMode::Start);
-        for item in iterator {
-            let (key, val) = item?;
+        for (key, val) in self.db_wrapper.lock_db().iter()? {
             let do_continue = callback(
                 serde_cbor::from_slice(&key)?,
                 &serde_cbor::from_slice(&val)?,
@@ -135,20 +114,10 @@ impl PayloadStorage for OnDiskPayloadStorage {
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
-        let mut store_ref = self.store.write();
-        store_ref.drop_cf(DB_PAYLOAD_CF)?;
-        store_ref.create_cf(DB_PAYLOAD_CF, &db_options())?;
-        Ok(())
+        self.db_wrapper.recreate_column_family()
     }
 
     fn flusher(&self) -> Flusher {
-        let store = self.store.clone();
-        Box::new(move || {
-            let store_ref = store.read();
-            let cf_handle = store_ref
-                .cf_handle(DB_PAYLOAD_CF)
-                .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-            Ok(store_ref.flush_cf(cf_handle)?)
-        })
+        self.db_wrapper.flusher()
     }
 }

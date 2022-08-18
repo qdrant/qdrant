@@ -5,7 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::distributions::Standard;
 use rand::Rng;
-use segment::common::rocksdb_operations::open_db;
+use segment::common::rocksdb_wrapper::open_db;
 use segment::types::{Distance, VectorElementType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::VectorStorageSS;

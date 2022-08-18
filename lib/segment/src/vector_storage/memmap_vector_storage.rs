@@ -317,7 +317,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_wrapper::open_db;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 
     #[test]

@@ -214,7 +214,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_wrapper::open_db;
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;

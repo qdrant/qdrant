@@ -7,14 +7,14 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitVec;
 use log::debug;
 use parking_lot::RwLock;
-use rocksdb::{IteratorMode, DB};
+use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use crate::common::rocksdb_operations::{db_write_options, DB_VECTOR_CF};
+use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_VECTOR_CF};
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_scores_iterable;
@@ -28,7 +28,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     vectors: ChunkedVectors,
     deleted: BitVec,
     deleted_count: usize,
-    store: Arc<RwLock<DB>>,
+    db_wrapper: DatabaseColumnWrapper,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -85,7 +85,7 @@ where
 }
 
 pub fn open_simple_vector_storage(
-    store: Arc<RwLock<DB>>,
+    database: Arc<RwLock<DB>>,
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
@@ -93,24 +93,22 @@ pub fn open_simple_vector_storage(
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
 
-    {
-        let store_ref = store.read();
-        let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
-        for item in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
-            let (key, val) = item?;
-            let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
-            let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
-            if stored_record.deleted {
-                deleted_count += 1;
-            }
-
-            while deleted.len() <= (point_id as usize) {
-                deleted.push(false);
-            }
-
-            deleted.set(point_id as usize, stored_record.deleted);
-            vectors.insert(point_id, &stored_record.vector);
+    let db_wrapper = DatabaseColumnWrapper::new(database, DB_VECTOR_CF);
+    for (key, value) in db_wrapper.lock_db().iter()? {
+        let point_id: PointOffsetType = bincode::deserialize(&key)
+            .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
+        let stored_record: StoredRecord = bincode::deserialize(&value)
+            .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
+        if stored_record.deleted {
+            deleted_count += 1;
         }
+
+        while deleted.len() <= (point_id as usize) {
+            deleted.push(false);
+        }
+
+        deleted.set(point_id as usize, stored_record.deleted);
+        vectors.insert(point_id, &stored_record.vector);
     }
 
     debug!("Segment vectors: {}", vectors.len());
@@ -128,7 +126,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
-            store,
+            db_wrapper,
         }))),
         Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
             EuclidMetric,
@@ -138,7 +136,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
-            store,
+            db_wrapper,
         }))),
         Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
             DotProductMetric,
@@ -148,7 +146,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
-            store,
+            db_wrapper,
         }))),
     }
 }
@@ -165,13 +163,9 @@ where
             vector: v.to_vec(), // ToDo: try to reduce number of vector copies
         };
 
-        let store_ref = self.store.read();
-        let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
-        store_ref.put_cf_opt(
-            cf_handle,
-            bincode::serialize(&point_id).unwrap(),
-            bincode::serialize(&record).unwrap(),
-            &db_write_options(),
+        self.db_wrapper.put(
+            &bincode::serialize(&point_id).unwrap(),
+            &bincode::serialize(&record).unwrap(),
         )?;
 
         Ok(())
@@ -263,12 +257,7 @@ where
     }
 
     fn flusher(&self) -> Flusher {
-        let store = self.store.clone();
-        Box::new(move || {
-            let store_ref = store.read();
-            let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
-            Ok(store_ref.flush_cf(cf_handle)?)
-        })
+        self.db_wrapper.flusher()
     }
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
@@ -340,7 +329,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_wrapper::open_db;
 
     #[test]
     fn test_score_points() {
