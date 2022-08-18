@@ -23,16 +23,6 @@ pub struct DatabaseColumnWrapper {
     pub column_name: String,
 }
 
-/*
-//'a: 'b, 'b: 'c, 'c
-pub struct DatabaseColumnIterator<'a, 'b: 'a, 'c: 'b + 'a> {
-    pub _holder: parking_lot::RwLockReadGuard<'a, DB>,
-    pub handle: &'b ColumnFamily,
-    pub iter: rocksdb::DBRawIterator<'c>,
-    pub just_seeked: bool,
-}
-*/
-
 pub struct DatabaseColumnIterator<'a> {
     pub handle: &'a ColumnFamily,
     pub iter: rocksdb::DBRawIterator<'a>,
@@ -169,32 +159,6 @@ impl DatabaseColumnWrapper {
         }
     }
 
-    pub fn iter2(&self) -> OperationResult<DatabaseColumnIterator> {
-        unimplemented!()
-        //let _holder = self.database.read();
-        //let handle: &'a rocksdb::ColumnFamily = _holder.cf_handle(&self.column_name).unwrap();
-        //let mut iter: rocksdb::DBRawIteratorWithThreadMode<'a, DB> = _holder.raw_iterator_cf(&handle);
-        //iter.seek_to_first();
-        //unimplemented!()
-        //unimplemented!()
-        /*
-        let _holder: parking_lot::RwLockReadGuard<'a, DB> = self.database.read();
-        let handle: &'a rocksdb::ColumnFamily = _holder.cf_handle(&self.column_name).unwrap();
-        let mut iter: rocksdb::DBRawIteratorWithThreadMode<'a, DB> = _holder.raw_iterator_cf(&handle);
-
-        let mut iter = db.raw_iterator_cf::<'b, 'c>(&handle);
-        iter.seek_to_first();
-        Ok(
-            DatabaseColumnIterator {
-                _holder: db,
-                handle,
-                iter,
-                just_seeked: true,
-            }
-        )
-        */
-    }
-
     pub fn flusher(&self) -> Flusher {
         let database = self.database.clone();
         let column_name = self.column_name.clone();
@@ -273,7 +237,12 @@ impl<'a> LockedDatabaseColumnWrapper<'a> {
 
 impl<'a> DatabaseColumnIterator<'a> {
     pub fn new(db: &'a DB, column_name: &str) -> OperationResult<DatabaseColumnIterator<'a>> {
-        let handle = db.cf_handle(column_name).unwrap();
+        let handle = db.cf_handle(column_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "RocksDB cf_handle error: Cannot find column family {}",
+                column_name
+            ))
+        })?;
         let mut iter = db.raw_iterator_cf(&handle);
         iter.seek_to_first();
         Ok(DatabaseColumnIterator {
