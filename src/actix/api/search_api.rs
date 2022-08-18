@@ -21,7 +21,7 @@ pub async fn search_points(
     process_response(response, timing)
 }
 
-#[post("/collections/{name}/points/search-batch")]
+#[post("/collections/{name}/points/search/batch")]
 pub async fn batch_search_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,

@@ -99,7 +99,7 @@ def test_points_search(tmp_path: pathlib.Path):
         assert_http_ok(r_search)
 
         r_batch = requests.post(
-            f"{uri}/collections/test_collection/points/search-batch", json={
+            f"{uri}/collections/test_collection/points/search/batch", json={
                 "searches": [q]
             }
         )
@@ -115,7 +115,7 @@ def test_points_search(tmp_path: pathlib.Path):
     # Check that `search_batch` return the same results on all peers for duplicated searches
     for uri in peer_api_uris:
         r_batch = requests.post(
-            f"{uri}/collections/test_collection/points/search-batch", json={
+            f"{uri}/collections/test_collection/points/search/batch", json={
                 "searches": [q, q, q, q]
             }
         )
@@ -153,7 +153,7 @@ def test_points_search(tmp_path: pathlib.Path):
     }
     for uri in peer_api_uris:
         r_batch = requests.post(
-            f"{uri}/collections/test_collection/points/search-batch", json={
+            f"{uri}/collections/test_collection/points/search/batch", json={
                 "searches": [q1, q2, q3]
             }
         )
