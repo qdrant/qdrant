@@ -1522,6 +1522,14 @@ pub struct RecommendPoints {
     pub offset: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendBatchPoints {
+    /// Name of the collection
+    #[prost(string, tag="1")]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="2")]
+    pub recommend_points: ::prost::alloc::vec::Vec<RecommendPoints>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPoints {
     /// name of the collection
     #[prost(string, tag="1")]
@@ -1638,6 +1646,14 @@ pub struct GetResponse {
 pub struct RecommendResponse {
     #[prost(message, repeated, tag="1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Time spent to process
+    #[prost(double, tag="2")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendBatchResponse {
+    #[prost(message, repeated, tag="1")]
+    pub result: ::prost::alloc::vec::Vec<BatchResult>,
     /// Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
@@ -2131,6 +2147,27 @@ pub mod points_client {
             self.inner.unary(request.into_request(), path, codec).await
         }
         ///
+        ///Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+        pub async fn recommend_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecommendBatchPoints>,
+        ) -> Result<tonic::Response<super::RecommendBatchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/RecommendBatch",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        ///
         ///Count points in collection with given filtering conditions
         pub async fn count(
             &mut self,
@@ -2230,6 +2267,12 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::RecommendPoints>,
         ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status>;
+        ///
+        ///Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+        async fn recommend_batch(
+            &self,
+            request: tonic::Request<super::RecommendBatchPoints>,
+        ) -> Result<tonic::Response<super::RecommendBatchResponse>, tonic::Status>;
         ///
         ///Count points in collection with given filtering conditions
         async fn count(
@@ -2723,6 +2766,46 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = RecommendSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/RecommendBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct RecommendBatchSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::RecommendBatchPoints>
+                    for RecommendBatchSvc<T> {
+                        type Response = super::RecommendBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RecommendBatchPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).recommend_batch(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RecommendBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

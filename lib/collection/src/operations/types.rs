@@ -275,6 +275,12 @@ pub struct RecommendRequest {
     pub score_threshold: Option<ScoreType>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct RecommendRequestBatch {
+    pub searches: Vec<RecommendRequest>,
+}
+
 /// Count Request
 /// Counts the number of points which satisfy the given filter.
 /// If filter is not provided, the count of all points in the collection will be returned.

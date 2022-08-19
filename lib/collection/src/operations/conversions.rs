@@ -13,8 +13,8 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
 };
 use crate::operations::types::{
-    CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, Record, SearchRequest,
-    UpdateResult, UpdateStatus,
+    CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, RecommendRequest, Record,
+    SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::remote_shard::CollectionSearchRequest;
@@ -459,6 +459,32 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
     fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
         Ok(SearchRequest {
             vector: value.vector,
+            filter: value.filter.map(|f| f.try_into()).transpose()?,
+            params: value.params.map(|p| p.into()),
+            limit: value.limit as usize,
+            offset: value.offset.unwrap_or_default() as usize,
+            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector: value.with_vector.unwrap_or(false),
+            score_threshold: value.score_threshold,
+        })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::RecommendPoints) -> Result<Self, Self::Error> {
+        Ok(RecommendRequest {
+            positive: value
+                .positive
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
+            negative: value
+                .negative
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
             limit: value.limit as usize,

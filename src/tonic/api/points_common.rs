@@ -4,14 +4,15 @@ use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::{
     BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints,
-    GetResponse, PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints,
-    ScrollResponse, SearchBatchResponse, SearchPoints, SearchResponse, SetPayloadPoints,
-    UpsertPoints,
+    GetResponse, PointsOperationResponse, RecommendBatchResponse, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchPoints,
+    SearchResponse, SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::PointInsertOperations;
 use collection::operations::types::{
-    default_exact_count, PointRequest, ScrollRequest, SearchRequest, SearchRequestBatch,
+    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
+    SearchRequestBatch,
 };
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;
@@ -391,6 +392,39 @@ pub async fn recommend(
         result: recommended_points
             .into_iter()
             .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn recommend_batch(
+    toc: &TableOfContent,
+    collection_name: String,
+    recommend_points: Vec<RecommendPoints>,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<RecommendBatchResponse>, Status> {
+    let searches: Result<Vec<_>, Status> = recommend_points
+        .into_iter()
+        .map(|recommend_point| recommend_point.try_into())
+        .collect();
+    let recommend_batch = RecommendRequestBatch {
+        searches: searches?,
+    };
+
+    let timing = Instant::now();
+    let scored_points = toc
+        .recommend_batch(&collection_name, recommend_batch, shard_selection)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = RecommendBatchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| BatchResult {
+                result: points.into_iter().map(|p| p.into()).collect(),
+            })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
     };

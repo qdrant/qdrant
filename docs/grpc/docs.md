@@ -73,6 +73,8 @@
     - [PointsOperationResponse](#qdrant-PointsOperationResponse)
     - [PointsSelector](#qdrant-PointsSelector)
     - [Range](#qdrant-Range)
+    - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
+    - [RecommendBatchResponse](#qdrant-RecommendBatchResponse)
     - [RecommendPoints](#qdrant-RecommendPoints)
     - [RecommendResponse](#qdrant-RecommendResponse)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
@@ -1199,6 +1201,38 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-RecommendBatchPoints"></a>
+
+### RecommendBatchPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| recommend_points | [RecommendPoints](#qdrant-RecommendPoints) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-RecommendBatchResponse"></a>
+
+### RecommendBatchResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [BatchResult](#qdrant-BatchResult) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
 <a name="qdrant-RecommendPoints"></a>
 
 ### RecommendPoints
@@ -1600,6 +1634,7 @@ The JSON representation for `Value` is JSON value.
 | SearchBatch | [SearchBatchPoints](#qdrant-SearchBatchPoints) | [SearchBatchResponse](#qdrant-SearchBatchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
 | Scroll | [ScrollPoints](#qdrant-ScrollPoints) | [ScrollResponse](#qdrant-ScrollResponse) | Iterate over all or filtered points points |
 | Recommend | [RecommendPoints](#qdrant-RecommendPoints) | [RecommendResponse](#qdrant-RecommendResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
+| RecommendBatch | [RecommendBatchPoints](#qdrant-RecommendBatchPoints) | [RecommendBatchResponse](#qdrant-RecommendBatchResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 | Count | [CountPoints](#qdrant-CountPoints) | [CountResponse](#qdrant-CountResponse) | Count points in collection with given filtering conditions |
 
  

@@ -4,16 +4,16 @@ use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, GetPoints, GetResponse,
-    PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
-    SearchBatchPoints, SearchBatchResponse, SearchPoints, SearchResponse, SetPayloadPoints,
-    UpsertPoints,
+    PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse,
+    SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    recommend, scroll, search, search_batch, set_payload, upsert,
+    recommend, recommend_batch, scroll, search, search_batch, set_payload, upsert,
 };
 
 pub struct PointsService {
@@ -111,6 +111,17 @@ impl Points for PointsService {
         request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         recommend(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
+    async fn recommend_batch(
+        &self,
+        request: Request<RecommendBatchPoints>,
+    ) -> Result<Response<RecommendBatchResponse>, Status> {
+        let RecommendBatchPoints {
+            collection_name,
+            recommend_points,
+        } = request.into_inner();
+        recommend_batch(self.toc.as_ref(), collection_name, recommend_points, None).await
     }
 
     async fn count(

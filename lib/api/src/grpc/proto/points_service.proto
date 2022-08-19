@@ -56,6 +56,10 @@ service Points {
    */
   rpc Recommend (RecommendPoints) returns (RecommendResponse) {}
   /*
+  Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+   */
+  rpc RecommendBatch (RecommendBatchPoints) returns (RecommendBatchResponse) {}
+  /*
    Count points in collection with given filtering conditions
    */
   rpc Count (CountPoints) returns (CountResponse) {}
