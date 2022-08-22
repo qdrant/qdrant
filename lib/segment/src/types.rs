@@ -87,11 +87,11 @@ pub type PointIdType = ExtendedPointId;
 )]
 /// Distance function types used to compare vectors
 pub enum Distance {
-    /// https://en.wikipedia.org/wiki/Cosine_similarity
+    /// <https://en.wikipedia.org/wiki/Cosine_similarity>
     Cosine,
-    /// https://en.wikipedia.org/wiki/Euclidean_distance
+    /// <https://en.wikipedia.org/wiki/Euclidean_distance>
     Euclid,
-    /// https://en.wikipedia.org/wiki/Dot_product
+    /// <https://en.wikipedia.org/wiki/Dot_product>
     Dot,
 }
 

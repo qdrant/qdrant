@@ -77,7 +77,7 @@ pub struct OptimizersConfigDiff {
     #[serde(alias = "memmap_threshold_kb")]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
-    /// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+    /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
     pub indexing_threshold: Option<usize>,
