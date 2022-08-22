@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::RwLock;
-use rocksdb::{IteratorMode, DB};
+use rocksdb::DB;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
@@ -54,12 +54,13 @@ pub struct GeoMapIndex {
     points_count: usize,
     values_count: usize,
     max_values_per_point: usize,
-    store_cf_name: String,
-    db: Arc<RwLock<DB>>,
+    db_wrapper: DatabaseColumnWrapper,
 }
 
 impl GeoMapIndex {
     pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
+        let store_cf_name = Self::storage_cf_name(field);
+        let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
         GeoMapIndex {
             points_per_hash: Default::default(),
             values_per_hash: Default::default(),
@@ -68,8 +69,7 @@ impl GeoMapIndex {
             points_count: 0,
             values_count: 0,
             max_values_per_point: 1,
-            store_cf_name: Self::storage_cf_name(field),
-            db,
+            db_wrapper,
         }
     }
 
@@ -78,19 +78,15 @@ impl GeoMapIndex {
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+        self.db_wrapper.recreate_column_family()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        let store_ref = self.db.read();
-        let cf_handle = if let Some(cf_handle) = store_ref.cf_handle(&self.store_cf_name) {
-            cf_handle
-        } else {
+        if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         };
 
-        for item in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
-            let (key, value) = item?;
+        for (key, value) in self.db_wrapper.lock_db().iter()? {
             let key_str = std::str::from_utf8(&key).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;
@@ -154,18 +150,7 @@ impl GeoMapIndex {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let db = self.db.clone();
-        let store_cf_name = self.store_cf_name.clone();
-        Box::new(move || {
-            let store_ref = db.read();
-            let cf_handle = store_ref.cf_handle(&store_cf_name).ok_or_else(|| {
-                OperationError::service_error(&format!(
-                    "Index flush error: column family {} not found",
-                    store_cf_name
-                ))
-            })?;
-            Ok(store_ref.flush_cf(cf_handle)?)
-        })
+        self.db_wrapper.flusher()
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
@@ -234,15 +219,6 @@ impl GeoMapIndex {
     }
 
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.db.read();
-
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "point remove error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             return Ok(()); // Already removed or never actually existed
         }
@@ -271,9 +247,7 @@ impl GeoMapIndex {
             if let Some(ref offsets) = hash_points {
                 for point_offset in offsets.iter() {
                     let key = Self::encode_db_key(removed_geo_hash, *point_offset);
-                    store_ref.delete_cf(cf_handle, &key).map_err(|e| {
-                        OperationError::service_error(&format!("Index db remove error: {}", e))
-                    })?;
+                    self.db_wrapper.remove(&key)?;
                 }
             }
 
@@ -320,14 +294,6 @@ impl GeoMapIndex {
             return Ok(());
         }
 
-        let store_ref = self.db.read();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index add error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             // That's a smart reallocation
             self.point_to_values.resize(idx as usize + 1, vec![]);
@@ -347,11 +313,7 @@ impl GeoMapIndex {
 
             geo_hashes.push(added_geo_hash);
 
-            store_ref
-                .put_cf_opt(cf_handle, &key, &value, &db_write_options())
-                .map_err(|e| {
-                    OperationError::service_error(&format!("Index db update error: {}", e))
-                })?;
+            self.db_wrapper.put(&key, &value)?;
         }
 
         for geo_hash in &geo_hashes {
@@ -480,7 +442,7 @@ impl PayloadFieldIndex for GeoMapIndex {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.write().drop_cf(&self.store_cf_name)?)
+        self.db_wrapper.remove_column_family()
     }
 
     fn flusher(&self) -> Flusher {
@@ -575,7 +537,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
+    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::types::GeoRadius;
 

@@ -5,7 +5,6 @@ use std::result;
 
 use atomicwrites::Error as AtomicIoError;
 use rayon::ThreadPoolBuildError;
-use rocksdb::Error;
 use thiserror::Error;
 
 use crate::common::file_operations::FileStorageError;
@@ -102,12 +101,6 @@ impl<E> From<AtomicIoError<E>> for OperationError {
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
         OperationError::service_error(&format!("IO Error: {}", err))
-    }
-}
-
-impl From<Error> for OperationError {
-    fn from(err: Error) -> Self {
-        OperationError::service_error(&format!("persistence error: {}", err))
     }
 }
 

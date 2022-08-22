@@ -104,7 +104,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_wrapper::open_db;
     use crate::types::Payload;
 
     #[test]

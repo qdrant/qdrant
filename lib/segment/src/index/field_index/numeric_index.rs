@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
@@ -93,8 +93,7 @@ impl ToRangeValue for IntPayloadType {
 
 pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
     map: BTreeMap<Vec<u8>, u32>,
-    db: Arc<RwLock<DB>>,
-    store_cf_name: String,
+    db_wrapper: DatabaseColumnWrapper,
     histogram: Histogram,
     points_count: usize,
     max_values_per_point: usize,
@@ -103,10 +102,11 @@ pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
 
 impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> NumericIndex<T> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
+        let store_cf_name = Self::storage_cf_name(field);
+        let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
         Self {
             map: BTreeMap::new(),
-            db,
-            store_cf_name: Self::storage_cf_name(field),
+            db_wrapper,
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
             max_values_per_point: 1,
@@ -119,16 +119,12 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+        self.db_wrapper.recreate_column_family()
     }
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
         let key = value.encode_key(id);
-        let db_ref = self.db.read();
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!("Column not found: {}", self.store_cf_name))
-        })?;
-        db_ref.put_cf_opt(cf_handle, &key, id.to_be_bytes(), &db_write_options())?;
+        self.db_wrapper.put(&key, id.to_be_bytes())?;
         Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
         Ok(())
     }
@@ -160,26 +156,14 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
-        let db_ref = self.db.read();
-        let cf_handle = if let Some(cf_handle) = db_ref.cf_handle(&self.store_cf_name) {
-            cf_handle
-        } else {
+        if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         };
 
-        let mut iter = db_ref.raw_iterator_cf(&cf_handle);
+        for (key, value) in self.db_wrapper.lock_db().iter()? {
+            let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
+            let (idx, value) = T::decode_key(&key);
 
-        iter.seek_to_first();
-
-        while iter.valid() {
-            let key_bytes = iter.key().unwrap().to_owned();
-            let value_idx = u32::from_be_bytes(
-                iter.value()
-                    .ok_or_else(|| OperationError::service_error("cannot take value iteratror"))?
-                    .try_into()
-                    .map_err(|_| OperationError::service_error("key with incorrect length"))?,
-            );
-            let (idx, value) = T::decode_key(&key_bytes);
             if idx != value_idx {
                 return Err(OperationError::service_error("incorrect key value"));
             }
@@ -190,8 +174,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
             self.point_to_values[idx as usize].push(value);
 
-            Self::add_to_map(&mut self.map, &mut self.histogram, key_bytes, idx);
-            iter.next();
+            Self::add_to_map(&mut self.map, &mut self.histogram, key.to_vec(), idx);
         }
         for values in &self.point_to_values {
             if !values.is_empty() {
@@ -203,30 +186,10 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn flusher(&self) -> Flusher {
-        let db = self.db.clone();
-        let store_cf_name = self.store_cf_name.clone();
-        Box::new(move || {
-            let db_ref = db.read();
-            let cf_handle = db_ref.cf_handle(&store_cf_name).ok_or_else(|| {
-                OperationError::service_error(&format!(
-                    "Index flush error: column family {} not found",
-                    store_cf_name
-                ))
-            })?;
-            Ok(db_ref.flush_cf(cf_handle)?)
-        })
+        self.db_wrapper.flusher()
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let db_ref = self.db.read();
-
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             return Ok(());
         }
@@ -235,7 +198,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
         for value in &removed_values {
             let key = value.encode_key(idx);
-            db_ref.delete_cf(cf_handle, &key)?;
+            self.db_wrapper.remove(&key)?;
             Self::remove_from_map(&mut self.map, &mut self.histogram, key);
         }
 
@@ -388,7 +351,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.write().drop_cf(&self.store_cf_name)?)
+        self.db_wrapper.recreate_column_family()
     }
 
     fn flusher(&self) -> Flusher {
@@ -579,7 +542,7 @@ mod tests {
     use tempfile::{Builder, TempDir};
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
+    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 
     const COLUMN_NAME: &str = "test";
 
@@ -772,7 +735,7 @@ mod tests {
 
         index.flusher()().unwrap();
 
-        let db_ref = index.db;
+        let db_ref = index.db_wrapper.database;
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME);
         new_index.load().unwrap();
 

@@ -8,7 +8,7 @@ use log::info;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use crate::common::rocksdb_operations::open_db;
+use crate::common::rocksdb_wrapper::open_db;
 use crate::common::version::StorageVersion;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
@@ -36,7 +36,8 @@ fn create_segment(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
-    let database = open_db(segment_path)?;
+    let database = open_db(segment_path)
+        .map_err(|err| OperationError::service_error(&format!("RocksDB open error: {}", err)))?;
 
     let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");

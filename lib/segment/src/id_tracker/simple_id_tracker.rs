@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use bincode;
 use parking_lot::RwLock;
-use rocksdb::{IteratorMode, DB};
+use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::common::rocksdb_operations::{db_write_options, DB_MAPPING_CF, DB_VERSIONS_CF};
+use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
@@ -56,7 +56,8 @@ pub struct SimpleIdTracker {
     external_to_internal: BTreeMap<PointIdType, PointOffsetType>,
     external_to_version: HashMap<PointIdType, SeqNumberType>,
     max_internal_id: PointOffsetType,
-    store: Arc<RwLock<DB>>,
+    mapping_db_wrapper: DatabaseColumnWrapper,
+    versions_db_wrapper: DatabaseColumnWrapper,
 }
 
 impl SimpleIdTracker {
@@ -66,40 +67,31 @@ impl SimpleIdTracker {
         let mut external_to_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut max_internal_id = 0;
 
-        {
-            let store_ref = store.read();
-            for item in store_ref.iterator_cf(
-                store_ref.cf_handle(DB_MAPPING_CF).unwrap(),
-                IteratorMode::Start,
-            ) {
-                let (key, val) = item?;
-                let external_id = Self::restore_key(&key);
-                let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
-                let replaced = internal_to_external.insert(internal_id, external_id);
-                if let Some(replaced_id) = replaced {
-                    // Fixing corrupted mapping - this id should be recovered from WAL
-                    // This should not happen in normal operation, but it can happen if
-                    // the database is corrupted.
-                    log::warn!(
-                        "removing duplicated external id {} in internal id {}",
-                        external_id,
-                        replaced_id
-                    );
-                    external_to_internal.remove(&replaced_id);
-                }
-                external_to_internal.insert(external_id, internal_id);
-                max_internal_id = max_internal_id.max(internal_id);
+        let mapping_db_wrapper = DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF);
+        for (key, val) in mapping_db_wrapper.lock_db().iter()? {
+            let external_id = Self::restore_key(&key);
+            let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
+            let replaced = internal_to_external.insert(internal_id, external_id);
+            if let Some(replaced_id) = replaced {
+                // Fixing corrupted mapping - this id should be recovered from WAL
+                // This should not happen in normal operation, but it can happen if
+                // the database is corrupted.
+                log::warn!(
+                    "removing duplicated external id {} in internal id {}",
+                    external_id,
+                    replaced_id
+                );
+                external_to_internal.remove(&replaced_id);
             }
+            external_to_internal.insert(external_id, internal_id);
+            max_internal_id = max_internal_id.max(internal_id);
+        }
 
-            for item in store_ref.iterator_cf(
-                store_ref.cf_handle(DB_VERSIONS_CF).unwrap(),
-                IteratorMode::Start,
-            ) {
-                let (key, val) = item?;
-                let external_id = Self::restore_key(&key);
-                let version: SeqNumberType = bincode::deserialize(&val).unwrap();
-                external_to_version.insert(external_id, version);
-            }
+        let versions_db_wrapper = DatabaseColumnWrapper::new(store, DB_VERSIONS_CF);
+        for (key, val) in versions_db_wrapper.lock_db().iter()? {
+            let external_id = Self::restore_key(&key);
+            let version: SeqNumberType = bincode::deserialize(&val).unwrap();
+            external_to_version.insert(external_id, version);
         }
 
         Ok(SimpleIdTracker {
@@ -107,7 +99,8 @@ impl SimpleIdTracker {
             external_to_internal,
             external_to_version,
             max_internal_id,
-            store,
+            mapping_db_wrapper,
+            versions_db_wrapper,
         })
     }
 
@@ -132,12 +125,9 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         self.external_to_version.insert(external_id, version);
-        let store_ref = self.store.read();
-        store_ref.put_cf_opt(
-            store_ref.cf_handle(DB_VERSIONS_CF).unwrap(),
-            Self::store_key(&external_id),
-            bincode::serialize(&version).unwrap(),
-            &db_write_options(),
+        self.versions_db_wrapper.put(
+            &Self::store_key(&external_id),
+            &bincode::serialize(&version).unwrap(),
         )?;
         Ok(())
     }
@@ -159,12 +149,9 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_external.insert(internal_id, external_id);
         self.max_internal_id = self.max_internal_id.max(internal_id);
 
-        let store_ref = self.store.read();
-        store_ref.put_cf_opt(
-            store_ref.cf_handle(DB_MAPPING_CF).unwrap(),
-            Self::store_key(&external_id),
-            bincode::serialize(&internal_id).unwrap(),
-            &db_write_options(),
+        self.mapping_db_wrapper.put(
+            &Self::store_key(&external_id),
+            &bincode::serialize(&internal_id).unwrap(),
         )?;
         Ok(())
     }
@@ -177,15 +164,10 @@ impl IdTracker for SimpleIdTracker {
             Some(x) => self.internal_to_external.remove(&x),
             None => None,
         };
-        let store_ref = self.store.read();
-        store_ref.delete_cf(
-            store_ref.cf_handle(DB_MAPPING_CF).unwrap(),
-            Self::store_key(&external_id),
-        )?;
-        store_ref.delete_cf(
-            store_ref.cf_handle(DB_VERSIONS_CF).unwrap(),
-            Self::store_key(&external_id),
-        )?;
+        self.mapping_db_wrapper
+            .remove(&Self::store_key(&external_id))?;
+        self.versions_db_wrapper
+            .remove(&Self::store_key(&external_id))?;
         Ok(())
     }
 
@@ -222,19 +204,11 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn mapping_flusher(&self) -> Flusher {
-        let store = self.store.clone();
-        Box::new(move || {
-            let store_ref = store.read();
-            Ok(store_ref.flush_cf(&store_ref.cf_handle(DB_MAPPING_CF).unwrap())?)
-        })
+        self.mapping_db_wrapper.flusher()
     }
 
     fn versions_flusher(&self) -> Flusher {
-        let store = self.store.clone();
-        Box::new(move || {
-            let store_ref = store.read();
-            Ok(store_ref.flush_cf(&store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?)
-        })
+        self.versions_db_wrapper.flusher()
     }
 }
 
@@ -245,7 +219,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_wrapper::open_db;
 
     fn check_bincode_serialization<
         T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
