@@ -15,7 +15,7 @@ Goals of the release:
 To build a solid foundation for future development, we decided to keep Qdrant as legacy-free as possible.
 That means that while switching to `v1.0`, some breaking changes are likely.
 
-ETA of `v1.0-rc` is Q2 2022
+ETA of `v1.0-rc` is Q3 2022
 
 
 ## How to contribute
