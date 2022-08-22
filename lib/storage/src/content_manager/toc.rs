@@ -10,8 +10,8 @@ use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    CountRequest, CountResult, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
-    SearchRequest, SearchRequestBatch, UpdateResult,
+    CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
+    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
@@ -550,6 +550,29 @@ impl TableOfContent {
         let collection = self.get_collection(collection_name).await?;
         collection
             .recommend_by(request, self.search_runtime.handle(), shard_selection)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    /// Recommend points in a batchi fashion using positive and negative example from the request
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - for what collection do we recommend
+    /// * `request` - [`RecommendRequestBatch`]
+    ///
+    /// # Result
+    ///
+    /// Points with recommendation score
+    pub async fn recommend_batch(
+        &self,
+        collection_name: &str,
+        request: RecommendRequestBatch,
+        shard_selection: Option<ShardId>,
+    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        collection
+            .recommend_batch_by(request, self.search_runtime.handle(), shard_selection)
             .await
             .map_err(|err| err.into())
     }

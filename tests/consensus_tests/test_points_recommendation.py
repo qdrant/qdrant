@@ -1,4 +1,5 @@
 import pathlib
+import time
 
 from .utils import *
 
@@ -6,7 +7,7 @@ N_PEERS = 5
 N_SHARDS = 6
 
 
-def test_points_search(tmp_path: pathlib.Path):
+def test_points_recommendation(tmp_path: pathlib.Path):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, N_PEERS)
 
@@ -83,9 +84,10 @@ def test_points_search(tmp_path: pathlib.Path):
         })
     assert_http_ok(r_batch)
 
-    # Check that 'search' & `search_batch` return the same results on all peers
+    # Check that 'recommendation' & `recommendation_batch` return the same results on all peers
     q = {
-        "vector": [0.2, 0.1, 0.9, 0.7],
+        "positive": [2, 3],
+        "negative": [10],
         "top": 3,
         "offset": 1,
         "with_vector": True,
@@ -95,22 +97,21 @@ def test_points_search(tmp_path: pathlib.Path):
 
     # Capture result from first peer
     r_init_search = requests.post(
-        f"{peer_api_uris[0]}/collections/test_collection/points/search", json=q
+        f"{peer_api_uris[0]}/collections/test_collection/points/recommend", json=q
     ).json()["result"]
 
     for uri in peer_api_uris:
         r_search = requests.post(
-            f"{uri}/collections/test_collection/points/search", json=q
+            f"{uri}/collections/test_collection/points/recommend", json=q
         )
         assert_http_ok(r_search)
 
         r_batch = requests.post(
-            f"{uri}/collections/test_collection/points/search/batch", json={
+            f"{uri}/collections/test_collection/points/recommend/batch", json={
                 "searches": [q]
             }
         )
         assert_http_ok(r_batch)
-
         # only one search in the batch
         assert len(r_batch.json()["result"]) == 1
         # assert same number of results
@@ -120,10 +121,10 @@ def test_points_search(tmp_path: pathlib.Path):
         # search equivalent to single batch
         assert r_search.json()["result"] == r_batch.json()["result"][0]
 
-    # Check that `search_batch` return the same results on all peers for duplicated searches
+    # Check that `recommend_batch` return the same results on all peers for duplicated searches
     for uri in peer_api_uris:
         r_batch = requests.post(
-            f"{uri}/collections/test_collection/points/search/batch", json={
+            f"{uri}/collections/test_collection/points/recommend/batch", json={
                 "searches": [q, q, q, q]
             }
         )
@@ -141,41 +142,44 @@ def test_points_search(tmp_path: pathlib.Path):
 
     # Check that `search_batch` return the same results on all peers compared to multiple searches
     q1 = {
-        "vector": [0.2, 0.1, 0.9, 0.7],
+        "positive": [2, 3],
+        "negative": [10],
         "top": 3,
         "offset": 1,
         "with_vector": True
     }
     q2 = {
-        "vector": [0.1, 0.2, 0.9, 0.7],
+        "positive": [2, 3],
+        "negative": [10],
         "top": 5,
         "offset": 3,
         "with_payload": True,
     }
     q3 = {
-        "vector": [0.2, 0.1, 0.7, 0.9],
+        "positive": [2, 3],
+        "negative": [10],
         "top": 10,
         "score_threshold": 1.1
     }
     for uri in peer_api_uris:
         r_batch = requests.post(
-            f"{uri}/collections/test_collection/points/search/batch", json={
+            f"{uri}/collections/test_collection/points/recommend/batch", json={
                 "searches": [q1, q2, q3]
             }
         )
         assert_http_ok(r_batch)
 
         r_search_1 = requests.post(
-            f"{uri}/collections/test_collection/points/search", json=q1
+            f"{uri}/collections/test_collection/points/recommend", json=q1
         )
         assert_http_ok(r_search_1)
         r_search_2 = requests.post(
-            f"{uri}/collections/test_collection/points/search", json=q2
+            f"{uri}/collections/test_collection/points/recommend", json=q2
         )
         assert_http_ok(r_search_2)
 
         r_search_3 = requests.post(
-            f"{uri}/collections/test_collection/points/search", json=q3
+            f"{uri}/collections/test_collection/points/recommend", json=q3
         )
         assert_http_ok(r_search_3)
 

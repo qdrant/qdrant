@@ -144,6 +144,11 @@ message RecommendPoints {
   optional uint64 offset = 10; // Offset of the result
 }
 
+message RecommendBatchPoints {
+  string collection_name = 1; // Name of the collection
+  repeated RecommendPoints recommend_points = 2;
+}
+
 message CountPoints {
   string collection_name = 1; // name of the collection
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
@@ -220,6 +225,11 @@ message GetResponse {
 
 message RecommendResponse {
   repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
+}
+
+message RecommendBatchResponse {
+  repeated BatchResult result = 1;
   double time = 2; // Time spent to process
 }
 

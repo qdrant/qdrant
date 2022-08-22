@@ -50,4 +50,3 @@ def test_many_collections(tmp_path: pathlib.Path):
     # Check that all collections exist on all peers
     for i in range(1, N_COLLECTIONS + 1):
         wait_for_uniform_collection_existence(f"test_collection_{i}", peer_api_uris)
-

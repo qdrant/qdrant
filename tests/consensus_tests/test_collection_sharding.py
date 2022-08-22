@@ -72,8 +72,8 @@ def test_collection_sharding(tmp_path: pathlib.Path):
                     "payload": {"city": ["Berlin", "Moscow"]}},
                 {"id": 4, "vector": [0.18, 0.01, 0.85, 0.80],
                     "payload": {"city": ["London", "Moscow"]}},
-                {"id": 5, "vector": [0.24, 0.18, 0.22,
-                                     0.44], "payload": {"count": [0]}},
+                {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44],
+                    "payload": {"count": [0]}},
                 {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]}
             ]
         })

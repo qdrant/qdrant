@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,9 +27,9 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
-    CountResult, LocalShardInfo, PointRequest, RecommendRequest, Record, RemoteShardInfo,
-    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, ShardTransferInfo,
-    UpdateResult,
+    CountResult, LocalShardInfo, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
+    RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
+    ShardTransferInfo, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -552,6 +552,7 @@ impl Collection {
         }
     }
 
+    // TODO use batched version with single request
     pub async fn recommend_by(
         &self,
         request: RecommendRequest,
@@ -640,6 +641,113 @@ impl Collection {
         };
 
         self.search(search_request, search_runtime_handle, shard_selection)
+            .await
+    }
+
+    pub async fn recommend_batch_by(
+        &self,
+        request_batch: RecommendRequestBatch,
+        search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // pack all reference vector ids
+        let mut all_reference_vectors_ids = HashSet::new();
+        for request in &request_batch.searches {
+            if request.positive.is_empty() {
+                return Err(CollectionError::BadRequest {
+                    description: "At least one positive vector ID required".to_owned(),
+                });
+            }
+            for point_id in request.positive.iter().chain(&request.negative) {
+                all_reference_vectors_ids.insert(*point_id);
+            }
+        }
+
+        // batch vector retrieval
+        let all_vectors = self
+            .retrieve(
+                PointRequest {
+                    ids: all_reference_vectors_ids.into_iter().collect(),
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: true,
+                },
+                shard_selection,
+            )
+            .await?;
+
+        let all_vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = all_vectors
+            .into_iter()
+            .map(|rec| (rec.id, rec.vector.unwrap()))
+            .collect();
+
+        let mut searches = Vec::with_capacity(request_batch.searches.len());
+
+        for request in request_batch.searches {
+            let reference_vectors_ids = request
+                .positive
+                .iter()
+                .chain(&request.negative)
+                .cloned()
+                .collect_vec();
+
+            for &point_id in &reference_vectors_ids {
+                if !all_vectors_map.contains_key(&point_id) {
+                    return Err(CollectionError::PointNotFound {
+                        missed_point_id: point_id,
+                    });
+                }
+            }
+
+            let avg_positive = avg_vectors(
+                request
+                    .positive
+                    .iter()
+                    .map(|vid| all_vectors_map.get(vid).unwrap()),
+            );
+
+            let search_vector = if request.negative.is_empty() {
+                avg_positive
+            } else {
+                let avg_negative = avg_vectors(
+                    request
+                        .negative
+                        .iter()
+                        .map(|vid| all_vectors_map.get(vid).unwrap()),
+                );
+
+                avg_positive
+                    .iter()
+                    .cloned()
+                    .zip(avg_negative.iter().cloned())
+                    .map(|(pos, neg)| pos + pos - neg)
+                    .collect()
+            };
+
+            let search_request = SearchRequest {
+                vector: search_vector,
+                filter: Some(Filter {
+                    should: None,
+                    must: request
+                        .filter
+                        .clone()
+                        .map(|filter| vec![Condition::Filter(filter)]),
+                    must_not: Some(vec![Condition::HasId(HasIdCondition {
+                        has_id: reference_vectors_ids.iter().cloned().collect(),
+                    })]),
+                }),
+                with_payload: request.with_payload.clone(),
+                with_vector: request.with_vector,
+                params: request.params,
+                limit: request.limit,
+                score_threshold: request.score_threshold,
+                offset: request.offset,
+            };
+            searches.push(search_request)
+        }
+
+        let search_batch_request = SearchRequestBatch { searches };
+
+        self.search_batch(search_batch_request, search_runtime_handle, shard_selection)
             .await
     }
 
@@ -754,8 +862,9 @@ impl Collection {
                         peek_top_smallest_scores_iterable(res, request.limit + request.offset)
                     }
                 };
-                // Remove offset from top result.
-                if request.offset > 0 {
+                // Remove `offset` from top result only for client requests
+                // to avoid applying `offset` twice in distributed mode.
+                if shard_selection.is_none() && request.offset > 0 {
                     if top_res.len() >= request.offset {
                         // Panics if the end point > length of the vector.
                         top_res.drain(..request.offset);
