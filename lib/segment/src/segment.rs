@@ -836,10 +836,10 @@ impl SegmentEntry for Segment {
         Ok(deleted_points)
     }
 
-    fn vector_dim(&self, vector_name: &str) -> usize {
-        // todo(ivan): add OperationResult for this function return
+    fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
+        check_vector_name(vector_name, &self.segment_config)?;
         let vector_data_config = &self.segment_config.vector_data[vector_name];
-        vector_data_config.vector_size
+        Ok(vector_data_config.vector_size)
     }
 
     fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {

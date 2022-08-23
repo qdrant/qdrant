@@ -235,7 +235,7 @@ pub trait SegmentEntry {
     /// Estimate points count in this segment for given filter.
     fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
-    fn vector_dim(&self, vector_name: &str) -> usize;
+    fn vector_dim(&self, vector_name: &str) -> OperationResult<usize>;
 
     /// Number of vectors, marked as deleted
     fn deleted_count(&self) -> usize;

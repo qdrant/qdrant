@@ -600,7 +600,7 @@ impl SegmentEntry for ProxySegment {
             .delete_filtered(op_num, filter)
     }
 
-    fn vector_dim(&self, vector_name: &str) -> usize {
+    fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
         self.write_segment.get().read().vector_dim(vector_name)
     }
 

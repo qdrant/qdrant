@@ -108,7 +108,7 @@ impl SegmentOptimizer for MergeOptimizer {
                     true => Some((
                         *idx,
                         read_segment.points_count()
-                            * read_segment.vector_dim(DEFAULT_VECTOR_NAME)
+                            * read_segment.vector_dim(DEFAULT_VECTOR_NAME).unwrap()
                             * VECTOR_ELEMENT_SIZE,
                     )),
                     false => None,
