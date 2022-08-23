@@ -5,15 +5,17 @@ mod tests {
 
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
+    use segment::common::only_default_vector;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
     use segment::index::hnsw_index::hnsw::HNSWIndex;
     use segment::index::{PayloadIndex, VectorIndex};
+    use segment::segment::DEFAULT_VECTOR_NAME;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
         PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType,
-        StorageType,
+        StorageType, VectorDataConfig,
     };
     use serde_json::json;
     use tempfile::Builder;
@@ -38,10 +40,15 @@ mod tests {
         let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
         let config = SegmentConfig {
-            vector_size: dim,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: dim,
+                    distance,
+                },
+            )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            distance,
             payload_storage_type: Default::default(),
         };
 
@@ -56,7 +63,7 @@ mod tests {
             let payload: Payload = json!({int_key:int_payload,}).into();
 
             segment
-                .upsert_point(n as SeqNumberType, idx, &vector)
+                .upsert_point(n as SeqNumberType, idx, &only_default_vector(&vector))
                 .unwrap();
             segment
                 .set_full_payload(n as SeqNumberType, idx, &payload)
@@ -75,7 +82,9 @@ mod tests {
 
         let mut hnsw_index = HNSWIndex::open(
             hnsw_dir.path(),
-            segment.vector_storage.clone(),
+            segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .clone(),
             payload_index_ptr.clone(),
             hnsw_config,
         )
@@ -153,11 +162,10 @@ mod tests {
                 Some(&SearchParams { hnsw_ef: Some(ef) }),
             );
 
-            let plain_result =
-                segment
-                    .vector_index
-                    .borrow()
-                    .search(&[&query], filter_query, top, None);
+            let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_index
+                .borrow()
+                .search(&[&query], filter_query, top, None);
 
             if plain_result.get(0).unwrap() == &index_result {
                 hits += 1;

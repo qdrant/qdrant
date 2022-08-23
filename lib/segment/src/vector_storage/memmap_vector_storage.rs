@@ -317,7 +317,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 
     #[test]
@@ -336,8 +336,8 @@ mod tests {
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path()).unwrap();
-            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec1).unwrap();
@@ -359,8 +359,8 @@ mod tests {
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path()).unwrap();
-            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec4).unwrap();
@@ -402,8 +402,8 @@ mod tests {
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path()).unwrap();
-            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec1).unwrap();

@@ -6,6 +6,7 @@ mod tests {
     use std::iter::FromIterator;
 
     use segment::entry::entry_point::SegmentEntry;
+    use segment::segment::DEFAULT_VECTOR_NAME;
     use segment::types::{Condition, Filter, WithPayload};
     use tempfile::Builder;
 
@@ -22,7 +23,15 @@ mod tests {
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
 
         let res = segment
-            .search(&query_vector, &WithPayload::default(), false, None, 1, None)
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query_vector,
+                &WithPayload::default(),
+                false,
+                None,
+                1,
+                None,
+            )
             .unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");
@@ -38,6 +47,7 @@ mod tests {
 
         let res = segment
             .search(
+                DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
                 false,

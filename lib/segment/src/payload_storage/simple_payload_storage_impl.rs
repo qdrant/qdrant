@@ -67,12 +67,12 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 
     #[test]
     fn test_wipe() {
         let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
@@ -112,7 +112,7 @@ mod tests {
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         storage.assign(100, &payload).unwrap();
         let pload = storage.payload(100).unwrap();

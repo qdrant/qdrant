@@ -5,7 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::distributions::Standard;
 use rand::Rng;
-use segment::common::rocksdb_wrapper::open_db;
+use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::types::{Distance, VectorElementType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::VectorStorageSS;
@@ -26,8 +26,8 @@ fn init_vector_storage(
     num: usize,
     dist: Distance,
 ) -> Arc<AtomicRefCell<VectorStorageSS>> {
-    let db = open_db(path).unwrap();
-    let storage = open_simple_vector_storage(db, dim, dist).unwrap();
+    let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
+    let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, dist).unwrap();
     {
         let mut borrowed_storage = storage.borrow_mut();
         for _i in 0..num {

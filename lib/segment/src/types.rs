@@ -326,10 +326,7 @@ impl Default for PayloadStorageType {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
-    /// Size of a vectors used
-    pub vector_size: usize,
-    /// Type of distance function used for measuring distance between vectors
-    pub distance: Distance,
+    pub vector_data: HashMap<String, VectorDataConfig>,
     /// Type of index used for search
     pub index: Indexes,
     /// Type of vector storage
@@ -337,6 +334,15 @@ pub struct SegmentConfig {
     /// Defines payload storage type
     #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorDataConfig {
+    /// Size of a vectors used
+    pub vector_size: usize,
+    /// Type of distance function used for measuring distance between vectors
+    pub distance: Distance,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>

@@ -1,22 +1,24 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::path::Path;
 
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
+    use segment::common::only_default_vector;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{
         generate_diverse_payload, random_filter, random_vector, FLICKING_KEY, GEO_KEY, INT_KEY,
         INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY,
     };
     use segment::index::PayloadIndex;
-    use segment::segment::Segment;
+    use segment::segment::{Segment, DEFAULT_VECTOR_NAME};
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes,
         IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig,
-        StorageType, WithPayload,
+        StorageType, VectorDataConfig, WithPayload,
     };
     use tempfile::Builder;
 
@@ -25,10 +27,15 @@ mod tests {
         let dim = 5;
 
         let config = SegmentConfig {
-            vector_size: dim,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: dim,
+                    distance: Distance::Dot,
+                },
+            )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            distance: Distance::Dot,
             payload_storage_type: Default::default(),
         };
 
@@ -50,8 +57,12 @@ mod tests {
             let vector = random_vector(&mut rnd, dim);
             let payload: Payload = generate_diverse_payload(&mut rnd);
 
-            plain_segment.upsert_point(opnum, idx, &vector).unwrap();
-            struct_segment.upsert_point(opnum, idx, &vector).unwrap();
+            plain_segment
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
+                .unwrap();
+            struct_segment
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
+                .unwrap();
             plain_segment
                 .set_full_payload(opnum, idx, &payload)
                 .unwrap();
@@ -181,7 +192,7 @@ mod tests {
 
         let payload_index = struct_segment.payload_index.borrow();
         let filter_context = payload_index.filter_context(&filter);
-        let exact = struct_segment
+        let exact = struct_segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .borrow()
             .iter_ids()
@@ -215,6 +226,7 @@ mod tests {
 
             let plain_result = plain_segment
                 .search(
+                    DEFAULT_VECTOR_NAME,
                     &query_vector,
                     &WithPayload::default(),
                     false,
@@ -225,6 +237,7 @@ mod tests {
                 .unwrap();
             let struct_result = struct_segment
                 .search(
+                    DEFAULT_VECTOR_NAME,
                     &query_vector,
                     &WithPayload::default(),
                     false,
@@ -242,7 +255,11 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
             assert!(
-                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                estimation.max
+                    <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
+                        .vector_storage
+                        .borrow()
+                        .vector_count() as usize,
                 "{:#?}",
                 estimation
             );
@@ -295,6 +312,7 @@ mod tests {
 
             let plain_result = plain_segment
                 .search(
+                    DEFAULT_VECTOR_NAME,
                     &query_vector,
                     &WithPayload::default(),
                     false,
@@ -312,13 +330,18 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
             assert!(
-                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                estimation.max
+                    <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
+                        .vector_storage
+                        .borrow()
+                        .vector_count() as usize,
                 "{:#?}",
                 estimation
             );
 
             let struct_result = struct_segment
                 .search(
+                    DEFAULT_VECTOR_NAME,
                     &query_vector,
                     &WithPayload::default(),
                     false,
@@ -336,7 +359,11 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
             assert!(
-                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                estimation.max
+                    <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
+                        .vector_storage
+                        .borrow()
+                        .vector_count() as usize,
                 "{:#?}",
                 estimation
             );

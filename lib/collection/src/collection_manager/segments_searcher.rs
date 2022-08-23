@@ -5,6 +5,7 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::OperationError;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::spaces::tools::peek_top_largest_scores_iterable;
 use segment::types::{
     Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, VectorElementType, WithPayload,
@@ -118,7 +119,7 @@ impl SegmentsSearcher {
                             None
                         },
                         vector: if with_vector {
-                            Some(segment.vector(id)?)
+                            Some(segment.vector(DEFAULT_VECTOR_NAME, id)?)
                         } else {
                             None
                         },
@@ -172,6 +173,7 @@ async fn search_in_segment(
             // execute what has been batched so far
             if !vectors_batch.is_empty() {
                 let mut res = segment.get().read().search_batch(
+                    DEFAULT_VECTOR_NAME,
                     &vectors_batch,
                     &prev_params.with_payload,
                     prev_params.with_vector,
@@ -192,6 +194,7 @@ async fn search_in_segment(
     // run last batch if any
     if !vectors_batch.is_empty() {
         let mut res = segment.get().read().search_batch(
+            DEFAULT_VECTOR_NAME,
             &vectors_batch,
             &prev_params.with_payload,
             prev_params.with_vector,

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::telemetry::TelemetryOperationAggregator;
 use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
@@ -64,7 +65,9 @@ impl IndexingOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.points_count();
-                let vector_size = vector_count * read_segment.vector_dim() * VECTOR_ELEMENT_SIZE;
+                let vector_size = vector_count
+                    * read_segment.vector_dim(DEFAULT_VECTOR_NAME)
+                    * VECTOR_ELEMENT_SIZE;
 
                 if read_segment.segment_type() == SegmentType::Special {
                     return None; // Never optimize already optimized segment
@@ -109,7 +112,9 @@ impl IndexingOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.points_count();
-                let vector_size = vector_count * read_segment.vector_dim() * VECTOR_ELEMENT_SIZE;
+                let vector_size = vector_count
+                    * read_segment.vector_dim(DEFAULT_VECTOR_NAME)
+                    * VECTOR_ELEMENT_SIZE;
 
                 let segment_config = read_segment.config();
 
@@ -243,6 +248,7 @@ mod tests {
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
     use segment::fixtures::index_fixtures::random_vector;
+    use segment::segment::DEFAULT_VECTOR_NAME;
     use segment::types::{Payload, PayloadSchemaType, StorageType};
     use serde_json::json;
     use tempfile::Builder;
@@ -301,8 +307,11 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vector_size: NonZeroU64::new(segment_config.vector_size as u64).unwrap(),
-                distance: segment_config.distance,
+                vector_size: NonZeroU64::new(
+                    segment_config.vector_data[DEFAULT_VECTOR_NAME].vector_size as u64,
+                )
+                .unwrap(),
+                distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
             },

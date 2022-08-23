@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
+use segment::common::only_default_vector;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
@@ -150,7 +151,7 @@ fn upsert_with_payload(
     vector: &[VectorElementType],
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
-    let mut res = segment.upsert_point(op_num, point_id, vector)?;
+    let mut res = segment.upsert_point(op_num, point_id, &only_default_vector(vector))?;
     if let Some(full_payload) = payload {
         res &= segment.set_payload(op_num, point_id, full_payload)?;
     }

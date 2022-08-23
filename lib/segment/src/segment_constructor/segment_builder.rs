@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
 use crate::index::PayloadIndex;
-use crate::segment::Segment;
+use crate::segment::{Segment, DEFAULT_VECTOR_NAME};
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadKeyType, PayloadSchemaType, SegmentConfig};
 
@@ -58,11 +58,15 @@ impl SegmentBuilder {
                 self_segment.version = cmp::max(self_segment.version(), other.version());
 
                 let other_id_tracker = other.id_tracker.borrow();
-                let other_vector_storage = other.vector_storage.borrow();
+                let other_vector_storage = other.vector_data[DEFAULT_VECTOR_NAME]
+                    .vector_storage
+                    .borrow();
                 let other_payload_index = other.payload_index.borrow();
 
                 let mut id_tracker = self_segment.id_tracker.borrow_mut();
-                let mut vector_storage = self_segment.vector_storage.borrow_mut();
+                let mut vector_storage = self_segment.vector_data[DEFAULT_VECTOR_NAME]
+                    .vector_storage
+                    .borrow_mut();
                 let mut payload_index = self_segment.payload_index.borrow_mut();
 
                 let new_internal_range = vector_storage.update_from(&*other_vector_storage)?;
@@ -135,7 +139,10 @@ impl SegmentBuilder {
                 }
             }
 
-            segment.vector_index.borrow_mut().build_index(stopped)?;
+            segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_index
+                .borrow_mut()
+                .build_index(stopped)?;
 
             segment.flush(true)?;
             // Now segment is going to be evicted from RAM

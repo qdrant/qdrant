@@ -13,9 +13,11 @@ use rocksdb::DB;
 use tar::Builder;
 
 use crate::common::version::StorageVersion;
+use crate::common::{check_vector_name, check_vectors_set};
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
-    get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
+    get_service_error, AllVectors, OperationError, OperationResult, SegmentEntry,
+    SegmentFailedState,
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
@@ -30,6 +32,7 @@ use crate::types::{
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
+pub const DEFAULT_VECTOR_NAME: &str = "";
 
 pub struct SegmentVersion;
 
@@ -54,9 +57,8 @@ pub struct Segment {
     pub current_path: PathBuf,
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-    pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    pub vector_data: HashMap<String, VectorData>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-    pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
     /// Shows what kind of indexes and storages are used in this segment
@@ -69,25 +71,34 @@ pub struct Segment {
     pub flush_thread: Mutex<Option<JoinHandle<OperationResult<SeqNumberType>>>>,
 }
 
+pub struct VectorData {
+    pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+}
+
 impl Segment {
     fn update_vector(
         &mut self,
         old_internal_id: PointOffsetType,
-        vector: Vec<VectorElementType>,
+        vectors: AllVectors,
     ) -> OperationResult<PointOffsetType> {
-        let new_internal_index = {
-            let mut vector_storage = self.vector_storage.borrow_mut();
-            vector_storage.update_vector(old_internal_id, vector)
-        }?;
-        if new_internal_index != old_internal_id {
-            // If vector was moved to a new internal id, move payload to this internal id as well
-            let mut payload_index = self.payload_index.borrow_mut();
-            let payload = payload_index.drop(old_internal_id)?;
-            if let Some(payload) = payload {
-                payload_index.assign(new_internal_index, &payload)?;
+        check_vectors_set(&vectors, &self.segment_config)?;
+        let mut new_internal_index = 0;
+        for (vector_name, vector) in vectors {
+            let vector_data = &self.vector_data[&vector_name];
+            new_internal_index = {
+                let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                vector_storage.update_vector(old_internal_id, vector)
+            }?;
+            if new_internal_index != old_internal_id {
+                // If vector was moved to a new internal id, move payload to this internal id as well
+                let mut payload_index = self.payload_index.borrow_mut();
+                let payload = payload_index.drop(old_internal_id)?;
+                if let Some(payload) = payload {
+                    payload_index.assign(new_internal_index, &payload)?;
+                }
             }
         }
-
         Ok(new_internal_index)
     }
 
@@ -217,9 +228,12 @@ impl Segment {
     #[inline]
     fn vector_by_offset(
         &self,
+        vector_name: &str,
         point_offset: PointOffsetType,
     ) -> OperationResult<Vec<VectorElementType>> {
-        Ok(self
+        check_vector_name(vector_name, &self.segment_config)?;
+        let vector_data = &self.vector_data[vector_name];
+        Ok(vector_data
             .vector_storage
             .borrow()
             .get_vector(point_offset)
@@ -282,6 +296,7 @@ impl Segment {
     /// Converts raw ScoredPointOffset search result into ScoredPoint result
     fn process_search_result(
         &self,
+        vector_name: &str,
         internal_result: &[ScoredPointOffset],
         with_payload: &WithPayload,
         with_vector: bool,
@@ -316,7 +331,7 @@ impl Segment {
                 };
 
                 let vector = if with_vector {
-                    Some(self.vector_by_offset(point_offset)?)
+                    Some(self.vector_by_offset(vector_name, point_offset)?)
                 } else {
                     None
                 };
@@ -346,6 +361,7 @@ impl SegmentEntry for Segment {
 
     fn search(
         &self,
+        vector_name: &str,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
         with_vector: bool,
@@ -353,7 +369,9 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
+        check_vector_name(vector_name, &self.segment_config)?;
+        let vector_data = &self.vector_data[vector_name];
+        let expected_vector_dim = vector_data.vector_storage.borrow().vector_dim();
         if vector.len() != expected_vector_dim {
             return Err(OperationError::WrongVector {
                 expected_dim: expected_vector_dim,
@@ -361,16 +379,18 @@ impl SegmentEntry for Segment {
             });
         }
 
-        let internal_result = &self
-            .vector_index
-            .borrow()
-            .search(&[vector], filter, top, params)[0];
+        let internal_result =
+            &vector_data
+                .vector_index
+                .borrow()
+                .search(&[vector], filter, top, params)[0];
 
-        self.process_search_result(internal_result, with_payload, with_vector)
+        self.process_search_result(vector_name, internal_result, with_payload, with_vector)
     }
 
     fn search_batch(
         &self,
+        vector_name: &str,
         vectors: &[&[VectorElementType]],
         with_payload: &WithPayload,
         with_vector: bool,
@@ -378,7 +398,9 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
+        check_vector_name(vector_name, &self.segment_config)?;
+        let vector_data = &self.vector_data[vector_name];
+        let expected_vector_dim = vector_data.vector_storage.borrow().vector_dim();
         for vector in vectors {
             if vector.len() != expected_vector_dim {
                 return Err(OperationError::WrongVector {
@@ -388,7 +410,7 @@ impl SegmentEntry for Segment {
             }
         }
 
-        let internal_results = self
+        let internal_results = vector_data
             .vector_index
             .borrow()
             .search(vectors, filter, top, params);
@@ -396,7 +418,7 @@ impl SegmentEntry for Segment {
         let res = internal_results
             .iter()
             .map(|internal_result| {
-                self.process_search_result(internal_result, with_payload, with_vector)
+                self.process_search_result(vector_name, internal_result, with_payload, with_vector)
             })
             .collect();
 
@@ -407,27 +429,32 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector: &[VectorElementType],
+        vectors: &AllVectors,
     ) -> OperationResult<bool> {
+        check_vectors_set(vectors, &self.segment_config)?;
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            let vector_dim = segment.vector_storage.borrow().vector_dim();
-            if vector_dim != vector.len() {
-                return Err(OperationError::WrongVector {
-                    expected_dim: vector_dim,
-                    received_dim: vector.len(),
-                });
-            }
+            let mut processed_vectors = AllVectors::new();
+            for (vector_name, vector) in vectors {
+                let vector_data = &segment.vector_data[vector_name];
+                let vector_dim = vector_data.vector_storage.borrow().vector_dim();
+                if vector_dim != vector.len() {
+                    return Err(OperationError::WrongVector {
+                        expected_dim: vector_dim,
+                        received_dim: vector.len(),
+                    });
+                }
 
-            let processed_vector = segment
-                .segment_config
-                .distance
-                .preprocess_vector(vector)
-                .unwrap_or_else(|| vector.to_owned());
+                let processed_vector = segment.segment_config.vector_data[vector_name]
+                    .distance
+                    .preprocess_vector(vector)
+                    .unwrap_or_else(|| vector.to_owned());
+                processed_vectors.insert(vector_name.to_owned(), processed_vector);
+            }
 
             let stored_internal_point = segment.id_tracker.borrow().internal_id(point_id);
 
             let was_replaced = if let Some(existing_internal_id) = stored_internal_point {
-                let new_index = segment.update_vector(existing_internal_id, processed_vector)?;
+                let new_index = segment.update_vector(existing_internal_id, processed_vectors)?;
                 if new_index != existing_internal_id {
                     let mut id_tracker = segment.id_tracker.borrow_mut();
                     id_tracker.drop(point_id)?;
@@ -435,10 +462,13 @@ impl SegmentEntry for Segment {
                 }
                 true
             } else {
-                let new_index = segment
-                    .vector_storage
-                    .borrow_mut()
-                    .put_vector(processed_vector)?;
+                let mut new_index = 0;
+                for (vector_name, processed_vector) in processed_vectors {
+                    new_index = segment.vector_data[&vector_name]
+                        .vector_storage
+                        .borrow_mut()
+                        .put_vector(processed_vector)?;
+                }
                 segment
                     .id_tracker
                     .borrow_mut()
@@ -460,7 +490,12 @@ impl SegmentEntry for Segment {
             let internal_id = id_tracker.internal_id(point_id);
             match internal_id {
                 Some(internal_id) => {
-                    segment.vector_storage.borrow_mut().delete(internal_id)?;
+                    for vector_data in segment.vector_data.values() {
+                        vector_data
+                            .vector_storage
+                            .borrow_mut()
+                            .delete(internal_id)?;
+                    }
                     segment.payload_index.borrow_mut().drop(internal_id)?;
                     id_tracker.drop(point_id)?;
                     Ok(true)
@@ -530,9 +565,13 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>> {
+    fn vector(
+        &self,
+        vector_name: &str,
+        point_id: PointIdType,
+    ) -> OperationResult<Vec<VectorElementType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.vector_by_offset(internal_id)
+        self.vector_by_offset(vector_name, internal_id)
     }
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
@@ -603,7 +642,8 @@ impl SegmentEntry for Segment {
     }
 
     fn deleted_count(&self) -> usize {
-        self.vector_storage.borrow().deleted_count()
+        let vector_data = self.vector_data.values().next().unwrap();
+        vector_data.vector_storage.borrow().deleted_count()
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -630,7 +670,7 @@ impl SegmentEntry for Segment {
             segment_type: self.segment_type,
             num_vectors: self.points_count(),
             num_points: self.points_count(),
-            num_deleted_vectors: self.vector_storage.borrow().deleted_count(),
+            num_deleted_vectors: self.deleted_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,
@@ -657,10 +697,14 @@ impl SegmentEntry for Segment {
             return Ok(current_persisted_version);
         }
 
+        let vector_storage_flushers: Vec<_> = self
+            .vector_data
+            .iter()
+            .map(|(_, v)| v.vector_storage.borrow().flusher())
+            .collect();
         let state = self.get_state();
         let current_path = self.current_path.clone();
         let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
-        let vector_storage_flusher = self.vector_storage.borrow().flusher();
         let payload_index_flusher = self.payload_index.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
@@ -672,9 +716,14 @@ impl SegmentEntry for Segment {
                     err
                 ))
             })?;
-            vector_storage_flusher().map_err(|err| {
-                OperationError::service_error(&format!("Failed to flush vector_storage: {}", err))
-            })?;
+            for vector_storage_flusher in vector_storage_flushers {
+                vector_storage_flusher().map_err(|err| {
+                    OperationError::service_error(&format!(
+                        "Failed to flush vector_storage: {}",
+                        err
+                    ))
+                })?;
+            }
             payload_index_flusher().map_err(|err| {
                 OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
             })?;
@@ -787,8 +836,10 @@ impl SegmentEntry for Segment {
         Ok(deleted_points)
     }
 
-    fn vector_dim(&self) -> usize {
-        self.segment_config.vector_size
+    fn vector_dim(&self, vector_name: &str) -> usize {
+        // todo(ivan): add OperationResult for this function return
+        let vector_data_config = &self.segment_config.vector_data[vector_name];
+        vector_data_config.vector_size
     }
 
     fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
@@ -877,7 +928,11 @@ impl SegmentEntry for Segment {
         SegmentTelemetry {
             info: self.info(),
             config: self.config(),
-            vector_index: self.vector_index.borrow().get_telemetry_data(),
+            vector_index: self
+                .vector_data
+                .iter()
+                .map(|(k, v)| (k.to_owned(), v.vector_index.borrow().get_telemetry_data()))
+                .collect(),
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
         }
     }
@@ -898,8 +953,9 @@ mod tests {
     use walkdir::WalkDir;
 
     use super::*;
+    use crate::common::only_default_vector;
     use crate::segment_constructor::build_segment;
-    use crate::types::{Distance, Indexes, SegmentConfig, StorageType};
+    use crate::types::{Distance, Indexes, SegmentConfig, StorageType, VectorDataConfig};
 
     // no longer valid since users are now allowed to store arbitrary json objects.
     // TODO(gvelo): add tests for invalid payload types on indexed fields.
@@ -940,23 +996,33 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let dim = 4;
         let config = SegmentConfig {
-            vector_size: dim,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: dim,
+                    distance: Distance::Dot,
+                },
+            )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            distance: Distance::Dot,
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config).unwrap();
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-        segment.upsert_point(100, 4.into(), &vec4).unwrap();
+        segment
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-        segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        segment
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = segment
             .search(
+                DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
                 false,
@@ -969,6 +1035,7 @@ mod tests {
 
         let search_batch_result = segment
             .search_batch(
+                DEFAULT_VECTOR_NAME,
                 &[&query_vector],
                 &WithPayload::default(),
                 false,
@@ -998,15 +1065,22 @@ mod tests {
         let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
         let dim = 2;
         let config = SegmentConfig {
-            vector_size: dim,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: dim,
+                    distance: Distance::Dot,
+                },
+            )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            distance: Distance::Dot,
             payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
 
@@ -1040,6 +1114,7 @@ mod tests {
         let filter_invalid: Filter = serde_json::from_str(filter_invalid_str).unwrap();
         let results_with_valid_filter = segment
             .search(
+                DEFAULT_VECTOR_NAME,
                 &[1.0, 1.0],
                 &WithPayload::default(),
                 false,
@@ -1052,6 +1127,7 @@ mod tests {
         assert_eq!(results_with_valid_filter.first().unwrap().id, 0.into());
         let results_with_invalid_filter = segment
             .search(
+                DEFAULT_VECTOR_NAME,
                 &[1.0, 1.0],
                 &WithPayload::default(),
                 false,
@@ -1077,15 +1153,22 @@ mod tests {
 
         let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let config = SegmentConfig {
-            vector_size: 2,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: 2,
+                    distance: Distance::Dot,
+                },
+            )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            distance: Distance::Dot,
             payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();
@@ -1153,15 +1236,22 @@ mod tests {
 
         let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let config = SegmentConfig {
-            vector_size: 2,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: 2,
+                    distance: Distance::Dot,
+                },
+            )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            distance: Distance::Dot,
             payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();
@@ -1198,15 +1288,22 @@ mod tests {
 
         let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let config = SegmentConfig {
-            vector_size: 2,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: 2,
+                    distance: Distance::Dot,
+                },
+            )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            distance: Distance::Dot,
             payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();

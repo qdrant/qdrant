@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::Mutex;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::telemetry::TelemetryOperationAggregator;
 use segment::types::{HnswConfig, SegmentType, VECTOR_ELEMENT_SIZE};
 
@@ -107,7 +108,7 @@ impl SegmentOptimizer for MergeOptimizer {
                     true => Some((
                         *idx,
                         read_segment.points_count()
-                            * read_segment.vector_dim()
+                            * read_segment.vector_dim(DEFAULT_VECTOR_NAME)
                             * VECTOR_ELEMENT_SIZE,
                     )),
                     false => None,

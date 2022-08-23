@@ -363,6 +363,12 @@ impl From<OperationError> for CollectionError {
             OperationError::WrongVector { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
+            OperationError::UnexistsVectorName { .. } => Self::BadInput {
+                description: format!("{}", err),
+            },
+            OperationError::MissedVectorName { .. } => Self::BadInput {
+                description: format!("{}", err),
+            },
             OperationError::PointIdError { missed_point_id } => {
                 Self::PointNotFound { missed_point_id }
             }

@@ -6,13 +6,13 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::SegmentEntry;
-use segment::segment::Segment;
+use segment::segment::{Segment, DEFAULT_VECTOR_NAME};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use segment::types::{
     HnswConfig, Indexes, PayloadKeyType, PayloadSchemaType, PayloadStorageType, PointIdType,
-    SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
+    SegmentConfig, StorageType, VectorDataConfig, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -71,8 +71,13 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
-            vector_size: collection_params.vector_size.get() as usize,
-            distance: collection_params.distance,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: collection_params.vector_size.get() as usize,
+                    distance: collection_params.distance,
+                },
+            )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
@@ -96,7 +101,9 @@ pub trait SegmentOptimizer {
             .map(|s| {
                 let segment = s.get();
                 let locked_segment = segment.read();
-                locked_segment.points_count() * locked_segment.vector_dim() * VECTOR_ELEMENT_SIZE
+                locked_segment.points_count()
+                    * locked_segment.vector_dim(DEFAULT_VECTOR_NAME)
+                    * VECTOR_ELEMENT_SIZE
             })
             .sum();
 
@@ -110,8 +117,13 @@ pub trait SegmentOptimizer {
             total_vectors_size >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let optimized_config = SegmentConfig {
-            vector_size: collection_params.vector_size.get() as usize,
-            distance: collection_params.distance,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    vector_size: collection_params.vector_size.get() as usize,
+                    distance: collection_params.distance,
+                },
+            )]),
             index: if is_indexed {
                 Indexes::Hnsw(self.hnsw_config())
             } else {

@@ -16,6 +16,8 @@ use crate::types::{
     VectorElementType, WithPayload,
 };
 
+pub type AllVectors = HashMap<String, Vec<VectorElementType>>;
+
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum OperationError {
@@ -24,6 +26,10 @@ pub enum OperationError {
         expected_dim: usize,
         received_dim: usize,
     },
+    #[error("Unexists vector name error: {received_name}")]
+    UnexistsVectorName { received_name: String },
+    #[error("Missed vector name error: {received_name}")]
+    MissedVectorName { received_name: String },
     #[error("No point with id {missed_point_id} found")]
     PointIdError { missed_point_id: PointIdType },
     #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]
@@ -138,8 +144,10 @@ pub trait SegmentEntry {
     /// Get version of specified point
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType>;
 
+    #[allow(clippy::too_many_arguments)]
     fn search(
         &self,
+        vector_name: &str,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
         with_vector: bool,
@@ -148,8 +156,10 @@ pub trait SegmentEntry {
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
+    #[allow(clippy::too_many_arguments)]
     fn search_batch(
         &self,
+        vector_name: &str,
         vectors: &[&[VectorElementType]],
         with_payload: &WithPayload,
         with_vector: bool,
@@ -162,7 +172,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector: &[VectorElementType],
+        vectors: &AllVectors,
     ) -> OperationResult<bool>;
 
     fn delete_point(
@@ -198,7 +208,11 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<bool>;
 
-    fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>>;
+    fn vector(
+        &self,
+        vector_name: &str,
+        point_id: PointIdType,
+    ) -> OperationResult<Vec<VectorElementType>>;
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
@@ -221,7 +235,7 @@ pub trait SegmentEntry {
     /// Estimate points count in this segment for given filter.
     fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
-    fn vector_dim(&self) -> usize;
+    fn vector_dim(&self, vector_name: &str) -> usize;
 
     /// Number of vectors, marked as deleted
     fn deleted_count(&self) -> usize;

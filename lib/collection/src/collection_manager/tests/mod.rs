@@ -5,6 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::SegmentEntry;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::types::{PayloadKeyType, PayloadSchemaType, PointIdType};
 use tempfile::Builder;
 
@@ -116,7 +117,9 @@ fn test_move_points_to_copy_on_write() {
 
     let copy_on_write_points = copy_on_write_segment_read.iter_points().collect_vec();
 
-    let vector_storage = copy_on_write_segment_read.vector_storage.clone();
+    let vector_storage = copy_on_write_segment_read.vector_data[DEFAULT_VECTOR_NAME]
+        .vector_storage
+        .clone();
     let id_mapper = copy_on_write_segment_read.id_tracker.clone();
 
     eprintln!("copy_on_write_points = {:#?}", copy_on_write_points);

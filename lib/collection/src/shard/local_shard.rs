@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::remove_file;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -11,9 +11,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::index::field_index::CardinalityEstimation;
-use segment::segment::Segment;
+use segment::segment::{Segment, DEFAULT_VECTOR_NAME};
 use segment::segment_constructor::{build_segment, load_segment};
-use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
+use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig, VectorDataConfig};
 use tokio::fs::{copy, create_dir_all};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc::UnboundedSender;
@@ -282,8 +282,13 @@ impl LocalShard {
         for _sid in 0..segment_number {
             let path_clone = segments_path.clone();
             let segment_config = SegmentConfig {
-                vector_size,
-                distance,
+                vector_data: HashMap::from([(
+                    DEFAULT_VECTOR_NAME.to_owned(),
+                    VectorDataConfig {
+                        vector_size,
+                        distance,
+                    },
+                )]),
                 index: Default::default(),
                 storage_type: Default::default(),
                 payload_storage_type: match config.params.on_disk_payload {

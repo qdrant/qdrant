@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use segment::common::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -20,11 +21,21 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-    segment1.upsert_point(1, 1.into(), &vec1).unwrap();
-    segment1.upsert_point(2, 2.into(), &vec2).unwrap();
-    segment1.upsert_point(3, 3.into(), &vec3).unwrap();
-    segment1.upsert_point(4, 4.into(), &vec4).unwrap();
-    segment1.upsert_point(5, 5.into(), &vec5).unwrap();
+    segment1
+        .upsert_point(1, 1.into(), &only_default_vector(&vec1))
+        .unwrap();
+    segment1
+        .upsert_point(2, 2.into(), &only_default_vector(&vec2))
+        .unwrap();
+    segment1
+        .upsert_point(3, 3.into(), &only_default_vector(&vec3))
+        .unwrap();
+    segment1
+        .upsert_point(4, 4.into(), &only_default_vector(&vec4))
+        .unwrap();
+    segment1
+        .upsert_point(5, 5.into(), &only_default_vector(&vec5))
+        .unwrap();
 
     let payload_key = "color";
 
@@ -51,11 +62,21 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec4 = vec![-1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![-1.0, 0.0, 0.0, 0.0];
 
-    segment2.upsert_point(11, 11.into(), &vec1).unwrap();
-    segment2.upsert_point(12, 12.into(), &vec2).unwrap();
-    segment2.upsert_point(13, 13.into(), &vec3).unwrap();
-    segment2.upsert_point(14, 14.into(), &vec4).unwrap();
-    segment2.upsert_point(15, 15.into(), &vec5).unwrap();
+    segment2
+        .upsert_point(11, 11.into(), &only_default_vector(&vec1))
+        .unwrap();
+    segment2
+        .upsert_point(12, 12.into(), &only_default_vector(&vec2))
+        .unwrap();
+    segment2
+        .upsert_point(13, 13.into(), &only_default_vector(&vec3))
+        .unwrap();
+    segment2
+        .upsert_point(14, 14.into(), &only_default_vector(&vec4))
+        .unwrap();
+    segment2
+        .upsert_point(15, 15.into(), &only_default_vector(&vec5))
+        .unwrap();
 
     let payload_key = "color";
 

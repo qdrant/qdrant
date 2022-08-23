@@ -6,10 +6,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use segment::common::only_default_vector;
 use segment::entry::entry_point::{
-    OperationError, OperationResult, SegmentEntry, SegmentFailedState,
+    AllVectors, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use segment::index::field_index::CardinalityEstimation;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
@@ -79,7 +81,7 @@ impl ProxySegment {
         }
 
         let (vector, payload) = (
-            wrapped_segment_guard.vector(point_id)?,
+            wrapped_segment_guard.vector(DEFAULT_VECTOR_NAME, point_id)?,
             wrapped_segment_guard.payload(point_id)?,
         );
 
@@ -95,7 +97,7 @@ impl ProxySegment {
         let segment_arc = self.write_segment.get();
         let mut write_segment = segment_arc.write();
 
-        write_segment.upsert_point(op_num, point_id, &vector)?;
+        write_segment.upsert_point(op_num, point_id, &only_default_vector(&vector))?;
         write_segment.set_full_payload(op_num, point_id, &payload)?;
 
         Ok(true)
@@ -146,6 +148,7 @@ impl SegmentEntry for ProxySegment {
 
     fn search(
         &self,
+        vector_name: &str,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
         with_vector: bool,
@@ -167,6 +170,7 @@ impl SegmentEntry for ProxySegment {
                 self.add_deleted_points_condition_to_filter(filter, &deleted_points);
 
             self.wrapped_segment.get().read().search(
+                vector_name,
                 vector,
                 with_payload,
                 with_vector,
@@ -176,6 +180,7 @@ impl SegmentEntry for ProxySegment {
             )?
         } else {
             self.wrapped_segment.get().read().search(
+                vector_name,
                 vector,
                 with_payload,
                 with_vector,
@@ -186,6 +191,7 @@ impl SegmentEntry for ProxySegment {
         };
 
         let mut write_result = self.write_segment.get().read().search(
+            vector_name,
             vector,
             with_payload,
             with_vector,
@@ -200,6 +206,7 @@ impl SegmentEntry for ProxySegment {
 
     fn search_batch(
         &self,
+        vector_name: &str,
         vectors: &[&[VectorElementType]],
         with_payload: &WithPayload,
         with_vector: bool,
@@ -221,6 +228,7 @@ impl SegmentEntry for ProxySegment {
                 self.add_deleted_points_condition_to_filter(filter, &deleted_points);
 
             self.wrapped_segment.get().read().search_batch(
+                vector_name,
                 vectors,
                 with_payload,
                 with_vector,
@@ -230,6 +238,7 @@ impl SegmentEntry for ProxySegment {
             )?
         } else {
             self.wrapped_segment.get().read().search_batch(
+                vector_name,
                 vectors,
                 with_payload,
                 with_vector,
@@ -239,6 +248,7 @@ impl SegmentEntry for ProxySegment {
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
+            vector_name,
             vectors,
             with_payload,
             with_vector,
@@ -256,13 +266,13 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector: &[VectorElementType],
+        vectors: &AllVectors,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
             .write()
-            .upsert_point(op_num, point_id, vector)
+            .upsert_point(op_num, point_id, vectors)
     }
 
     fn delete_point(
@@ -335,18 +345,28 @@ impl SegmentEntry for ProxySegment {
             .clear_payload(op_num, point_id)
     }
 
-    fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>> {
+    fn vector(
+        &self,
+        vector_name: &str,
+        point_id: PointIdType,
+    ) -> OperationResult<Vec<VectorElementType>> {
         return if self.deleted_points.read().contains(&point_id) {
-            self.write_segment.get().read().vector(point_id)
+            self.write_segment
+                .get()
+                .read()
+                .vector(vector_name, point_id)
         } else {
             {
                 let write_segment = self.write_segment.get();
                 let segment_guard = write_segment.read();
                 if segment_guard.has_point(point_id) {
-                    return segment_guard.vector(point_id);
+                    return segment_guard.vector(vector_name, point_id);
                 }
             }
-            self.wrapped_segment.get().read().vector(point_id)
+            self.wrapped_segment
+                .get()
+                .read()
+                .vector(vector_name, point_id)
         };
     }
 
@@ -580,8 +600,8 @@ impl SegmentEntry for ProxySegment {
             .delete_filtered(op_num, filter)
     }
 
-    fn vector_dim(&self) -> usize {
-        self.write_segment.get().read().vector_dim()
+    fn vector_dim(&self, vector_name: &str) -> usize {
+        self.write_segment.get().read().vector_dim(vector_name)
     }
 
     fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
@@ -683,14 +703,19 @@ mod tests {
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-        proxy_segment.upsert_point(100, 4.into(), &vec4).unwrap();
+        proxy_segment
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-        proxy_segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        proxy_segment
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = proxy_segment
             .search(
+                DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
                 false,
@@ -745,14 +770,19 @@ mod tests {
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-        proxy_segment.upsert_point(100, 4.into(), &vec4).unwrap();
+        proxy_segment
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-        proxy_segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        proxy_segment
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = proxy_segment
             .search(
+                DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
                 false,
@@ -766,6 +796,7 @@ mod tests {
 
         let search_batch_result = proxy_segment
             .search_batch(
+                DEFAULT_VECTOR_NAME,
                 &[&query_vector],
                 &WithPayload::default(),
                 false,
@@ -804,6 +835,7 @@ mod tests {
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = proxy_segment
             .search(
+                DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
                 false,
@@ -817,6 +849,7 @@ mod tests {
 
         let search_batch_result = proxy_segment
             .search_batch(
+                DEFAULT_VECTOR_NAME,
                 &[&query_vector],
                 &WithPayload::default(),
                 false,
@@ -863,7 +896,15 @@ mod tests {
         let mut all_single_results = Vec::with_capacity(query_vectors.len());
         for query_vector in query_vectors {
             let res = proxy_segment
-                .search(query_vector, &WithPayload::default(), false, None, 10, None)
+                .search(
+                    DEFAULT_VECTOR_NAME,
+                    query_vector,
+                    &WithPayload::default(),
+                    false,
+                    None,
+                    10,
+                    None,
+                )
                 .unwrap();
             all_single_results.push(res);
         }
@@ -872,6 +913,7 @@ mod tests {
 
         let search_batch_result = proxy_segment
             .search_batch(
+                DEFAULT_VECTOR_NAME,
                 query_vectors,
                 &WithPayload::default(),
                 false,
@@ -959,12 +1001,18 @@ mod tests {
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-        proxy_segment.upsert_point(100, 4.into(), &vec4).unwrap();
+        proxy_segment
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-        proxy_segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        proxy_segment
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
-        proxy_segment2.upsert_point(201, 11.into(), &vec6).unwrap();
+        proxy_segment2
+            .upsert_point(201, 11.into(), &only_default_vector(&vec6))
+            .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
         eprintln!("Snapshot into {:?}", snapshot_dir.path());

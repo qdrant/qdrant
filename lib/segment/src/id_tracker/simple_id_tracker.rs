@@ -219,7 +219,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 
     fn check_bincode_serialization<
         T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn test_iterator() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();
 
