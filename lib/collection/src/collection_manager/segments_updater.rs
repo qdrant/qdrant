@@ -3,10 +3,7 @@ use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
-use segment::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
-    SeqNumberType, VectorElementType,
-};
+use segment::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType, VectorElementType};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
@@ -125,10 +122,10 @@ pub(crate) fn create_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
-    field_type: &Option<PayloadSchemaType>,
+    field_schema: Option<&PayloadFieldSchema>,
 ) -> CollectionResult<usize> {
     let res = segments.apply_segments(|write_segment| {
-        write_segment.create_field_index(op_num, field_name, field_type)
+        write_segment.create_field_index(op_num, field_name, field_schema)
     })?;
     Ok(res)
 }
@@ -292,7 +289,7 @@ pub(crate) fn process_field_index_operation(
             &segments.read(),
             op_num,
             &index_data.field_name,
-            &index_data.field_type,
+            index_data.field_type.as_ref(),
         ),
         FieldIndexOperations::DeleteIndex(field_name) => {
             delete_field_index(&segments.read(), op_num, field_name)

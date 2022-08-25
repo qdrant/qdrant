@@ -12,6 +12,7 @@ pub mod telemetry;
 #[allow(deprecated)]
 pub mod types;
 pub mod vector_storage;
+pub mod data_types;
 
 #[macro_use]
 extern crate num_derive;

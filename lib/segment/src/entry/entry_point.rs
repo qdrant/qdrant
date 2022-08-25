@@ -10,11 +10,7 @@ use thiserror::Error;
 use crate::common::file_operations::FileStorageError;
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
-use crate::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorElementType, WithPayload,
-};
+use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorElementType, WithPayload};
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -262,11 +258,11 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
-        field_type: &Option<PayloadSchemaType>,
+        field_schema: Option<&PayloadFieldSchema>,
     ) -> OperationResult<bool>;
 
     /// Get indexed fields
-    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType>;
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;

@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
+use crate::grpc::qdrant::payload_index_params::IndexParams;
 use crate::grpc::qdrant::point_id::PointIdOptions;
 use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::value::Kind;
@@ -16,8 +17,9 @@ use crate::grpc::qdrant::{
     CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
     GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, HnswConfigDiff,
     IsEmptyCondition, ListCollectionsResponse, ListValue, Match, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint,
-    SearchParams, Struct, Value, ValuesCount, WithPayloadSelector,
+    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
+    Range, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount,
+    WithPayloadSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -125,6 +127,30 @@ impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
     }
 }
 
+impl From<segment::data_types::text_index::TokenizerType> for TokenizerType {
+    fn from(tokenizer_type: segment::data_types::text_index::TokenizerType) -> Self {
+        match tokenizer_type {
+            segment::data_types::text_index::TokenizerType::Ngram => TokenizerType::Ngram,
+            segment::data_types::text_index::TokenizerType::Whitespace => TokenizerType::Whitespace,
+            segment::data_types::text_index::TokenizerType::Word => TokenizerType::Word,
+        }
+    }
+}
+
+impl From<segment::data_types::text_index::TextIndexParams> for PayloadIndexParams {
+    fn from(params: segment::data_types::text_index::TextIndexParams) -> Self {
+        let tokenizer = TokenizerType::from(params.tokenizer);
+        PayloadIndexParams {
+            index_params: Some(IndexParams::TextIndexParams(TextIndexParams {
+                tokenizer: tokenizer as i32,
+                lowercase: params.lowercase,
+                min_token_len: params.min_token_len.map(|x| x as u64),
+                max_token_len: params.max_token_len.map(|x| x as u64),
+            })),
+        }
+    }
+}
+
 impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
     fn from(schema: segment::types::PayloadIndexInfo) -> Self {
         PayloadSchemaInfo {
@@ -133,38 +159,101 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
                 segment::types::PayloadSchemaType::Integer => PayloadSchemaType::Integer,
                 segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
                 segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
+                segment::types::PayloadSchemaType::Text => PayloadSchemaType::Text,
             }
             .into(),
+            params: schema.params.map(|params| match params {
+                segment::types::PayloadSchemaParams::Text(text_index_params) => {
+                    text_index_params.into()
+                }
+            }),
         }
     }
 }
+
+impl TryFrom<TokenizerType> for segment::data_types::text_index::TokenizerType {
+    type Error = Status;
+    fn try_from(tokenizer_type: TokenizerType) -> Result<Self, Self::Error> {
+        match tokenizer_type {
+            TokenizerType::Unknown => Err(Status::invalid_argument("unknown tokenizer type")),
+            TokenizerType::Ngram => Ok(segment::data_types::text_index::TokenizerType::Ngram),
+            TokenizerType::Whitespace => {
+                Ok(segment::data_types::text_index::TokenizerType::Whitespace)
+            }
+            TokenizerType::Word => Ok(segment::data_types::text_index::TokenizerType::Word),
+        }
+    }
+}
+
+impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexParams {
+    type Error = Status;
+    fn try_from(params: TextIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::text_index::TextIndexParams {
+            tokenizer: TokenizerType::from_i32(params.tokenizer)
+                .map(|x| x.try_into())
+                .unwrap_or_else(|| Err(Status::invalid_argument("unknown tokenizer type")))?,
+            lowercase: params.lowercase,
+            min_token_len: params.min_token_len.map(|x| x as usize),
+            max_token_len: params.max_token_len.map(|x| x as usize),
+        })
+    }
+}
+
+impl TryFrom<PayloadIndexParams> for segment::data_types::text_index::TextIndexParams {
+    type Error = Status;
+    fn try_from(params: PayloadIndexParams) -> Result<Self, Self::Error> {
+        match params.index_params {
+            None => Ok(Default::default()),
+            Some(IndexParams::TextIndexParams(text_index_params)) => {
+                Ok(text_index_params.try_into()?)
+            }
+        }
+    }
+}
+
+impl TryFrom<IndexParams> for segment::types::PayloadSchemaParams {
+    type Error = Status;
+
+    fn try_from(value: IndexParams) -> Result<Self, Self::Error> {
+        match value {
+            IndexParams::TextIndexParams(text_index_params) => {
+                Ok(segment::types::PayloadSchemaParams::Text(text_index_params.try_into()?))
+            }
+        }
+    }
+}
+
 
 impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
     type Error = Status;
 
     fn try_from(schema: PayloadSchemaInfo) -> Result<Self, Self::Error> {
-        match PayloadSchemaType::from_i32(schema.data_type) {
-            None => Err(Status::invalid_argument(
+
+        let data_type = match PayloadSchemaType::from_i32(schema.data_type) {
+            None => return Err(Status::invalid_argument(
                 "Malformed payload schema".to_string(),
             )),
             Some(data_type) => match data_type {
-                PayloadSchemaType::Keyword => Ok(segment::types::PayloadIndexInfo {
-                    data_type: segment::types::PayloadSchemaType::Keyword,
-                }),
-                PayloadSchemaType::Integer => Ok(segment::types::PayloadIndexInfo {
-                    data_type: segment::types::PayloadSchemaType::Integer,
-                }),
-                PayloadSchemaType::Float => Ok(segment::types::PayloadIndexInfo {
-                    data_type: segment::types::PayloadSchemaType::Float,
-                }),
-                PayloadSchemaType::Geo => Ok(segment::types::PayloadIndexInfo {
-                    data_type: segment::types::PayloadSchemaType::Geo,
-                }),
-                PayloadSchemaType::UnknownType => Err(Status::invalid_argument(
+                PayloadSchemaType::Keyword => segment::types::PayloadSchemaType::Keyword,
+                PayloadSchemaType::Integer => segment::types::PayloadSchemaType::Integer,
+                PayloadSchemaType::Float => segment::types::PayloadSchemaType::Float,
+                PayloadSchemaType::Geo => segment::types::PayloadSchemaType::Geo,
+                PayloadSchemaType::Text => segment::types::PayloadSchemaType::Text,
+                PayloadSchemaType::UnknownType => return Err(Status::invalid_argument(
                     "Malformed payload schema".to_string(),
                 )),
             },
-        }
+        };
+        let params = match schema.params {
+            None => None,
+            Some(PayloadIndexParams { index_params: None }) => None,
+            Some(PayloadIndexParams { index_params: Some(index_params) }) => Some(index_params.try_into()?),
+        };
+
+        Ok(segment::types::PayloadIndexInfo {
+            data_type,
+            params,
+        })
     }
 }
 

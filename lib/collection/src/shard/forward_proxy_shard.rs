@@ -45,13 +45,13 @@ impl ForwardProxyShard {
     /// Create payload indexes in the remote shard same as in the wrapped shard.
     pub async fn transfer_indexes(&self) -> CollectionResult<()> {
         let _update_lock = self.update_lock.lock().await;
-        for (index_key, index_type) in self.wrapped_shard.info().await?.payload_schema.iter() {
+        for (index_key, index_type) in self.wrapped_shard.info().await?.payload_schema {
             self.remote_shard
                 .update(
                     CollectionUpdateOperations::FieldIndexOperation(
                         FieldIndexOperations::CreateIndex(CreateIndex {
-                            field_name: index_key.clone(),
-                            field_type: Some(index_type.data_type),
+                            field_name: index_key,
+                            field_type: Some(index_type.try_into()?),
                         }),
                     ),
                     false,

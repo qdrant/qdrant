@@ -16,6 +16,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::common::utils;
+use crate::data_types::text_index::TextIndexParams;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 
@@ -183,11 +184,14 @@ pub enum SegmentType {
     Special,
 }
 
-/// Payload field type & index information
+/// Display payload field type & index information
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct PayloadIndexInfo {
     pub data_type: PayloadSchemaType,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<PayloadSchemaParams>,
 }
 
 /// Aggregated information about segment
@@ -545,6 +549,63 @@ pub enum PayloadSchemaType {
     Integer,
     Float,
     Geo,
+    Text,
+}
+
+/// Payload type with parameters
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum PayloadSchemaParams {
+    Text(TextIndexParams),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum PayloadFieldSchema {
+    FieldType(PayloadSchemaType),
+    FieldParams(PayloadSchemaParams),
+}
+
+impl From<PayloadSchemaType> for PayloadFieldSchema {
+    fn from(payload_schema_type: PayloadSchemaType) -> Self {
+        PayloadFieldSchema::FieldType(payload_schema_type)
+    }
+}
+
+impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
+    type Error = String;
+
+    fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
+        match (index_info.data_type, index_info.params) {
+            (PayloadSchemaType::Text, Some(PayloadSchemaParams::Text(params))) => Ok(
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
+            ),
+            (data_type, Some(_)) => Err(format!(
+                "Payload field with type {:?} has unexpected params",
+                data_type
+            )),
+            (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
+        }
+    }
+}
+
+impl From<PayloadFieldSchema> for PayloadIndexInfo {
+    fn from(field_type: PayloadFieldSchema) -> Self {
+        match field_type {
+            PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
+                data_type,
+                params: None,
+            },
+            PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
+                PayloadSchemaParams::Text(_) => PayloadIndexInfo {
+                    data_type: PayloadSchemaType::Text,
+                    params: Some(schema_params),
+                },
+            },
+        }
+    }
 }
 
 pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
@@ -1298,6 +1359,21 @@ mod tests {
         assert_ne!(payload, Default::default());
         remove_value_from_json_map("b", &mut payload.0);
         assert_eq!(payload, Default::default());
+    }
+
+    #[test]
+    fn test_payload_parsing() {
+        let ft = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let ft_json = serde_json::to_string(&ft).unwrap();
+        eprintln!("ft_json = {:?}", ft_json);
+
+        let ft = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(Default::default()));
+        let ft_json = serde_json::to_string(&ft).unwrap();
+        eprintln!("ft_json = {:?}", ft_json);
+
+        let query = r#""keyword""#;
+        let field_type: PayloadSchemaType = serde_json::from_str(query).unwrap();
+        eprintln!("field_type = {:?}", field_type);
     }
 }
 

@@ -7,7 +7,7 @@ use api::grpc::qdrant::{
     DeletePoints, DeletePointsInternal, PointsIdsList, PointsSelector, SetPayloadPoints,
     SetPayloadPointsInternal, UpsertPoints, UpsertPointsInternal,
 };
-use segment::types::{Filter, PointIdType};
+use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType};
 use tonic::Status;
 
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
@@ -150,24 +150,44 @@ pub fn internal_create_index(
     shard: &RemoteShard,
     wait: bool,
 ) -> CreateFieldIndexCollectionInternal {
+    let (field_type, field_index_params) = create_index
+        .field_type
+        .map(|field_schema| match field_schema {
+            PayloadFieldSchema::FieldType(field_type) => match field_type {
+                segment::types::PayloadSchemaType::Keyword => {
+                    (api::grpc::qdrant::FieldType::Keyword as i32, None)
+                }
+                segment::types::PayloadSchemaType::Integer => {
+                    (api::grpc::qdrant::FieldType::Integer as i32, None)
+                }
+                segment::types::PayloadSchemaType::Float => {
+                    (api::grpc::qdrant::FieldType::Float as i32, None)
+                }
+                segment::types::PayloadSchemaType::Geo => {
+                    (api::grpc::qdrant::FieldType::Geo as i32, None)
+                }
+                segment::types::PayloadSchemaType::Text => {
+                    (api::grpc::qdrant::FieldType::Text as i32, None)
+                }
+            },
+            PayloadFieldSchema::FieldParams(field_params) => match field_params {
+                PayloadSchemaParams::Text(text_index_params) => (
+                    api::grpc::qdrant::FieldType::Text as i32,
+                    Some(text_index_params.into()),
+                ),
+            },
+        })
+        .map(|(field_type, field_params)| (Some(field_type), field_params))
+        .unwrap_or((None, None));
+
     CreateFieldIndexCollectionInternal {
         shard_id: shard.id,
         create_field_index_collection: Some(CreateFieldIndexCollection {
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             field_name: create_index.field_name,
-            field_type: create_index.field_type.map(|field_type| match field_type {
-                segment::types::PayloadSchemaType::Keyword => {
-                    api::grpc::qdrant::FieldType::Keyword as i32
-                }
-                segment::types::PayloadSchemaType::Integer => {
-                    api::grpc::qdrant::FieldType::Integer as i32
-                }
-                segment::types::PayloadSchemaType::Float => {
-                    api::grpc::qdrant::FieldType::Float as i32
-                }
-                segment::types::PayloadSchemaType::Geo => api::grpc::qdrant::FieldType::Geo as i32,
-            }),
+            field_type,
+            field_index_params,
         }),
     }
 }

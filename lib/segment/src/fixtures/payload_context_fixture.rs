@@ -197,15 +197,15 @@ pub fn create_struct_payload_index(
     let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path).unwrap();
 
     index
-        .set_indexed(STR_KEY, PayloadSchemaType::Keyword)
+        .set_indexed(STR_KEY, PayloadSchemaType::Keyword.into())
         .unwrap();
     index
-        .set_indexed(INT_KEY, PayloadSchemaType::Integer)
+        .set_indexed(INT_KEY, PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed(FLT_KEY, PayloadSchemaType::Float)
+        .set_indexed(FLT_KEY, PayloadSchemaType::Float.into())
         .unwrap();
-    index.set_indexed(GEO_KEY, PayloadSchemaType::Geo).unwrap();
+    index.set_indexed(GEO_KEY, PayloadSchemaType::Geo.into()).unwrap();
 
     index
 }

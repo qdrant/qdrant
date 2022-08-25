@@ -41,7 +41,7 @@ mod tests {
 
         let mut opnum = 0;
         struct_segment
-            .create_field_index(opnum, INT_KEY_2, &Some(PayloadSchemaType::Integer))
+            .create_field_index(opnum, INT_KEY_2, Some(&PayloadSchemaType::Integer.into()))
             .unwrap();
 
         opnum += 1;
@@ -63,16 +63,16 @@ mod tests {
         }
 
         struct_segment
-            .create_field_index(opnum, STR_KEY, &Some(PayloadSchemaType::Keyword))
+            .create_field_index(opnum, STR_KEY, Some(&PayloadSchemaType::Keyword.into()))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, INT_KEY, &None)
+            .create_field_index(opnum, INT_KEY, None)
             .unwrap();
         struct_segment
-            .create_field_index(opnum, GEO_KEY, &Some(PayloadSchemaType::Geo))
+            .create_field_index(opnum, GEO_KEY, Some(&PayloadSchemaType::Geo.into()))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, FLICKING_KEY, &Some(PayloadSchemaType::Integer))
+            .create_field_index(opnum, FLICKING_KEY, Some(&PayloadSchemaType::Integer.into()))
             .unwrap();
 
         for _ in 0..points_to_clear {
