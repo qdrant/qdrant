@@ -9,10 +9,10 @@ pub mod segment_constructor;
 pub mod spaces;
 pub mod telemetry;
 
+pub mod data_types;
 #[allow(deprecated)]
 pub mod types;
 pub mod vector_storage;
-pub mod data_types;
 
 #[macro_use]
 extern crate num_derive;

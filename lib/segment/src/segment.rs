@@ -22,7 +22,11 @@ use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::telemetry::SegmentTelemetry;
-use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload};
+use crate::types::{
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
+};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -612,12 +616,7 @@ impl SegmentEntry for Segment {
             .borrow()
             .indexed_fields()
             .into_iter()
-            .map(|(key, index_schema)| {
-                (
-                    key,
-                    index_schema.into(),
-                )
-            })
+            .map(|(key, index_schema)| (key, index_schema.into()))
             .collect();
 
         SegmentInfo {

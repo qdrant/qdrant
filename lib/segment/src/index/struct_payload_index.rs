@@ -29,7 +29,10 @@ use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{infer_value_type, Condition, FieldCondition, Filter, IsEmptyCondition, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, PayloadFieldSchema};
+use crate::types::{
+    infer_value_type, Condition, FieldCondition, Filter, IsEmptyCondition, Payload,
+    PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+};
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 

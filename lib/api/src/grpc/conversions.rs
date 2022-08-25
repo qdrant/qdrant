@@ -216,44 +216,45 @@ impl TryFrom<IndexParams> for segment::types::PayloadSchemaParams {
 
     fn try_from(value: IndexParams) -> Result<Self, Self::Error> {
         match value {
-            IndexParams::TextIndexParams(text_index_params) => {
-                Ok(segment::types::PayloadSchemaParams::Text(text_index_params.try_into()?))
-            }
+            IndexParams::TextIndexParams(text_index_params) => Ok(
+                segment::types::PayloadSchemaParams::Text(text_index_params.try_into()?),
+            ),
         }
     }
 }
-
 
 impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
     type Error = Status;
 
     fn try_from(schema: PayloadSchemaInfo) -> Result<Self, Self::Error> {
-
         let data_type = match PayloadSchemaType::from_i32(schema.data_type) {
-            None => return Err(Status::invalid_argument(
-                "Malformed payload schema".to_string(),
-            )),
+            None => {
+                return Err(Status::invalid_argument(
+                    "Malformed payload schema".to_string(),
+                ))
+            }
             Some(data_type) => match data_type {
                 PayloadSchemaType::Keyword => segment::types::PayloadSchemaType::Keyword,
                 PayloadSchemaType::Integer => segment::types::PayloadSchemaType::Integer,
                 PayloadSchemaType::Float => segment::types::PayloadSchemaType::Float,
                 PayloadSchemaType::Geo => segment::types::PayloadSchemaType::Geo,
                 PayloadSchemaType::Text => segment::types::PayloadSchemaType::Text,
-                PayloadSchemaType::UnknownType => return Err(Status::invalid_argument(
-                    "Malformed payload schema".to_string(),
-                )),
+                PayloadSchemaType::UnknownType => {
+                    return Err(Status::invalid_argument(
+                        "Malformed payload schema".to_string(),
+                    ))
+                }
             },
         };
         let params = match schema.params {
             None => None,
             Some(PayloadIndexParams { index_params: None }) => None,
-            Some(PayloadIndexParams { index_params: Some(index_params) }) => Some(index_params.try_into()?),
+            Some(PayloadIndexParams {
+                index_params: Some(index_params),
+            }) => Some(index_params.try_into()?),
         };
 
-        Ok(segment::types::PayloadIndexInfo {
-            data_type,
-            params,
-        })
+        Ok(segment::types::PayloadIndexInfo { data_type, params })
     }
 }
 

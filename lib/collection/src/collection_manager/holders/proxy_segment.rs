@@ -12,7 +12,11 @@ use segment::entry::entry_point::{
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
-use segment::types::{Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorElementType, WithPayload};
+use segment::types::{
+    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    VectorElementType, WithPayload,
+};
 use uuid::Uuid;
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;

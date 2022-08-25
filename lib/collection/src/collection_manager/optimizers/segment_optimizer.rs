@@ -10,7 +10,10 @@ use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
-use segment::types::{HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType, SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE};
+use segment::types::{
+    HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
+    SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
+};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{

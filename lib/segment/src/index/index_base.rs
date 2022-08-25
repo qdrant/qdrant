@@ -8,7 +8,10 @@ use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
 use crate::telemetry::VectorIndexTelemetry;
-use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams, VectorElementType};
+use crate::types::{
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PointOffsetType, SearchParams, VectorElementType,
+};
 use crate::vector_storage::ScoredPointOffset;
 
 /// Trait for vector searching

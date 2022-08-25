@@ -72,7 +72,11 @@ mod tests {
             .create_field_index(opnum, GEO_KEY, Some(&PayloadSchemaType::Geo.into()))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, FLICKING_KEY, Some(&PayloadSchemaType::Integer.into()))
+            .create_field_index(
+                opnum,
+                FLICKING_KEY,
+                Some(&PayloadSchemaType::Integer.into()),
+            )
             .unwrap();
 
         for _ in 0..points_to_clear {

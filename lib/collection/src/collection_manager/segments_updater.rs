@@ -3,7 +3,10 @@ use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
-use segment::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType, VectorElementType};
+use segment::types::{
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    SeqNumberType, VectorElementType,
+};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;

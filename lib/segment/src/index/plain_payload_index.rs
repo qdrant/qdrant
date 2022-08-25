@@ -17,7 +17,10 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::{TelemetryOperationStatistics, VectorIndexTelemetry};
-use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams, VectorElementType};
+use crate::types::{
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PointOffsetType, SearchParams, VectorElementType,
+};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.

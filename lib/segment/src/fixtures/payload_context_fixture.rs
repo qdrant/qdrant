@@ -205,7 +205,9 @@ pub fn create_struct_payload_index(
     index
         .set_indexed(FLT_KEY, PayloadSchemaType::Float.into())
         .unwrap();
-    index.set_indexed(GEO_KEY, PayloadSchemaType::Geo.into()).unwrap();
+    index
+        .set_indexed(GEO_KEY, PayloadSchemaType::Geo.into())
+        .unwrap();
 
     index
 }

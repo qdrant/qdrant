@@ -7,7 +7,9 @@ use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
-use crate::types::{FloatPayloadType, IntPayloadType, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
+use crate::types::{
+    FloatPayloadType, IntPayloadType, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+};
 
 /// Selects index types based on field type
 pub fn index_selector(
@@ -31,11 +33,9 @@ pub fn index_selector(
             }
             PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(GeoMapIndex::new(db, field))],
             PayloadSchemaType::Text => vec![], // ToDo: add text index here
-        }
+        },
         PayloadFieldSchema::FieldParams(payload_params) => match payload_params {
-            PayloadSchemaParams::Text(_text_index_params) => vec![] // ToDo: add text index here
-        }
+            PayloadSchemaParams::Text(_text_index_params) => vec![], // ToDo: add text index here
+        },
     }
-
-
 }
