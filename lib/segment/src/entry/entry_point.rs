@@ -26,8 +26,8 @@ pub enum OperationError {
         expected_dim: usize,
         received_dim: usize,
     },
-    #[error("Unexists vector name error: {received_name}")]
-    UnexistsVectorName { received_name: String },
+    #[error("Not existing vector name error: {received_name}")]
+    VectorNameNotExists { received_name: String },
     #[error("Missed vector name error: {received_name}")]
     MissedVectorName { received_name: String },
     #[error("No point with id {missed_point_id} found")]
@@ -61,6 +61,14 @@ pub struct SegmentFailedState {
     pub version: SeqNumberType,
     pub point_id: Option<PointIdType>,
     pub error: OperationError,
+}
+
+impl From<semver::Error> for OperationError {
+    fn from(error: semver::Error) -> Self {
+        OperationError::ServiceError {
+            description: error.to_string(),
+        }
+    }
 }
 
 impl From<ThreadPoolBuildError> for OperationError {

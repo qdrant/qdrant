@@ -7,8 +7,8 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use log::info;
 use parking_lot::Mutex;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use semver::Version;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
@@ -151,23 +151,26 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
         return Ok(None);
     }
 
-    let stored_version = SegmentVersion::load(path)?;
-    if stored_version != SegmentVersion::current() {
-        info!(
-            "Migrating segment {} -> {}",
-            stored_version,
-            SegmentVersion::current()
-        );
+    let stored_version: Version = SegmentVersion::load(path)?.parse()?;
+    let app_version: Version = SegmentVersion::current().parse()?;
+
+    if stored_version != app_version {
+        info!("Migrating segment {} -> {}", stored_version, app_version,);
+
+        if stored_version.minor == 3 {
+            let segment_state = load_segment_state_v3(&path)?;
+            Segment::save_state(&segment_state, &path)?;
+        } else {
+            return Err(OperationError::service_error(&format!(
+                "Segment version({}) is not compatible with current version({})",
+                stored_version, app_version
+            )));
+        }
+
         SegmentVersion::save(path)?
     }
 
-    let segment_config_path = path.join(SEGMENT_STATE_FILE);
-    let mut contents = String::new();
-
-    let mut file = File::open(segment_config_path)?;
-    file.read_to_string(&mut contents)?;
-
-    let segment_state = load_segment_state(&contents, path)?;
+    let segment_state = Segment::load_state(&path)?;
 
     Ok(Some(create_segment(
         segment_state.version,
@@ -200,15 +203,15 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
     Ok(segment)
 }
 
-fn load_segment_state(contents: &str, path: &Path) -> OperationResult<SegmentState> {
-    #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
+    #[derive(Deserialize)]
     #[serde(rename_all = "snake_case")]
     pub struct ObsoleteSegmentState {
         pub version: SeqNumberType,
         pub config: ObsoleteSegmentConfig,
     }
 
-    #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+    #[derive(Deserialize)]
     #[serde(rename_all = "snake_case")]
     pub struct ObsoleteSegmentConfig {
         /// Size of a vectors used
@@ -224,36 +227,34 @@ fn load_segment_state(contents: &str, path: &Path) -> OperationResult<SegmentSta
         pub payload_storage_type: PayloadStorageType,
     }
 
-    let from_obsolete = |state: ObsoleteSegmentState| {
-        let vector_data = VectorDataConfig {
-            vector_size: state.config.vector_size,
-            distance: state.config.distance,
-        };
-        SegmentState {
-            version: state.version,
-            config: SegmentConfig {
-                vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
-                index: state.config.index,
-                storage_type: state.config.storage_type,
-                payload_storage_type: state.config.payload_storage_type,
-            },
-        }
-    };
+    let path = segment_path.join(SEGMENT_STATE_FILE);
 
-    let segment_state = serde_json::from_str::<SegmentState>(contents).map_err(|err| {
-        OperationError::service_error(&format!(
-            "Failed to read segment {}. Error: {}",
-            path.to_str().unwrap(),
-            err
-        ))
-    });
-    if segment_state.is_err() {
-        // try to load obsolete format
-        match serde_json::from_str::<ObsoleteSegmentState>(contents) {
-            Ok(obsolete_segment_state) => Ok(from_obsolete(obsolete_segment_state)),
-            Err(_) => segment_state,
-        }
-    } else {
-        segment_state
-    }
+    let mut contents = String::new();
+
+    let mut file = File::open(&path)?;
+    file.read_to_string(&mut contents)?;
+
+    serde_json::from_str::<ObsoleteSegmentState>(&contents)
+        .map(|state| {
+            let vector_data = VectorDataConfig {
+                vector_size: state.config.vector_size,
+                distance: state.config.distance,
+            };
+            SegmentState {
+                version: state.version,
+                config: SegmentConfig {
+                    vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
+                    index: state.config.index,
+                    storage_type: state.config.storage_type,
+                    payload_storage_type: state.config.payload_storage_type,
+                },
+            }
+        })
+        .map_err(|err| {
+            OperationError::service_error(&format!(
+                "Failed to read segment {}. Error: {}",
+                path.to_str().unwrap(),
+                err
+            ))
+        })
 }

@@ -363,7 +363,7 @@ impl From<OperationError> for CollectionError {
             OperationError::WrongVector { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
-            OperationError::UnexistsVectorName { .. } => Self::BadInput {
+            OperationError::VectorNameNotExists { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
             OperationError::MissedVectorName { .. } => Self::BadInput {

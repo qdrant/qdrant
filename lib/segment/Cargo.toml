@@ -1,6 +1,6 @@
 [package]
 name = "segment"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
 edition = "2021"
 
@@ -43,6 +43,7 @@ seahash = "4.1.0"
 json-patch = "0.2.6"
 tar = "0.4.38"
 fs_extra = "1.2.0"
+semver = "1.0.13"
 
 [[bench]]
 name = "vector_search"

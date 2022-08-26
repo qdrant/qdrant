@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename, File};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use atomic_refcell::AtomicRefCell;
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use fs_extra::dir::{copy_with_progress, CopyOptions, TransitProcess};
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
@@ -14,6 +12,7 @@ use tar::Builder;
 
 use crate::common::version::StorageVersion;
 use crate::common::{check_vector_name, check_vectors_set};
+use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
     get_service_error, AllVectors, OperationError, OperationResult, SegmentEntry,
@@ -214,12 +213,14 @@ impl Segment {
         }
     }
 
-    fn save_state(state: &SegmentState, current_path: &Path) -> OperationResult<()> {
+    pub fn save_state(state: &SegmentState, current_path: &Path) -> OperationResult<()> {
         let state_path = current_path.join(SEGMENT_STATE_FILE);
-        let af = AtomicFile::new(state_path, AllowOverwrite);
-        let state_bytes = serde_json::to_vec(state).unwrap();
-        af.write(|f| f.write_all(&state_bytes))?;
-        Ok(())
+        Ok(atomic_save_json(&state_path, state)?)
+    }
+
+    pub fn load_state(current_path: &Path) -> OperationResult<SegmentState> {
+        let state_path = current_path.join(SEGMENT_STATE_FILE);
+        Ok(read_json(&state_path)?)
     }
 
     /// Retrieve vector by internal ID

@@ -17,7 +17,7 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> AllVectors {
 
 pub fn check_vector_name(vector_name: &str, segment_config: &SegmentConfig) -> OperationResult<()> {
     if !segment_config.vector_data.contains_key(vector_name) {
-        return Err(OperationError::UnexistsVectorName {
+        return Err(OperationError::VectorNameNotExists {
             received_name: vector_name.to_owned(),
         });
     }
@@ -30,7 +30,7 @@ pub fn check_vectors_set(
 ) -> OperationResult<()> {
     for vector_name in vectors.keys() {
         if !segment_config.vector_data.contains_key(vector_name) {
-            return Err(OperationError::UnexistsVectorName {
+            return Err(OperationError::VectorNameNotExists {
                 received_name: vector_name.to_owned(),
             });
         }

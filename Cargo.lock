@@ -3105,7 +3105,7 @@ checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
 
 [[package]]
 name = "segment"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "atomic_refcell",
  "atomicwrites",
@@ -3132,6 +3132,7 @@ dependencies = [
  "rocksdb",
  "schemars",
  "seahash",
+ "semver 1.0.13",
  "serde",
  "serde_cbor",
  "serde_json",
