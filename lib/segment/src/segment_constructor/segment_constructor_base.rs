@@ -42,7 +42,7 @@ fn create_segment(
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
     let get_vector_name_with_prefix = |prefix: &str, vector_name: &str| {
-        if vector_name.is_empty() {
+        if !vector_name.is_empty() {
             format!("{}-{}", prefix, vector_name)
         } else {
             prefix.to_owned()
