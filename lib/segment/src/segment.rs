@@ -10,9 +10,9 @@ use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
 
+use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::StorageVersion;
 use crate::common::{check_vector_name, check_vectors_set};
-use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
     get_service_error, AllVectors, OperationError, OperationResult, SegmentEntry,
