@@ -9,6 +9,7 @@ mod histogram;
 pub mod index_selector;
 pub mod map_index;
 pub mod numeric_index;
+pub mod full_text_index;
 mod stat_tools;
 
 pub use field_index_base::*;

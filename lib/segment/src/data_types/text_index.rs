@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenizerType {
-    Ngram,
+    Prefix,
     Whitespace,
     Word,
 }
@@ -34,5 +34,6 @@ pub struct TextIndexParams {
     pub max_token_len: Option<usize>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// If true, lowercase all tokens. Default: true
     pub lowercase: Option<bool>,
 }
