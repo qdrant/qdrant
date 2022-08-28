@@ -2,11 +2,11 @@ use serde_json::Value;
 
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
+use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
@@ -84,7 +84,7 @@ pub enum FieldIndex {
     KeywordIndex(MapIndex<String>),
     FloatIndex(NumericIndex<FloatPayloadType>),
     GeoIndex(GeoMapIndex),
-    FullTextIndex(FullTextIndex)
+    FullTextIndex(FullTextIndex),
 }
 
 impl FieldIndex {

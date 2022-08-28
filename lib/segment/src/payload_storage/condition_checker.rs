@@ -2,7 +2,9 @@
 
 use serde_json::Value;
 
-use crate::types::{GeoBoundingBox, GeoRadius, Match, MatchValue, Range, ValueVariants, ValuesCount, MatchText};
+use crate::types::{
+    GeoBoundingBox, GeoRadius, Match, MatchText, MatchValue, Range, ValueVariants, ValuesCount,
+};
 
 pub trait ValueChecker {
     fn check_match(&self, payload: &Value) -> bool;

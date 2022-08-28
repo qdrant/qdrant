@@ -6,7 +6,10 @@ use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::query_checker::{check_field_condition, check_is_empty_condition};
-use crate::types::{Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchText, MatchValue, PointOffsetType, Range, ValueVariants};
+use crate::types::{
+    Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchText,
+    MatchValue, PointOffsetType, Range, ValueVariants,
+};
 
 pub fn condition_converter<'a>(
     condition: &'a Condition,
@@ -168,19 +171,17 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             }
             (_, _) => None,
         },
-        Match::Text( MatchText { text } ) => {
-            match index {
-                FieldIndex::FullTextIndex(full_text_index) => {
-                    let parsed_query = full_text_index.parse_query(&text);
-                    Some(Box::new(move |point_id: PointOffsetType| {
-                        match full_text_index.get_doc(point_id) {
-                            None => false,
-                            Some(doc) => parsed_query.check_match(doc)
-                        }
-                    }))
-                }
-                _ => None,
+        Match::Text(MatchText { text }) => match index {
+            FieldIndex::FullTextIndex(full_text_index) => {
+                let parsed_query = full_text_index.parse_query(&text);
+                Some(Box::new(
+                    move |point_id: PointOffsetType| match full_text_index.get_doc(point_id) {
+                        None => false,
+                        Some(doc) => parsed_query.check_match(doc),
+                    },
+                ))
             }
-        }
+            _ => None,
+        },
     }
 }

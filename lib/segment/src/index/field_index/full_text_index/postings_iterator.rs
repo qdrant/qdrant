@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-pub fn intersect_btree_iterator<'a, T: Ord + Copy>(mut postings: Vec<&'a BTreeSet<T>>) -> Box<dyn Iterator<Item = T> + 'a> {
+pub fn intersect_btree_iterator<'a, T: Ord + Copy>(
+    mut postings: Vec<&'a BTreeSet<T>>,
+) -> Box<dyn Iterator<Item = T> + 'a> {
     let smallest_posting_idx = postings
         .iter()
         .enumerate()
@@ -16,7 +18,6 @@ pub fn intersect_btree_iterator<'a, T: Ord + Copy>(mut postings: Vec<&'a BTreeSe
 
     Box::new(and_iter)
 }
-
 
 #[cfg(test)]
 mod tests {
