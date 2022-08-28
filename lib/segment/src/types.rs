@@ -1165,33 +1165,6 @@ mod tests {
         let query = r#"
         {
             "key": "hello",
-            "match": { "integer": 42 }
-        }
-        "#;
-        let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(
-            condition.r#match.unwrap(),
-            Match::Value(MatchValue {
-                value: ValueVariants::Integer(42)
-            })
-        );
-
-        let query = r#"
-        {
-            "key": "hello",
-            "match": { "keyword": "world" }
-        }"#;
-        let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(
-            condition.r#match.unwrap(),
-            Match::Value(MatchValue {
-                value: ValueVariants::Keyword("world".to_owned())
-            })
-        );
-
-        let query = r#"
-        {
-            "key": "hello",
             "match": { "value": 42 }
         }
         "#;
@@ -1241,7 +1214,7 @@ mod tests {
                 {
                     "key": "hello",
                     "match": {
-                        "integer": 42
+                        "value": 42
                     }
                 },
                 {

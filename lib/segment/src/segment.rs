@@ -1011,7 +1011,7 @@ mod tests {
                 {
                     "key": "metadata.height",
                     "match": {
-                        "integer": 50
+                        "value": 50
                     }
                 }
             ]
@@ -1024,7 +1024,7 @@ mod tests {
                 {
                     "key": "metadata.height",
                     "match": {
-                        "integer": 60
+                        "value": 60
                     }
                 }
             ]
