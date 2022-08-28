@@ -9,17 +9,43 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::text_index::TextIndexParams;
 use crate::entry::entry_point::OperationResult;
+use crate::index::field_index::full_text_index::postings_iterator::intersect_btree_iterator;
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
-use crate::types::{FieldCondition, PayloadKeyType, PointOffsetType};
+use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
 type PostingList = BTreeSet<PointOffsetType>;
 
+#[derive(Default, Clone)]
+pub struct Document {
+    pub tokens: BTreeSet<String>,
+}
+
+impl Document {
+    pub fn is_empty(&self) -> bool {
+        self.tokens.is_empty()
+    }
+}
+
+pub struct ParsedQuery {
+    pub tokens: BTreeSet<String>,
+}
+
+impl ParsedQuery {
+    pub fn check_match(&self, document: &Document) -> bool {
+        // Check that all tokens are in document
+        self.tokens
+            .iter()
+            .all(|query_token| document.tokens.contains(query_token))
+    }
+}
+
 pub struct FullTextIndex {
     postings: BTreeMap<String, PostingList>,
-    point_to_tokens: Vec<Vec<String>>,
+    point_to_docs: Vec<Document>,
     points_count: usize,
     db_wrapper: DatabaseColumnWrapper,
     config: TextIndexParams,
@@ -35,22 +61,44 @@ impl FullTextIndex {
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
         FullTextIndex {
             postings: BTreeMap::new(),
-            point_to_tokens: Vec::new(),
+            point_to_docs: Vec::new(),
             points_count: 0,
             db_wrapper,
             config,
         }
     }
 
-    pub fn get_tokens(&self, idx: PointOffsetType) -> Option<&Vec<String>> {
-        self.point_to_tokens.get(idx as usize)
+    pub fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
+        self.point_to_docs.get(idx as usize)
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            points_values_count: self.points_count,
+            points_count: self.points_count,
+            histogram_bucket_size: None,
+        }
+    }
+
+    pub fn recreate(&self) -> OperationResult<()> {
+        self.db_wrapper.recreate_column_family()
+    }
+
+    pub fn parse_query(&self, text: &str) -> ParsedQuery {
+        let mut tokens = vec![];
+        Tokenizer::tokenize_query(text, &self.config, |token| {
+            tokens.push(token.to_owned());
+        });
+        ParsedQuery {
+            tokens: tokens.into_iter().collect(),
+        }
     }
 }
 
 impl ValueIndexer<String> for FullTextIndex {
     fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
-        if let Some(existing_tokens) = self.get_tokens(idx) {
-            if !existing_tokens.is_empty() {
+        if let Some(document) = self.get_doc(idx) {
+            if !document.is_empty() {
                 self.remove_point(idx)?;
             }
         }
@@ -59,8 +107,9 @@ impl ValueIndexer<String> for FullTextIndex {
             return Ok(());
         }
 
-        if self.point_to_tokens.len() <= idx as usize {
-            self.point_to_tokens.resize(idx as usize + 1, vec![]);
+        if self.point_to_docs.len() <= idx as usize {
+            self.point_to_docs
+                .resize(idx as usize + 1, Default::default());
         }
 
         self.points_count += 1;
@@ -73,7 +122,9 @@ impl ValueIndexer<String> for FullTextIndex {
             });
         }
 
-        self.point_to_tokens[idx as usize] = tokens.iter().cloned().collect();
+        self.point_to_docs[idx as usize] = Document {
+            tokens: tokens.iter().cloned().collect(),
+        };
 
         for token in tokens {
             let posting = self
@@ -96,19 +147,19 @@ impl ValueIndexer<String> for FullTextIndex {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        if self.point_to_tokens.len() <= id as usize {
+        if self.point_to_docs.len() <= id as usize {
             return Ok(()); // Already removed or never actually existed
         }
 
-        let removed_tokens = std::mem::take(&mut self.point_to_tokens[id as usize]);
+        let removed_doc = std::mem::take(&mut self.point_to_docs[id as usize]);
 
-        if removed_tokens.is_empty() {
+        if removed_doc.is_empty() {
             return Ok(());
         }
 
         self.points_count -= 1;
 
-        for removed_token in removed_tokens {
+        for removed_token in removed_doc.tokens {
             let posting = self.postings.get_mut(&removed_token);
             if let Some(posting) = posting {
                 posting.remove(&id);
@@ -144,21 +195,99 @@ impl PayloadFieldIndex for FullTextIndex {
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        todo!()
+        if let Some(Match::Text(text_match)) = &condition.r#match {
+            let parsed_query = self.parse_query(&text_match.text);
+            let postings_opt: Option<Vec<_>> = parsed_query
+                .tokens
+                .iter()
+                .map(|token| self.postings.get(token))
+                .collect();
+            if postings_opt.is_none() {
+                // There are unseen tokens -> no matches
+                return Some(Box::new(vec![].into_iter()));
+            }
+            let postings = postings_opt.unwrap();
+            if postings.is_empty() {
+                return None; // No tokens -> all points are matched
+            }
+            return Some(intersect_btree_iterator(postings));
+        }
+        None
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        todo!()
+        if let Some(Match::Text(text_match)) = &condition.r#match {
+            let parsed_query = self.parse_query(&text_match.text);
+            let postings_opt: Option<Vec<_>> = parsed_query
+                .tokens
+                .iter()
+                .map(|token| self.postings.get(token))
+                .collect();
+            if postings_opt.is_none() {
+                // There are unseen tokens -> no matches
+                return Some(CardinalityEstimation {
+                    primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                    min: 0,
+                    exp: 0,
+                    max: 0,
+                });
+            }
+            let postings = postings_opt.unwrap();
+            if postings.is_empty() {
+                return None;
+            }
+            // Smallest posting is the largest possible cardinality
+            let smallest_posting = postings.iter().map(|posting| posting.len()).min().unwrap();
+
+            return if postings.len() == 1 {
+                Some(CardinalityEstimation {
+                    primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                    min: smallest_posting,
+                    exp: smallest_posting,
+                    max: smallest_posting,
+                })
+            } else {
+                let expected_frac: f64 = postings
+                    .iter()
+                    .map(|posting| posting.len() as f64 / self.points_count as f64)
+                    .product();
+                let exp = (expected_frac * self.points_count as f64) as usize;
+                Some(CardinalityEstimation {
+                    primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                    min: 0, // ToDo: make better estimation
+                    exp,
+                    max: smallest_posting,
+                })
+            };
+        }
+        None
     }
 
     fn payload_blocks(
         &self,
-        _threshold: usize,
-        _key: PayloadKeyType,
+        threshold: usize,
+        key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         // It might be very hard to predict possible combinations of conditions,
-        // so we just skip it for full-text index
-        Box::new(vec![].into_iter())
+        // so we only build it for individual tokens
+        Box::new(
+            self.postings
+                .iter()
+                .filter(move |(_token, posting)| posting.len() >= threshold)
+                .map(move |(token, posting)| PayloadBlockCondition {
+                    condition: FieldCondition {
+                        key: key.clone(),
+                        r#match: Some(Match::Text(MatchText {
+                            text: token.to_owned(),
+                        })),
+                        range: None,
+                        geo_bounding_box: None,
+                        geo_radius: None,
+                        values_count: None,
+                    },
+                    cardinality: posting.len(),
+                }),
+        )
     }
 
     fn count_indexed_points(&self) -> usize {
@@ -205,6 +334,21 @@ mod tests {
         }
 
         assert_eq!(index.count_indexed_points(), payloads.len());
+
+        let filter_condition = FieldCondition {
+            key: "text".to_string(),
+            r#match: Some(Match::Text(MatchText {
+                text: "multivac".to_owned(),
+            })),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: None
+        };
+
+        let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
+        assert_eq!(search_res, vec![0, 4]);
+
 
         index.remove_point(2).unwrap();
         index.remove_point(3).unwrap();
