@@ -552,96 +552,20 @@ impl Collection {
         }
     }
 
-    // TODO use batched version with single request
     pub async fn recommend_by(
         &self,
         request: RecommendRequest,
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        if request.positive.is_empty() {
-            return Err(CollectionError::BadRequest {
-                description: "At least one positive vector ID required".to_owned(),
-            });
-        }
-
-        let reference_vectors_ids = request
-            .positive
-            .iter()
-            .chain(&request.negative)
-            .cloned()
-            .collect_vec();
-
-        let vectors = self
-            .retrieve(
-                PointRequest {
-                    ids: reference_vectors_ids.clone(),
-                    with_payload: Some(WithPayloadInterface::Bool(true)),
-                    with_vector: true,
-                },
-                shard_selection,
-            )
+        // `recommend_by` is a special case of recommend_by_batch with a single batch
+        let request_batch = RecommendRequestBatch {
+            searches: vec![request],
+        };
+        let results = self
+            .recommend_batch_by(request_batch, search_runtime_handle, shard_selection)
             .await?;
-        let vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = vectors
-            .into_iter()
-            .map(|rec| (rec.id, rec.vector.unwrap()))
-            .collect();
-
-        for &point_id in &reference_vectors_ids {
-            if !vectors_map.contains_key(&point_id) {
-                return Err(CollectionError::PointNotFound {
-                    missed_point_id: point_id,
-                });
-            }
-        }
-
-        let avg_positive = avg_vectors(
-            request
-                .positive
-                .iter()
-                .map(|vid| vectors_map.get(vid).unwrap()),
-        );
-
-        let search_vector = if request.negative.is_empty() {
-            avg_positive
-        } else {
-            let avg_negative = avg_vectors(
-                request
-                    .negative
-                    .iter()
-                    .map(|vid| vectors_map.get(vid).unwrap()),
-            );
-
-            avg_positive
-                .iter()
-                .cloned()
-                .zip(avg_negative.iter().cloned())
-                .map(|(pos, neg)| pos + pos - neg)
-                .collect()
-        };
-
-        let search_request = SearchRequest {
-            vector: search_vector,
-            filter: Some(Filter {
-                should: None,
-                must: request
-                    .filter
-                    .clone()
-                    .map(|filter| vec![Condition::Filter(filter)]),
-                must_not: Some(vec![Condition::HasId(HasIdCondition {
-                    has_id: reference_vectors_ids.iter().cloned().collect(),
-                })]),
-            }),
-            with_payload: request.with_payload.clone(),
-            with_vector: request.with_vector,
-            params: request.params,
-            limit: request.limit,
-            score_threshold: request.score_threshold,
-            offset: request.offset,
-        };
-
-        self.search(search_request, search_runtime_handle, shard_selection)
-            .await
+        Ok(results.into_iter().next().unwrap())
     }
 
     pub async fn recommend_batch_by(

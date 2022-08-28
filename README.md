@@ -202,6 +202,7 @@ Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 * The [Documentation](https://qdrant.tech/documentation/)
 * Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
 * Follow our [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
+* Assess Qdrant's performance in our [benchmarks](https://qdrant.tech/benchmarks/)
 * Check out our further plans in [v1.0 Roadmap](https://qdrant.to/roadmap)
 
 ## Contacts
