@@ -52,7 +52,7 @@ impl InvertedIndex {
             let posting = self
                 .postings
                 .entry(token.to_owned())
-                .or_insert_with(|| BTreeSet::new());
+                .or_insert_with(BTreeSet::new);
             posting.insert(idx);
         }
         self.points_count += 1;
@@ -113,7 +113,7 @@ impl InvertedIndex {
                     }),
             );
         }
-        return intersect_btree_iterator(postings);
+        intersect_btree_iterator(postings)
     }
 
     pub fn estimate_cardinality(

@@ -17,7 +17,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
+use crate::types::{FieldCondition, Match, PayloadKeyType, PointOffsetType};
 
 pub struct FullTextIndex {
     inverted_index: InvertedIndex,
@@ -211,6 +211,7 @@ mod tests {
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::data_types::text_index::TokenizerType;
+    use crate::types::MatchText;
 
     fn filter_request(text: &str) -> FieldCondition {
         FieldCondition {
@@ -249,7 +250,7 @@ mod tests {
         {
             let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
-            let mut index = FullTextIndex::new(db, config, "text");
+            let mut index = FullTextIndex::new(db, config.clone(), "text");
 
             index.recreate().unwrap();
 
@@ -275,8 +276,7 @@ mod tests {
             index.remove_point(3).unwrap();
 
             let filter_condition = filter_request("giant computer");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert!(search_res.is_empty());
+            assert!(index.filter(&filter_condition).unwrap().next().is_none());
 
             assert_eq!(index.count_indexed_points(), payloads.len() - 2);
 

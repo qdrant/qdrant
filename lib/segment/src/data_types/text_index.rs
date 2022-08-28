@@ -21,7 +21,7 @@ impl Default for TokenizerType {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct TextIndexParams {
     #[serde(default)]

@@ -3,18 +3,18 @@ use crate::data_types::text_index::{TextIndexParams, TokenizerType};
 struct WhiteSpaceTokenizer;
 
 impl WhiteSpaceTokenizer {
-    fn tokenize<C: FnMut(&str)>(text: &str, mut callback: C) {
-        text.split_whitespace().for_each(|s| callback(s));
+    fn tokenize<C: FnMut(&str)>(text: &str, callback: C) {
+        text.split_whitespace().for_each(callback);
     }
 }
 
 struct WordTokenizer;
 
 impl WordTokenizer {
-    fn tokenize<C: FnMut(&str)>(text: &str, mut callback: C) {
+    fn tokenize<C: FnMut(&str)>(text: &str, callback: C) {
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|x| !x.is_empty())
-            .for_each(|s| callback(s));
+            .for_each(callback);
     }
 }
 
@@ -30,7 +30,7 @@ impl PrefixTokenizer {
                     match ngram {
                         Some(end) => callback(&word[..end]),
                         None => {
-                            callback(&word);
+                            callback(word);
                             break;
                         }
                     }
@@ -53,7 +53,7 @@ impl PrefixTokenizer {
                 match ngram {
                     Some(end) => callback(&word[..end]),
                     None => {
-                        callback(&word);
+                        callback(word);
                     }
                 }
             });
