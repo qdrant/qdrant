@@ -108,7 +108,7 @@ fn create_segment(
         };
 
         vector_data.insert(
-            DEFAULT_VECTOR_NAME.to_owned(),
+            vector_name.to_owned(),
             VectorData {
                 vector_storage,
                 vector_index,
@@ -158,8 +158,8 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
 
         if stored_version.minor == 3 {
-            let segment_state = load_segment_state_v3(&path)?;
-            Segment::save_state(&segment_state, &path)?;
+            let segment_state = load_segment_state_v3(path)?;
+            Segment::save_state(&segment_state, path)?;
         } else {
             return Err(OperationError::service_error(&format!(
                 "Segment version({}) is not compatible with current version({})",
@@ -170,7 +170,7 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
         SegmentVersion::save(path)?
     }
 
-    let segment_state = Segment::load_state(&path)?;
+    let segment_state = Segment::load_state(path)?;
 
     Ok(Some(create_segment(
         segment_state.version,
