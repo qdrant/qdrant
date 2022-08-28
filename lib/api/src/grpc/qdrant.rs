@@ -366,7 +366,7 @@ pub enum PayloadSchemaType {
 #[repr(i32)]
 pub enum TokenizerType {
     Unknown = 0,
-    Ngram = 1,
+    Prefix = 1,
     Whitespace = 2,
     Word = 3,
 }
@@ -1769,7 +1769,7 @@ pub struct FieldCondition {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof="r#match::MatchValue", tags="1, 2, 3")]
+    #[prost(oneof="r#match::MatchValue", tags="1, 2, 3, 4")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -1785,6 +1785,9 @@ pub mod r#match {
         /// Match boolean
         #[prost(bool, tag="3")]
         Boolean(bool),
+        /// Match text
+        #[prost(string, tag="4")]
+        Text(::prost::alloc::string::String),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

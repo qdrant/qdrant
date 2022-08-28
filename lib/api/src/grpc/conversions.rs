@@ -130,7 +130,7 @@ impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
 impl From<segment::data_types::text_index::TokenizerType> for TokenizerType {
     fn from(tokenizer_type: segment::data_types::text_index::TokenizerType) -> Self {
         match tokenizer_type {
-            segment::data_types::text_index::TokenizerType::Ngram => TokenizerType::Ngram,
+            segment::data_types::text_index::TokenizerType::Prefix => TokenizerType::Prefix,
             segment::data_types::text_index::TokenizerType::Whitespace => TokenizerType::Whitespace,
             segment::data_types::text_index::TokenizerType::Word => TokenizerType::Word,
         }
@@ -176,7 +176,7 @@ impl TryFrom<TokenizerType> for segment::data_types::text_index::TokenizerType {
     fn try_from(tokenizer_type: TokenizerType) -> Result<Self, Self::Error> {
         match tokenizer_type {
             TokenizerType::Unknown => Err(Status::invalid_argument("unknown tokenizer type")),
-            TokenizerType::Ngram => Ok(segment::data_types::text_index::TokenizerType::Ngram),
+            TokenizerType::Prefix => Ok(segment::data_types::text_index::TokenizerType::Prefix),
             TokenizerType::Whitespace => {
                 Ok(segment::data_types::text_index::TokenizerType::Whitespace)
             }
@@ -683,6 +683,7 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Keyword(kw) => kw.into(),
                 MatchValue::Integer(int) => int.into(),
                 MatchValue::Boolean(flag) => flag.into(),
+                MatchValue::Text(text) => segment::types::Match::Text(text.into()),
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -698,8 +699,9 @@ impl From<segment::types::Match> for Match {
                 segment::types::ValueVariants::Integer(int) => MatchValue::Integer(int),
                 segment::types::ValueVariants::Bool(flag) => MatchValue::Boolean(flag),
             },
-            segment::types::Match::Keyword(kw) => MatchValue::Keyword(kw.keyword),
-            segment::types::Match::Integer(int) => MatchValue::Integer(int.integer),
+            segment::types::Match::Text(segment::types::MatchText { text }) => {
+                MatchValue::Text(text)
+            }
         };
         Self {
             match_value: Some(match_value),

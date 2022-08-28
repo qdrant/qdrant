@@ -277,6 +277,7 @@ message Match {
     string keyword = 1; // Match string keyword
     int64 integer = 2; // Match integer
     bool boolean = 3; // Match boolean
+    string text = 4; // Match text
   }
 }
 

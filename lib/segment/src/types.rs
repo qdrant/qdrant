@@ -649,26 +649,6 @@ pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
     }
 }
 
-/// Match by keyword (deprecated)
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[deprecated]
-pub struct MatchKeyword {
-    /// Keyword value to match
-    #[deprecated]
-    pub keyword: String,
-}
-
-/// Match filter request (deprecated)
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[deprecated]
-pub struct MatchInteger {
-    /// Integer value to match
-    #[deprecated]
-    pub integer: IntPayloadType,
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ValueVariants {
@@ -677,10 +657,24 @@ pub enum ValueVariants {
     Bool(bool),
 }
 
+/// Exact match of the given value
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchValue {
     pub value: ValueVariants,
+}
+
+/// Full-text match of the strings.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchText {
+    pub text: String,
+}
+
+impl From<String> for MatchText {
+    fn from(text: String) -> Self {
+        MatchText { text }
+    }
 }
 
 /// Match filter request
@@ -689,8 +683,7 @@ pub struct MatchValue {
 #[serde(untagged)]
 pub enum MatchInterface {
     Value(MatchValue),
-    Keyword(MatchKeyword),
-    Integer(MatchInteger),
+    Text(MatchText),
 }
 
 /// Match filter request
@@ -699,20 +692,14 @@ pub enum MatchInterface {
 #[serde(untagged)]
 pub enum Match {
     Value(MatchValue),
-    Keyword(MatchKeyword),
-    Integer(MatchInteger),
+    Text(MatchText),
 }
 
 impl From<MatchInterface> for Match {
     fn from(value: MatchInterface) -> Self {
         match value {
             MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
-            MatchInterface::Keyword(MatchKeyword { keyword }) => Self::Value(MatchValue {
-                value: ValueVariants::Keyword(keyword),
-            }),
-            MatchInterface::Integer(MatchInteger { integer }) => Self::Value(MatchValue {
-                value: ValueVariants::Integer(integer),
-            }),
+            MatchInterface::Text(text) => Self::Text(MatchText { text: text.text }),
         }
     }
 }

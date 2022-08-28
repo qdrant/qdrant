@@ -222,7 +222,7 @@ mod tests {
             .unwrap();
 
         index.add_point(4, &serde_json::json!(
-            "The question came about as a result of a fivedollar bet over highballs, and it happened this way: "
+            "The question came about as a result of a five dollar bet over highballs, and it happened this way: "
         )).unwrap();
 
         assert_eq!(index.count_indexed_points(), payloads.len() - 1);
