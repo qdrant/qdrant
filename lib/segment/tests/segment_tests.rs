@@ -135,8 +135,8 @@ mod tests {
             6,
             6.into(),
             &AllVectors::from([
-                ("vector2".to_owned(), vec![10.].clone()),
-                ("vector3".to_owned(), vec![5., 6., 7., 8.].clone()),
+                ("vector2".to_owned(), vec![10.]),
+                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
         );
 
@@ -156,10 +156,10 @@ mod tests {
             6,
             6.into(),
             &AllVectors::from([
-                ("vector1".to_owned(), vec![5., 6., 7., 8.].clone()),
-                ("vector2".to_owned(), vec![10.].clone()),
-                ("vector3".to_owned(), vec![5., 6., 7., 8.].clone()),
-                ("vector4".to_owned(), vec![5., 6., 7., 8.].clone()),
+                ("vector1".to_owned(), vec![5., 6., 7., 8.]),
+                ("vector2".to_owned(), vec![10.]),
+                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ("vector4".to_owned(), vec![5., 6., 7., 8.]),
             ]),
         );
 
