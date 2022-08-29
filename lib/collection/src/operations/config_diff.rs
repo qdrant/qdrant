@@ -1,10 +1,12 @@
+use std::num::NonZeroU32;
+
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::types::HnswConfig;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::config::WalConfig;
+use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::OptimizersConfig;
 
@@ -44,6 +46,12 @@ pub struct WalConfigDiff {
     pub wal_capacity_mb: Option<usize>,
     /// Number of WAL segments to create ahead of actually used ones
     pub wal_segments_ahead: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]
+pub struct CollectionParamsDiff {
+    /// Number of replicas for each shard
+    pub replication_factor: Option<NonZeroU32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge)]
@@ -121,6 +129,8 @@ impl DiffConfig<HnswConfig> for HnswConfigDiff {}
 impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {}
 
 impl DiffConfig<WalConfig> for WalConfigDiff {}
+
+impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
 
 /// Hacky way to update configuration structures with diff-updates.
 /// Intended to only be used in non critical for speed places.

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use collection::collection::Collection;
 use collection::collection_state;
 use collection::config::{CollectionConfig, CollectionParams};
-use collection::operations::config_diff::DiffConfig;
+use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
@@ -234,6 +234,8 @@ impl TableOfContent {
                     description: "`shard_number` cannot be 0".to_string(),
                 })?,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
+            // TODO: use `replication_factor` supplied in `CreateCollection`
+            replication_factor: collection::config::default_replication_factor(),
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),
@@ -279,14 +281,15 @@ impl TableOfContent {
         collection_name: &str,
         operation: UpdateCollection,
     ) -> Result<bool, StorageError> {
-        match operation.optimizers_config {
-            None => {}
-            Some(new_optimizers_config) => {
-                let collection = self.get_collection(collection_name).await?;
-                collection
-                    .update_optimizer_params_from_diff(new_optimizers_config)
-                    .await?
-            }
+        let UpdateCollection { optimizers_config } = operation;
+        // TODO: get `params` from `UpdateCollection`
+        let params: Option<CollectionParamsDiff> = None;
+        let collection = self.get_collection(collection_name).await?;
+        if let Some(diff) = optimizers_config {
+            collection.update_optimizer_params_from_diff(diff).await?
+        }
+        if let Some(diff) = params {
+            collection.update_params_from_diff(diff).await?;
         }
         Ok(true)
     }
