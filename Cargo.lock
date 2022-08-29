@@ -2455,9 +2455,9 @@ dependencies = [
 
 [[package]]
 name = "pprof"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bba88ee898c63351101af3e60c66c5398c517681ce533eef8caff10ecf11ec1"
+checksum = "d6472bfed9475542ac46c518734a8d06d71b0f6cb2c17f904aa301711a57786f"
 dependencies = [
  "backtrace",
  "cfg-if",
