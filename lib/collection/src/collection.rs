@@ -960,7 +960,6 @@ impl Collection {
         Ok(points)
     }
 
-    // TODO: handle update from snapshot
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
