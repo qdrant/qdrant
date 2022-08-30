@@ -2793,7 +2793,7 @@
             "nullable": true
           },
           "indexing_threshold": {
-            "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256",
+            "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -3805,7 +3805,7 @@
             "nullable": true
           },
           "indexing_threshold": {
-            "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256",
+            "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -4337,7 +4337,6 @@
       "SnapshotDescription": {
         "type": "object",
         "required": [
-          "creation_time",
           "name",
           "size"
         ],
@@ -4347,7 +4346,8 @@
           },
           "creation_time": {
             "type": "string",
-            "format": "partial-date-time"
+            "format": "partial-date-time",
+            "nullable": true
           },
           "size": {
             "type": "integer",
