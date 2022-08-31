@@ -30,7 +30,8 @@ async fn test_snapshot_collection() {
     let collection_params = CollectionParams {
         vector_size: NonZeroU64::new(4).unwrap(),
         distance: Distance::Dot,
-        shard_number: NonZeroU32::new(3).expect("Shard number can not be zero"),
+        shard_number: NonZeroU32::new(3).unwrap(),
+        replication_factor: NonZeroU32::new(3).unwrap(),
         on_disk_payload: false,
     };
 

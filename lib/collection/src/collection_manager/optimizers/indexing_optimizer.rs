@@ -304,6 +304,7 @@ mod tests {
                 vector_size: NonZeroU64::new(segment_config.vector_size as u64).unwrap(),
                 distance: segment_config.distance,
                 shard_number: NonZeroU32::new(1).unwrap(),
+                replication_factor: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
             },
             Default::default(),
