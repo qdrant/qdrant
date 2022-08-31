@@ -54,8 +54,10 @@ fn batch_search_bench(c: &mut Criterion) {
     };
 
     let collection_params = CollectionParams {
-        vector_size: NonZeroU64::new(100).unwrap(),
-        distance: Distance::Dot,
+        vector: None,
+        vectors: None,
+        vector_size: Some(NonZeroU64::new(100).unwrap()),
+        distance: Some(Distance::Dot),
         shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
         on_disk_payload: false,
     };
@@ -121,6 +123,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequest {
+                            vector_name: None,
                             vector: query,
                             filter: filter.clone(),
                             params: None,
@@ -153,6 +156,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequest {
+                            vector_name: None,
                             vector: query,
                             filter: filter.clone(),
                             params: None,

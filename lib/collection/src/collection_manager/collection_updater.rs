@@ -70,6 +70,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
+    use segment::segment::DEFAULT_VECTOR_NAME;
     use segment::types::{Payload, WithPayload};
     use tempfile::Builder;
 
@@ -94,6 +95,7 @@ mod tests {
 
         let records = SegmentsSearcher::retrieve(
             &segments,
+            DEFAULT_VECTOR_NAME,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             true,
@@ -125,6 +127,7 @@ mod tests {
 
         let records = SegmentsSearcher::retrieve(
             &segments,
+            DEFAULT_VECTOR_NAME,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             true,
@@ -157,9 +160,15 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), false)
-            .await
-            .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            DEFAULT_VECTOR_NAME,
+            &points,
+            &WithPayload::from(true),
+            false,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(res.len(), 3);
 
@@ -184,19 +193,29 @@ mod tests {
         )
         .unwrap();
 
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[3.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            DEFAULT_VECTOR_NAME,
+            &[3.into()],
+            &WithPayload::from(true),
+            false,
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
         // Test clear payload
 
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            DEFAULT_VECTOR_NAME,
+            &[2.into()],
+            &WithPayload::from(true),
+            false,
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
@@ -208,10 +227,15 @@ mod tests {
             },
         )
         .unwrap();
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            DEFAULT_VECTOR_NAME,
+            &[2.into()],
+            &WithPayload::from(true),
+            false,
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
     }

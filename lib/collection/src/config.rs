@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::num::{NonZeroU32, NonZeroU64};
@@ -6,6 +7,7 @@ use std::path::Path;
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::types::{Distance, HnswConfig};
 use serde::{Deserialize, Serialize};
 use wal::WalOptions;
@@ -44,10 +46,12 @@ impl Default for WalConfig {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
+    pub vectors: Option<HashMap<String, VectorParams>>,
+    pub vector: Option<VectorParams>,
     /// Size of a vectors used
-    pub vector_size: NonZeroU64,
+    pub vector_size: Option<NonZeroU64>,
     /// Type of distance function used for measuring distance between vectors
-    pub distance: Distance,
+    pub distance: Option<Distance>,
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
     pub shard_number: NonZeroU32,
@@ -57,6 +61,15 @@ pub struct CollectionParams {
     /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
+}
+
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorParams {
+    /// Size of a vectors used
+    pub size: NonZeroU64,
+    /// Type of distance function used for measuring distance between vectors
+    pub distance: Distance,
 }
 
 fn default_shard_number() -> NonZeroU32 {
@@ -92,5 +105,60 @@ impl CollectionConfig {
         let mut file = File::open(config_path)?;
         file.read_to_string(&mut contents)?;
         Ok(serde_json::from_str(&contents)?)
+    }
+}
+
+impl CollectionParams {
+    pub fn get_vector_params(
+        &self,
+        vector_name: Option<&String>,
+    ) -> CollectionResult<VectorParams> {
+        if let Some(vector_name) = vector_name {
+            Ok(self
+                .vectors
+                .as_ref()
+                .ok_or(CollectionError::BadInput {
+                    description: String::new(),
+                })?
+                .get(vector_name)
+                .ok_or(CollectionError::BadInput {
+                    description: String::new(),
+                })?
+                .clone())
+        } else if let Some(vector_params) = &self.vector {
+            Ok(vector_params.clone())
+        } else {
+            Ok(VectorParams {
+                distance: self.distance.ok_or(CollectionError::BadInput {
+                    description: String::new(),
+                })?,
+                size: self.vector_size.ok_or(CollectionError::BadInput {
+                    description: String::new(),
+                })?,
+            })
+        }
+    }
+
+    pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorParams>> {
+        if let Some(vectors) = &self.vectors {
+            Ok(vectors.clone())
+        } else if let Some(vector) = &self.vector {
+            Ok(HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                vector.clone(),
+            )]))
+        } else {
+            Ok(HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorParams {
+                    distance: self.distance.ok_or(CollectionError::BadInput {
+                        description: String::new(),
+                    })?,
+                    size: self.vector_size.ok_or(CollectionError::BadInput {
+                        description: String::new(),
+                    })?,
+                },
+            )]))
+        }
     }
 }

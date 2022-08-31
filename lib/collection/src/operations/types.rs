@@ -193,6 +193,8 @@ pub struct ScrollResult {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
+    ///
+    pub vector_name: Option<String>,
     /// Look for vectors closest to this
     pub vector: Vec<VectorElementType>,
     /// Look only for points which satisfies this conditions
@@ -273,6 +275,8 @@ pub struct RecommendRequest {
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
+    ///
+    pub vector_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

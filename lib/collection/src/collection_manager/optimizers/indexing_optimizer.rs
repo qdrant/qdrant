@@ -307,11 +307,15 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vector_size: NonZeroU64::new(
-                    segment_config.vector_data[DEFAULT_VECTOR_NAME].vector_size as u64,
-                )
-                .unwrap(),
-                distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                vectors: None,
+                vector: None,
+                vector_size: Some(
+                    NonZeroU64::new(
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].vector_size as u64,
+                    )
+                    .unwrap(),
+                ),
+                distance: Some(segment_config.vector_data[DEFAULT_VECTOR_NAME].distance),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
             },

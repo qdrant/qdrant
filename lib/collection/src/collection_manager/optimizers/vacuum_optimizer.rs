@@ -216,8 +216,10 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             CollectionParams {
-                vector_size: NonZeroU64::new(4).unwrap(),
-                distance: Distance::Dot,
+                vectors: None,
+                vector: None,
+                vector_size: Some(NonZeroU64::new(4).unwrap()),
+                distance: Some(Distance::Dot),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
             },

@@ -43,6 +43,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let query_vector = vec![1.0, 0.0, 0.0, 0.0];
 
     let full_search_request = SearchRequest {
+        vector_name: None,
         vector: query_vector.clone(),
         filter: None,
         limit: 100,
@@ -66,6 +67,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let page_size = 10;
 
     let page_1_request = SearchRequest {
+        vector_name: None,
         vector: query_vector.clone(),
         filter: None,
         limit: 10,
@@ -88,6 +90,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     }
 
     let page_9_request = SearchRequest {
+        vector_name: None,
         vector: query_vector.clone(),
         filter: None,
         limit: 10,

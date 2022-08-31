@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::fs::remove_file;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::index::field_index::CardinalityEstimation;
-use segment::segment::{Segment, DEFAULT_VECTOR_NAME};
+use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig, VectorDataConfig};
 use tokio::fs::{copy, create_dir_all};
@@ -275,20 +275,24 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
 
-        let vector_size = config.params.vector_size.get() as usize;
-        let distance = config.params.distance;
+        let vector_params = config.params.get_all_vector_params()?;
         let segment_number = config.optimizer_config.get_number_segments();
 
         for _sid in 0..segment_number {
             let path_clone = segments_path.clone();
             let segment_config = SegmentConfig {
-                vector_data: HashMap::from([(
-                    DEFAULT_VECTOR_NAME.to_owned(),
-                    VectorDataConfig {
-                        vector_size,
-                        distance,
-                    },
-                )]),
+                vector_data: vector_params
+                    .iter()
+                    .map(|(name, params)| {
+                        (
+                            name.clone(),
+                            VectorDataConfig {
+                                vector_size: params.size.get() as usize,
+                                distance: params.distance,
+                            },
+                        )
+                    })
+                    .collect(),
                 index: Default::default(),
                 storage_type: Default::default(),
                 payload_storage_type: match config.params.on_disk_payload {

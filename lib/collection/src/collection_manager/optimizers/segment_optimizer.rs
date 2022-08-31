@@ -71,13 +71,19 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
-            vector_data: HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorDataConfig {
-                    vector_size: collection_params.vector_size.get() as usize,
-                    distance: collection_params.distance,
-                },
-            )]),
+            vector_data: collection_params
+                .get_all_vector_params()?
+                .iter()
+                .map(|(name, params)| {
+                    (
+                        name.to_owned(),
+                        VectorDataConfig {
+                            vector_size: params.size.get() as usize,
+                            distance: params.distance,
+                        },
+                    )
+                })
+                .collect(),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
@@ -117,13 +123,19 @@ pub trait SegmentOptimizer {
             total_vectors_size >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let optimized_config = SegmentConfig {
-            vector_data: HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorDataConfig {
-                    vector_size: collection_params.vector_size.get() as usize,
-                    distance: collection_params.distance,
-                },
-            )]),
+            vector_data: collection_params
+                .get_all_vector_params()?
+                .iter()
+                .map(|(name, params)| {
+                    (
+                        name.to_owned(),
+                        VectorDataConfig {
+                            vector_size: params.size.get() as usize,
+                            distance: params.distance,
+                        },
+                    )
+                })
+                .collect(),
             index: if is_indexed {
                 Indexes::Hnsw(self.hnsw_config())
             } else {

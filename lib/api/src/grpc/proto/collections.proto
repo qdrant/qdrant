@@ -158,10 +158,17 @@ message CollectionOperationResponse {
 }
 
 message CollectionParams {
-  uint64 vector_size = 1; // Size of the vectors
-  Distance distance = 2; // Distance function used for comparing vectors
+  optional uint64 vector_size = 1; // Size of the vectors
+  optional Distance distance = 2; // Distance function used for comparing vectors
   uint32 shard_number = 3; // Number of shards in collection
   bool on_disk_payload = 4; // If true - point's payload will not be stored in memory
+  optional VectorParams vector = 5;
+  map<string, VectorParams> vectors = 6;
+}
+
+message VectorParams {
+  uint64 size = 1; // Size of the vectors
+  Distance distance = 2; // Distance function used for comparing vectors
 }
 
 message CollectionConfig {

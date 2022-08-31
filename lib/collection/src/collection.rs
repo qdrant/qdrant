@@ -648,6 +648,7 @@ impl Collection {
             };
 
             let search_request = SearchRequest {
+                vector_name: request.vector_name,
                 vector: search_vector,
                 filter: Some(Filter {
                     should: None,
@@ -773,11 +774,16 @@ impl Collection {
                 merged_results[index].append(shard_searches_result)
             }
         }
-        let distance = self.config.read().await.params.distance;
+        let collection_params = self.config.read().await.params.clone();
         let top_results: Vec<Vec<ScoredPoint>> = merged_results
             .into_iter()
             .zip(request.searches.iter())
             .map(|(res, request)| {
+                // todo(ivan): remove unwrap
+                let distance = collection_params
+                    .get_vector_params(request.vector_name.as_ref())
+                    .unwrap()
+                    .distance;
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {
                         peek_top_largest_scores_iterable(res, request.limit + request.offset)

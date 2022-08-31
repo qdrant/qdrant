@@ -4,6 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use segment::entry::entry_point::SegmentEntry;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::types::{
     ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, ScoredPoint, SegmentType,
     WithPayload, WithPayloadInterface,
@@ -86,8 +87,15 @@ impl ShardOperation for LocalShard {
             .collect_vec();
 
         let with_payload = WithPayload::from(with_payload_interface);
-        let mut points =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector).await?;
+        // todo(ivan) provide vector name
+        let mut points = SegmentsSearcher::retrieve(
+            segments,
+            DEFAULT_VECTOR_NAME,
+            &point_ids,
+            &with_payload,
+            with_vector,
+        )
+        .await?;
         points.sort_by_key(|point| point.id);
 
         Ok(points)
@@ -169,11 +177,16 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
             .await?;
-        let distance = self.config.read().await.params.distance;
+        let collection_params = self.config.read().await.params.clone();
         let top_results = res
             .into_iter()
             .zip(request.searches.iter())
             .map(|(vector_res, req)| {
+                // todo(ivan): remove unwrap
+                let distance = collection_params
+                    .get_vector_params(req.vector_name.as_ref())
+                    .unwrap()
+                    .distance;
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
                     scored_point.score = distance.postprocess_score(scored_point.score);
                     scored_point
@@ -211,6 +224,14 @@ impl ShardOperation for LocalShard {
         with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
-        SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector).await
+        // todo(ivan) provide vector name
+        SegmentsSearcher::retrieve(
+            self.segments(),
+            DEFAULT_VECTOR_NAME,
+            &request.ids,
+            with_payload,
+            with_vector,
+        )
+        .await
     }
 }

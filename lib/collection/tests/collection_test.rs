@@ -57,6 +57,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
     }
 
     let search_request = SearchRequest {
+        vector_name: None,
         vector: vec![1.0, 1.0, 1.0, 1.0],
         with_payload: None,
         with_vector: false,
@@ -115,6 +116,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     }
 
     let search_request = SearchRequest {
+        vector_name: None,
         vector: vec![1.0, 0.0, 1.0, 1.0],
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true,
@@ -320,6 +322,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
     let result = collection
         .recommend_by(
             RecommendRequest {
+                vector_name: None,
                 positive: vec![0.into()],
                 negative: vec![8.into()],
                 filter: None,
