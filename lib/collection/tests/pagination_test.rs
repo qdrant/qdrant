@@ -1,6 +1,7 @@
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use collection::operations::types::SearchRequest;
 use collection::operations::CollectionUpdateOperations;
+use segment::common::only_default_vector;
 use segment::types::WithPayloadInterface;
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -28,7 +29,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     for i in 0..1000 {
         points.push(PointStruct {
             id: i.into(),
-            vector: vec![i as f32, 0.0, 0.0, 0.0],
+            vectors: only_default_vector(&[i as f32, 0.0, 0.0, 0.0]),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }

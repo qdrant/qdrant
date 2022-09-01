@@ -4,7 +4,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use segment::entry::entry_point::SegmentEntry;
-use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::types::{
     ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, ScoredPoint, SegmentType,
     WithPayload, WithPayloadInterface,
@@ -90,7 +89,6 @@ impl ShardOperation for LocalShard {
         // todo(ivan) provide vector name
         let mut points = SegmentsSearcher::retrieve(
             segments,
-            DEFAULT_VECTOR_NAME,
             &point_ids,
             &with_payload,
             with_vector,
@@ -227,7 +225,6 @@ impl ShardOperation for LocalShard {
         // todo(ivan) provide vector name
         SegmentsSearcher::retrieve(
             self.segments(),
-            DEFAULT_VECTOR_NAME,
             &request.ids,
             with_payload,
             with_vector,

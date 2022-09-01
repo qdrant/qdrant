@@ -7,6 +7,7 @@ use std::sync::Arc;
 use futures::future::{join_all, try_join_all};
 use itertools::Itertools;
 use segment::common::version::StorageVersion;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::spaces::tools::{peek_top_largest_scores_iterable, peek_top_smallest_scores_iterable};
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, VectorElementType,
@@ -599,14 +600,15 @@ impl Collection {
             )
             .await?;
 
-        let all_vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = all_vectors
-            .into_iter()
-            .map(|rec| (rec.id, rec.vector.unwrap()))
-            .collect();
-
         let mut searches = Vec::with_capacity(request_batch.searches.len());
 
         for request in request_batch.searches {
+            let vector_name = request.vector_name.clone().unwrap_or(DEFAULT_VECTOR_NAME.to_owned());
+            let all_vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = all_vectors
+                .iter()
+                .map(|rec| (rec.id, rec.vectors.as_ref().unwrap()[&vector_name].clone()))
+                .collect();
+
             let reference_vectors_ids = request
                 .positive
                 .iter()
@@ -733,7 +735,9 @@ impl Collection {
                 .into_iter()
                 .zip(request.clone().searches.into_iter())
                 .map(|(without_payload_result, req)| {
+                    let vector_name: String = req.vector_name.clone().unwrap_or(DEFAULT_VECTOR_NAME.to_owned());
                     self.fill_search_result_with_payload(
+                        vector_name,
                         without_payload_result,
                         req.with_payload.clone(),
                         req.with_vector,
@@ -811,6 +815,7 @@ impl Collection {
 
     async fn fill_search_result_with_payload(
         &self,
+        vector_name: String,
         search_result: Vec<ScoredPoint>,
         with_payload: Option<WithPayloadInterface>,
         with_vector: bool,
@@ -834,7 +839,7 @@ impl Collection {
                 // So we just filter out them.
                 records_map.remove(&scored_point.id).map(|record| {
                     scored_point.payload = record.payload;
-                    scored_point.vector = record.vector;
+                    scored_point.vector = record.vectors.map(|vectors| vectors[&vector_name].clone());
                     scored_point
                 })
             })

@@ -247,6 +247,7 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
+    use segment::common::only_default_vector;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::segment::DEFAULT_VECTOR_NAME;
     use segment::types::{Payload, PayloadSchemaType, StorageType};
@@ -449,9 +450,9 @@ mod tests {
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![501.into(), 502.into(), 503.into()],
                 vectors: vec![
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
+                    only_default_vector(&random_vector(&mut rng, dim)),
+                    only_default_vector(&random_vector(&mut rng, dim)),
+                    only_default_vector(&random_vector(&mut rng, dim)),
                 ],
                 payloads: Some(vec![
                     Some(point_payload.clone()),
@@ -521,9 +522,9 @@ mod tests {
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![601.into(), 602.into(), 603.into()],
                 vectors: vec![
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
-                    random_vector(&mut rng, dim),
+                    only_default_vector(&random_vector(&mut rng, dim)),
+                    only_default_vector(&random_vector(&mut rng, dim)),
+                    only_default_vector(&random_vector(&mut rng, dim)),
                 ],
                 payloads: None,
             }));

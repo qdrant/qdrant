@@ -155,7 +155,7 @@ impl From<Record> for api::grpc::qdrant::RetrievedPoint {
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vector: record.vector.unwrap_or_default(),
+            vector: todo!(), //todo(ivan) record.vectors.unwrap_or_default(),
         }
     }
 }
@@ -167,7 +167,7 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
         Ok(Self {
             id: retrieved_point.id.unwrap().try_into()?,
             payload: Some(proto_to_payloads(retrieved_point.payload)?),
-            vector: Some(retrieved_point.vector),
+            vectors: todo!(), //todo(ivan) Some(retrieved_point.vector),
         })
     }
 }
@@ -345,6 +345,8 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
 
         let converted_payload = proto_to_payloads(payload)?;
 
+        todo!() //todo(ivan)
+/*
         Ok(Self {
             id: id
                 .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
@@ -352,6 +354,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
             vector,
             payload: Some(converted_payload),
         })
+        */
     }
 }
 
@@ -359,6 +362,8 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
+        todo!() //todo(ivan)
+        /*
         let PointStruct {
             id,
             vector,
@@ -375,6 +380,7 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
             vector,
             payload: converted_payload,
         })
+        */
     }
 }
 
@@ -394,7 +400,7 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
             });
             let point = api::grpc::qdrant::PointStruct {
                 id,
-                vector: vector.unwrap_or_default(),
+                vector: todo!(), //todo(ivan) vector.unwrap_or_default(),
                 payload: payload.unwrap_or_default(),
             };
             points.push(point);

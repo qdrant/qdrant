@@ -12,6 +12,7 @@ use collection::shard::local_shard::LocalShard;
 use collection::shard::ShardOperation;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
+use segment::common::only_default_vector;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Condition, Distance, FieldCondition, Filter, Payload, Range};
 use serde_json::Map;
@@ -27,10 +28,10 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
     for i in 0..num_points {
         let mut payload_map = Map::new();
         payload_map.insert("a".to_string(), (i % 5).into());
-        let vector = random_vector(&mut rng, dim);
+        let vectors = only_default_vector(&random_vector(&mut rng, dim));
         let point = PointStruct {
             id: i.into(),
-            vector,
+            vectors,
             payload: Some(Payload(payload_map)),
         };
         points.push(point);

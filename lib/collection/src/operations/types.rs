@@ -6,7 +6,7 @@ use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
-use segment::entry::entry_point::OperationError;
+use segment::entry::entry_point::{OperationError, AllVectors};
 use segment::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
     SeqNumberType, VectorElementType, WithPayloadInterface,
@@ -24,9 +24,6 @@ use crate::config::CollectionConfig;
 use crate::save_on_disk;
 use crate::shard::{PeerId, ShardId};
 use crate::wal::WalError;
-
-/// Type of vector in API
-pub type VectorType = Vec<VectorElementType>;
 
 /// Current state of the collection
 #[derive(
@@ -61,8 +58,8 @@ pub struct Record {
     pub id: PointIdType,
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
-    /// Vector of the point
-    pub vector: Option<Vec<VectorElementType>>,
+    /// Vectors of the point
+    pub vectors: Option<AllVectors>,
 }
 
 /// Current statistics and configuration of the collection

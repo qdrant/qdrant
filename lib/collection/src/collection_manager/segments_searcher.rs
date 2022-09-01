@@ -92,7 +92,6 @@ impl SegmentsSearcher {
 
     pub async fn retrieve(
         segments: &RwLock<SegmentHolder>,
-        vector_name: &str,
         points: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: bool,
@@ -119,8 +118,8 @@ impl SegmentsSearcher {
                         } else {
                             None
                         },
-                        vector: if with_vector {
-                            Some(segment.vector(vector_name, id)?)
+                        vectors: if with_vector {
+                            Some(segment.all_vectors(id)?)
                         } else {
                             None
                         },
@@ -269,7 +268,6 @@ mod tests {
 
         let records = SegmentsSearcher::retrieve(
             &segment_holder,
-            DEFAULT_VECTOR_NAME,
             &[1.into(), 2.into(), 3.into()],
             &WithPayload::from(true),
             true,

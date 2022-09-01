@@ -70,7 +70,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use segment::segment::DEFAULT_VECTOR_NAME;
+    use segment::common::only_default_vector;
     use segment::types::{Payload, WithPayload};
     use tempfile::Builder;
 
@@ -88,14 +88,13 @@ mod tests {
         let segments = build_test_holder(dir.path());
         let points = vec![1.into(), 500.into()];
 
-        let vectors = vec![vec![2., 2., 2., 2.], vec![2., 0., 2., 0.]];
+        let vectors = vec![only_default_vector(&[2., 2., 2., 2.]), only_default_vector(&[2., 0., 2., 0.])];
 
         let res = upsert_points(&segments, 100, &points, &vectors, &None);
         assert!(matches!(res, Ok(1)));
 
         let records = SegmentsSearcher::retrieve(
             &segments,
-            DEFAULT_VECTOR_NAME,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             true,
@@ -106,13 +105,13 @@ mod tests {
         assert_eq!(records.len(), 3);
 
         for record in records {
-            let v = record.vector.unwrap();
+            let v = record.vectors.unwrap();
 
             if record.id == 1.into() {
-                assert_eq!(&v, &vec![2., 2., 2., 2.])
+                assert_eq!(&v, &only_default_vector(&[2., 2., 2., 2.]))
             }
             if record.id == 500.into() {
-                assert_eq!(&v, &vec![2., 0., 2., 0.])
+                assert_eq!(&v, &only_default_vector(&[2., 0., 2., 0.]))
             }
         }
 
@@ -127,7 +126,6 @@ mod tests {
 
         let records = SegmentsSearcher::retrieve(
             &segments,
-            DEFAULT_VECTOR_NAME,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             true,
@@ -136,7 +134,7 @@ mod tests {
         .unwrap();
 
         for record in records {
-            let _v = record.vector.unwrap();
+            let _v = record.vectors.unwrap();
             assert_ne!(record.id, 500.into());
         }
     }
@@ -162,7 +160,6 @@ mod tests {
 
         let res = SegmentsSearcher::retrieve(
             &segments,
-            DEFAULT_VECTOR_NAME,
             &points,
             &WithPayload::from(true),
             false,
@@ -195,7 +192,6 @@ mod tests {
 
         let res = SegmentsSearcher::retrieve(
             &segments,
-            DEFAULT_VECTOR_NAME,
             &[3.into()],
             &WithPayload::from(true),
             false,
@@ -209,7 +205,6 @@ mod tests {
 
         let res = SegmentsSearcher::retrieve(
             &segments,
-            DEFAULT_VECTOR_NAME,
             &[2.into()],
             &WithPayload::from(true),
             false,
@@ -229,7 +224,6 @@ mod tests {
         .unwrap();
         let res = SegmentsSearcher::retrieve(
             &segments,
-            DEFAULT_VECTOR_NAME,
             &[2.into()],
             &WithPayload::from(true),
             false,
