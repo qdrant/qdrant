@@ -58,7 +58,10 @@ fn test_update_proxy_segments() {
 
     let _proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
-    let vectors = vec![only_default_vector(&[0.0, 0.0, 0.0, 0.0]), only_default_vector(&[0.0, 0.0, 0.0, 0.0])];
+    let vectors = vec![
+        only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+        only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+    ];
 
     for i in 1..10 {
         let ids = vec![(100 * i + 1).into(), (100 * i + 2).into()];
@@ -94,10 +97,16 @@ fn test_move_points_to_copy_on_write() {
 
     let proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
-    let vectors = vec![only_default_vector(&[0.0, 0.0, 0.0, 0.0]), only_default_vector(&[0.0, 0.0, 0.0, 0.0])];
+    let vectors = vec![
+        only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+        only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+    ];
     upsert_points(&segments, 1001, &[1.into(), 2.into()], &vectors, &None).unwrap();
 
-    let vectors = vec![only_default_vector(&[0.0, 0.0, 0.0, 0.0]), only_default_vector(&[0.0, 0.0, 0.0, 0.0])];
+    let vectors = vec![
+        only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+        only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+    ];
     upsert_points(&segments, 1002, &[2.into(), 3.into()], &vectors, &None).unwrap();
 
     let segments_write = segments.write();

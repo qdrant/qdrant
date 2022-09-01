@@ -88,7 +88,10 @@ mod tests {
         let segments = build_test_holder(dir.path());
         let points = vec![1.into(), 500.into()];
 
-        let vectors = vec![only_default_vector(&[2., 2., 2., 2.]), only_default_vector(&[2., 0., 2., 0.])];
+        let vectors = vec![
+            only_default_vector(&[2., 2., 2., 2.]),
+            only_default_vector(&[2., 0., 2., 0.]),
+        ];
 
         let res = upsert_points(&segments, 100, &points, &vectors, &None);
         assert!(matches!(res, Ok(1)));
@@ -158,14 +161,9 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve(
-            &segments,
-            &points,
-            &WithPayload::from(true),
-            false,
-        )
-        .await
-        .unwrap();
+        let res = SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), false)
+            .await
+            .unwrap();
 
         assert_eq!(res.len(), 3);
 
@@ -190,27 +188,19 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve(
-            &segments,
-            &[3.into()],
-            &WithPayload::from(true),
-            false,
-        )
-        .await
-        .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &[3.into()], &WithPayload::from(true), false)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
         // Test clear payload
 
-        let res = SegmentsSearcher::retrieve(
-            &segments,
-            &[2.into()],
-            &WithPayload::from(true),
-            false,
-        )
-        .await
-        .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
@@ -222,14 +212,10 @@ mod tests {
             },
         )
         .unwrap();
-        let res = SegmentsSearcher::retrieve(
-            &segments,
-            &[2.into()],
-            &WithPayload::from(true),
-            false,
-        )
-        .await
-        .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
     }

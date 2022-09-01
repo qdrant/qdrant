@@ -603,7 +603,10 @@ impl Collection {
         let mut searches = Vec::with_capacity(request_batch.searches.len());
 
         for request in request_batch.searches {
-            let vector_name = request.vector_name.clone().unwrap_or(DEFAULT_VECTOR_NAME.to_owned());
+            let vector_name = request
+                .vector_name
+                .clone()
+                .unwrap_or(DEFAULT_VECTOR_NAME.to_owned());
             let all_vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = all_vectors
                 .iter()
                 .map(|rec| (rec.id, rec.vectors.as_ref().unwrap()[&vector_name].clone()))
@@ -735,7 +738,10 @@ impl Collection {
                 .into_iter()
                 .zip(request.clone().searches.into_iter())
                 .map(|(without_payload_result, req)| {
-                    let vector_name: String = req.vector_name.clone().unwrap_or(DEFAULT_VECTOR_NAME.to_owned());
+                    let vector_name: String = req
+                        .vector_name
+                        .clone()
+                        .unwrap_or(DEFAULT_VECTOR_NAME.to_owned());
                     self.fill_search_result_with_payload(
                         vector_name,
                         without_payload_result,
@@ -839,7 +845,8 @@ impl Collection {
                 // So we just filter out them.
                 records_map.remove(&scored_point.id).map(|record| {
                     scored_point.payload = record.payload;
-                    scored_point.vector = record.vectors.map(|vectors| vectors[&vector_name].clone());
+                    scored_point.vector =
+                        record.vectors.map(|vectors| vectors[&vector_name].clone());
                     scored_point
                 })
             })

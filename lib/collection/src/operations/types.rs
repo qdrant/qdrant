@@ -6,7 +6,7 @@ use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
-use segment::entry::entry_point::{OperationError, AllVectors};
+use segment::entry::entry_point::{AllVectors, OperationError};
 use segment::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
     SeqNumberType, VectorElementType, WithPayloadInterface,

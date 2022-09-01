@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
-use segment::entry::entry_point::{OperationResult, SegmentEntry, AllVectors};
+use segment::entry::entry_point::{AllVectors, OperationResult, SegmentEntry};
 use segment::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     SeqNumberType,

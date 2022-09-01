@@ -346,15 +346,15 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
         let converted_payload = proto_to_payloads(payload)?;
 
         todo!() //todo(ivan)
-/*
-        Ok(Self {
-            id: id
-                .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
-                .try_into()?,
-            vector,
-            payload: Some(converted_payload),
-        })
-        */
+                /*
+                Ok(Self {
+                    id: id
+                        .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
+                        .try_into()?,
+                    vector,
+                    payload: Some(converted_payload),
+                })
+                */
     }
 }
 
@@ -363,24 +363,24 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
         todo!() //todo(ivan)
-        /*
-        let PointStruct {
-            id,
-            vector,
-            payload,
-        } = value;
+                /*
+                let PointStruct {
+                    id,
+                    vector,
+                    payload,
+                } = value;
 
-        let converted_payload = match payload {
-            None => HashMap::new(),
-            Some(payload) => payload_to_proto(payload),
-        };
+                let converted_payload = match payload {
+                    None => HashMap::new(),
+                    Some(payload) => payload_to_proto(payload),
+                };
 
-        Ok(Self {
-            id: Some(id.into()),
-            vector,
-            payload: converted_payload,
-        })
-        */
+                Ok(Self {
+                    id: Some(id.into()),
+                    vector,
+                    payload: converted_payload,
+                })
+                */
     }
 }
 
