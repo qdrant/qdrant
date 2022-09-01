@@ -575,6 +575,14 @@ impl SegmentEntry for Segment {
         self.vector_by_offset(vector_name, internal_id)
     }
 
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<AllVectors> {
+        let mut result = AllVectors::new();
+        for vector_name in self.vector_data.keys() {
+            result.insert(vector_name.clone(), self.vector(vector_name, point_id)?);
+        }
+        Ok(result)
+    }
+
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_by_offset(internal_id)

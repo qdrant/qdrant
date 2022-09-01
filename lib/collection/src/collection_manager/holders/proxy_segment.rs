@@ -6,12 +6,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use segment::common::only_default_vector;
 use segment::entry::entry_point::{
     AllVectors, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use segment::index::field_index::CardinalityEstimation;
-use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
@@ -80,8 +78,8 @@ impl ProxySegment {
             return Ok(false);
         }
 
-        let (vector, payload) = (
-            wrapped_segment_guard.vector(DEFAULT_VECTOR_NAME, point_id)?,
+        let (all_vectors, payload) = (
+            wrapped_segment_guard.all_vectors(point_id)?,
             wrapped_segment_guard.payload(point_id)?,
         );
 
@@ -97,7 +95,7 @@ impl ProxySegment {
         let segment_arc = self.write_segment.get();
         let mut write_segment = segment_arc.write();
 
-        write_segment.upsert_point(op_num, point_id, &only_default_vector(&vector))?;
+        write_segment.upsert_point(op_num, point_id, &all_vectors)?;
         write_segment.set_full_payload(op_num, point_id, &payload)?;
 
         Ok(true)
@@ -368,6 +366,21 @@ impl SegmentEntry for ProxySegment {
                 .read()
                 .vector(vector_name, point_id)
         };
+    }
+
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<AllVectors> {
+        let mut result = AllVectors::new();
+        for vector_name in self
+            .wrapped_segment
+            .get()
+            .read()
+            .config()
+            .vector_data
+            .keys()
+        {
+            result.insert(vector_name.clone(), self.vector(vector_name, point_id)?);
+        }
+        Ok(result)
     }
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
@@ -674,6 +687,8 @@ impl SegmentEntry for ProxySegment {
 mod tests {
     use std::fs::read_dir;
 
+    use segment::common::only_default_vector;
+    use segment::segment::DEFAULT_VECTOR_NAME;
     use segment::types::FieldCondition;
     use tempfile::Builder;
 
