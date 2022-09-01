@@ -403,7 +403,7 @@ impl SegmentEntry for Segment {
         res
     }
 
-    fn upsert_point(
+    fn upsert_vector(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -949,9 +949,9 @@ mod tests {
         let mut segment = build_segment(dir.path(), &config).unwrap();
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-        segment.upsert_point(100, 4.into(), &vec4).unwrap();
+        segment.upsert_vector(100, 4.into(), &vec4).unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-        segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        segment.upsert_vector(101, 6.into(), &vec6).unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
@@ -1006,7 +1006,7 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment.upsert_vector(0, 0.into(), &[1.0, 1.0]).unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
 
@@ -1085,7 +1085,7 @@ mod tests {
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment.upsert_vector(0, 0.into(), &[1.0, 1.0]).unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();
@@ -1161,7 +1161,7 @@ mod tests {
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment.upsert_vector(0, 0.into(), &[1.0, 1.0]).unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();
@@ -1206,7 +1206,7 @@ mod tests {
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment.upsert_vector(0, 0.into(), &[1.0, 1.0]).unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();

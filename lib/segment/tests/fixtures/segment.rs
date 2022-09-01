@@ -20,11 +20,11 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-    segment1.upsert_point(1, 1.into(), &vec1).unwrap();
-    segment1.upsert_point(2, 2.into(), &vec2).unwrap();
-    segment1.upsert_point(3, 3.into(), &vec3).unwrap();
-    segment1.upsert_point(4, 4.into(), &vec4).unwrap();
-    segment1.upsert_point(5, 5.into(), &vec5).unwrap();
+    segment1.upsert_vector(1, 1.into(), &vec1).unwrap();
+    segment1.upsert_vector(2, 2.into(), &vec2).unwrap();
+    segment1.upsert_vector(3, 3.into(), &vec3).unwrap();
+    segment1.upsert_vector(4, 4.into(), &vec4).unwrap();
+    segment1.upsert_vector(5, 5.into(), &vec5).unwrap();
 
     let payload_key = "color";
 
@@ -51,11 +51,11 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec4 = vec![-1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![-1.0, 0.0, 0.0, 0.0];
 
-    segment2.upsert_point(11, 11.into(), &vec1).unwrap();
-    segment2.upsert_point(12, 12.into(), &vec2).unwrap();
-    segment2.upsert_point(13, 13.into(), &vec3).unwrap();
-    segment2.upsert_point(14, 14.into(), &vec4).unwrap();
-    segment2.upsert_point(15, 15.into(), &vec5).unwrap();
+    segment2.upsert_vector(11, 11.into(), &vec1).unwrap();
+    segment2.upsert_vector(12, 12.into(), &vec2).unwrap();
+    segment2.upsert_vector(13, 13.into(), &vec3).unwrap();
+    segment2.upsert_vector(14, 14.into(), &vec4).unwrap();
+    segment2.upsert_vector(15, 15.into(), &vec5).unwrap();
 
     let payload_key = "color";
 
