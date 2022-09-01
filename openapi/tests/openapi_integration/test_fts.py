@@ -240,7 +240,7 @@ def test_scroll_with_prefix():
                     {
                         "key": "title",
                         "match": {
-                            "text": "ROBOT + LAWS",
+                            "text": "ROBO",
                         }
                     }
                 ]
