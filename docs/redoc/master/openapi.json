@@ -2834,7 +2834,7 @@
         }
       },
       "PayloadIndexInfo": {
-        "description": "Payload field type & index information",
+        "description": "Display payload field type & index information",
         "type": "object",
         "required": [
           "data_type"
@@ -2842,6 +2842,16 @@
         "properties": {
           "data_type": {
             "$ref": "#/components/schemas/PayloadSchemaType"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayloadSchemaParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -2852,7 +2862,54 @@
           "keyword",
           "integer",
           "float",
-          "geo"
+          "geo",
+          "text"
+        ]
+      },
+      "PayloadSchemaParams": {
+        "description": "Payload type with parameters",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "tokenizer": {
+                "$ref": "#/components/schemas/TokenizerType"
+              },
+              "min_token_len": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0,
+                "nullable": true
+              },
+              "max_token_len": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0,
+                "nullable": true
+              },
+              "lowercase": {
+                "type": "boolean",
+                "nullable": true
+              }
+            }
+          }
+        ]
+      },
+      "TokenizerType": {
+        "type": "string",
+        "enum": [
+          "ngram",
+          "whitespace",
+          "word"
         ]
       },
       "PointRequest": {
@@ -3961,10 +4018,10 @@
           "field_name": {
             "type": "string"
           },
-          "field_type": {
+          "field_schema": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PayloadSchemaType"
+                "$ref": "#/components/schemas/PayloadFieldSchema"
               },
               {
                 "nullable": true
@@ -3972,6 +4029,16 @@
             ]
           }
         }
+      },
+      "PayloadFieldSchema": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PayloadSchemaType"
+          },
+          {
+            "$ref": "#/components/schemas/PayloadSchemaParams"
+          }
+        ]
       },
       "PointsSelector": {
         "anyOf": [

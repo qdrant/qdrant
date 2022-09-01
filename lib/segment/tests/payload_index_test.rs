@@ -8,7 +8,7 @@ mod tests {
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{
         generate_diverse_payload, random_filter, random_vector, FLICKING_KEY, GEO_KEY, INT_KEY,
-        INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY,
+        INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY, TEXT_KEY,
     };
     use segment::index::PayloadIndex;
     use segment::segment::Segment;
@@ -41,7 +41,7 @@ mod tests {
 
         let mut opnum = 0;
         struct_segment
-            .create_field_index(opnum, INT_KEY_2, &Some(PayloadSchemaType::Integer))
+            .create_field_index(opnum, INT_KEY_2, Some(&PayloadSchemaType::Integer.into()))
             .unwrap();
 
         opnum += 1;
@@ -63,16 +63,23 @@ mod tests {
         }
 
         struct_segment
-            .create_field_index(opnum, STR_KEY, &Some(PayloadSchemaType::Keyword))
+            .create_field_index(opnum, STR_KEY, Some(&PayloadSchemaType::Keyword.into()))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, INT_KEY, &None)
+            .create_field_index(opnum, INT_KEY, None)
             .unwrap();
         struct_segment
-            .create_field_index(opnum, GEO_KEY, &Some(PayloadSchemaType::Geo))
+            .create_field_index(opnum, GEO_KEY, Some(&PayloadSchemaType::Geo.into()))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, FLICKING_KEY, &Some(PayloadSchemaType::Integer))
+            .create_field_index(opnum, TEXT_KEY, Some(&PayloadSchemaType::Text.into()))
+            .unwrap();
+        struct_segment
+            .create_field_index(
+                opnum,
+                FLICKING_KEY,
+                Some(&PayloadSchemaType::Integer.into()),
+            )
             .unwrap();
 
         for _ in 0..points_to_clear {

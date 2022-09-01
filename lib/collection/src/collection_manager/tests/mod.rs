@@ -5,7 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::SegmentEntry;
-use segment::types::{PayloadKeyType, PayloadSchemaType, PointIdType};
+use segment::types::{PayloadFieldSchema, PayloadKeyType, PointIdType};
 use tempfile::Builder;
 
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
@@ -25,7 +25,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
     let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
     let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
     let proxy_created_indexes = Arc::new(RwLock::new(
-        HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+        HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
     ));
 
     let proxy = ProxySegment::new(

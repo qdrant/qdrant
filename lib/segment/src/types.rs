@@ -16,6 +16,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::common::utils;
+use crate::data_types::text_index::TextIndexParams;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 
@@ -183,11 +184,14 @@ pub enum SegmentType {
     Special,
 }
 
-/// Payload field type & index information
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+/// Display payload field type & index information
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct PayloadIndexInfo {
     pub data_type: PayloadSchemaType,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<PayloadSchemaParams>,
 }
 
 /// Aggregated information about segment
@@ -545,6 +549,63 @@ pub enum PayloadSchemaType {
     Integer,
     Float,
     Geo,
+    Text,
+}
+
+/// Payload type with parameters
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum PayloadSchemaParams {
+    Text(TextIndexParams),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum PayloadFieldSchema {
+    FieldType(PayloadSchemaType),
+    FieldParams(PayloadSchemaParams),
+}
+
+impl From<PayloadSchemaType> for PayloadFieldSchema {
+    fn from(payload_schema_type: PayloadSchemaType) -> Self {
+        PayloadFieldSchema::FieldType(payload_schema_type)
+    }
+}
+
+impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
+    type Error = String;
+
+    fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
+        match (index_info.data_type, index_info.params) {
+            (PayloadSchemaType::Text, Some(PayloadSchemaParams::Text(params))) => Ok(
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
+            ),
+            (data_type, Some(_)) => Err(format!(
+                "Payload field with type {:?} has unexpected params",
+                data_type
+            )),
+            (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
+        }
+    }
+}
+
+impl From<PayloadFieldSchema> for PayloadIndexInfo {
+    fn from(field_type: PayloadFieldSchema) -> Self {
+        match field_type {
+            PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
+                data_type,
+                params: None,
+            },
+            PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
+                PayloadSchemaParams::Text(_) => PayloadIndexInfo {
+                    data_type: PayloadSchemaType::Text,
+                    params: Some(schema_params),
+                },
+            },
+        }
+    }
 }
 
 pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
@@ -588,26 +649,6 @@ pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
     }
 }
 
-/// Match by keyword (deprecated)
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[deprecated]
-pub struct MatchKeyword {
-    /// Keyword value to match
-    #[deprecated]
-    pub keyword: String,
-}
-
-/// Match filter request (deprecated)
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[deprecated]
-pub struct MatchInteger {
-    /// Integer value to match
-    #[deprecated]
-    pub integer: IntPayloadType,
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ValueVariants {
@@ -616,10 +657,24 @@ pub enum ValueVariants {
     Bool(bool),
 }
 
+/// Exact match of the given value
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchValue {
     pub value: ValueVariants,
+}
+
+/// Full-text match of the strings.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchText {
+    pub text: String,
+}
+
+impl From<String> for MatchText {
+    fn from(text: String) -> Self {
+        MatchText { text }
+    }
 }
 
 /// Match filter request
@@ -628,8 +683,7 @@ pub struct MatchValue {
 #[serde(untagged)]
 pub enum MatchInterface {
     Value(MatchValue),
-    Keyword(MatchKeyword),
-    Integer(MatchInteger),
+    Text(MatchText),
 }
 
 /// Match filter request
@@ -638,20 +692,14 @@ pub enum MatchInterface {
 #[serde(untagged)]
 pub enum Match {
     Value(MatchValue),
-    Keyword(MatchKeyword),
-    Integer(MatchInteger),
+    Text(MatchText),
 }
 
 impl From<MatchInterface> for Match {
     fn from(value: MatchInterface) -> Self {
         match value {
             MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
-            MatchInterface::Keyword(MatchKeyword { keyword }) => Self::Value(MatchValue {
-                value: ValueVariants::Keyword(keyword),
-            }),
-            MatchInterface::Integer(MatchInteger { integer }) => Self::Value(MatchValue {
-                value: ValueVariants::Integer(integer),
-            }),
+            MatchInterface::Text(text) => Self::Text(MatchText { text: text.text }),
         }
     }
 }
@@ -1117,33 +1165,6 @@ mod tests {
         let query = r#"
         {
             "key": "hello",
-            "match": { "integer": 42 }
-        }
-        "#;
-        let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(
-            condition.r#match.unwrap(),
-            Match::Value(MatchValue {
-                value: ValueVariants::Integer(42)
-            })
-        );
-
-        let query = r#"
-        {
-            "key": "hello",
-            "match": { "keyword": "world" }
-        }"#;
-        let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(
-            condition.r#match.unwrap(),
-            Match::Value(MatchValue {
-                value: ValueVariants::Keyword("world".to_owned())
-            })
-        );
-
-        let query = r#"
-        {
-            "key": "hello",
             "match": { "value": 42 }
         }
         "#;
@@ -1193,7 +1214,7 @@ mod tests {
                 {
                     "key": "hello",
                     "match": {
-                        "integer": 42
+                        "value": 42
                     }
                 },
                 {
@@ -1298,6 +1319,21 @@ mod tests {
         assert_ne!(payload, Default::default());
         remove_value_from_json_map("b", &mut payload.0);
         assert_eq!(payload, Default::default());
+    }
+
+    #[test]
+    fn test_payload_parsing() {
+        let ft = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let ft_json = serde_json::to_string(&ft).unwrap();
+        eprintln!("ft_json = {:?}", ft_json);
+
+        let ft = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(Default::default()));
+        let ft_json = serde_json::to_string(&ft).unwrap();
+        eprintln!("ft_json = {:?}", ft_json);
+
+        let query = r#""keyword""#;
+        let field_type: PayloadSchemaType = serde_json::from_str(query).unwrap();
+        eprintln!("field_type = {:?}", field_type);
     }
 }
 

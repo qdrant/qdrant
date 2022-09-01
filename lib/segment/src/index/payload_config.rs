@@ -5,14 +5,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::entry::entry_point::OperationResult;
-use crate::types::{PayloadKeyType, PayloadSchemaType};
+use crate::types::{PayloadFieldSchema, PayloadKeyType};
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 
 /// Keeps information of which field should be index
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct PayloadConfig {
-    pub indexed_fields: HashMap<PayloadKeyType, PayloadSchemaType>,
+    pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
 }
 
 impl PayloadConfig {

@@ -9,14 +9,14 @@ use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
 use crate::index::PayloadIndex;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
-use crate::types::{PayloadKeyType, PayloadSchemaType, SegmentConfig};
+use crate::types::{PayloadFieldSchema, PayloadKeyType, SegmentConfig};
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
     pub segment: Option<Segment>,
     pub destination_path: PathBuf,
     pub temp_path: PathBuf,
-    pub indexed_fields: HashMap<PayloadKeyType, PayloadSchemaType>,
+    pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
 }
 
 impl SegmentBuilder {
@@ -127,7 +127,7 @@ impl SegmentBuilder {
             self.segment = None;
 
             for (field, payload_schema) in &self.indexed_fields {
-                segment.create_field_index(segment.version(), field, &Some(*payload_schema))?;
+                segment.create_field_index(segment.version(), field, Some(payload_schema))?;
                 if stopped.load(Ordering::Relaxed) {
                     return Err(OperationError::Cancelled {
                         description: "Cancelled by external thread".to_string(),

@@ -23,7 +23,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
     SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
@@ -616,14 +616,7 @@ impl SegmentEntry for Segment {
             .borrow()
             .indexed_fields()
             .into_iter()
-            .map(|(key, index_schema)| {
-                (
-                    key,
-                    PayloadIndexInfo {
-                        data_type: index_schema,
-                    },
-                )
-            })
+            .map(|(key, index_schema)| (key, index_schema.into()))
             .collect();
 
         SegmentInfo {
@@ -741,14 +734,14 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: u64,
         key: PayloadKeyTypeRef,
-        field_type: &Option<PayloadSchemaType>,
+        field_type: Option<&PayloadFieldSchema>,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, None, |segment| match field_type {
-            Some(schema_type) => {
+            Some(schema) => {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .set_indexed(key, *schema_type)?;
+                    .set_indexed(key, schema.clone())?;
                 Ok(true)
             }
             None => match segment.infer_from_payload_data(key)? {
@@ -759,14 +752,14 @@ impl SegmentEntry for Segment {
                     segment
                         .payload_index
                         .borrow_mut()
-                        .set_indexed(key, schema_type)?;
+                        .set_indexed(key, schema_type.into())?;
                     Ok(true)
                 }
             },
         })
     }
 
-    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.payload_index.borrow().indexed_fields()
     }
 
@@ -1018,7 +1011,7 @@ mod tests {
                 {
                     "key": "metadata.height",
                     "match": {
-                        "integer": 50
+                        "value": 50
                     }
                 }
             ]
@@ -1031,7 +1024,7 @@ mod tests {
                 {
                     "key": "metadata.height",
                     "match": {
-                        "integer": 60
+                        "value": 60
                     }
                 }
             ]

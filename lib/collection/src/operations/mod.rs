@@ -10,7 +10,7 @@ pub mod types;
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
-use segment::types::{ExtendedPointId, PayloadSchemaType};
+use segment::types::{ExtendedPointId, PayloadFieldSchema};
 use serde::{Deserialize, Serialize};
 
 use self::types::CollectionResult;
@@ -21,7 +21,7 @@ use crate::shard::ShardId;
 #[serde(rename_all = "snake_case")]
 pub struct CreateIndex {
     pub field_name: String,
-    pub field_type: Option<PayloadSchemaType>,
+    pub field_type: Option<PayloadFieldSchema>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

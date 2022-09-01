@@ -7,7 +7,7 @@ use collection::operations::types::{
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shard::ShardId;
 use schemars::JsonSchema;
-use segment::types::{PayloadSchemaType, ScoredPoint};
+use segment::types::{PayloadFieldSchema, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -15,7 +15,8 @@ use storage::content_manager::toc::TableOfContent;
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateFieldIndex {
     pub field_name: String,
-    pub field_type: Option<PayloadSchemaType>,
+    #[serde(alias = "field_type")]
+    pub field_schema: Option<PayloadFieldSchema>,
 }
 
 pub async fn do_upsert_points(
@@ -108,7 +109,7 @@ pub async fn do_create_index(
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
             field_name: operation.field_name,
-            field_type: operation.field_type,
+            field_type: operation.field_schema,
         }),
     );
     toc.update(collection_name, collection_operation, shard_selection, wait)

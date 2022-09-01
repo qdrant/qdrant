@@ -350,7 +350,7 @@ mod tests {
             opnum.next().unwrap(),
             &FieldIndexOperations::CreateIndex(CreateIndex {
                 field_name: payload_field.to_owned(),
-                field_type: Some(PayloadSchemaType::Integer),
+                field_type: Some(PayloadSchemaType::Integer.into()),
             }),
         )
         .unwrap();
