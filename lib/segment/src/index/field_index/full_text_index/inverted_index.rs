@@ -34,7 +34,7 @@ impl ParsedQuery {
 
 pub struct InvertedIndex {
     postings: BTreeMap<String, PostingList>,
-    pub point_to_docs: Vec<Document>,
+    pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
 
@@ -61,7 +61,7 @@ impl InvertedIndex {
                 .resize(idx as usize + 1, Default::default());
         }
 
-        self.point_to_docs[idx as usize] = document;
+        self.point_to_docs[idx as usize] = Some(document);
     }
 
     pub fn remove_document(&mut self, idx: PointOffsetType) -> Option<Document> {
@@ -69,11 +69,11 @@ impl InvertedIndex {
             return None; // Already removed or never actually existed
         }
 
-        let removed_doc = std::mem::take(&mut self.point_to_docs[idx as usize]);
+        let removed_doc = match std::mem::take(&mut self.point_to_docs[idx as usize]) {
+            Some(doc) => doc,
+            None => return None,
+        };
 
-        if removed_doc.is_empty() {
-            return None;
-        }
         self.points_count -= 1;
 
         for removed_token in &removed_doc.tokens {
@@ -100,18 +100,8 @@ impl InvertedIndex {
         }
         let postings = postings_opt.unwrap();
         if postings.is_empty() {
-            return Box::new(
-                self.point_to_docs
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, doc)| {
-                        if doc.is_empty() {
-                            None
-                        } else {
-                            Some(idx as PointOffsetType)
-                        }
-                    }),
-            );
+            // Empty request -> no matches
+            return Box::new(vec![].into_iter());
         }
         intersect_btree_iterator(postings)
     }
@@ -137,7 +127,13 @@ impl InvertedIndex {
         }
         let postings = postings_opt.unwrap();
         if postings.is_empty() {
-            return CardinalityEstimation::unknown(self.points_count);
+            // Empty request -> no matches
+            return CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                min: 0,
+                exp: 0,
+                max: 0,
+            };
         }
         // Smallest posting is the largest possible cardinality
         let smallest_posting = postings.iter().map(|posting| posting.len()).min().unwrap();

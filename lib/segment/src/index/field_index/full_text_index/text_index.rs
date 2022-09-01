@@ -61,7 +61,10 @@ impl FullTextIndex {
     }
 
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
-        self.inverted_index.point_to_docs.get(idx as usize)
+        match self.inverted_index.point_to_docs.get(idx as usize) {
+            Some(Some(doc)) => Some(doc),
+            _ => None,
+        }
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
@@ -89,10 +92,8 @@ impl FullTextIndex {
 
 impl ValueIndexer<String> for FullTextIndex {
     fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
-        if let Some(document) = self.get_doc(idx) {
-            if !document.is_empty() {
-                self.remove_point(idx)?;
-            }
+        if self.get_doc(idx).is_some() {
+            self.remove_point(idx)?;
         }
 
         if values.is_empty() {
@@ -114,8 +115,11 @@ impl ValueIndexer<String> for FullTextIndex {
         self.inverted_index.index_document(idx, document);
 
         let db_idx = Self::store_key(&idx);
-        let db_document =
-            Self::serialize_document(&self.inverted_index.point_to_docs[idx as usize])?;
+        let db_document = Self::serialize_document(
+            self.inverted_index.point_to_docs[idx as usize]
+                .as_ref()
+                .unwrap(),
+        )?;
 
         self.db_wrapper.put(&db_idx, &db_document)?;
 
