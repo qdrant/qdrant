@@ -80,12 +80,22 @@ impl From<RenameAlias> for AliasOperations {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateVectorData {
+    pub size: usize,
+    pub distance: Distance,
+}
+
 /// Operation for creating new collection and (optionally) specify index params
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
-    pub vector_size: usize,
-    pub distance: Distance,
+    pub vector: Option<CreateVectorData>,
+    // todo(ivan): Cannot use HashMap because of Hash trait
+    pub vectors: Option<Vec<(String, CreateVectorData)>>,
+    pub vector_size: Option<usize>,
+    pub distance: Option<Distance>,
     /// Number of shards in collection.
     /// Default is 1 for standalone, otherwise equal to the number of nodes
     /// Minimum is 1

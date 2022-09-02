@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use collection::collection::Collection;
 use collection::collection_state;
-use collection::config::{CollectionConfig, CollectionParams};
+use collection::config::{CollectionConfig, CollectionParams, VectorParams};
 use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -199,6 +199,8 @@ impl TableOfContent {
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
         let CreateCollection {
+            vector,
+            vectors,
             vector_size,
             distance,
             shard_number,
@@ -224,16 +226,46 @@ impl TableOfContent {
                 "If shard number was supplied then this exact number should be used in a distribution"
             )
         }
-        // todo(ivan) use multiple names
+
+        let convert_vector_size_err = StorageError::BadInput {
+            description: "`vector_size` cannot be 0".to_string(),
+        };
+
         let collection_params = CollectionParams {
-            vector: None,
-            vectors: None,
-            vector_size: Some(NonZeroU64::new(vector_size as u64).ok_or(
-                StorageError::BadInput {
-                    description: "`vector_size` cannot be 0".to_string(),
-                },
-            )?),
-            distance: Some(distance),
+            vector: if let Some(vector) = vector {
+                Some(VectorParams {
+                    distance: vector.distance,
+                    size: NonZeroU64::new(vector.size as u64)
+                        .ok_or_else(|| convert_vector_size_err.clone())?,
+                })
+            } else {
+                None
+            },
+            vectors: if let Some(vectors) = vectors {
+                let mut map = HashMap::new();
+                for vector in vectors {
+                    map.insert(
+                        vector.0.clone(),
+                        VectorParams {
+                            distance: vector.1.distance,
+                            size: NonZeroU64::new(vector.1.size as u64)
+                                .ok_or_else(|| convert_vector_size_err.clone())?,
+                        },
+                    );
+                }
+                Some(map)
+            } else {
+                None
+            },
+            vector_size: if let Some(vector_size) = vector_size {
+                Some(
+                    NonZeroU64::new(vector_size as u64)
+                        .ok_or_else(|| convert_vector_size_err.clone())?,
+                )
+            } else {
+                None
+            },
+            distance,
             shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
                 .ok_or(StorageError::BadInput {
                     description: "`shard_number` cannot be 0".to_string(),

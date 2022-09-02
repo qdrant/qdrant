@@ -1,6 +1,15 @@
 syntax = "proto3";
 package qdrant;
 
+message VectorParams {
+  uint64 size = 1; // Size of the vectors
+  Distance distance = 2; // Distance function used for comparing vectors
+}
+
+message VectorParamsMap {
+  map<string, VectorParams> map = 1;
+}
+
 message GetCollectionInfoRequest {
   string collection_name = 1; // Name of the collection
 }
@@ -132,14 +141,16 @@ message OptimizersConfigDiff {
 
 message CreateCollection {
   string collection_name = 1; // Name of the collection
-  uint64 vector_size = 2; // Size of the vectors
-  Distance distance = 3; // Distance function used for comparing vectors
+  optional uint64 vector_size = 2; // Size of the vectors
+  optional Distance distance = 3; // Distance function used for comparing vectors
   optional HnswConfigDiff hnsw_config = 4; // Configuration of vector index
   optional WalConfigDiff wal_config = 5; // Configuration of the Write-Ahead-Log
   optional OptimizersConfigDiff optimizers_config = 6; // Configuration of the optimizers
   optional uint32 shard_number = 7; // Number of shards in the collection, default = 1
   optional bool on_disk_payload = 8; // If true - point's payload will not be stored in memory
   optional uint64 timeout = 9; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+  optional VectorParams vector = 10;
+  optional VectorParamsMap vectors = 11;
 }
 
 message UpdateCollection {
@@ -164,12 +175,7 @@ message CollectionParams {
   uint32 shard_number = 3; // Number of shards in collection
   bool on_disk_payload = 4; // If true - point's payload will not be stored in memory
   optional VectorParams vector = 5;
-  map<string, VectorParams> vectors = 6;
-}
-
-message VectorParams {
-  uint64 size = 1; // Size of the vectors
-  Distance distance = 2; // Distance function used for comparing vectors
+  optional VectorParamsMap vectors = 6;
 }
 
 message CollectionConfig {

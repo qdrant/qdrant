@@ -1,4 +1,18 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorParams {
+    /// Size of the vectors
+    #[prost(uint64, tag="1")]
+    pub size: u64,
+    /// Distance function used for comparing vectors
+    #[prost(enumeration="Distance", tag="2")]
+    pub distance: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorParamsMap {
+    #[prost(map="string, message", tag="1")]
+    pub map: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoRequest {
     /// Name of the collection
     #[prost(string, tag="1")]
@@ -126,11 +140,11 @@ pub struct CreateCollection {
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
     /// Size of the vectors
-    #[prost(uint64, tag="2")]
-    pub vector_size: u64,
+    #[prost(uint64, optional, tag="2")]
+    pub vector_size: ::core::option::Option<u64>,
     /// Distance function used for comparing vectors
-    #[prost(enumeration="Distance", tag="3")]
-    pub distance: i32,
+    #[prost(enumeration="Distance", optional, tag="3")]
+    pub distance: ::core::option::Option<i32>,
     /// Configuration of vector index
     #[prost(message, optional, tag="4")]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
@@ -149,6 +163,10 @@ pub struct CreateCollection {
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag="9")]
     pub timeout: ::core::option::Option<u64>,
+    #[prost(message, optional, tag="10")]
+    pub vector: ::core::option::Option<VectorParams>,
+    #[prost(message, optional, tag="11")]
+    pub vectors: ::core::option::Option<VectorParamsMap>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
@@ -196,17 +214,8 @@ pub struct CollectionParams {
     pub on_disk_payload: bool,
     #[prost(message, optional, tag="5")]
     pub vector: ::core::option::Option<VectorParams>,
-    #[prost(map="string, message", tag="6")]
-    pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct VectorParams {
-    /// Size of the vectors
-    #[prost(uint64, tag="1")]
-    pub size: u64,
-    /// Distance function used for comparing vectors
-    #[prost(enumeration="Distance", tag="2")]
-    pub distance: i32,
+    #[prost(message, optional, tag="6")]
+    pub vectors: ::core::option::Option<VectorParamsMap>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {

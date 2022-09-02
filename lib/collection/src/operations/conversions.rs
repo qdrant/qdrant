@@ -96,15 +96,17 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             config: Some(api::grpc::qdrant::CollectionConfig {
                 params: Some(api::grpc::qdrant::CollectionParams {
                     vector: config.params.vector.map(|vector| vector.into()),
-                    vectors: config
-                        .params
-                        .vectors
-                        .unwrap_or_default()
-                        .iter()
-                        .map(|(vector_name, vector_param)| {
-                            (vector_name.clone(), vector_param.clone().into())
-                        })
-                        .collect(),
+                    vectors: if let Some(vectors) = config.params.vectors {
+                        let map = vectors
+                            .iter()
+                            .map(|(vector_name, vector_param)| {
+                                (vector_name.clone(), vector_param.clone().into())
+                            })
+                            .collect();
+                        Some(api::grpc::qdrant::VectorParamsMap { map })
+                    } else {
+                        None
+                    },
                     vector_size: config.params.vector_size.map(|size| size.get()),
                     distance: config.params.distance.map(|distance| {
                         match distance {
@@ -240,10 +242,10 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     CollectionParams {
                         // todo(ivan) remove unwraps
                         vector: params.vector.map(|vector| vector.try_into().unwrap()),
-                        vectors: if params.vectors.is_empty() {
+                        vectors: if let Some(vectors) = params.vectors {
                             Some(
-                                params
-                                    .vectors
+                                vectors
+                                    .map
                                     .iter()
                                     .map(|(vector_name, vector_param)| {
                                         (
