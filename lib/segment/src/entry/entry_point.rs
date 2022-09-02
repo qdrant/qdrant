@@ -247,6 +247,8 @@ pub trait SegmentEntry {
 
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize>;
 
+    fn vector_dims(&self) -> HashMap<String, usize>;
+
     /// Number of vectors, marked as deleted
     fn deleted_count(&self) -> usize;
 

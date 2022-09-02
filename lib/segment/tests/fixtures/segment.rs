@@ -114,21 +114,21 @@ pub fn build_segment_3(path: &Path) -> Segment {
                 (
                     "vector1".to_owned(),
                     VectorDataConfig {
-                        vector_size: 4,
+                        size: 4,
                         distance: Distance::Dot,
                     },
                 ),
                 (
                     "vector2".to_owned(),
                     VectorDataConfig {
-                        vector_size: 1,
+                        size: 1,
                         distance: Distance::Dot,
                     },
                 ),
                 (
                     "vector3".to_owned(),
                     VectorDataConfig {
-                        vector_size: 4,
+                        size: 4,
                         distance: Distance::Euclid,
                     },
                 ),

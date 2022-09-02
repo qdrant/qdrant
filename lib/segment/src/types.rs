@@ -344,7 +344,7 @@ pub struct SegmentConfig {
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataConfig {
     /// Size of a vectors used
-    pub vector_size: usize,
+    pub size: usize,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
 }

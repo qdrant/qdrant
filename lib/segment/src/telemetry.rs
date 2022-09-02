@@ -223,7 +223,7 @@ impl Anonymize for SegmentConfig {
 impl Anonymize for VectorDataConfig {
     fn anonymize(&self) -> Self {
         VectorDataConfig {
-            vector_size: telemetry_round(self.vector_size),
+            size: telemetry_round(self.size),
             distance: self.distance,
         }
     }

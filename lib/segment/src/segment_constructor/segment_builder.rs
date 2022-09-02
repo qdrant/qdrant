@@ -57,12 +57,14 @@ impl SegmentBuilder {
             Some(self_segment) => {
                 self_segment.version = cmp::max(self_segment.version(), other.version());
 
+                // todo(ivan) remove DEFAULT_VECTOR_NAME
                 let other_id_tracker = other.id_tracker.borrow();
                 let other_vector_storage = other.vector_data[DEFAULT_VECTOR_NAME]
                     .vector_storage
                     .borrow();
                 let other_payload_index = other.payload_index.borrow();
 
+                // todo(ivan) remove DEFAULT_VECTOR_NAME
                 let mut id_tracker = self_segment.id_tracker.borrow_mut();
                 let mut vector_storage = self_segment.vector_data[DEFAULT_VECTOR_NAME]
                     .vector_storage
@@ -139,6 +141,7 @@ impl SegmentBuilder {
                 }
             }
 
+            // todo(ivan) remove DEFAULT_VECTOR_NAME
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow_mut()

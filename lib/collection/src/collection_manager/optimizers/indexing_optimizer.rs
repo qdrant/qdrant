@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::telemetry::TelemetryOperationAggregator;
 use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
@@ -66,7 +65,10 @@ impl IndexingOptimizer {
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.points_count();
                 let vector_size = vector_count
-                    * read_segment.vector_dim(DEFAULT_VECTOR_NAME).unwrap()
+                    * read_segment
+                        .vector_dims()
+                        .values()
+                        .fold(1, |acc, x| acc * x)
                     * VECTOR_ELEMENT_SIZE;
 
                 if read_segment.segment_type() == SegmentType::Special {
@@ -113,7 +115,10 @@ impl IndexingOptimizer {
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.points_count();
                 let vector_size = vector_count
-                    * read_segment.vector_dim(DEFAULT_VECTOR_NAME).unwrap()
+                    * read_segment
+                        .vector_dims()
+                        .values()
+                        .fold(1, |acc, x| acc * x)
                     * VECTOR_ELEMENT_SIZE;
 
                 let segment_config = read_segment.config();
@@ -311,10 +316,8 @@ mod tests {
                 vectors: None,
                 vector: None,
                 vector_size: Some(
-                    NonZeroU64::new(
-                        segment_config.vector_data[DEFAULT_VECTOR_NAME].vector_size as u64,
-                    )
-                    .unwrap(),
+                    NonZeroU64::new(segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64)
+                        .unwrap(),
                 ),
                 distance: Some(segment_config.vector_data[DEFAULT_VECTOR_NAME].distance),
                 shard_number: NonZeroU32::new(1).unwrap(),

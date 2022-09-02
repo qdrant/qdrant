@@ -841,7 +841,15 @@ impl SegmentEntry for Segment {
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data_config = &self.segment_config.vector_data[vector_name];
-        Ok(vector_data_config.vector_size)
+        Ok(vector_data_config.size)
+    }
+
+    fn vector_dims(&self) -> HashMap<String, usize> {
+        self.segment_config
+            .vector_data
+            .iter()
+            .map(|(vector_name, vector_config)| (vector_name.clone(), vector_config.size))
+            .collect()
     }
 
     fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
@@ -1001,7 +1009,7 @@ mod tests {
             vector_data: HashMap::from([(
                 DEFAULT_VECTOR_NAME.to_owned(),
                 VectorDataConfig {
-                    vector_size: dim,
+                    size: dim,
                     distance: Distance::Dot,
                 },
             )]),
@@ -1070,7 +1078,7 @@ mod tests {
             vector_data: HashMap::from([(
                 DEFAULT_VECTOR_NAME.to_owned(),
                 VectorDataConfig {
-                    vector_size: dim,
+                    size: dim,
                     distance: Distance::Dot,
                 },
             )]),
@@ -1158,7 +1166,7 @@ mod tests {
             vector_data: HashMap::from([(
                 DEFAULT_VECTOR_NAME.to_owned(),
                 VectorDataConfig {
-                    vector_size: 2,
+                    size: 2,
                     distance: Distance::Dot,
                 },
             )]),
@@ -1241,7 +1249,7 @@ mod tests {
             vector_data: HashMap::from([(
                 DEFAULT_VECTOR_NAME.to_owned(),
                 VectorDataConfig {
-                    vector_size: 2,
+                    size: 2,
                     distance: Distance::Dot,
                 },
             )]),
@@ -1293,7 +1301,7 @@ mod tests {
             vector_data: HashMap::from([(
                 DEFAULT_VECTOR_NAME.to_owned(),
                 VectorDataConfig {
-                    vector_size: 2,
+                    size: 2,
                     distance: Distance::Dot,
                 },
             )]),

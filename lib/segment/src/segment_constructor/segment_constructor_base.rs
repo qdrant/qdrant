@@ -83,13 +83,13 @@ fn create_segment(
                 open_simple_vector_storage(
                     database.clone(),
                     &db_column_name,
-                    vector_config.vector_size,
+                    vector_config.size,
                     vector_config.distance,
                 )?
             }
             StorageType::Mmap => open_memmap_vector_storage(
                 &vector_storage_path,
-                vector_config.vector_size,
+                vector_config.size,
                 vector_config.distance,
             )?,
         };
@@ -237,7 +237,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
     serde_json::from_str::<ObsoleteSegmentState>(&contents)
         .map(|state| {
             let vector_data = VectorDataConfig {
-                vector_size: state.config.vector_size,
+                size: state.config.vector_size,
                 distance: state.config.distance,
             };
             SegmentState {

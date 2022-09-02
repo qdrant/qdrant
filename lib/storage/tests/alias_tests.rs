@@ -65,8 +65,10 @@ mod tests {
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
                     collection_name: "test".to_string(),
                     create_collection: CreateCollection {
-                        vector_size: 10,
-                        distance: Distance::Cosine,
+                        vector: None,
+                        vectors: None,
+                        vector_size: Some(10),
+                        distance: Some(Distance::Cosine),
                         hnsw_config: None,
                         wal_config: None,
                         optimizers_config: None,

@@ -617,6 +617,10 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().vector_dim(vector_name)
     }
 
+    fn vector_dims(&self) -> HashMap<String, usize> {
+        self.write_segment.get().read().vector_dims()
+    }
+
     fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
         log::info!(
             "Taking a snapshot of a proxy segment into {:?}",

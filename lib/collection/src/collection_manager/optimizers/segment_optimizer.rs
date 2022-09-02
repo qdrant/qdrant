@@ -6,7 +6,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::SegmentEntry;
-use segment::segment::{Segment, DEFAULT_VECTOR_NAME};
+use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
@@ -78,7 +78,7 @@ pub trait SegmentOptimizer {
                     (
                         name.to_owned(),
                         VectorDataConfig {
-                            vector_size: params.size.get() as usize,
+                            size: params.size.get() as usize,
                             distance: params.distance,
                         },
                     )
@@ -108,7 +108,9 @@ pub trait SegmentOptimizer {
                 let segment = s.get();
                 let locked_segment = segment.read();
                 locked_segment.points_count()
-                    * locked_segment.vector_dim(DEFAULT_VECTOR_NAME).unwrap()
+                    * locked_segment.vector_dims()
+                        .values()
+                        .fold(1, |acc, x| acc * x)
                     * VECTOR_ELEMENT_SIZE
             })
             .sum();
@@ -130,7 +132,7 @@ pub trait SegmentOptimizer {
                     (
                         name.to_owned(),
                         VectorDataConfig {
-                            vector_size: params.size.get() as usize,
+                            size: params.size.get() as usize,
                             distance: params.distance,
                         },
                     )

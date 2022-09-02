@@ -23,7 +23,7 @@ pub fn build_simple_segment(
             vector_data: HashMap::from([(
                 DEFAULT_VECTOR_NAME.to_owned(),
                 VectorDataConfig {
-                    vector_size: dim,
+                    size: dim,
                     distance,
                 },
             )]),

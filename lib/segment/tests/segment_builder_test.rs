@@ -82,8 +82,7 @@ mod tests {
             vector_data: HashMap::from([(
                 DEFAULT_VECTOR_NAME.to_owned(),
                 VectorDataConfig {
-                    vector_size: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME]
-                        .vector_size,
+                    size: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].size,
                     distance: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                 },
             )]),

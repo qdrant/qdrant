@@ -287,7 +287,7 @@ impl LocalShard {
                         (
                             name.clone(),
                             VectorDataConfig {
-                                vector_size: params.size.get() as usize,
+                                size: params.size.get() as usize,
                                 distance: params.distance,
                             },
                         )
