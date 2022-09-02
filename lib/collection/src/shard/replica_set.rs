@@ -3,15 +3,14 @@ use std::sync::Arc;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use tokio::runtime::Handle;
 
-use crate::operations::{
-    types::{
-        CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-        SearchRequestBatch, UpdateResult,
-    },
-    CollectionUpdateOperations,
+use super::local_shard::LocalShard;
+use super::remote_shard::RemoteShard;
+use super::ShardOperation;
+use crate::operations::types::{
+    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
+    SearchRequestBatch, UpdateResult,
 };
-
-use super::{local_shard::LocalShard, remote_shard::RemoteShard, ShardOperation};
+use crate::operations::CollectionUpdateOperations;
 
 pub struct Replica<T: ShardOperation> {
     shard: T,

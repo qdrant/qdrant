@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tonic::transport::Uri;
 
+use self::replica_set::ReplicaSet;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult,
@@ -35,8 +36,6 @@ use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_versioning::suggest_next_version_path;
 use crate::telemetry::ShardTelemetry;
-
-use self::replica_set::ReplicaSet;
 
 pub type ShardId = u32;
 
