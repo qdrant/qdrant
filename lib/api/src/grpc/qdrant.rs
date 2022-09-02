@@ -1294,6 +1294,11 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Vector {
+    #[prost(float, repeated, tag="1")]
+    pub data: ::prost::alloc::vec::Vec<f32>,
+}
 // ---------------------------------------------
 // ---------------- RPC Requests ---------------
 // ---------------------------------------------
@@ -1650,8 +1655,8 @@ pub struct RetrievedPoint {
     pub id: ::core::option::Option<PointId>,
     #[prost(map="string, message", tag="2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    #[prost(float, repeated, tag="3")]
-    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(map="string, message", tag="3")]
+    pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResponse {
@@ -1834,8 +1839,8 @@ pub struct PointsIdsList {
 pub struct PointStruct {
     #[prost(message, optional, tag="1")]
     pub id: ::core::option::Option<PointId>,
-    #[prost(float, repeated, tag="2")]
-    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(map="string, message", tag="2")]
+    pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
     #[prost(map="string, message", tag="3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }

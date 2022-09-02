@@ -606,7 +606,7 @@ impl Collection {
             let vector_name = request
                 .vector_name
                 .clone()
-                .unwrap_or(DEFAULT_VECTOR_NAME.to_owned());
+                .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned());
             let all_vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = all_vectors
                 .iter()
                 .map(|rec| (rec.id, rec.vectors.as_ref().unwrap()[&vector_name].clone()))
@@ -741,7 +741,7 @@ impl Collection {
                     let vector_name: String = req
                         .vector_name
                         .clone()
-                        .unwrap_or(DEFAULT_VECTOR_NAME.to_owned());
+                        .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned());
                     self.fill_search_result_with_payload(
                         vector_name,
                         without_payload_result,

@@ -155,7 +155,14 @@ impl From<Record> for api::grpc::qdrant::RetrievedPoint {
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vector: todo!(), //todo(ivan) record.vectors.unwrap_or_default(),
+            vectors: record
+                .vectors
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(vector_name, vector_data)| {
+                    (vector_name, api::grpc::qdrant::Vector { data: vector_data })
+                })
+                .collect(),
         }
     }
 }
@@ -167,7 +174,13 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
         Ok(Self {
             id: retrieved_point.id.unwrap().try_into()?,
             payload: Some(proto_to_payloads(retrieved_point.payload)?),
-            vectors: todo!(), //todo(ivan) Some(retrieved_point.vector),
+            vectors: Some(
+                retrieved_point
+                    .vectors
+                    .into_iter()
+                    .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
+                    .collect(),
+            ),
         })
     }
 }
@@ -339,22 +352,23 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
     fn try_from(value: api::grpc::qdrant::PointStruct) -> Result<Self, Self::Error> {
         let api::grpc::qdrant::PointStruct {
             id,
-            vector,
+            vectors,
             payload,
         } = value;
 
         let converted_payload = proto_to_payloads(payload)?;
+        let vectors = vectors
+            .into_iter()
+            .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
+            .collect();
 
-        todo!() //todo(ivan)
-                /*
-                Ok(Self {
-                    id: id
-                        .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
-                        .try_into()?,
-                    vector,
-                    payload: Some(converted_payload),
-                })
-                */
+        Ok(Self {
+            id: id
+                .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
+                .try_into()?,
+            vectors,
+            payload: Some(converted_payload),
+        })
     }
 }
 
@@ -362,25 +376,28 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        todo!() //todo(ivan)
-                /*
-                let PointStruct {
-                    id,
-                    vector,
-                    payload,
-                } = value;
+        let PointStruct {
+            id,
+            vectors,
+            payload,
+        } = value;
 
-                let converted_payload = match payload {
-                    None => HashMap::new(),
-                    Some(payload) => payload_to_proto(payload),
-                };
+        let converted_payload = match payload {
+            None => HashMap::new(),
+            Some(payload) => payload_to_proto(payload),
+        };
+        let vectors = vectors
+            .into_iter()
+            .map(|(vector_name, vector_data)| {
+                (vector_name, api::grpc::qdrant::Vector { data: vector_data })
+            })
+            .collect();
 
-                Ok(Self {
-                    id: Some(id.into()),
-                    vector,
-                    payload: converted_payload,
-                })
-                */
+        Ok(Self {
+            id: Some(id.into()),
+            vectors,
+            payload: converted_payload,
+        })
     }
 }
 
@@ -400,7 +417,13 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
             });
             let point = api::grpc::qdrant::PointStruct {
                 id,
-                vector: todo!(), //todo(ivan) vector.unwrap_or_default(),
+                vectors: vector
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(vector_name, vector_data)| {
+                        (vector_name, api::grpc::qdrant::Vector { data: vector_data })
+                    })
+                    .collect(),
                 payload: payload.unwrap_or_default(),
             };
             points.push(point);
