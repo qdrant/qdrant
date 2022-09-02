@@ -8,6 +8,7 @@ use collection::operations::types::{
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardTransfer;
 use itertools::Itertools;
+use segment::common::only_default_vector;
 use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
 };
@@ -36,11 +37,11 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
                 .map(|x| x.into())
                 .collect_vec(),
             vectors: vec![
-                vec![1.0, 0.0, 1.0, 1.0],
-                vec![1.0, 0.0, 1.0, 0.0],
-                vec![1.0, 1.0, 1.0, 1.0],
-                vec![1.0, 1.0, 0.0, 1.0],
-                vec![1.0, 0.0, 0.0, 0.0],
+                only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
+                only_default_vector(&[1.0, 1.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 1.0, 0.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
             ],
             payloads: None,
         }
@@ -57,6 +58,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
     }
 
     let search_request = SearchRequest {
+        vector_name: None,
         vector: vec![1.0, 1.0, 1.0, 1.0],
         with_payload: None,
         with_vector: false,
@@ -96,7 +98,10 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
             ids: vec![0.into(), 1.into()],
-            vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
+            vectors: vec![
+                only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
+            ],
             payloads: serde_json::from_str(
                 r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
             )
@@ -115,6 +120,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     }
 
     let search_request = SearchRequest {
+        vector_name: None,
         vector: vec![1.0, 0.0, 1.0, 1.0],
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true,
@@ -176,11 +182,11 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
                     .map(|x| x.into())
                     .collect_vec(),
                 vectors: vec![
-                    vec![1.0, 0.0, 1.0, 1.0],
-                    vec![1.0, 0.0, 1.0, 0.0],
-                    vec![1.0, 1.0, 1.0, 1.0],
-                    vec![1.0, 1.0, 0.0, 1.0],
-                    vec![1.0, 0.0, 0.0, 0.0],
+                    only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+                    only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
+                    only_default_vector(&[1.0, 1.0, 1.0, 1.0]),
+                    only_default_vector(&[1.0, 1.0, 0.0, 1.0]),
+                    only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
                 ],
                 payloads: None,
             }
@@ -239,7 +245,10 @@ fn test_deserialization() {
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
             ids: vec![0.into(), 1.into()],
-            vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
+            vectors: vec![
+                only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
+            ],
             payloads: None,
         }
         .into(),
@@ -259,12 +268,12 @@ fn test_deserialization2() {
         vec![
             PointStruct {
                 id: 0.into(),
-                vector: vec![1.0, 0.0, 1.0, 1.0],
+                vectors: only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
                 payload: None,
             },
             PointStruct {
                 id: 1.into(),
-                vector: vec![1.0, 0.0, 1.0, 0.0],
+                vectors: only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
                 payload: None,
             },
         ]
@@ -298,15 +307,15 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
                 .map(|x| x.into())
                 .collect_vec(),
             vectors: vec![
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![1.0, 0.0, 0.0, 0.0],
-                vec![1.0, 0.0, 0.0, 0.0],
-                vec![0.0, 1.0, 0.0, 0.0],
-                vec![0.0, 1.0, 0.0, 0.0],
-                vec![0.0, 0.0, 1.0, 0.0],
-                vec![0.0, 0.0, 1.0, 0.0],
-                vec![0.0, 0.0, 0.0, 1.0],
-                vec![0.0, 0.0, 0.0, 1.0],
+                only_default_vector(&[0.0, 0.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 1.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 1.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 1.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 1.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 0.0, 1.0]),
+                only_default_vector(&[0.0, 0.0, 0.0, 1.0]),
             ],
             payloads: None,
         }
@@ -320,6 +329,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
     let result = collection
         .recommend_by(
             RecommendRequest {
+                vector_name: None,
                 positive: vec![0.into()],
                 negative: vec![8.into()],
                 filter: None,
@@ -359,15 +369,15 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 .map(|x| x.into())
                 .collect_vec(),
             vectors: vec![
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![1.0, 0.0, 0.0, 0.0],
-                vec![1.0, 0.0, 0.0, 0.0],
-                vec![0.0, 1.0, 0.0, 0.0],
-                vec![0.0, 1.0, 0.0, 0.0],
-                vec![0.0, 0.0, 1.0, 0.0],
-                vec![0.0, 0.0, 1.0, 0.0],
-                vec![0.0, 0.0, 0.0, 1.0],
-                vec![0.0, 0.0, 0.0, 1.0],
+                only_default_vector(&[0.0, 0.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 1.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 1.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 1.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 1.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 0.0, 1.0]),
+                only_default_vector(&[0.0, 0.0, 0.0, 1.0]),
             ],
             payloads: None,
         }
@@ -416,11 +426,11 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 .map(|x| x.into())
                 .collect_vec(),
             vectors: vec![
-                vec![1.0, 0.0, 1.0, 1.0],
-                vec![1.0, 0.0, 1.0, 0.0],
-                vec![1.0, 1.0, 1.0, 1.0],
-                vec![1.0, 1.0, 0.0, 1.0],
-                vec![1.0, 0.0, 0.0, 0.0],
+                only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
+                only_default_vector(&[1.0, 1.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 1.0, 0.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
             ],
             payloads: None,
         }
@@ -491,15 +501,15 @@ async fn test_promote_temporary_shards() {
                 .map(|x| x.into())
                 .collect_vec(),
             vectors: vec![
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![1.0, 0.0, 0.0, 0.0],
-                vec![1.0, 0.0, 0.0, 0.0],
-                vec![0.0, 1.0, 0.0, 0.0],
-                vec![0.0, 1.0, 0.0, 0.0],
-                vec![0.0, 0.0, 1.0, 0.0],
-                vec![0.0, 0.0, 1.0, 0.0],
-                vec![0.0, 0.0, 0.0, 1.0],
-                vec![0.0, 0.0, 0.0, 1.0],
+                only_default_vector(&[0.0, 0.0, 1.0, 1.0]),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 1.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 1.0, 0.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 1.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 1.0, 0.0]),
+                only_default_vector(&[0.0, 0.0, 0.0, 1.0]),
+                only_default_vector(&[0.0, 0.0, 0.0, 1.0]),
             ],
             payloads: None,
         }

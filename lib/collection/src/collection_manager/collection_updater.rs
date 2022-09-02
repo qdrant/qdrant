@@ -70,6 +70,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
+    use segment::common::only_default_vector;
     use segment::types::{Payload, WithPayload};
     use tempfile::Builder;
 
@@ -87,7 +88,10 @@ mod tests {
         let segments = build_test_holder(dir.path());
         let points = vec![1.into(), 500.into()];
 
-        let vectors = vec![vec![2., 2., 2., 2.], vec![2., 0., 2., 0.]];
+        let vectors = vec![
+            only_default_vector(&[2., 2., 2., 2.]),
+            only_default_vector(&[2., 0., 2., 0.]),
+        ];
 
         let res = upsert_points(&segments, 100, &points, &vectors, &None);
         assert!(matches!(res, Ok(1)));
@@ -104,13 +108,13 @@ mod tests {
         assert_eq!(records.len(), 3);
 
         for record in records {
-            let v = record.vector.unwrap();
+            let v = record.vectors.unwrap();
 
             if record.id == 1.into() {
-                assert_eq!(&v, &vec![2., 2., 2., 2.])
+                assert_eq!(&v, &only_default_vector(&[2., 2., 2., 2.]))
             }
             if record.id == 500.into() {
-                assert_eq!(&v, &vec![2., 0., 2., 0.])
+                assert_eq!(&v, &only_default_vector(&[2., 0., 2., 0.]))
             }
         }
 
@@ -133,7 +137,7 @@ mod tests {
         .unwrap();
 
         for record in records {
-            let _v = record.vector.unwrap();
+            let _v = record.vectors.unwrap();
             assert_ne!(record.id, 500.into());
         }
     }

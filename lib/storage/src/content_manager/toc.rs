@@ -224,11 +224,16 @@ impl TableOfContent {
                 "If shard number was supplied then this exact number should be used in a distribution"
             )
         }
+        // todo(ivan) use multiple names
         let collection_params = CollectionParams {
-            vector_size: NonZeroU64::new(vector_size as u64).ok_or(StorageError::BadInput {
-                description: "`vector_size` cannot be 0".to_string(),
-            })?,
-            distance,
+            vector: None,
+            vectors: None,
+            vector_size: Some(NonZeroU64::new(vector_size as u64).ok_or(
+                StorageError::BadInput {
+                    description: "`vector_size` cannot be 0".to_string(),
+                },
+            )?),
+            distance: Some(distance),
             shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
                 .ok_or(StorageError::BadInput {
                     description: "`shard_number` cannot be 0".to_string(),

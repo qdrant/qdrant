@@ -183,17 +183,30 @@ pub struct CollectionOperationResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
     /// Size of the vectors
-    #[prost(uint64, tag="1")]
-    pub vector_size: u64,
+    #[prost(uint64, optional, tag="1")]
+    pub vector_size: ::core::option::Option<u64>,
     /// Distance function used for comparing vectors
-    #[prost(enumeration="Distance", tag="2")]
-    pub distance: i32,
+    #[prost(enumeration="Distance", optional, tag="2")]
+    pub distance: ::core::option::Option<i32>,
     /// Number of shards in collection
     #[prost(uint32, tag="3")]
     pub shard_number: u32,
     /// If true - point's payload will not be stored in memory
     #[prost(bool, tag="4")]
     pub on_disk_payload: bool,
+    #[prost(message, optional, tag="5")]
+    pub vector: ::core::option::Option<VectorParams>,
+    #[prost(map="string, message", tag="6")]
+    pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorParams {
+    /// Size of the vectors
+    #[prost(uint64, tag="1")]
+    pub size: u64,
+    /// Distance function used for comparing vectors
+    #[prost(enumeration="Distance", tag="2")]
+    pub distance: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
@@ -1322,6 +1335,11 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Vector {
+    #[prost(float, repeated, tag="1")]
+    pub data: ::prost::alloc::vec::Vec<f32>,
+}
 // ---------------------------------------------
 // ---------------- RPC Requests ---------------
 // ---------------------------------------------
@@ -1503,6 +1521,9 @@ pub struct SearchPoints {
     /// Offset of the result
     #[prost(uint64, optional, tag="9")]
     pub offset: ::core::option::Option<u64>,
+    /// vector name
+    #[prost(string, optional, tag="10")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchPoints {
@@ -1564,6 +1585,9 @@ pub struct RecommendPoints {
     /// Offset of the result
     #[prost(uint64, optional, tag="10")]
     pub offset: ::core::option::Option<u64>,
+    /// vector name
+    #[prost(string, optional, tag="11")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchPoints {
@@ -1675,8 +1699,8 @@ pub struct RetrievedPoint {
     pub id: ::core::option::Option<PointId>,
     #[prost(map="string, message", tag="2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    #[prost(float, repeated, tag="3")]
-    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(map="string, message", tag="3")]
+    pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResponse {
@@ -1862,8 +1886,8 @@ pub struct PointsIdsList {
 pub struct PointStruct {
     #[prost(message, optional, tag="1")]
     pub id: ::core::option::Option<PointId>,
-    #[prost(float, repeated, tag="2")]
-    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(map="string, message", tag="2")]
+    pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
     #[prost(map="string, message", tag="3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }

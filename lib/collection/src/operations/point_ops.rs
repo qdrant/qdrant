@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use schemars::gen::SchemaGenerator;
 use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
+use segment::entry::entry_point::AllVectors;
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 
 use super::types::{CollectionError, CollectionResult};
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard, Validate};
 use crate::hash_ring::HashRing;
-use crate::operations::types::{Record, VectorType};
+use crate::operations::types::Record;
 use crate::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -17,8 +18,8 @@ use crate::shard::ShardId;
 pub struct PointStruct {
     /// Point id
     pub id: PointIdType,
-    /// Vector
-    pub vector: VectorType,
+    /// Vectors
+    pub vectors: AllVectors,
     /// Payload values (optional)
     pub payload: Option<Payload>,
 }
@@ -28,10 +29,10 @@ impl TryFrom<Record> for PointStruct {
     type Error = String;
 
     fn try_from(record: Record) -> Result<Self, Self::Error> {
-        match record.vector {
-            Some(vector) => Ok(Self {
+        match record.vectors {
+            Some(vectors) => Ok(Self {
                 id: record.id,
-                vector,
+                vectors,
                 payload: record.payload,
             }),
             None => Err("Vector is empty".to_string()),
@@ -43,7 +44,7 @@ impl TryFrom<Record> for PointStruct {
 #[serde(rename_all = "snake_case")]
 pub struct Batch {
     pub ids: Vec<PointIdType>,
-    pub vectors: Vec<VectorType>,
+    pub vectors: Vec<AllVectors>,
     pub payloads: Option<Vec<Option<Payload>>>,
 }
 
@@ -276,6 +277,8 @@ impl From<Vec<PointStruct>> for PointOperations {
 
 #[cfg(test)]
 mod tests {
+    use segment::common::only_default_vector;
+
     use super::*;
 
     #[test]
@@ -292,14 +295,14 @@ mod tests {
 
         let batch = PointInsertOperations::PointsBatch(Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: vec![vec![0.1]],
+            vectors: vec![only_default_vector(&[0.1])],
             payloads: None,
         });
         assert!(matches!(batch.validate(), Ok(())));
 
         let batch = PointInsertOperations::PointsBatch(Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: vec![vec![0.1]],
+            vectors: vec![only_default_vector(&[0.1])],
             payloads: Some(vec![]),
         });
         assert!(matches!(

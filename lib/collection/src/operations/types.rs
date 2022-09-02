@@ -6,7 +6,7 @@ use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
-use segment::entry::entry_point::OperationError;
+use segment::entry::entry_point::{AllVectors, OperationError};
 use segment::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
     SeqNumberType, VectorElementType, WithPayloadInterface,
@@ -24,9 +24,6 @@ use crate::config::CollectionConfig;
 use crate::save_on_disk;
 use crate::shard::{PeerId, ShardId};
 use crate::wal::WalError;
-
-/// Type of vector in API
-pub type VectorType = Vec<VectorElementType>;
 
 /// Current state of the collection
 #[derive(
@@ -61,8 +58,8 @@ pub struct Record {
     pub id: PointIdType,
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
-    /// Vector of the point
-    pub vector: Option<Vec<VectorElementType>>,
+    /// Vectors of the point
+    pub vectors: Option<AllVectors>,
 }
 
 /// Current statistics and configuration of the collection
@@ -193,6 +190,8 @@ pub struct ScrollResult {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
+    ///
+    pub vector_name: Option<String>,
     /// Look for vectors closest to this
     pub vector: Vec<VectorElementType>,
     /// Look only for points which satisfies this conditions
@@ -273,6 +272,8 @@ pub struct RecommendRequest {
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
+    ///
+    pub vector_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

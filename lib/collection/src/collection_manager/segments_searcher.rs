@@ -118,8 +118,8 @@ impl SegmentsSearcher {
                         } else {
                             None
                         },
-                        vector: if with_vector {
-                            Some(segment.vector(DEFAULT_VECTOR_NAME, id)?)
+                        vectors: if with_vector {
+                            Some(segment.all_vectors(id)?)
                         } else {
                             None
                         },
@@ -135,6 +135,7 @@ impl SegmentsSearcher {
 
 #[derive(PartialEq, Default)]
 struct BatchSearchParams<'a> {
+    pub vector_name: String,
     pub filter: Option<&'a Filter>,
     pub with_payload: WithPayload,
     pub with_vector: bool,
@@ -158,6 +159,10 @@ async fn search_in_segment(
             .unwrap_or(&WithPayloadInterface::Bool(false));
 
         let params = BatchSearchParams {
+            vector_name: search_query
+                .vector_name
+                .clone()
+                .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned()),
             filter: search_query.filter.as_ref(),
             with_payload: WithPayload::from(with_payload_interface),
             with_vector: search_query.with_vector,
@@ -173,7 +178,7 @@ async fn search_in_segment(
             // execute what has been batched so far
             if !vectors_batch.is_empty() {
                 let mut res = segment.get().read().search_batch(
-                    DEFAULT_VECTOR_NAME,
+                    &prev_params.vector_name,
                     &vectors_batch,
                     &prev_params.with_payload,
                     prev_params.with_vector,
@@ -194,7 +199,7 @@ async fn search_in_segment(
     // run last batch if any
     if !vectors_batch.is_empty() {
         let mut res = segment.get().read().search_batch(
-            DEFAULT_VECTOR_NAME,
+            &prev_params.vector_name,
             &vectors_batch,
             &prev_params.with_payload,
             prev_params.with_vector,
@@ -233,6 +238,7 @@ mod tests {
             limit: 5,
             score_threshold: None,
             offset: 0,
+            vector_name: None,
         };
 
         let batch_request = SearchRequestBatch {

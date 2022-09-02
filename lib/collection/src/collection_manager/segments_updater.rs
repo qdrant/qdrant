@@ -2,17 +2,16 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
-use segment::common::only_default_vector;
-use segment::entry::entry_point::{OperationResult, SegmentEntry};
+use segment::entry::entry_point::{AllVectors, OperationResult, SegmentEntry};
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    SeqNumberType, VectorElementType,
+    SeqNumberType,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
-use crate::operations::types::{CollectionError, CollectionResult, VectorType};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::FieldIndexOperations;
 
 /// A collection of functions for updating points and payloads stored in segments
@@ -148,10 +147,10 @@ fn upsert_with_payload(
     segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
     op_num: SeqNumberType,
     point_id: PointIdType,
-    vector: &[VectorElementType],
+    vectors: &AllVectors,
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
-    let mut res = segment.upsert_vector(op_num, point_id, &only_default_vector(vector))?;
+    let mut res = segment.upsert_vector(op_num, point_id, vectors)?;
     if let Some(full_payload) = payload {
         res &= segment.set_payload(op_num, point_id, full_payload)?;
     }
@@ -165,10 +164,10 @@ pub(crate) fn upsert_points(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
     ids: &[PointIdType],
-    vectors: &[VectorType],
+    vectors: &[AllVectors],
     payloads: &Option<Vec<Option<Payload>>>,
 ) -> CollectionResult<usize> {
-    let vectors_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
+    let vectors_map: HashMap<PointIdType, &AllVectors> = ids.iter().cloned().zip(vectors).collect();
     let payloads_map: HashMap<PointIdType, &Payload> = match payloads {
         None => Default::default(),
         Some(payloads_vector) => ids
@@ -246,7 +245,7 @@ pub(crate) fn process_point_operation(
                     let mut payloads = vec![];
                     for point in points {
                         ids.push(point.id);
-                        vectors.push(point.vector);
+                        vectors.push(point.vectors);
                         payloads.push(point.payload)
                     }
                     (ids, vectors, Some(payloads))

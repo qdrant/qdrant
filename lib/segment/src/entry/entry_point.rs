@@ -222,6 +222,8 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<Vec<VectorElementType>>;
 
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<AllVectors>;
+
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;

@@ -169,11 +169,16 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
             .await?;
-        let distance = self.config.read().await.params.distance;
+        let collection_params = self.config.read().await.params.clone();
         let top_results = res
             .into_iter()
             .zip(request.searches.iter())
             .map(|(vector_res, req)| {
+                // todo(ivan): remove unwrap
+                let distance = collection_params
+                    .get_vector_params(req.vector_name.as_ref())
+                    .unwrap()
+                    .distance;
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
                     scored_point.score = distance.postprocess_score(scored_point.score);
                     scored_point

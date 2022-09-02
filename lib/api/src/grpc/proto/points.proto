@@ -16,6 +16,9 @@ message PointId {
   }
 }
 
+message Vector {
+  repeated float data = 1;
+}
 
 // ---------------------------------------------
 // ---------------- RPC Requests ---------------
@@ -118,6 +121,7 @@ message SearchPoints {
   SearchParams params = 7; // Search config
   optional float score_threshold = 8; // If provided - cut off results with worse scores
   optional uint64 offset = 9; // Offset of the result
+  optional string vector_name = 10; // vector name
 }
 
 message SearchBatchPoints {
@@ -145,6 +149,7 @@ message RecommendPoints {
   SearchParams params = 8; // Search config
   optional float score_threshold = 9; // If provided - cut off results with worse scores
   optional uint64 offset = 10; // Offset of the result
+  optional string vector_name = 11; // vector name
 }
 
 message RecommendBatchPoints {
@@ -218,7 +223,7 @@ message CountResult {
 message RetrievedPoint {
   PointId id = 1;
   map<string, Value> payload = 2;
-  repeated float vector = 3;
+  map<string, Vector> vectors = 3;
 }
 
 message GetResponse {
@@ -327,7 +332,7 @@ message PointsIdsList {
 
 message PointStruct {
   PointId id = 1;
-  repeated float vector = 2;
+  map<string, Vector> vectors = 2;
   map<string, Value> payload = 3;
 }
 

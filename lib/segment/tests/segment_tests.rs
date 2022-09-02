@@ -131,7 +131,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_segment_3(dir.path());
 
-        let result = segment.upsert_point(
+        let result = segment.upsert_vector(
             6,
             6.into(),
             &AllVectors::from([
@@ -152,7 +152,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_segment_3(dir.path());
 
-        let result = segment.upsert_point(
+        let result = segment.upsert_vector(
             6,
             6.into(),
             &AllVectors::from([

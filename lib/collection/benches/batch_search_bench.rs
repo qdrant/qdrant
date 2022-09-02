@@ -12,6 +12,7 @@ use collection::shard::local_shard::LocalShard;
 use collection::shard::ShardOperation;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
+use segment::common::only_default_vector;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Condition, Distance, FieldCondition, Filter, Payload, Range};
 use serde_json::Map;
@@ -27,10 +28,10 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
     for i in 0..num_points {
         let mut payload_map = Map::new();
         payload_map.insert("a".to_string(), (i % 5).into());
-        let vector = random_vector(&mut rng, dim);
+        let vectors = only_default_vector(&random_vector(&mut rng, dim));
         let point = PointStruct {
             id: i.into(),
-            vector,
+            vectors,
             payload: Some(Payload(payload_map)),
         };
         points.push(point);
@@ -54,8 +55,10 @@ fn batch_search_bench(c: &mut Criterion) {
     };
 
     let collection_params = CollectionParams {
-        vector_size: NonZeroU64::new(100).unwrap(),
-        distance: Distance::Dot,
+        vector: None,
+        vectors: None,
+        vector_size: Some(NonZeroU64::new(100).unwrap()),
+        distance: Some(Distance::Dot),
         shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
         replication_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,
@@ -122,6 +125,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequest {
+                            vector_name: None,
                             vector: query,
                             filter: filter.clone(),
                             params: None,
@@ -154,6 +158,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequest {
+                            vector_name: None,
                             vector: query,
                             filter: filter.clone(),
                             params: None,

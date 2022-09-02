@@ -6,7 +6,9 @@ use itertools::Itertools;
 use segment::types::Distance;
 use tonic::Status;
 
-use crate::config::{default_replication_factor, CollectionConfig, CollectionParams, WalConfig};
+use crate::config::{
+    default_replication_factor, CollectionConfig, CollectionParams, VectorParams, WalConfig,
+};
 use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
@@ -93,13 +95,25 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             ram_data_size: ram_data_size as u64,
             config: Some(api::grpc::qdrant::CollectionConfig {
                 params: Some(api::grpc::qdrant::CollectionParams {
-                    vector_size: config.params.vector_size.get(),
-                    distance: match config.params.distance {
-                        segment::types::Distance::Cosine => api::grpc::qdrant::Distance::Cosine,
-                        segment::types::Distance::Euclid => api::grpc::qdrant::Distance::Euclid,
-                        segment::types::Distance::Dot => api::grpc::qdrant::Distance::Dot,
-                    }
-                    .into(),
+                    vector: config.params.vector.map(|vector| vector.into()),
+                    vectors: config
+                        .params
+                        .vectors
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|(vector_name, vector_param)| {
+                            (vector_name.clone(), vector_param.clone().into())
+                        })
+                        .collect(),
+                    vector_size: config.params.vector_size.map(|size| size.get()),
+                    distance: config.params.distance.map(|distance| {
+                        match distance {
+                            segment::types::Distance::Cosine => api::grpc::qdrant::Distance::Cosine,
+                            segment::types::Distance::Euclid => api::grpc::qdrant::Distance::Euclid,
+                            segment::types::Distance::Dot => api::grpc::qdrant::Distance::Dot,
+                        }
+                        .into()
+                    }),
                     shard_number: config.params.shard_number.get(),
                     on_disk_payload: config.params.on_disk_payload,
                 }),
@@ -143,7 +157,14 @@ impl From<Record> for api::grpc::qdrant::RetrievedPoint {
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vector: record.vector.unwrap_or_default(),
+            vectors: record
+                .vectors
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(vector_name, vector_data)| {
+                    (vector_name, api::grpc::qdrant::Vector { data: vector_data })
+                })
+                .collect(),
         }
     }
 }
@@ -155,7 +176,13 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
         Ok(Self {
             id: retrieved_point.id.unwrap().try_into()?,
             payload: Some(proto_to_payloads(retrieved_point.payload)?),
-            vector: Some(retrieved_point.vector),
+            vectors: Some(
+                retrieved_point
+                    .vectors
+                    .into_iter()
+                    .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
+                    .collect(),
+            ),
         })
     }
 }
@@ -209,31 +236,60 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
         Ok(Self {
             params: match config.params {
                 None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
-                Some(params) => CollectionParams {
-                    vector_size: NonZeroU64::new(params.vector_size).unwrap(),
-                    distance: match api::grpc::qdrant::Distance::from_i32(params.distance) {
-                        None => {
-                            return Err(Status::invalid_argument(
-                                "Malformed CollectionParams distance",
-                            ))
-                        }
-                        Some(distance) => match distance {
-                            api::grpc::qdrant::Distance::UnknownDistance => {
-                                return Err(Status::invalid_argument(
-                                    "Malformed CollectionParams distance",
-                                ))
-                            }
-                            api::grpc::qdrant::Distance::Cosine => Distance::Cosine,
-                            api::grpc::qdrant::Distance::Euclid => Distance::Euclid,
-                            api::grpc::qdrant::Distance::Dot => Distance::Dot,
+                Some(params) => {
+                    CollectionParams {
+                        // todo(ivan) remove unwraps
+                        vector: params.vector.map(|vector| vector.try_into().unwrap()),
+                        vectors: if params.vectors.is_empty() {
+                            Some(
+                                params
+                                    .vectors
+                                    .iter()
+                                    .map(|(vector_name, vector_param)| {
+                                        (
+                                            vector_name.clone(),
+                                            vector_param.clone().try_into().unwrap(),
+                                        )
+                                    })
+                                    .collect(),
+                            )
+                        } else {
+                            None
                         },
-                    },
-                    shard_number: NonZeroU32::new(params.shard_number)
-                        .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
-                    on_disk_payload: params.on_disk_payload,
-                    // TODO: use `repliction_factor` from `config`
-                    replication_factor: default_replication_factor(),
-                },
+                        // todo(ivan) remove unwrap
+                        vector_size: params
+                            .vector_size
+                            .map(|size| NonZeroU64::new(size).unwrap()),
+                        // todo(ivan) copypaste conversion
+                        distance: if let Some(distance) = params.distance {
+                            match api::grpc::qdrant::Distance::from_i32(distance) {
+                                None => {
+                                    return Err(Status::invalid_argument(
+                                        "Malformed CollectionParams distance",
+                                    ))
+                                }
+                                Some(distance) => match distance {
+                                    api::grpc::qdrant::Distance::UnknownDistance => {
+                                        return Err(Status::invalid_argument(
+                                            "Malformed CollectionParams distance",
+                                        ))
+                                    }
+                                    api::grpc::qdrant::Distance::Cosine => Some(Distance::Cosine),
+                                    api::grpc::qdrant::Distance::Euclid => Some(Distance::Euclid),
+                                    api::grpc::qdrant::Distance::Dot => Some(Distance::Dot),
+                                },
+                            }
+                        } else {
+                            None
+                        },
+                        shard_number: NonZeroU32::new(params.shard_number).ok_or_else(|| {
+                            Status::invalid_argument("`shard_number` cannot be zero")
+                        })?,
+                        on_disk_payload: params.on_disk_payload,
+                        // TODO: use `repliction_factor` from `config`
+                        replication_factor: default_replication_factor(),
+                    }
+                }
             },
             hnsw_config: match config.hnsw_config {
                 None => return Err(Status::invalid_argument("Malformed HnswConfig type")),
@@ -302,17 +358,21 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
     fn try_from(value: api::grpc::qdrant::PointStruct) -> Result<Self, Self::Error> {
         let api::grpc::qdrant::PointStruct {
             id,
-            vector,
+            vectors,
             payload,
         } = value;
 
         let converted_payload = proto_to_payloads(payload)?;
+        let vectors = vectors
+            .into_iter()
+            .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
+            .collect();
 
         Ok(Self {
             id: id
                 .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
                 .try_into()?,
-            vector,
+            vectors,
             payload: Some(converted_payload),
         })
     }
@@ -324,7 +384,7 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
         let PointStruct {
             id,
-            vector,
+            vectors,
             payload,
         } = value;
 
@@ -332,10 +392,16 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
             None => HashMap::new(),
             Some(payload) => payload_to_proto(payload),
         };
+        let vectors = vectors
+            .into_iter()
+            .map(|(vector_name, vector_data)| {
+                (vector_name, api::grpc::qdrant::Vector { data: vector_data })
+            })
+            .collect();
 
         Ok(Self {
             id: Some(id.into()),
-            vector,
+            vectors,
             payload: converted_payload,
         })
     }
@@ -357,7 +423,13 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
             });
             let point = api::grpc::qdrant::PointStruct {
                 id,
-                vector: vector.unwrap_or_default(),
+                vectors: vector
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(vector_name, vector_data)| {
+                        (vector_name, api::grpc::qdrant::Vector { data: vector_data })
+                    })
+                    .collect(),
                 payload: payload.unwrap_or_default(),
             };
             points.push(point);
@@ -444,6 +516,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
         let (collection_id, request) = value.0;
         api::grpc::qdrant::SearchPoints {
             collection_name: collection_id,
+            vector_name: request.vector_name.clone(),
             vector: request.vector.clone(),
             filter: request.filter.clone().map(|f| f.into()),
             limit: request.limit as u64,
@@ -461,6 +534,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
 
     fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
         Ok(SearchRequest {
+            vector_name: value.vector_name,
             vector: value.vector,
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
@@ -495,6 +569,48 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
             with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
             with_vector: value.with_vector.unwrap_or(false),
             score_threshold: value.score_threshold,
+            vector_name: value.vector_name,
         })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::VectorParams) -> Result<Self, Self::Error> {
+        Ok(VectorParams {
+            size: NonZeroU64::new(value.size).unwrap(),
+            distance: match api::grpc::qdrant::Distance::from_i32(value.distance) {
+                None => {
+                    return Err(Status::invalid_argument(
+                        "Malformed CollectionParams distance",
+                    ))
+                }
+                Some(distance) => match distance {
+                    api::grpc::qdrant::Distance::UnknownDistance => {
+                        return Err(Status::invalid_argument(
+                            "Malformed CollectionParams distance",
+                        ))
+                    }
+                    api::grpc::qdrant::Distance::Cosine => Distance::Cosine,
+                    api::grpc::qdrant::Distance::Euclid => Distance::Euclid,
+                    api::grpc::qdrant::Distance::Dot => Distance::Dot,
+                },
+            },
+        })
+    }
+}
+
+impl From<VectorParams> for api::grpc::qdrant::VectorParams {
+    fn from(value: VectorParams) -> Self {
+        api::grpc::qdrant::VectorParams {
+            size: value.size.get(),
+            distance: match value.distance {
+                segment::types::Distance::Cosine => api::grpc::qdrant::Distance::Cosine,
+                segment::types::Distance::Euclid => api::grpc::qdrant::Distance::Euclid,
+                segment::types::Distance::Dot => api::grpc::qdrant::Distance::Dot,
+            }
+            .into(),
+        }
     }
 }

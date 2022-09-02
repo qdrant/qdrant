@@ -1,6 +1,7 @@
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use collection::operations::types::SearchRequest;
 use collection::operations::CollectionUpdateOperations;
+use segment::common::only_default_vector;
 use segment::types::WithPayloadInterface;
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -28,7 +29,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     for i in 0..1000 {
         points.push(PointStruct {
             id: i.into(),
-            vector: vec![i as f32, 0.0, 0.0, 0.0],
+            vectors: only_default_vector(&[i as f32, 0.0, 0.0, 0.0]),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }
@@ -43,6 +44,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let query_vector = vec![1.0, 0.0, 0.0, 0.0];
 
     let full_search_request = SearchRequest {
+        vector_name: None,
         vector: query_vector.clone(),
         filter: None,
         limit: 100,
@@ -66,6 +68,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let page_size = 10;
 
     let page_1_request = SearchRequest {
+        vector_name: None,
         vector: query_vector.clone(),
         filter: None,
         limit: 10,
@@ -88,6 +91,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     }
 
     let page_9_request = SearchRequest {
+        vector_name: None,
         vector: query_vector.clone(),
         filter: None,
         limit: 10,
