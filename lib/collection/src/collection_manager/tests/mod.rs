@@ -6,7 +6,6 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::DEFAULT_VECTOR_NAME;
-use segment::types::{PayloadKeyType, PayloadSchemaType, PointIdType};
 use segment::types::{PayloadFieldSchema, PayloadKeyType, PointIdType};
 use tempfile::Builder;
 
