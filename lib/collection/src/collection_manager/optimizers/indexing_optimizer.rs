@@ -65,10 +65,7 @@ impl IndexingOptimizer {
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.points_count();
                 let vector_size = vector_count
-                    * read_segment
-                        .vector_dims()
-                        .values()
-                        .fold(1, |acc, x| acc * x)
+                    * read_segment.vector_dims().values().product::<usize>()
                     * VECTOR_ELEMENT_SIZE;
 
                 if read_segment.segment_type() == SegmentType::Special {
@@ -115,10 +112,7 @@ impl IndexingOptimizer {
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.points_count();
                 let vector_size = vector_count
-                    * read_segment
-                        .vector_dims()
-                        .values()
-                        .fold(1, |acc, x| acc * x)
+                    * read_segment.vector_dims().values().product::<usize>()
                     * VECTOR_ELEMENT_SIZE;
 
                 let segment_config = read_segment.config();
