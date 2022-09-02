@@ -177,6 +177,7 @@ impl ShardHolder {
                                 Some(temp) => temp,
                             }
                         }
+                        Shard::ReplicaSet(_) => todo!(),
                     },
                 };
                 Ok(vec![target_shard])
@@ -292,6 +293,7 @@ impl LockedShardHolder {
                     "Shard {} is not local on peer",
                     id
                 ))),
+                Shard::ReplicaSet(_) => todo!(),
             },
         }
     }
