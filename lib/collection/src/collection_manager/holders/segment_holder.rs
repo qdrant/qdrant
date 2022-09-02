@@ -9,9 +9,8 @@ use std::time::Duration;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
-use segment::common::only_default_vector;
 use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
-use segment::segment::{Segment, DEFAULT_VECTOR_NAME};
+use segment::segment::Segment;
 use segment::types::{PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -348,13 +347,13 @@ impl<'s> SegmentHolder {
                 self.aloha_random_write(
                     &appendable_segments,
                     |_appendable_idx, appendable_write_segment| {
-                        let vector = write_segment.vector(DEFAULT_VECTOR_NAME, point_id)?;
+                        let all_vectors = write_segment.all_vectors(point_id)?;
                         let payload = write_segment.payload(point_id)?;
 
                         appendable_write_segment.upsert_vector(
                             op_num,
                             point_id,
-                            &only_default_vector(&vector),
+                            &all_vectors,
                         )?;
                         appendable_write_segment.set_full_payload(op_num, point_id, &payload)?;
 
