@@ -42,6 +42,7 @@ enum PayloadSchemaType {
   Integer = 2;
   Float = 3;
   Geo = 4;
+  Text = 5;
 }
 
 message OptimizerStatus {
@@ -171,8 +172,29 @@ message CollectionConfig {
   WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
 }
 
+enum TokenizerType {
+  Unknown = 0;
+  Prefix = 1;
+  Whitespace = 2;
+  Word = 3;
+}
+
+message TextIndexParams {
+  TokenizerType tokenizer = 1; // Tokenizer type
+  optional bool lowercase = 2; // If true - all tokens will be lowercased
+  optional uint64 min_token_len = 3; // Minimal token length
+  optional uint64 max_token_len = 4; // Maximal token length
+}
+
+message PayloadIndexParams {
+  oneof index_params {
+    TextIndexParams text_index_params = 1; // Parameters for text index
+  }
+}
+
 message PayloadSchemaInfo {
   PayloadSchemaType data_type = 1; // Field data type
+  optional PayloadIndexParams params = 2; // Field index parameters
 }
 
 message CollectionInfo {

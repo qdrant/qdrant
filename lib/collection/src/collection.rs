@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ use tokio::sync::{Mutex, RwLock};
 use crate::collection_state::State;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
-use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
+use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
 use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
@@ -62,7 +63,7 @@ impl StorageVersion for CollectionVersion {
 pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: Arc<LockedShardHolder>,
-    config: Arc<RwLock<CollectionConfig>>,
+    pub(crate) config: Arc<RwLock<CollectionConfig>>,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     path: PathBuf,
@@ -957,6 +958,26 @@ impl Collection {
         };
         let points = all_shard_collection_results.into_iter().flatten().collect();
         Ok(points)
+    }
+
+    pub async fn update_params_from_diff(
+        &self,
+        params_diff: CollectionParamsDiff,
+    ) -> CollectionResult<()> {
+        let mut config = self.config.write().await;
+        let old_repl_factor = config.params.replication_factor;
+        config.params = params_diff.update(&config.params)?;
+        self.handle_repl_factor_change(old_repl_factor, config.params.replication_factor);
+        Ok(())
+    }
+
+    pub fn handle_repl_factor_change(&self, old: NonZeroU32, new: NonZeroU32) {
+        if old != new {
+            // TODO: remove or add replicas. In case of replica addition:
+            // 1. Create and mark them as inactive
+            // 2. Copy data
+            // 3. Mark them as active
+        }
     }
 
     /// Updates shard optimization params:

@@ -8,7 +8,7 @@ use rand::SeedableRng;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::fixtures::payload_fixtures::{
-    generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY,
+    generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY,
 };
 use crate::id_tracker::IdTracker;
 use crate::index::plain_payload_index::PlainPayloadIndex;
@@ -197,15 +197,21 @@ pub fn create_struct_payload_index(
     let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path).unwrap();
 
     index
-        .set_indexed(STR_KEY, PayloadSchemaType::Keyword)
+        .set_indexed(STR_KEY, PayloadSchemaType::Keyword.into())
         .unwrap();
     index
-        .set_indexed(INT_KEY, PayloadSchemaType::Integer)
+        .set_indexed(INT_KEY, PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed(FLT_KEY, PayloadSchemaType::Float)
+        .set_indexed(FLT_KEY, PayloadSchemaType::Float.into())
         .unwrap();
-    index.set_indexed(GEO_KEY, PayloadSchemaType::Geo).unwrap();
+    index
+        .set_indexed(GEO_KEY, PayloadSchemaType::Geo.into())
+        .unwrap();
+
+    index
+        .set_indexed(TEXT_KEY, PayloadSchemaType::Text.into())
+        .unwrap();
 
     index
 }

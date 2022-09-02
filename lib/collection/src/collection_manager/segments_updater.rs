@@ -5,7 +5,7 @@ use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::only_default_vector;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType, VectorElementType,
 };
 
@@ -126,10 +126,10 @@ pub(crate) fn create_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
-    field_type: &Option<PayloadSchemaType>,
+    field_schema: Option<&PayloadFieldSchema>,
 ) -> CollectionResult<usize> {
     let res = segments.apply_segments(|write_segment| {
-        write_segment.create_field_index(op_num, field_name, field_type)
+        write_segment.create_field_index(op_num, field_name, field_schema)
     })?;
     Ok(res)
 }
@@ -151,7 +151,7 @@ fn upsert_with_payload(
     vector: &[VectorElementType],
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
-    let mut res = segment.upsert_point(op_num, point_id, &only_default_vector(vector))?;
+    let mut res = segment.upsert_vector(op_num, point_id, &only_default_vector(vector))?;
     if let Some(full_payload) = payload {
         res &= segment.set_payload(op_num, point_id, full_payload)?;
     }
@@ -293,7 +293,7 @@ pub(crate) fn process_field_index_operation(
             &segments.read(),
             op_num,
             &index_data.field_name,
-            &index_data.field_type,
+            index_data.field_type.as_ref(),
         ),
         FieldIndexOperations::DeleteIndex(field_name) => {
             delete_field_index(&segments.read(), op_num, field_name)

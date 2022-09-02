@@ -211,10 +211,42 @@ pub struct CollectionConfig {
     pub wal_config: ::core::option::Option<WalConfigDiff>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TextIndexParams {
+    /// Tokenizer type
+    #[prost(enumeration="TokenizerType", tag="1")]
+    pub tokenizer: i32,
+    /// If true - all tokens will be lowercased
+    #[prost(bool, optional, tag="2")]
+    pub lowercase: ::core::option::Option<bool>,
+    /// Minimal token length
+    #[prost(uint64, optional, tag="3")]
+    pub min_token_len: ::core::option::Option<u64>,
+    /// Maximal token length
+    #[prost(uint64, optional, tag="4")]
+    pub max_token_len: ::core::option::Option<u64>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PayloadIndexParams {
+    #[prost(oneof="payload_index_params::IndexParams", tags="1")]
+    pub index_params: ::core::option::Option<payload_index_params::IndexParams>,
+}
+/// Nested message and enum types in `PayloadIndexParams`.
+pub mod payload_index_params {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum IndexParams {
+        /// Parameters for text index
+        #[prost(message, tag="1")]
+        TextIndexParams(super::TextIndexParams),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadSchemaInfo {
     /// Field data type
     #[prost(enumeration="PayloadSchemaType", tag="1")]
     pub data_type: i32,
+    /// Field index parameters
+    #[prost(message, optional, tag="2")]
+    pub params: ::core::option::Option<PayloadIndexParams>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
@@ -328,6 +360,15 @@ pub enum PayloadSchemaType {
     Integer = 2,
     Float = 3,
     Geo = 4,
+    Text = 5,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TokenizerType {
+    Unknown = 0,
+    Prefix = 1,
+    Whitespace = 2,
+    Word = 3,
 }
 /// Generated client implementations.
 pub mod collections_client {
@@ -1379,6 +1420,9 @@ pub struct CreateFieldIndexCollection {
     /// Field type.
     #[prost(enumeration="FieldType", optional, tag="4")]
     pub field_type: ::core::option::Option<i32>,
+    /// Payload index params.
+    #[prost(message, optional, tag="5")]
+    pub field_index_params: ::core::option::Option<PayloadIndexParams>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteFieldIndexCollection {
@@ -1725,7 +1769,7 @@ pub struct FieldCondition {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof="r#match::MatchValue", tags="1, 2, 3")]
+    #[prost(oneof="r#match::MatchValue", tags="1, 2, 3, 4")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -1741,6 +1785,9 @@ pub mod r#match {
         /// Match boolean
         #[prost(bool, tag="3")]
         Boolean(bool),
+        /// Match text
+        #[prost(string, tag="4")]
+        Text(::prost::alloc::string::String),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1834,6 +1881,7 @@ pub enum FieldType {
     Integer = 1,
     Float = 2,
     Geo = 3,
+    Text = 4,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

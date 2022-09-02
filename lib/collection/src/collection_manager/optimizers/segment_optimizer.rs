@@ -13,6 +13,8 @@ use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use segment::types::{
     HnswConfig, Indexes, PayloadKeyType, PayloadSchemaType, PayloadStorageType, PointIdType,
     SegmentConfig, StorageType, VectorDataConfig, VECTOR_ELEMENT_SIZE,
+    HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
+    SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -243,7 +245,7 @@ pub trait SegmentOptimizer {
         optimizing_segments: &[LockedSegment],
         proxy_deleted_points: Arc<RwLock<HashSet<PointIdType>>>,
         proxy_deleted_indexes: Arc<RwLock<HashSet<PayloadKeyType>>>,
-        proxy_created_indexes: Arc<RwLock<HashMap<PayloadKeyType, PayloadSchemaType>>>,
+        proxy_created_indexes: Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>,
         stopped: &AtomicBool,
     ) -> CollectionResult<Segment> {
         let mut segment_builder = self.optimized_segment_builder(optimizing_segments)?;
@@ -293,11 +295,11 @@ pub trait SegmentOptimizer {
             self.check_cancellation(stopped)?;
         }
 
-        for (create_field_name, schema_type) in &create_indexes {
+        for (create_field_name, schema) in create_indexes {
             optimized_segment.create_field_index(
                 optimized_segment.version(),
-                create_field_name,
-                &Some(*schema_type),
+                &create_field_name,
+                Some(&schema),
             )?;
             self.check_cancellation(stopped)?;
         }
@@ -362,7 +364,7 @@ pub trait SegmentOptimizer {
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let proxy_created_indexes = Arc::new(RwLock::new(HashMap::<
             PayloadKeyType,
-            PayloadSchemaType,
+            PayloadFieldSchema,
         >::new()));
 
         let proxies = optimizing_segments.iter().map(|sg| {
@@ -436,7 +438,7 @@ pub trait SegmentOptimizer {
                 optimized_segment.create_field_index(
                     optimized_segment.version(),
                     created_field_name,
-                    &Some(*schema_type),
+                    Some(schema_type),
                 )?;
             }
 

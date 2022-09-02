@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
+use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
@@ -83,6 +84,7 @@ pub enum FieldIndex {
     KeywordIndex(MapIndex<String>),
     FloatIndex(NumericIndex<FloatPayloadType>),
     GeoIndex(GeoMapIndex),
+    FullTextIndex(FullTextIndex),
 }
 
 impl FieldIndex {
@@ -93,6 +95,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
+            FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
         }
     }
 
@@ -104,6 +107,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index,
+            FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index,
         }
     }
 
@@ -114,6 +118,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index.load(),
         }
     }
 
@@ -124,6 +129,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.clear(),
             FieldIndex::FloatIndex(index) => index.clear(),
             FieldIndex::GeoIndex(index) => index.clear(),
+            FieldIndex::FullTextIndex(index) => index.clear(),
         }
     }
 
@@ -134,6 +140,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.recreate(),
             FieldIndex::FloatIndex(index) => index.recreate(),
             FieldIndex::GeoIndex(index) => index.recreate(),
+            FieldIndex::FullTextIndex(index) => index.recreate(),
         }
     }
 
@@ -190,6 +197,9 @@ impl FieldIndex {
             FieldIndex::GeoIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
+            FieldIndex::FullTextIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
         }
     }
 
@@ -200,6 +210,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
             FieldIndex::FloatIndex(index) => index.remove_point(point_id),
             FieldIndex::GeoIndex(index) => index.remove_point(point_id),
+            FieldIndex::FullTextIndex(index) => index.remove_point(point_id),
         }
     }
 
@@ -210,6 +221,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.get_telemetry_data(),
             FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
             FieldIndex::GeoIndex(index) => index.get_telemetry_data(),
+            FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
         }
     }
 }

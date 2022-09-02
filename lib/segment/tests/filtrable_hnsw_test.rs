@@ -63,7 +63,7 @@ mod tests {
             let payload: Payload = json!({int_key:int_payload,}).into();
 
             segment
-                .upsert_point(n as SeqNumberType, idx, &only_default_vector(&vector))
+                .upsert_vector(n as SeqNumberType, idx, &only_default_vector(&vector))
                 .unwrap();
             segment
                 .set_full_payload(n as SeqNumberType, idx, &payload)
@@ -94,7 +94,7 @@ mod tests {
 
         payload_index_ptr
             .borrow_mut()
-            .set_indexed(int_key, PayloadSchemaType::Integer)
+            .set_indexed(int_key, PayloadSchemaType::Integer.into())
             .unwrap();
         let borrowed_payload_index = payload_index_ptr.borrow();
         let blocks = borrowed_payload_index

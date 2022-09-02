@@ -51,6 +51,11 @@ pub struct CollectionParams {
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
     pub shard_number: NonZeroU32,
+    /// Number of replicas for each shard
+    // TODO: do not skip in v1.0 (when replication ships)
+    #[serde(skip)]
+    #[serde(default = "default_replication_factor")]
+    pub replication_factor: NonZeroU32,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -62,6 +67,11 @@ pub struct CollectionParams {
 fn default_shard_number() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
+
+pub fn default_replication_factor() -> NonZeroU32 {
+    NonZeroU32::new(1).unwrap()
+}
+
 fn default_on_disk_payload() -> bool {
     false
 }

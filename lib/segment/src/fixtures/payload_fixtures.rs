@@ -6,8 +6,8 @@ use rand::Rng;
 use serde_json::{json, Value};
 
 use crate::types::{
-    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, IsEmptyCondition, Payload,
-    PayloadField, Range as RangeCondition, ValuesCount, VectorElementType,
+    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, IsEmptyCondition, Match,
+    Payload, PayloadField, Range as RangeCondition, ValuesCount, VectorElementType,
 };
 
 const ADJECTIVE: &[&str] = &[
@@ -49,6 +49,11 @@ pub const INT_KEY_2: &str = "int2";
 pub const FLT_KEY: &str = "flt";
 pub const FLICKING_KEY: &str = "flicking";
 pub const GEO_KEY: &str = "geo";
+pub const TEXT_KEY: &str = "text";
+
+pub fn random_adj<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
+    ADJECTIVE.choose(rnd_gen).unwrap().to_string()
+}
 
 pub fn random_keyword<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
     let random_adj = ADJECTIVE.choose(rnd_gen).unwrap();
@@ -135,12 +140,20 @@ pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition 
 }
 
 pub fn random_simple_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
-    let kv_or_int: bool = rnd_gen.gen();
-    if kv_or_int {
-        Condition::Field(FieldCondition::new_match(
-            STR_KEY.to_string(),
-            random_keyword(rnd_gen).into(),
-        ))
+    let str_or_int: bool = rnd_gen.gen();
+    if str_or_int {
+        let kv_or_txt: bool = rnd_gen.gen();
+        if kv_or_txt {
+            Condition::Field(FieldCondition::new_match(
+                STR_KEY.to_string(),
+                random_keyword(rnd_gen).into(),
+            ))
+        } else {
+            Condition::Field(FieldCondition::new_match(
+                TEXT_KEY.to_string(),
+                Match::Text(random_adj(rnd_gen).into()),
+            ))
+        }
     } else {
         Condition::Field(FieldCondition::new_range(
             INT_KEY.to_string(),
@@ -213,7 +226,8 @@ pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
             INT_KEY: random_int_payload(rnd_gen, 1..=3),
             INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
-            GEO_KEY: random_geo_payload(rnd_gen, 1..=3)
+            GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
+            TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1)
         })
         .into()
     } else {
@@ -223,6 +237,7 @@ pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
             INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
+            TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1),
             FLICKING_KEY: random_int_payload(rnd_gen, 1..=3)
         })
         .into()
