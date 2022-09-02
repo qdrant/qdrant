@@ -60,6 +60,7 @@ fn batch_search_bench(c: &mut Criterion) {
         vector_size: Some(NonZeroU64::new(100).unwrap()),
         distance: Some(Distance::Dot),
         shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
+        replication_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,
     };
 

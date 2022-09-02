@@ -1,12 +1,13 @@
 use std::time::Instant;
 
 use api::grpc::conversions::proto_to_payloads;
+use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::{
     BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints,
-    GetResponse, PointsOperationResponse, RecommendBatchResponse, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchPoints,
-    SearchResponse, SetPayloadPoints, UpsertPoints,
+    GetResponse, PayloadIndexParams, PointsOperationResponse, RecommendBatchResponse,
+    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse,
+    SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::PointInsertOperations;
@@ -15,7 +16,7 @@ use collection::operations::types::{
     SearchRequestBatch,
 };
 use collection::shard::ShardId;
-use segment::types::PayloadSchemaType;
+use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Response, Status};
@@ -208,24 +209,43 @@ pub async fn create_field_index(
         wait,
         field_name,
         field_type,
+        field_index_params,
     } = create_field_index_collection;
 
-    let field_type = match field_type {
-        None => None,
-        Some(f) => match FieldType::from_i32(f) {
-            None => return Err(Status::invalid_argument("cannot convert field_type")),
-            Some(v) => match v {
-                FieldType::Keyword => Some(PayloadSchemaType::Keyword),
-                FieldType::Integer => Some(PayloadSchemaType::Integer),
-                FieldType::Float => Some(PayloadSchemaType::Float),
-                FieldType::Geo => Some(PayloadSchemaType::Geo),
-            },
+    let filed_type_parsed = field_type
+        .map(FieldType::from_i32)
+        .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
+
+    let field_schema = match (filed_type_parsed, field_index_params) {
+        (
+            Some(v),
+            Some(PayloadIndexParams {
+                index_params: Some(IndexParams::TextIndexParams(text_index_params)),
+            }),
+        ) => match v {
+            FieldType::Text => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
+                text_index_params.try_into()?,
+            ))),
+            _ => {
+                return Err(Status::invalid_argument(
+                    "field_type and field_index_params do not match",
+                ))
+            }
         },
+        (Some(v), None | Some(PayloadIndexParams { index_params: None })) => match v {
+            FieldType::Keyword => Some(PayloadSchemaType::Keyword.into()),
+            FieldType::Integer => Some(PayloadSchemaType::Integer.into()),
+            FieldType::Float => Some(PayloadSchemaType::Float.into()),
+            FieldType::Geo => Some(PayloadSchemaType::Geo.into()),
+            FieldType::Text => Some(PayloadSchemaType::Text.into()),
+        },
+        (None, Some(_)) => return Err(Status::invalid_argument("field type is missing")),
+        (None, None) => None,
     };
 
     let operation = CreateFieldIndex {
         field_name,
-        field_type,
+        field_schema,
     };
 
     let timing = Instant::now();

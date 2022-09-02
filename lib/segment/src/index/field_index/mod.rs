@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use crate::types::{FieldCondition, IsEmptyCondition, PointOffsetType};
 
 mod field_index_base;
+pub mod full_text_index;
 pub mod geo_hash;
 pub mod geo_index;
 mod histogram;

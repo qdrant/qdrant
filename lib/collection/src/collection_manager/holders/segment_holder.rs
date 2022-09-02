@@ -351,7 +351,7 @@ impl<'s> SegmentHolder {
                         let vector = write_segment.vector(DEFAULT_VECTOR_NAME, point_id)?;
                         let payload = write_segment.payload(point_id)?;
 
-                        appendable_write_segment.upsert_point(
+                        appendable_write_segment.upsert_vector(
                             op_num,
                             point_id,
                             &only_default_vector(&vector),

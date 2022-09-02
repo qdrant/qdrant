@@ -18,8 +18,8 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::{TelemetryOperationStatistics, VectorIndexTelemetry};
 use crate::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
-    SearchParams, VectorElementType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PointOffsetType, SearchParams, VectorElementType,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
@@ -73,19 +73,19 @@ impl PlainPayloadIndex {
 }
 
 impl PayloadIndex for PlainPayloadIndex {
-    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.config.indexed_fields.clone()
     }
 
     fn set_indexed(
         &mut self,
         field: PayloadKeyTypeRef,
-        payload_type: PayloadSchemaType,
+        payload_schema: PayloadFieldSchema,
     ) -> OperationResult<()> {
         if self
             .config
             .indexed_fields
-            .insert(field.to_owned(), payload_type)
+            .insert(field.to_owned(), payload_schema)
             .is_none()
         {
             return self.save_config();

@@ -3,6 +3,7 @@ syntax = "proto3";
 package qdrant;
 
 import "json_with_int.proto";
+import "collections.proto";
 
 // ---------------------------------------------
 // ------------- Point Id Requests -------------
@@ -67,6 +68,7 @@ enum FieldType {
   FieldTypeInteger = 1;
   FieldTypeFloat = 2;
   FieldTypeGeo = 3;
+  FieldTypeText = 4;
 }
 
 message CreateFieldIndexCollection {
@@ -74,6 +76,7 @@ message CreateFieldIndexCollection {
   optional bool wait = 2; // Wait until the changes have been applied?
   string field_name = 3; // Field name to index
   optional FieldType field_type = 4; // Field type.
+  optional PayloadIndexParams field_index_params = 5; // Payload index params.
 }
 
 message DeleteFieldIndexCollection {
@@ -251,8 +254,8 @@ message Filter {
 message Condition {
   oneof condition_one_of {
     FieldCondition field = 1;
-    IsEmptyCondition isEmpty = 2;
-    HasIdCondition hasId = 3;
+    IsEmptyCondition is_empty = 2;
+    HasIdCondition has_id = 3;
     Filter filter = 4;
   }
 }
@@ -279,6 +282,7 @@ message Match {
     string keyword = 1; // Match string keyword
     int64 integer = 2; // Match integer
     bool boolean = 3; // Match boolean
+    string text = 4; // Match text
   }
 }
 

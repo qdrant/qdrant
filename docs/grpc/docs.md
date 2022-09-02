@@ -23,14 +23,17 @@
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
+    - [PayloadIndexParams](#qdrant-PayloadIndexParams)
     - [PayloadSchemaInfo](#qdrant-PayloadSchemaInfo)
     - [RenameAlias](#qdrant-RenameAlias)
+    - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [WalConfigDiff](#qdrant-WalConfigDiff)
   
     - [CollectionStatus](#qdrant-CollectionStatus)
     - [Distance](#qdrant-Distance)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
+    - [TokenizerType](#qdrant-TokenizerType)
   
 - [collections_service.proto](#collections_service-proto)
     - [Collections](#qdrant-Collections)
@@ -458,6 +461,21 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
+<a name="qdrant-PayloadIndexParams"></a>
+
+### PayloadIndexParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| text_index_params | [TextIndexParams](#qdrant-TextIndexParams) |  | Parameters for text index |
+
+
+
+
+
+
 <a name="qdrant-PayloadSchemaInfo"></a>
 
 ### PayloadSchemaInfo
@@ -467,6 +485,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | data_type | [PayloadSchemaType](#qdrant-PayloadSchemaType) |  | Field data type |
+| params | [PayloadIndexParams](#qdrant-PayloadIndexParams) | optional | Field index parameters |
 
 
 
@@ -483,6 +502,24 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | old_alias_name | [string](#string) |  | Name of the alias to rename |
 | new_alias_name | [string](#string) |  | Name of the alias |
+
+
+
+
+
+
+<a name="qdrant-TextIndexParams"></a>
+
+### TextIndexParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| tokenizer | [TokenizerType](#qdrant-TokenizerType) |  | Tokenizer type |
+| lowercase | [bool](#bool) | optional | If true - all tokens will be lowercased |
+| min_token_len | [uint64](#uint64) | optional | Minimal token length |
+| max_token_len | [uint64](#uint64) | optional | Maximal token length |
 
 
 
@@ -564,6 +601,21 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Integer | 2 |  |
 | Float | 3 |  |
 | Geo | 4 |  |
+| Text | 5 |  |
+
+
+
+<a name="qdrant-TokenizerType"></a>
+
+### TokenizerType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Unknown | 0 |  |
+| Prefix | 1 |  |
+| Whitespace | 2 |  |
+| Word | 3 |  |
 
 
  
@@ -764,8 +816,8 @@ The JSON representation for `Value` is JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | field | [FieldCondition](#qdrant-FieldCondition) |  |  |
-| isEmpty | [IsEmptyCondition](#qdrant-IsEmptyCondition) |  |  |
-| hasId | [HasIdCondition](#qdrant-HasIdCondition) |  |  |
+| is_empty | [IsEmptyCondition](#qdrant-IsEmptyCondition) |  |  |
+| has_id | [HasIdCondition](#qdrant-HasIdCondition) |  |  |
 | filter | [Filter](#qdrant-Filter) |  |  |
 
 
@@ -833,6 +885,7 @@ The JSON representation for `Value` is JSON value.
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | field_name | [string](#string) |  | Field name to index |
 | field_type | [FieldType](#qdrant-FieldType) | optional | Field type. |
+| field_index_params | [PayloadIndexParams](#qdrant-PayloadIndexParams) | optional | Payload index params. |
 
 
 
@@ -1051,6 +1104,7 @@ The JSON representation for `Value` is JSON value.
 | keyword | [string](#string) |  | Match string keyword |
 | integer | [int64](#int64) |  | Match integer |
 | boolean | [bool](#bool) |  | Match boolean |
+| text | [string](#string) |  | Match text |
 
 
 
@@ -1579,6 +1633,7 @@ The JSON representation for `Value` is JSON value.
 | FieldTypeInteger | 1 |  |
 | FieldTypeFloat | 2 |  |
 | FieldTypeGeo | 3 |  |
+| FieldTypeText | 4 |  |
 
 
 

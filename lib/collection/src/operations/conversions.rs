@@ -6,7 +6,9 @@ use itertools::Itertools;
 use segment::types::Distance;
 use tonic::Status;
 
-use crate::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
+use crate::config::{
+    default_replication_factor, CollectionConfig, CollectionParams, VectorParams, WalConfig,
+};
 use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
@@ -280,8 +282,12 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         } else {
                             None
                         },
-                        shard_number: NonZeroU32::new(params.shard_number).unwrap(),
+                        shard_number: NonZeroU32::new(params.shard_number).ok_or_else(|| {
+                            Status::invalid_argument("`shard_number` cannot be zero")
+                        })?,
                         on_disk_payload: params.on_disk_payload,
+                        // TODO: use `repliction_factor` from `config`
+                        replication_factor: default_replication_factor(),
                     }
                 }
             },

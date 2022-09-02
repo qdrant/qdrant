@@ -32,7 +32,8 @@ async fn test_snapshot_collection() {
         vectors: None,
         vector_size: Some(NonZeroU64::new(4).unwrap()),
         distance: Some(Distance::Dot),
-        shard_number: NonZeroU32::new(3).expect("Shard number can not be zero"),
+        shard_number: NonZeroU32::new(3).unwrap(),
+        replication_factor: NonZeroU32::new(3).unwrap(),
         on_disk_payload: false,
     };
 

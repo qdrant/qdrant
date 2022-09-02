@@ -69,13 +69,19 @@ impl State {
     }
 
     async fn apply_config(
-        config: CollectionConfig,
+        new_config: CollectionConfig,
         collection: &Collection,
     ) -> CollectionResult<()> {
         log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
         collection
-            .update_optimizer_params(config.optimizer_config)
-            .await
+            .update_optimizer_params(new_config.optimizer_config)
+            .await?;
+        // updating replication factor
+        let mut config = collection.config.write().await;
+        let old_repl_factor = config.params.replication_factor;
+        config.params.replication_factor = new_config.params.replication_factor;
+        collection.handle_repl_factor_change(old_repl_factor, config.params.replication_factor);
+        Ok(())
     }
 
     async fn apply_shard_to_peer(

@@ -39,6 +39,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         vector_size: Some(NonZeroU64::new(4).unwrap()),
         distance: Some(Distance::Dot),
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
+        replication_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,
     };
 

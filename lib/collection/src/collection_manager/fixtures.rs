@@ -30,7 +30,7 @@ pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: 
         let payload_value = rnd.gen_range(1..1_000);
         let payload: Payload = json!({ payload_key: vec![payload_value] }).into();
         segment
-            .upsert_point(opnum, point_id, &only_default_vector(&random_vector))
+            .upsert_vector(opnum, point_id, &only_default_vector(&random_vector))
             .unwrap();
         segment.set_payload(opnum, point_id, &payload).unwrap();
     }
@@ -47,19 +47,19 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
     segment1
-        .upsert_point(1, 1.into(), &only_default_vector(&vec1))
+        .upsert_vector(1, 1.into(), &only_default_vector(&vec1))
         .unwrap();
     segment1
-        .upsert_point(2, 2.into(), &only_default_vector(&vec2))
+        .upsert_vector(2, 2.into(), &only_default_vector(&vec2))
         .unwrap();
     segment1
-        .upsert_point(3, 3.into(), &only_default_vector(&vec3))
+        .upsert_vector(3, 3.into(), &only_default_vector(&vec3))
         .unwrap();
     segment1
-        .upsert_point(4, 4.into(), &only_default_vector(&vec4))
+        .upsert_vector(4, 4.into(), &only_default_vector(&vec4))
         .unwrap();
     segment1
-        .upsert_point(5, 5.into(), &only_default_vector(&vec5))
+        .upsert_vector(5, 5.into(), &only_default_vector(&vec5))
         .unwrap();
 
     let payload_key = "color";
@@ -91,26 +91,26 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec15 = vec![1.0, 1.0, 0.0, 0.0];
 
     segment2
-        .upsert_point(7, 4.into(), &only_default_vector(&vec4))
+        .upsert_vector(7, 4.into(), &only_default_vector(&vec4))
         .unwrap();
     segment2
-        .upsert_point(8, 5.into(), &only_default_vector(&vec5))
+        .upsert_vector(8, 5.into(), &only_default_vector(&vec5))
         .unwrap();
 
     segment2
-        .upsert_point(11, 11.into(), &only_default_vector(&vec11))
+        .upsert_vector(11, 11.into(), &only_default_vector(&vec11))
         .unwrap();
     segment2
-        .upsert_point(12, 12.into(), &only_default_vector(&vec12))
+        .upsert_vector(12, 12.into(), &only_default_vector(&vec12))
         .unwrap();
     segment2
-        .upsert_point(13, 13.into(), &only_default_vector(&vec13))
+        .upsert_vector(13, 13.into(), &only_default_vector(&vec13))
         .unwrap();
     segment2
-        .upsert_point(14, 14.into(), &only_default_vector(&vec14))
+        .upsert_vector(14, 14.into(), &only_default_vector(&vec14))
         .unwrap();
     segment2
-        .upsert_point(15, 15.into(), &only_default_vector(&vec15))
+        .upsert_vector(15, 15.into(), &only_default_vector(&vec15))
         .unwrap();
 
     segment2
@@ -149,6 +149,7 @@ pub(crate) fn get_merge_optimizer(
             distance: Some(Distance::Dot),
             shard_number: NonZeroU32::new(1).unwrap(),
             on_disk_payload: false,
+            replication_factor: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
     )
@@ -174,6 +175,7 @@ pub(crate) fn get_indexing_optimizer(
             distance: Some(Distance::Dot),
             shard_number: NonZeroU32::new(1).unwrap(),
             on_disk_payload: false,
+            replication_factor: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
     )

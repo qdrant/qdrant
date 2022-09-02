@@ -13,7 +13,7 @@ use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
-    Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
+    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     VectorElementType, WithPayload,
 };
@@ -23,7 +23,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
-type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadSchemaType>>>;
+type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
 
 /// This object is a wrapper around read-only segment.
 /// It could be used to provide all read and write operations while wrapped segment is being optimized (i.e. not available for writing)
@@ -95,7 +95,7 @@ impl ProxySegment {
         let segment_arc = self.write_segment.get();
         let mut write_segment = segment_arc.write();
 
-        write_segment.upsert_point(op_num, point_id, &all_vectors)?;
+        write_segment.upsert_vector(op_num, point_id, &all_vectors)?;
         write_segment.set_full_payload(op_num, point_id, &payload)?;
 
         Ok(true)
@@ -260,7 +260,7 @@ impl SegmentEntry for ProxySegment {
         Ok(wrapped_results)
     }
 
-    fn upsert_point(
+    fn upsert_vector(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -270,7 +270,7 @@ impl SegmentEntry for ProxySegment {
         self.write_segment
             .get()
             .write()
-            .upsert_point(op_num, point_id, vectors)
+            .upsert_vector(op_num, point_id, vectors)
     }
 
     fn delete_point(
@@ -559,7 +559,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: u64,
         key: PayloadKeyTypeRef,
-        field_type: &Option<PayloadSchemaType>,
+        field_schema: Option<&PayloadFieldSchema>,
     ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
@@ -568,23 +568,23 @@ impl SegmentEntry for ProxySegment {
         self.write_segment
             .get()
             .write()
-            .create_field_index(op_num, key, field_type)?;
+            .create_field_index(op_num, key, field_schema)?;
         let indexed_fields = self.write_segment.get().read().get_indexed_fields();
 
-        let schema_type = match indexed_fields.get(key) {
+        let payload_schema = match indexed_fields.get(key) {
             Some(schema_type) => schema_type,
             None => return Ok(false),
         };
 
         self.created_indexes
             .write()
-            .insert(key.into(), schema_type.to_owned());
+            .insert(key.into(), payload_schema.to_owned());
         self.deleted_indexes.write().remove(key);
 
         Ok(true)
     }
 
-    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         let indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
         indexed_fields
             .into_iter()
@@ -706,7 +706,7 @@ mod tests {
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
         ));
 
         let mut proxy_segment = ProxySegment::new(
@@ -719,11 +719,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
@@ -773,7 +773,7 @@ mod tests {
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
         ));
 
         let mut proxy_segment = ProxySegment::new(
@@ -786,11 +786,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
@@ -836,7 +836,7 @@ mod tests {
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
         ));
 
         let proxy_segment = ProxySegment::new(
@@ -889,7 +889,7 @@ mod tests {
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
         ));
 
         let proxy_segment = ProxySegment::new(
@@ -966,7 +966,7 @@ mod tests {
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
         ));
 
         let mut proxy_segment = ProxySegment::new(
@@ -996,7 +996,7 @@ mod tests {
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
         ));
 
         let mut proxy_segment = ProxySegment::new(
@@ -1017,16 +1017,16 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
         proxy_segment2
-            .upsert_point(201, 11.into(), &only_default_vector(&vec6))
+            .upsert_vector(201, 11.into(), &only_default_vector(&vec6))
             .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();

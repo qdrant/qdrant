@@ -318,6 +318,7 @@ mod tests {
                 ),
                 distance: Some(segment_config.vector_data[DEFAULT_VECTOR_NAME].distance),
                 shard_number: NonZeroU32::new(1).unwrap(),
+                replication_factor: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
             },
             Default::default(),
@@ -363,7 +364,7 @@ mod tests {
             opnum.next().unwrap(),
             &FieldIndexOperations::CreateIndex(CreateIndex {
                 field_name: payload_field.to_owned(),
-                field_type: Some(PayloadSchemaType::Integer),
+                field_type: Some(PayloadSchemaType::Integer.into()),
             }),
         )
         .unwrap();

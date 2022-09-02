@@ -24,7 +24,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
     SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
@@ -426,7 +426,7 @@ impl SegmentEntry for Segment {
         res
     }
 
-    fn upsert_point(
+    fn upsert_vector(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -665,14 +665,7 @@ impl SegmentEntry for Segment {
             .borrow()
             .indexed_fields()
             .into_iter()
-            .map(|(key, index_schema)| {
-                (
-                    key,
-                    PayloadIndexInfo {
-                        data_type: index_schema,
-                    },
-                )
-            })
+            .map(|(key, index_schema)| (key, index_schema.into()))
             .collect();
 
         SegmentInfo {
@@ -799,14 +792,14 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: u64,
         key: PayloadKeyTypeRef,
-        field_type: &Option<PayloadSchemaType>,
+        field_type: Option<&PayloadFieldSchema>,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, None, |segment| match field_type {
-            Some(schema_type) => {
+            Some(schema) => {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .set_indexed(key, *schema_type)?;
+                    .set_indexed(key, schema.clone())?;
                 Ok(true)
             }
             None => match segment.infer_from_payload_data(key)? {
@@ -817,14 +810,14 @@ impl SegmentEntry for Segment {
                     segment
                         .payload_index
                         .borrow_mut()
-                        .set_indexed(key, schema_type)?;
+                        .set_indexed(key, schema_type.into())?;
                     Ok(true)
                 }
             },
         })
     }
 
-    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.payload_index.borrow().indexed_fields()
     }
 
@@ -1020,11 +1013,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
@@ -1088,7 +1081,7 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1101,7 +1094,7 @@ mod tests {
                 {
                     "key": "metadata.height",
                     "match": {
-                        "integer": 50
+                        "value": 50
                     }
                 }
             ]
@@ -1114,7 +1107,7 @@ mod tests {
                 {
                     "key": "metadata.height",
                     "match": {
-                        "integer": 60
+                        "value": 60
                     }
                 }
             ]
@@ -1176,7 +1169,7 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1259,7 +1252,7 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1311,7 +1304,7 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
         segment
-            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();

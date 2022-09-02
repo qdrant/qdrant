@@ -11,7 +11,7 @@ use crate::operations::types::CollectionResult;
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotDescription {
     pub name: String,
-    pub creation_time: NaiveDateTime,
+    pub creation_time: Option<NaiveDateTime>,
     pub size: u64,
 }
 
@@ -19,7 +19,7 @@ impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
     fn from(value: SnapshotDescription) -> Self {
         Self {
             name: value.name,
-            creation_time: Some(date_time_to_proto(value.creation_time)),
+            creation_time: value.creation_time.map(date_time_to_proto),
             size: value.size as i64,
         }
     }
@@ -28,14 +28,16 @@ impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
 pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotDescription> {
     let name = path.file_name().unwrap().to_str().unwrap();
     let file_meta = tokio::fs::metadata(&path).await?;
-    let creation_time = file_meta
-        .created()?
-        .duration_since(SystemTime::UNIX_EPOCH)?
-        .as_secs();
+    let creation_time = file_meta.created().ok().and_then(|created_time| {
+        created_time
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .ok()
+            .map(|duration| NaiveDateTime::from_timestamp(duration.as_secs() as i64, 0))
+    });
     let size = file_meta.len();
     Ok(SnapshotDescription {
         name: name.to_string(),
-        creation_time: NaiveDateTime::from_timestamp(creation_time as i64, 0),
+        creation_time,
         size,
     })
 }
