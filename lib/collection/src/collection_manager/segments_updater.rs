@@ -223,7 +223,9 @@ pub(crate) fn upsert_points<'a, T>(
     op_num: SeqNumberType,
     points: T,
 ) -> CollectionResult<usize>
-    where T: IntoIterator<Item = &'a PointStruct> {
+where
+    T: IntoIterator<Item = &'a PointStruct>,
+{
     let mut ids: Vec<PointIdType> = vec![];
     let mut points_map: HashMap<PointIdType, &PointStruct> = Default::default();
     points.into_iter().for_each(|p| {

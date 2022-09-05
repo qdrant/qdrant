@@ -51,7 +51,10 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                 OperationEffectArea::Filter(filter.clone())
             }
             point_ops::PointOperations::SyncPoints(sync_op) => {
-                debug_assert!(false, "SyncPoints operation should not be used during transfer");
+                debug_assert!(
+                    false,
+                    "SyncPoints operation should not be used during transfer"
+                );
                 OperationEffectArea::Points(sync_op.points.iter().map(|x| x.id).collect())
             }
         }

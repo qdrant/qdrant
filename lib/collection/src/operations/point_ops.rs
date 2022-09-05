@@ -244,9 +244,12 @@ impl SplitByShard for PointOperations {
                 .map(|ids| PointOperations::DeletePoints { ids }),
             by_filter @ PointOperations::DeletePointsByFilter(_) => {
                 OperationToShard::to_all(by_filter)
-            },
+            }
             PointOperations::SyncPoints(_) => {
-                debug_assert!(false, "SyncPoints operation is intended to by applied to specific shard only");
+                debug_assert!(
+                    false,
+                    "SyncPoints operation is intended to by applied to specific shard only"
+                );
                 OperationToShard::by_shard(vec![])
             }
         }
