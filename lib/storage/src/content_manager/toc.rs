@@ -21,7 +21,9 @@ use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
 
-use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
+use super::collection_meta_ops::{
+    CreateCollectionOperation, SetShardReplicaState, ShardTransferOperations,
+};
 use super::{consensus_state, CollectionContainer};
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::{
@@ -406,7 +408,21 @@ impl TableOfContent {
                 .handle_transfer(collection, operation)
                 .await
                 .map(|()| true),
+            CollectionMetaOperations::SetShardReplicaState(operation) => {
+                self.set_shard_replica_state(operation).await.map(|()| true)
+            }
         }
+    }
+
+    pub async fn set_shard_replica_state(
+        &self,
+        operation: SetShardReplicaState,
+    ) -> Result<(), StorageError> {
+        self.get_collection(&operation.collection_name)
+            .await?
+            .set_shard_replica_state(operation.shard_id, operation.peer_id, operation.active)
+            .await?;
+        Ok(())
     }
 
     /// Cancels all transfers where the source peer is the current peer.
@@ -428,12 +444,7 @@ impl TableOfContent {
         collection_id: CollectionId,
         transfer_operation: ShardTransferOperations,
     ) -> Result<(), StorageError> {
-        let collections = self.collections.read().await;
-        let collection = collections.get(&collection_id).ok_or_else(|| {
-            StorageError::service_error(&format!(
-                "Collection {collection_id} should be present at the time of shard transfer."
-            ))
-        })?;
+        let collection = self.get_collection(&collection_id).await?;
         match transfer_operation {
             ShardTransferOperations::Start(transfer) => {
                 // check that transfer can be performed
@@ -525,11 +536,7 @@ impl TableOfContent {
             collection_name,
             shard_id
         );
-        let real_collection_name = self.resolve_name(&collection_name).await?;
-        let read_collections = self.collections.read().await;
-
-        // safe 'unwrap' because the collection's existence is checked in `resolve_name`
-        let collection = read_collections.get(&real_collection_name).unwrap();
+        let collection = self.get_collection(&collection_name).await?;
         collection.initiate_temporary_shard(shard_id).await?;
         Ok(())
     }
