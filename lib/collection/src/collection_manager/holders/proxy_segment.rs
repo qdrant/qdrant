@@ -402,6 +402,21 @@ impl SegmentEntry for ProxySegment {
         read_points
     }
 
+    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
+        let deleted_points = self.deleted_points.read();
+        let mut read_points = self.wrapped_segment.get().read().read_range(from, to);
+        if !deleted_points.is_empty() {
+            read_points = read_points
+                .into_iter()
+                .filter(|idx| !deleted_points.contains(idx))
+                .collect();
+        }
+        let mut write_segment_points = self.write_segment.get().read().read_range(from, to);
+        read_points.append(&mut write_segment_points);
+        read_points.sort_unstable();
+        read_points
+    }
+
     fn has_point(&self, point_id: PointIdType) -> bool {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().has_point(point_id)
@@ -655,7 +670,8 @@ mod tests {
     use std::fs::read_dir;
 
     use segment::types::FieldCondition;
-    use tempfile::Builder;
+    use serde_json::json;
+    use tempfile::{Builder, TempDir};
 
     use super::*;
     use crate::collection_manager::fixtures::{
@@ -886,6 +902,24 @@ mod tests {
         assert_eq!(all_single_results, search_batch_result)
     }
 
+    fn wrap_proxy(dir: &TempDir, original_segment: LockedSegment) -> ProxySegment {
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
+        ));
+
+        ProxySegment::new(
+            original_segment,
+            write_segment,
+            deleted_points,
+            created_indexes,
+            deleted_indexes,
+        )
+    }
+
     #[test]
     fn test_read_filter() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -904,21 +938,7 @@ mod tests {
                 .read()
                 .read_filtered(None, 100, Some(&filter));
 
-        let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
-
-        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
-
-        let mut proxy_segment = ProxySegment::new(
-            original_segment,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
+        let mut proxy_segment = wrap_proxy(&dir, original_segment);
 
         proxy_segment.delete_point(100, 2.into()).unwrap();
 
@@ -926,6 +946,32 @@ mod tests {
         let proxy_res_filtered = proxy_segment.read_filtered(None, 100, Some(&filter));
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
+        assert_eq!(original_points.len() - 1, proxy_res.len());
+    }
+
+    #[test]
+    fn test_read_range() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+
+        let original_points = original_segment
+            .get()
+            .read()
+            .read_range(None, Some(10.into()));
+
+        let mut proxy_segment = wrap_proxy(&dir, original_segment);
+
+        proxy_segment.delete_point(100, 2.into()).unwrap();
+
+        proxy_segment
+            .set_payload(
+                101,
+                3.into(),
+                &json!({ "color": vec!["red".to_owned()] }).into(),
+            )
+            .unwrap();
+        let proxy_res = proxy_segment.read_range(None, Some(10.into()));
+
         assert_eq!(original_points.len() - 1, proxy_res.len());
     }
 

@@ -576,6 +576,15 @@ impl SegmentEntry for Segment {
         }
     }
 
+    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
+        let id_tracker = self.id_tracker.borrow();
+        let iterator = id_tracker.iter_from(from).map(|x| x.0);
+        match to {
+            None => iterator.collect(),
+            Some(to_id) => iterator.take_while(|x| *x <= to_id).collect(),
+        }
+    }
+
     fn has_point(&self, point_id: PointIdType) -> bool {
         self.id_tracker.borrow().internal_id(point_id).is_some()
     }

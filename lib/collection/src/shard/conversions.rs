@@ -5,16 +5,37 @@ use api::grpc::qdrant::{
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollection,
     DeleteFieldIndexCollectionInternal, DeletePayloadPoints, DeletePayloadPointsInternal,
     DeletePoints, DeletePointsInternal, PointsIdsList, PointsSelector, SetPayloadPoints,
-    SetPayloadPointsInternal, UpsertPoints, UpsertPointsInternal,
+    SetPayloadPointsInternal, SyncPoints, SyncPointsInternal, UpsertPoints, UpsertPointsInternal,
 };
 use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType};
 use tonic::Status;
 
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
-use crate::operations::point_ops::PointInsertOperations;
+use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation};
 use crate::operations::types::CollectionResult;
 use crate::operations::CreateIndex;
 use crate::shard::remote_shard::RemoteShard;
+
+pub fn internal_sync_points(
+    points_sync_operation: PointSyncOperation,
+    shard: &RemoteShard,
+    wait: bool,
+) -> CollectionResult<SyncPointsInternal> {
+    Ok(SyncPointsInternal {
+        shard_id: shard.id,
+        sync_points: Some(SyncPoints {
+            collection_name: shard.collection_id.clone(),
+            wait: Some(wait),
+            points: points_sync_operation
+                .points
+                .into_iter()
+                .map(|x| x.try_into())
+                .collect::<Result<Vec<_>, Status>>()?,
+            from_id: points_sync_operation.from_id.map(|x| x.into()),
+            to_id: points_sync_operation.to_id.map(|x| x.into()),
+        }),
+    })
+}
 
 pub fn internal_upsert_points(
     point_insert_operations: PointInsertOperations,

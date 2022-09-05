@@ -27,7 +27,8 @@ use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::shard::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
     internal_delete_index, internal_delete_payload, internal_delete_points,
-    internal_delete_points_by_filter, internal_set_payload, internal_upsert_points,
+    internal_delete_points_by_filter, internal_set_payload, internal_sync_points,
+    internal_upsert_points,
 };
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::{ChannelService, CollectionId, PeerId, ShardId, ShardOperation};
@@ -192,6 +193,14 @@ impl ShardOperation for RemoteShard {
                     let request = &internal_delete_points_by_filter(filter, self, wait);
                     self.with_points_client(|mut client| async move {
                         client.delete(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                PointOperations::SyncPoints(operation) => {
+                    let request = &internal_sync_points(operation, self, wait)?;
+                    self.with_points_client(|mut client| async move {
+                        client.sync(tonic::Request::new(request.clone())).await
                     })
                     .await?
                     .into_inner()

@@ -78,18 +78,27 @@ mod tests {
     use crate::collection_manager::segments_searcher::SegmentsSearcher;
     use crate::collection_manager::segments_updater::upsert_points;
     use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
-    use crate::operations::point_ops::PointOperations;
+    use crate::operations::point_ops::{PointOperations, PointStruct};
 
     #[tokio::test]
     async fn test_point_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let segments = build_test_holder(dir.path());
-        let points = vec![1.into(), 500.into()];
+        let points = vec![
+            PointStruct {
+                id: 1.into(),
+                vector: vec![2., 2., 2., 2.],
+                payload: None,
+            },
+            PointStruct {
+                id: 500.into(),
+                vector: vec![2., 0., 2., 0.],
+                payload: None,
+            },
+        ];
 
-        let vectors = vec![vec![2., 2., 2., 2.], vec![2., 0., 2., 0.]];
-
-        let res = upsert_points(&segments, 100, &points, &vectors, &None);
+        let res = upsert_points(&segments.read(), 100, &points);
         assert!(matches!(res, Ok(1)));
 
         let records = SegmentsSearcher::retrieve(

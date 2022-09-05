@@ -14,6 +14,7 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
 };
 use crate::collection_manager::segments_updater::upsert_points;
+use crate::operations::point_ops::PointStruct;
 
 fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> SegmentId {
     let mut write_segments = segments.write();
@@ -59,8 +60,19 @@ fn test_update_proxy_segments() {
     let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
 
     for i in 1..10 {
-        let ids = vec![(100 * i + 1).into(), (100 * i + 2).into()];
-        upsert_points(&segments, 1000 + i, &ids, &vectors, &None).unwrap();
+        let points = vec![
+            PointStruct {
+                id: (100 * i + 1).into(),
+                vector: vectors[0].clone(),
+                payload: None,
+            },
+            PointStruct {
+                id: (100 * i + 2).into(),
+                vector: vectors[1].clone(),
+                payload: None,
+            },
+        ];
+        upsert_points(&segments.read(), 1000 + i, &points).unwrap();
     }
 
     let all_ids = segments
@@ -92,11 +104,35 @@ fn test_move_points_to_copy_on_write() {
 
     let proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
-    let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
-    upsert_points(&segments, 1001, &[1.into(), 2.into()], &vectors, &None).unwrap();
+    let points = vec![
+        PointStruct {
+            id: 1.into(),
+            vector: vec![0.0, 0.0, 0.0, 0.0],
+            payload: None,
+        },
+        PointStruct {
+            id: 2.into(),
+            vector: vec![0.0, 0.0, 0.0, 0.0],
+            payload: None,
+        },
+    ];
 
-    let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
-    upsert_points(&segments, 1002, &[2.into(), 3.into()], &vectors, &None).unwrap();
+    upsert_points(&segments.read(), 1001, &points).unwrap();
+
+    let points = vec![
+        PointStruct {
+            id: 2.into(),
+            vector: vec![0.0, 0.0, 0.0, 0.0],
+            payload: None,
+        },
+        PointStruct {
+            id: 3.into(),
+            vector: vec![0.0, 0.0, 0.0, 0.0],
+            payload: None,
+        },
+    ];
+
+    upsert_points(&segments.read(), 1002, &points).unwrap();
 
     let segments_write = segments.write();
 

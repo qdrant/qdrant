@@ -10,8 +10,8 @@ use segment::types::{
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
-use crate::operations::types::{CollectionError, CollectionResult, VectorType};
+use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations, PointStruct};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::FieldIndexOperations;
 
 /// A collection of functions for updating points and payloads stored in segments
@@ -157,39 +157,90 @@ fn upsert_with_payload(
     Ok(res)
 }
 
+/// Sync points withing a given range
+pub(crate) fn sync_points(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    from_id: Option<PointIdType>,
+    to_id: Option<PointIdType>,
+    points: &[PointStruct],
+) -> CollectionResult<usize> {
+    let id_to_point = points
+        .iter()
+        .map(|p| (p.id, p))
+        .collect::<HashMap<PointIdType, &PointStruct>>();
+    let sync_points: HashSet<_> = points.iter().map(|p| p.id).collect();
+    // 1. Retrieve existing points for a range
+    let stored_point_ids: HashSet<_> = segments
+        .iter()
+        .flat_map(|(_, segment)| segment.get().read().read_range(from_id, to_id))
+        .collect();
+    // 2. Remove points, which do not present in the sync operation
+    let points_to_remove: Vec<_> = stored_point_ids.difference(&sync_points).copied().collect();
+    delete_points(segments, op_num, points_to_remove.as_slice())?;
+    // 3. Retrieve overlapping points, detect which one of them are changed
+    let existing_point_ids: Vec<_> = stored_point_ids
+        .intersection(&sync_points)
+        .copied()
+        .collect();
+
+    let mut points_to_update: Vec<_> = Vec::new();
+    let _num_updated = segments.read_points(existing_point_ids.as_slice(), |id, segment| {
+        let vector = segment.vector(id)?;
+        let payload = segment.payload(id)?;
+        let point = id_to_point.get(&id).unwrap();
+        let payload_match = match point.payload {
+            Some(ref p) => p == &payload,
+            None => Payload::default() == payload,
+        };
+
+        if point.vector != vector || !payload_match {
+            points_to_update.push(*point);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    })?;
+
+    // 4. Select new points
+    sync_points
+        .difference(&stored_point_ids)
+        .copied()
+        .for_each(|id| {
+            points_to_update.push(*id_to_point.get(&id).unwrap());
+        });
+
+    // 4. Upsert points which differ from the stored ones
+
+    upsert_points(segments, op_num, points_to_update)
+}
+
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.
 /// Returns: number of updated points.
-pub(crate) fn upsert_points(
-    segments: &RwLock<SegmentHolder>,
+pub(crate) fn upsert_points<'a, T>(
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
-    ids: &[PointIdType],
-    vectors: &[VectorType],
-    payloads: &Option<Vec<Option<Payload>>>,
-) -> CollectionResult<usize> {
-    let vectors_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
-    let payloads_map: HashMap<PointIdType, &Payload> = match payloads {
-        None => Default::default(),
-        Some(payloads_vector) => ids
-            .iter()
-            .clone()
-            .zip(payloads_vector)
-            .filter_map(|(id, payload)| {
-                payload.as_ref().map(|payload_values| (*id, payload_values))
-            })
-            .collect(),
-    };
+    points: T,
+) -> CollectionResult<usize>
+    where T: IntoIterator<Item = &'a PointStruct> {
+    let mut ids: Vec<PointIdType> = vec![];
+    let mut points_map: HashMap<PointIdType, &PointStruct> = Default::default();
+    points.into_iter().for_each(|p| {
+        ids.push(p.id);
+        points_map.insert(p.id, p);
+    });
 
-    let segments = segments.read();
     // Update points in writable segments
     let updated_points =
-        segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
+        segments.apply_points_to_appendable(op_num, &ids, |id, write_segment| {
+            let point = points_map[&id];
             upsert_with_payload(
                 write_segment,
                 op_num,
                 id,
-                vectors_map[&id],
-                payloads_map.get(&id).cloned(),
+                point.vector.as_slice(),
+                point.payload.as_ref(),
             )
         })?;
 
@@ -211,12 +262,13 @@ pub(crate) fn upsert_points(
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
+            let point = points_map[&point_id];
             res += upsert_with_payload(
                 &mut write_segment,
                 op_num,
                 point_id,
-                vectors_map[&point_id],
-                payloads_map.get(&point_id).cloned(),
+                point.vector.as_slice(),
+                point.payload.as_ref(),
             )? as usize;
         }
     };
@@ -232,31 +284,46 @@ pub(crate) fn process_point_operation(
     match point_operation {
         PointOperations::DeletePoints { ids, .. } => delete_points(&segments.read(), op_num, &ids),
         PointOperations::UpsertPoints(operation) => {
-            let (ids, vectors, payloads) = match operation {
+            let points: Vec<_> = match operation {
                 PointInsertOperations::PointsBatch(Batch {
                     ids,
                     vectors,
                     payloads,
-                    ..
-                }) => (ids, vectors, payloads),
-                PointInsertOperations::PointsList(points) => {
-                    let mut ids = vec![];
-                    let mut vectors = vec![];
-                    let mut payloads = vec![];
-                    for point in points {
-                        ids.push(point.id);
-                        vectors.push(point.vector);
-                        payloads.push(point.payload)
+                }) => {
+                    let vectors_iter = ids.into_iter().zip(vectors.into_iter());
+                    match payloads {
+                        None => vectors_iter
+                            .map(|(id, vector)| PointStruct {
+                                id,
+                                vector,
+                                payload: None,
+                            })
+                            .collect(),
+                        Some(payloads) => vectors_iter
+                            .zip(payloads.into_iter())
+                            .map(|((id, vector), payload)| PointStruct {
+                                id,
+                                vector,
+                                payload,
+                            })
+                            .collect(),
                     }
-                    (ids, vectors, Some(payloads))
                 }
+                PointInsertOperations::PointsList(points) => points,
             };
-            let res = upsert_points(segments, op_num, &ids, &vectors, &payloads)?;
+            let res = upsert_points(&segments.read(), op_num, points.iter())?;
             Ok(res)
         }
         PointOperations::DeletePointsByFilter(filter) => {
             delete_points_by_filter(&segments.read(), op_num, &filter)
         }
+        PointOperations::SyncPoints(operation) => sync_points(
+            &segments.read(),
+            op_num,
+            operation.from_id,
+            operation.to_id,
+            &operation.points,
+        ),
     }
 }
 
