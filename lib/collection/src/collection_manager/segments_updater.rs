@@ -228,8 +228,8 @@ pub(crate) fn sync_points(
         });
 
     // 5. Upsert points which differ from the stored ones
-    let num_upserted = upsert_points(segments, op_num, points_to_update)?;
-    debug_assert_eq!(num_upserted, num_new + num_updated);
+    let num_replaced = upsert_points(segments, op_num, points_to_update)?;
+    debug_assert_eq!(num_replaced, num_updated);
 
     Ok((deleted, num_new, num_updated))
 }
@@ -284,14 +284,13 @@ where
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
             let point = points_map[&point_id];
-            res += 1;
-            upsert_with_payload(
+            res += upsert_with_payload(
                 &mut write_segment,
                 op_num,
                 point_id,
                 point.vector.as_slice(),
                 point.payload.as_ref(),
-            )?;
+            )? as usize;
         }
     };
 
