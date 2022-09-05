@@ -7,14 +7,14 @@ use api::grpc::qdrant::{
     DeletePayloadPointsInternal, DeletePointsInternal, GetPointsInternal, GetResponse,
     PointsOperationResponse, RecommendPointsInternal, RecommendResponse, ScrollPointsInternal,
     ScrollResponse, SearchBatchPointsInternal, SearchBatchResponse, SearchPointsInternal,
-    SearchResponse, SetPayloadPointsInternal, UpsertPointsInternal,
+    SearchResponse, SetPayloadPointsInternal, SyncPointsInternal, UpsertPointsInternal,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    recommend, scroll, search, search_batch, set_payload, upsert,
+    recommend, scroll, search, search_batch, set_payload, sync, upsert,
 };
 
 /// This API is intended for P2P communication within a distributed deployment.
@@ -236,6 +236,19 @@ impl PointsInternal for PointsInternalService {
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
         count(self.toc.as_ref(), count_points, Some(shard_id)).await
+    }
+
+    async fn sync(
+        &self,
+        request: Request<SyncPointsInternal>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        let SyncPointsInternal {
+            sync_points,
+            shard_id,
+        } = request.into_inner();
+        let sync_points =
+            sync_points.ok_or_else(|| Status::invalid_argument("SyncPoints is missing"))?;
+        sync(self.toc.as_ref(), sync_points, shard_id).await
     }
 }
 

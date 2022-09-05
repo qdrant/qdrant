@@ -212,6 +212,8 @@ pub trait SegmentEntry {
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType>;
 
+    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
+
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
 

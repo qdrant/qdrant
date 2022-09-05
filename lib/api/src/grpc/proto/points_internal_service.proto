@@ -8,6 +8,7 @@ import "google/protobuf/struct.proto";
 
 service PointsInternal {
   rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponse) {}
+  rpc Sync (SyncPointsInternal) returns (PointsOperationResponse) {}
   rpc Delete (DeletePointsInternal) returns (PointsOperationResponse) {}
   rpc SetPayload (SetPayloadPointsInternal) returns (PointsOperationResponse) {}
   rpc DeletePayload (DeletePayloadPointsInternal) returns (PointsOperationResponse) {}
@@ -20,6 +21,20 @@ service PointsInternal {
   rpc Count (CountPointsInternal) returns (CountResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
+}
+
+
+message SyncPoints {
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  repeated PointStruct points = 3;
+  optional PointId from_id = 4; // Start of the sync range
+  optional PointId to_id = 5; // End of the sync range
+}
+
+message SyncPointsInternal {
+  SyncPoints sync_points = 1;
+  uint32 shard_id = 2;
 }
 
 message UpsertPointsInternal {

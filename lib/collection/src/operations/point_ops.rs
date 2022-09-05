@@ -76,6 +76,15 @@ struct PointsList {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct PointSyncOperation {
+    /// Minimal id of the sync range
+    pub from_id: Option<PointIdType>,
+    /// Maximal id og
+    pub to_id: Option<PointIdType>,
+    pub points: Vec<PointStruct>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum PointInsertOperations {
     /// Inset points from a batch.
@@ -142,7 +151,7 @@ impl JsonSchema for PointInsertOperations {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum PointOperations {
     /// Insert or update points
@@ -151,6 +160,8 @@ pub enum PointOperations {
     DeletePoints { ids: Vec<PointIdType> },
     /// Delete points by given filter criteria
     DeletePointsByFilter(Filter),
+    /// Points Sync
+    SyncPoints(PointSyncOperation),
 }
 
 impl Validate for PointOperations {
@@ -159,6 +170,7 @@ impl Validate for PointOperations {
             PointOperations::UpsertPoints(upsert_points) => upsert_points.validate(),
             PointOperations::DeletePoints { ids: _ } => Ok(()),
             PointOperations::DeletePointsByFilter(_) => Ok(()),
+            PointOperations::SyncPoints(_) => Ok(()),
         }
     }
 }
@@ -232,6 +244,13 @@ impl SplitByShard for PointOperations {
                 .map(|ids| PointOperations::DeletePoints { ids }),
             by_filter @ PointOperations::DeletePointsByFilter(_) => {
                 OperationToShard::to_all(by_filter)
+            }
+            PointOperations::SyncPoints(_) => {
+                debug_assert!(
+                    false,
+                    "SyncPoints operation is intended to by applied to specific shard only"
+                );
+                OperationToShard::by_shard(vec![])
             }
         }
     }
