@@ -143,6 +143,11 @@ pub(crate) fn delete_field_index(
     Ok(res)
 }
 
+///
+/// Returns
+/// - Ok(true) if the operation was successful and point replaced existing value
+/// - Ok(false) if the operation was successful and point was inserted
+/// - Err if the operation failed
 fn upsert_with_payload(
     segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
     op_num: SeqNumberType,
@@ -158,13 +163,22 @@ fn upsert_with_payload(
 }
 
 /// Sync points withing a given range
+///
+/// 1. Retrieve existing points for a range
+/// 2. Remove points, which do not present in the sync operation
+/// 3. Retrieve overlapping points, detect which one of them are changed
+/// 4. Select new points
+/// 5. Upsert points which differ from the stored ones
+///
+/// Returns:
+///     (number of deleted points, number of new points, number of updated points)
 pub(crate) fn sync_points(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     from_id: Option<PointIdType>,
     to_id: Option<PointIdType>,
     points: &[PointStruct],
-) -> CollectionResult<usize> {
+) -> CollectionResult<(usize, usize, usize)> {
     let id_to_point = points
         .iter()
         .map(|p| (p.id, p))
@@ -177,7 +191,7 @@ pub(crate) fn sync_points(
         .collect();
     // 2. Remove points, which do not present in the sync operation
     let points_to_remove: Vec<_> = stored_point_ids.difference(&sync_points).copied().collect();
-    delete_points(segments, op_num, points_to_remove.as_slice())?;
+    let deleted = delete_points(segments, op_num, points_to_remove.as_slice())?;
     // 3. Retrieve overlapping points, detect which one of them are changed
     let existing_point_ids: Vec<_> = stored_point_ids
         .intersection(&sync_points)
@@ -203,16 +217,21 @@ pub(crate) fn sync_points(
     })?;
 
     // 4. Select new points
+    let num_updated = points_to_update.len();
+    let mut num_new = 0;
     sync_points
         .difference(&stored_point_ids)
         .copied()
         .for_each(|id| {
+            num_new += 1;
             points_to_update.push(*id_to_point.get(&id).unwrap());
         });
 
-    // 4. Upsert points which differ from the stored ones
+    // 5. Upsert points which differ from the stored ones
+    let num_upserted = upsert_points(segments, op_num, points_to_update)?;
+    debug_assert_eq!(num_upserted, num_new + num_updated);
 
-    upsert_points(segments, op_num, points_to_update)
+    Ok((deleted, num_new, num_updated))
 }
 
 /// Checks point id in each segment, update point if found.
@@ -265,13 +284,14 @@ where
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
             let point = points_map[&point_id];
-            res += upsert_with_payload(
+            res += 1;
+            upsert_with_payload(
                 &mut write_segment,
                 op_num,
                 point_id,
                 point.vector.as_slice(),
                 point.payload.as_ref(),
-            )? as usize;
+            )?;
         }
     };
 
@@ -319,13 +339,16 @@ pub(crate) fn process_point_operation(
         PointOperations::DeletePointsByFilter(filter) => {
             delete_points_by_filter(&segments.read(), op_num, &filter)
         }
-        PointOperations::SyncPoints(operation) => sync_points(
-            &segments.read(),
-            op_num,
-            operation.from_id,
-            operation.to_id,
-            &operation.points,
-        ),
+        PointOperations::SyncPoints(operation) => {
+            let (deleted, new, updated) = sync_points(
+                &segments.read(),
+                op_num,
+                operation.from_id,
+                operation.to_id,
+                &operation.points,
+            )?;
+            Ok(deleted + new + updated)
+        }
     }
 }
 

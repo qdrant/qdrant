@@ -71,6 +71,7 @@ impl CollectionUpdater {
 #[cfg(test)]
 mod tests {
     use segment::types::{Payload, WithPayload};
+    use serde_json::json;
     use tempfile::Builder;
 
     use super::*;
@@ -79,6 +80,53 @@ mod tests {
     use crate::collection_manager::segments_updater::upsert_points;
     use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
     use crate::operations::point_ops::{PointOperations, PointStruct};
+
+    #[test]
+    fn test_sync_ops() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let segments = build_test_holder(dir.path());
+
+        let vec11 = vec![1.0, 1.0, 1.0, 1.0];
+        let vec12 = vec![1.0, 1.0, 1.0, 0.0];
+        let vec13 = vec![1.0, 0.0, 1.0, 1.0];
+
+        let points = vec![
+            PointStruct {
+                id: 11.into(),
+                vector: vec11,
+                payload: None,
+            },
+            PointStruct {
+                id: 12.into(),
+                vector: vec12,
+                payload: None,
+            },
+            PointStruct {
+                id: 13.into(),
+                vector: vec13,
+                payload: Some(json!({ "color": "red" }).into()),
+            },
+            PointStruct {
+                id: 14.into(),
+                vector: vec![0., 0., 0., 0.],
+                payload: None,
+            },
+            PointStruct {
+                id: 500.into(),
+                vector: vec![2., 0., 2., 0.],
+                payload: None,
+            },
+        ];
+
+        let (num_deleted, num_new, num_updated) =
+            sync_points(&segments.read(), 100, Some(10.into()), None, &points).unwrap();
+
+        assert_eq!(num_deleted, 1); // delete point 15
+        assert_eq!(num_new, 1); // insert point 500
+        assert_eq!(num_updated, 2); // upsert point 13 and 14 as it has updated data
+                                    // points 11 and 12 are not updated as they are same as before
+    }
 
     #[tokio::test]
     async fn test_point_ops() {
