@@ -6,6 +6,7 @@ on:
     # Pattern matched against refs/tags
     tags:        
       - '*'           # Push events to every tag not containing /
+    branches: [ multiplatform-build ]
 
 jobs:
 
@@ -23,11 +24,13 @@ jobs:
       env:
         RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
       run: |
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        docker buildx create --use
+        
         docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
-        docker build . --file Dockerfile --tag "docker.pkg.github.com/qdrant/qdrant/qdrant:$RELEASE_VERSION"
-        docker push "docker.pkg.github.com/qdrant/qdrant/qdrant:$RELEASE_VERSION"
         docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
-        docker tag "docker.pkg.github.com/qdrant/qdrant/qdrant:$RELEASE_VERSION" "generall/qdrant:$RELEASE_VERSION"
-        docker push "generall/qdrant:$RELEASE_VERSION"
-        docker tag "generall/qdrant:$RELEASE_VERSION" "generall/qdrant:latest"
-        docker push "generall/qdrant:latest"
+        
+        TAGS="-t generall/qdrant:${{ github.ref_name }} -t generall/qdrant:latest"
+        TAGS="${TAGS} -t docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
+        
+        docker buildx build --platform='linux/amd64,linux/arm64' $TAGS --push .
