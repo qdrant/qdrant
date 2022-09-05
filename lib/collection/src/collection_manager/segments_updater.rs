@@ -189,7 +189,7 @@ pub(crate) fn sync_points(
         .iter()
         .flat_map(|(_, segment)| segment.get().read().read_range(from_id, to_id))
         .collect();
-    // 2. Remove points, which do not present in the sync operation
+    // 2. Remove points, which are not present in the sync operation
     let points_to_remove: Vec<_> = stored_point_ids.difference(&sync_points).copied().collect();
     let deleted = delete_points(segments, op_num, points_to_remove.as_slice())?;
     // 3. Retrieve overlapping points, detect which one of them are changed
