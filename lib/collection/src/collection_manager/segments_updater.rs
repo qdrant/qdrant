@@ -203,16 +203,20 @@ pub(crate) fn sync_points(
         let vector = segment.vector(id)?;
         let payload = segment.payload(id)?;
         let point = id_to_point.get(&id).unwrap();
-        let payload_match = match point.payload {
-            Some(ref p) => p == &payload,
-            None => Payload::default() == payload,
-        };
-
-        if point.vector != vector || !payload_match {
+        if point.vector != vector {
             points_to_update.push(*point);
             Ok(true)
         } else {
-            Ok(false)
+            let payload_match = match point.payload {
+                Some(ref p) => p == &payload,
+                None => Payload::default() == payload,
+            };
+            if !payload_match {
+                points_to_update.push(*point);
+                Ok(true)
+            } else {
+                Ok(false)
+            }
         }
     })?;
 
