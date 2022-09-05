@@ -165,7 +165,7 @@ fn upsert_with_payload(
 /// Sync points within a given range
 ///
 /// 1. Retrieve existing points for a range
-/// 2. Remove points, which do not present in the sync operation
+/// 2. Remove points, which are not present in the sync operation
 /// 3. Retrieve overlapping points, detect which one of them are changed
 /// 4. Select new points
 /// 5. Upsert points which differ from the stored ones
