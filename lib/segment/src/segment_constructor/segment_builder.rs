@@ -141,11 +141,12 @@ impl SegmentBuilder {
                 }
             }
 
-            // todo(ivan) remove DEFAULT_VECTOR_NAME
-            segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_index
-                .borrow_mut()
-                .build_index(stopped)?;
+            for vector_data in segment.vector_data.values_mut() {
+                vector_data
+                    .vector_index
+                    .borrow_mut()
+                    .build_index(stopped)?;
+            }
 
             segment.flush(true)?;
             // Now segment is going to be evicted from RAM
