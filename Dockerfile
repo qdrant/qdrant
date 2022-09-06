@@ -25,9 +25,10 @@ RUN apt-get install -y clang cmake
 RUN rustup component add rustfmt
 
 
-RUN apt-get install -y g++-multilib
 RUN apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 RUN apt-get install -y binutils binutils-aarch64-linux-gnu
+RUN apt-get install -y g++-multilib
+
 
 #RUN apt-get update && apt-get install -y \
 #    g++-aarch64-linux-gnu \
