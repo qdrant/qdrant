@@ -326,6 +326,7 @@ impl Collection {
                         debug_assert!(!was_not_transferred);
                         false // Shard if already in transferring state
                     }
+                    Shard::ReplicaSet(_) => todo!(),
                 },
             }
         };
@@ -464,6 +465,7 @@ impl Collection {
                 Shard::ForwardProxy(_) => {
                     debug_assert!(false, "Proxy shard should not be temporary");
                 }
+                Shard::ReplicaSet(_) => todo!(),
             }
         }
 
@@ -1022,6 +1024,7 @@ impl Collection {
                     Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
                     Shard::ForwardProxy(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Remote(_) => {} // Do nothing for remote shards
+                    Shard::ReplicaSet(_) => todo!(),
                 }
             }
         }
@@ -1052,6 +1055,7 @@ impl Collection {
                     Shard::Remote(_) => {} // Do nothing for remote shards
                     Shard::Proxy(proxy) => proxy.on_optimizer_config_update().await?,
                     Shard::ForwardProxy(proxy) => proxy.on_optimizer_config_update().await?,
+                    Shard::ReplicaSet(_) => todo!(),
                 }
             }
         }
@@ -1141,6 +1145,7 @@ impl Collection {
                         points_count,
                     })
                 }
+                Shard::ReplicaSet(_) => todo!(),
             }
         }
         // extract shard transfers info
@@ -1262,6 +1267,7 @@ impl Collection {
                         // copy shard directory to snapshot directory
                         remote_shard.create_snapshot(&shard_snapshot_path).await?;
                     }
+                    Shard::ReplicaSet(_) => todo!(),
                 }
             }
         }
@@ -1330,6 +1336,7 @@ impl Collection {
                 Shard::Proxy(_proxy_shard) => (*shard_id, local_peer_id),
                 Shard::ForwardProxy(_proxy_shard) => (*shard_id, local_peer_id),
                 Shard::Remote(remote_shard) => (*shard_id, remote_shard.peer_id),
+                Shard::ReplicaSet(_) => todo!(),
             })
             .collect()
     }

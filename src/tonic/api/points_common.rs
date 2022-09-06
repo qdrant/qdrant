@@ -7,14 +7,17 @@ use api::grpc::qdrant::{
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints,
     GetResponse, PayloadIndexParams, PointsOperationResponse, RecommendBatchResponse,
     RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse,
-    SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
+    SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
-use collection::operations::point_ops::PointInsertOperations;
+use collection::operations::point_ops::{
+    PointInsertOperations, PointOperations, PointSyncOperation,
+};
 use collection::operations::types::{
     default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
     SearchRequestBatch,
 };
+use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
 use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
 use storage::content_manager::conversions::error_to_status;
@@ -62,6 +65,47 @@ pub async fn upsert(
     )
     .await
     .map_err(error_to_status)?;
+
+    let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn sync(
+    toc: &TableOfContent,
+    sync_points: SyncPoints,
+    shard_selection: ShardId,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let SyncPoints {
+        collection_name,
+        wait,
+        points,
+        from_id,
+        to_id,
+    } = sync_points;
+
+    let points = points
+        .into_iter()
+        .map(|point| point.try_into())
+        .collect::<Result<_, _>>()?;
+
+    let timing = Instant::now();
+
+    let operation = PointSyncOperation {
+        points,
+        from_id: from_id.map(|x| x.try_into()).transpose()?,
+        to_id: to_id.map(|x| x.try_into()).transpose()?,
+    };
+    let collection_operation =
+        CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
+    let result = toc
+        .update(
+            &collection_name,
+            collection_operation,
+            Some(shard_selection),
+            wait.unwrap_or(false),
+        )
+        .await
+        .map_err(error_to_status)?;
 
     let response = points_operation_response(timing, result);
     Ok(Response::new(response))

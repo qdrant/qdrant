@@ -2974,6 +2974,30 @@ pub mod points_server {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncPoints {
+    /// name of the collection
+    #[prost(string, tag="1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
+    #[prost(bool, optional, tag="2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(message, repeated, tag="3")]
+    pub points: ::prost::alloc::vec::Vec<PointStruct>,
+    /// Start of the sync range
+    #[prost(message, optional, tag="4")]
+    pub from_id: ::core::option::Option<PointId>,
+    /// End of the sync range
+    #[prost(message, optional, tag="5")]
+    pub to_id: ::core::option::Option<PointId>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncPointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub sync_points: ::core::option::Option<SyncPoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPointsInternal {
     #[prost(message, optional, tag="1")]
     pub upsert_points: ::core::option::Option<UpsertPoints>,
@@ -3146,6 +3170,25 @@ pub mod points_internal_client {
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Upsert",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn sync(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SyncPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Sync",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -3390,6 +3433,10 @@ pub mod points_internal_server {
             &self,
             request: tonic::Request<super::UpsertPointsInternal>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn sync(
+            &self,
+            request: tonic::Request<super::SyncPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
         async fn delete(
             &self,
             request: tonic::Request<super::DeletePointsInternal>,
@@ -3513,6 +3560,44 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = UpsertSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Sync" => {
+                    #[allow(non_camel_case_types)]
+                    struct SyncSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::SyncPointsInternal>
+                    for SyncSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SyncPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).sync(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SyncSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

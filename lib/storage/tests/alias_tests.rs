@@ -117,7 +117,7 @@ mod tests {
             ))
             .unwrap();
 
-        handle
+        let _ = handle
             .block_on(dispatcher.get_collection("test_alias3"))
             .unwrap();
     }

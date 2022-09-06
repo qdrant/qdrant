@@ -5,6 +5,8 @@ pub mod local_shard;
 pub mod local_shard_operations;
 pub mod proxy_shard;
 pub mod remote_shard;
+#[allow(dead_code)]
+pub mod replica_set;
 pub mod shard_config;
 pub mod shard_holder;
 pub mod shard_versioning;
@@ -22,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tonic::transport::Uri;
 
+use self::replica_set::ReplicaSet;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult,
@@ -38,7 +41,7 @@ pub type ShardId = u32;
 
 /// Shard
 ///
-/// A shard can either be local or remote
+/// Contains a part of the collection's points
 ///
 #[allow(clippy::large_enum_variant)]
 pub enum Shard {
@@ -46,6 +49,7 @@ pub enum Shard {
     Remote(RemoteShard),
     Proxy(ProxyShard),
     ForwardProxy(ForwardProxyShard),
+    ReplicaSet(ReplicaSet),
 }
 
 impl Shard {
@@ -55,6 +59,7 @@ impl Shard {
             Shard::Remote(remote_shard) => remote_shard,
             Shard::Proxy(proxy_shard) => proxy_shard,
             Shard::ForwardProxy(proxy_shard) => proxy_shard,
+            Shard::ReplicaSet(replica_set) => replica_set,
         }
     }
 
@@ -64,6 +69,7 @@ impl Shard {
             Shard::Remote(_) => (),
             Shard::Proxy(proxy_shard) => proxy_shard.before_drop().await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.before_drop().await,
+            Shard::ReplicaSet(_) => todo!(),
         }
     }
 
@@ -73,6 +79,7 @@ impl Shard {
             Shard::Remote(remote) => remote.peer_id,
             Shard::Proxy(_) => this_peer_id,
             Shard::ForwardProxy(_) => this_peer_id,
+            Shard::ReplicaSet(_) => todo!(),
         }
     }
 
@@ -82,6 +89,7 @@ impl Shard {
             Shard::Remote(remote_shard) => remote_shard.get_telemetry_data(),
             Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
             Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(),
+            Shard::ReplicaSet(_) => todo!(),
         }
     }
 }

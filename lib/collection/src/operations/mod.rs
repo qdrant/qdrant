@@ -33,7 +33,7 @@ pub enum FieldIndexOperations {
     DeleteIndex(String),
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum CollectionUpdateOperations {
