@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use collection::collection::Collection;
-use collection::collection_state;
+use collection::collection_state::{self, ShardInfo};
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -807,13 +807,7 @@ impl TableOfContent {
                                 };
                             };
                             collection
-                                .apply_state(
-                                    state.clone(),
-                                    self.this_peer_id(),
-                                    &self.get_collection_path(&collection.name()),
-                                    self.channel_service.clone(),
-                                    abort_transfer,
-                                )
+                                .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
                                 .await?;
                         }
                     }
@@ -823,7 +817,16 @@ impl TableOfContent {
                         let snapshots_path = self.create_snapshots_path(id).await?;
                         let shard_distribution = CollectionShardDistribution::from_shard_to_peer(
                             self.this_peer_id,
-                            &state.shard_to_peer,
+                            &state
+                                .shards
+                                .iter()
+                                .map(|(id, info)| match info {
+                                    ShardInfo::ReplicaSet { replicas: _ } => {
+                                        todo!("Handle multiple replicas in shard distribution")
+                                    }
+                                    ShardInfo::Single(peer_id) => (*id, *peer_id),
+                                })
+                                .collect(),
                         );
                         let collection = Collection::new(
                             id.to_string(),
@@ -919,7 +922,14 @@ impl TableOfContent {
     pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         for collection in self.collections.read().await.values() {
             let state = collection.state(self.this_peer_id()).await;
-            let peers_with_shards: HashSet<_> = state.shard_to_peer.values().collect();
+            let peers_with_shards: HashSet<_> = state
+                .shards
+                .into_values()
+                .flat_map(|shard_info| match shard_info {
+                    ShardInfo::ReplicaSet { replicas } => replicas.into_keys().collect::<Vec<_>>(),
+                    ShardInfo::Single(peer_id) => vec![peer_id],
+                })
+                .collect();
             if peers_with_shards.contains(&peer_id) {
                 return true;
             }

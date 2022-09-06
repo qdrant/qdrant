@@ -19,7 +19,7 @@ use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::collection_state::State;
+use crate::collection_state::{ShardInfo, State};
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
@@ -1172,9 +1172,22 @@ impl Collection {
         let shards_holder = self.shards_holder.read().await;
         State {
             config: self.config.read().await.clone(),
-            shard_to_peer: shards_holder
+            shards: shards_holder
                 .get_shards()
-                .map(|(shard_id, shard)| (*shard_id, shard.peer_id(this_peer_id)))
+                .map(|(shard_id, shard)| {
+                    let shard_info = match shard {
+                        Shard::ReplicaSet(replicas) => ShardInfo::ReplicaSet {
+                            replicas: replicas.replica_state.clone(),
+                        },
+                        shard => ShardInfo::Single(
+                            *shard
+                                .peer_ids(this_peer_id)
+                                .first()
+                                .expect("There is always at least 1 id"),
+                        ),
+                    };
+                    (*shard_id, shard_info)
+                })
                 .collect(),
             transfers: (*shards_holder.shard_transfers).clone(),
         }
@@ -1184,19 +1197,9 @@ impl Collection {
         &self,
         state: State,
         this_peer_id: PeerId,
-        collection_path: &Path,
-        channel_service: ChannelService,
         abort_transfer: impl FnMut(ShardTransfer),
     ) -> CollectionResult<()> {
-        state
-            .apply(
-                this_peer_id,
-                self,
-                collection_path,
-                channel_service,
-                abort_transfer,
-            )
-            .await
+        state.apply(this_peer_id, self, abort_transfer).await
     }
 
     pub async fn get_telemetry_data(&self) -> Option<CollectionTelemetry> {

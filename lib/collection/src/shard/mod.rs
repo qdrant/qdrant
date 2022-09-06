@@ -73,13 +73,13 @@ impl Shard {
         }
     }
 
-    pub fn peer_id(&self, this_peer_id: PeerId) -> PeerId {
+    pub fn peer_ids(&self, this_peer_id: PeerId) -> Vec<PeerId> {
         match self {
-            Shard::Local(_) => this_peer_id,
-            Shard::Remote(remote) => remote.peer_id,
-            Shard::Proxy(_) => this_peer_id,
-            Shard::ForwardProxy(_) => this_peer_id,
-            Shard::ReplicaSet(_) => todo!(),
+            Shard::Local(_) => vec![this_peer_id],
+            Shard::Remote(remote) => vec![remote.peer_id],
+            Shard::Proxy(_) => vec![this_peer_id],
+            Shard::ForwardProxy(_) => vec![this_peer_id],
+            Shard::ReplicaSet(replicas) => replicas.peer_ids(),
         }
     }
 
