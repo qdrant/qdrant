@@ -58,12 +58,12 @@ pub fn init(
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::from(dispatcher.toc().clone());
         let dispatcher_data = web::Data::from(dispatcher);
-        let telemetry_collector_data = web::Data::new(telemetry_collector.clone());
         let actix_telemetry_collector = telemetry_collector
             .lock()
             .await
             .actix_telemetry_collector
             .clone();
+        let telemetry_collector_data = web::Data::from(telemetry_collector);
         HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
