@@ -88,34 +88,34 @@ mod tests {
 
         let segments = build_test_holder(dir.path());
 
-        let vec11 = vec![1.0, 1.0, 1.0, 1.0];
-        let vec12 = vec![1.0, 1.0, 1.0, 0.0];
-        let vec13 = vec![1.0, 0.0, 1.0, 1.0];
+        let vec11 = only_default_vector(&[1.0, 1.0, 1.0, 1.0]);
+        let vec12 = only_default_vector(&[1.0, 1.0, 1.0, 0.0]);
+        let vec13 = only_default_vector(&[1.0, 0.0, 1.0, 1.0]);
 
         let points = vec![
             PointStruct {
                 id: 11.into(),
-                vector: vec11,
+                vectors: vec11,
                 payload: None,
             },
             PointStruct {
                 id: 12.into(),
-                vector: vec12,
+                vectors: vec12,
                 payload: None,
             },
             PointStruct {
                 id: 13.into(),
-                vector: vec13,
+                vectors: vec13,
                 payload: Some(json!({ "color": "red" }).into()),
             },
             PointStruct {
                 id: 14.into(),
-                vector: vec![0., 0., 0., 0.],
+                vectors: only_default_vector(&[0., 0., 0., 0.]),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: vec![2., 0., 2., 0.],
+                vectors: only_default_vector(&[2., 0., 2., 0.]),
                 payload: None,
             },
         ];
@@ -137,12 +137,12 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 1.into(),
-                vector: only_default_vector(&[2., 2., 2., 2.]),
+                vectors: only_default_vector(&[2., 2., 2., 2.]),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: only_default_vector(&[2., 0., 2., 0.]),
+                vectors: only_default_vector(&[2., 0., 2., 0.]),
                 payload: None,
             },
         ];

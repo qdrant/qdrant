@@ -200,10 +200,10 @@ pub(crate) fn sync_points(
 
     let mut points_to_update: Vec<_> = Vec::new();
     let _num_updated = segments.read_points(existing_point_ids.as_slice(), |id, segment| {
-        let vector = segment.vector(id)?;
+        let all_vectors = segment.all_vectors(id)?;
         let payload = segment.payload(id)?;
         let point = id_to_point.get(&id).unwrap();
-        if point.vector != vector {
+        if point.vectors != all_vectors {
             points_to_update.push(*point);
             Ok(true)
         } else {
@@ -264,7 +264,7 @@ where
                 write_segment,
                 op_num,
                 id,
-                point.vector.as_slice(),
+                &point.vectors,
                 point.payload.as_ref(),
             )
         })?;
@@ -318,17 +318,17 @@ pub(crate) fn process_point_operation(
                     let vectors_iter = ids.into_iter().zip(vectors.into_iter());
                     match payloads {
                         None => vectors_iter
-                            .map(|(id, vector)| PointStruct {
+                            .map(|(id, vectors)| PointStruct {
                                 id,
-                                vector,
+                                vectors,
                                 payload: None,
                             })
                             .collect(),
                         Some(payloads) => vectors_iter
                             .zip(payloads.into_iter())
-                            .map(|((id, vector), payload)| PointStruct {
+                            .map(|((id, vectors), payload)| PointStruct {
                                 id,
-                                vector,
+                                vectors,
                                 payload,
                             })
                             .collect(),
