@@ -3771,17 +3771,7 @@
           "vectors": {
             "type": "array",
             "items": {
-              "type": "array",
-              "items": [
-                {
-                  "type": "string"
-                },
-                {
-                  "$ref": "#/components/schemas/CreateVectorData"
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
+              "$ref": "#/components/schemas/CreateVectorData"
             },
             "nullable": true
           },
@@ -3857,6 +3847,10 @@
           "size"
         ],
         "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
           "size": {
             "type": "integer",
             "format": "uint",

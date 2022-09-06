@@ -17,6 +17,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
 use collection::shard::{ChannelService, CollectionId, PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -245,10 +246,12 @@ impl TableOfContent {
                 let mut map = HashMap::new();
                 for vector in vectors {
                     map.insert(
-                        vector.0.clone(),
+                        vector
+                            .name
+                            .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned()),
                         VectorParams {
-                            distance: vector.1.distance,
-                            size: NonZeroU64::new(vector.1.size as u64)
+                            distance: vector.distance,
+                            size: NonZeroU64::new(vector.size as u64)
                                 .ok_or_else(|| convert_vector_size_err.clone())?,
                         },
                     );

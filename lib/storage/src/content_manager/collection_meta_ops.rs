@@ -83,6 +83,7 @@ impl From<RenameAlias> for AliasOperations {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateVectorData {
+    pub name: Option<String>,
     pub size: usize,
     pub distance: Distance,
 }
@@ -92,7 +93,7 @@ pub struct CreateVectorData {
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
     pub vector: Option<CreateVectorData>,
-    pub vectors: Option<Vec<(String, CreateVectorData)>>,
+    pub vectors: Option<Vec<CreateVectorData>>,
     pub vector_size: Option<usize>,
     pub distance: Option<Distance>,
     /// Number of shards in collection.

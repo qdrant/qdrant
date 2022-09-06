@@ -36,6 +36,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
             create_collection: CreateCollection {
                 vector: if let Some(vector) = value.vector {
                     Some(CreateVectorData {
+                        name: None,
                         size: vector.size as usize,
                         distance: convert_distance(vector.distance)?,
                     })
@@ -45,13 +46,11 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 vectors: if let Some(vectors) = value.vectors {
                     let mut vec = Vec::new();
                     for (vector_name, vector) in vectors.map {
-                        vec.push((
-                            vector_name,
-                            CreateVectorData {
-                                size: vector.size as usize,
-                                distance: convert_distance(vector.distance)?,
-                            },
-                        ));
+                        vec.push(CreateVectorData {
+                            name: Some(vector_name),
+                            size: vector.size as usize,
+                            distance: convert_distance(vector.distance)?,
+                        });
                     }
                     Some(vec)
                 } else {
