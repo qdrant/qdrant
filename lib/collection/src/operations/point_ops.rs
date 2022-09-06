@@ -320,7 +320,7 @@ impl PointStruct {
         if let Some(vectors) = &self.vectors {
             vectors.clone()
         } else if let Some(vector) = &self.vector {
-            only_default_vector(&vector)
+            only_default_vector(vector)
         } else {
             panic!("PointStruct does not have vector data")
         }
@@ -332,7 +332,7 @@ impl Batch {
         if let Some(all_vectors) = &self.all_vectors {
             all_vectors.clone()
         } else if let Some(vectors) = &self.vectors {
-            vectors.iter().map(|vector| only_default_vector(&vector)).collect()
+            vectors.iter().map(|vector| only_default_vector(vector)).collect()
         } else {
             panic!("PointStruct does not have vector data")
         }
