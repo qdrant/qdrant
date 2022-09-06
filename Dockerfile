@@ -17,7 +17,7 @@ WORKDIR /qdrant
 COPY --from=planner /qdrant/recipe.json recipe.json
 
 RUN apt-get update
-RUN env ACCEPT_EULA=Y apt upgrade
+RUN env ACCEPT_EULA=Y apt upgrade -y
 RUN apt-get install -y clang cmake
 RUN rustup component add rustfmt
 
