@@ -156,11 +156,11 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
 
 impl From<Record> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: Record) -> Self {
+        let vectors = record.get_vectors();
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vectors: record
-                .vectors
+            vectors: vectors
                 .unwrap_or_default()
                 .into_iter()
                 .map(|(vector_name, vector_data)| {
@@ -178,6 +178,7 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
         Ok(Self {
             id: retrieved_point.id.unwrap().try_into()?,
             payload: Some(proto_to_payloads(retrieved_point.payload)?),
+            vector: None,
             vectors: Some(
                 retrieved_point
                     .vectors

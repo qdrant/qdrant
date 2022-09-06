@@ -32,7 +32,7 @@ impl TryFrom<Record> for PointStruct {
     type Error = String;
 
     fn try_from(record: Record) -> Result<Self, Self::Error> {
-        match record.vectors {
+        match record.get_vectors() {
             Some(vectors) => Ok(Self {
                 id: record.id,
                 vector: None,

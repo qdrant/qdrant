@@ -118,6 +118,7 @@ impl SegmentsSearcher {
                         } else {
                             None
                         },
+                        vector: None,
                         vectors: if with_vector {
                             Some(segment.all_vectors(id)?)
                         } else {

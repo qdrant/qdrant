@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(records.len(), 3);
 
         for record in records {
-            let v = record.vectors.unwrap();
+            let v = record.get_vectors().unwrap();
 
             if record.id == 1.into() {
                 assert_eq!(&v, &only_default_vector(&[2., 2., 2., 2.]))
@@ -198,7 +198,7 @@ mod tests {
         .unwrap();
 
         for record in records {
-            let _v = record.vectors.unwrap();
+            let _v = record.get_vectors().unwrap();
             assert_ne!(record.id, 500.into());
         }
     }

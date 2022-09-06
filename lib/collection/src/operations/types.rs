@@ -6,7 +6,9 @@ use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
+use segment::common::only_default_vector;
 use segment::entry::entry_point::{AllVectors, OperationError};
+use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
     SeqNumberType, VectorElementType, WithPayloadInterface,
@@ -61,6 +63,8 @@ pub struct Record {
     pub id: PointIdType,
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
+    /// Vector of the point
+    pub vector: Option<Vec<VectorElementType>>,
     /// Vectors of the point
     pub vectors: Option<AllVectors>,
 }
@@ -520,5 +524,31 @@ pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
     match err {
         Ok(_) => false,
         Err(error) => matches!(error, CollectionError::ServiceError { .. }),
+    }
+}
+
+impl Record {
+    pub fn get_vectors(&self) -> Option<AllVectors> {
+        if let Some(vectors) = &self.vectors {
+            Some(vectors.clone())
+        } else {
+            self.vector
+                .as_ref()
+                .map(|vector| only_default_vector(vector))
+        }
+    }
+
+    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorType> {
+        if let Some(vectors) = &self.vectors {
+            vectors.get(name).cloned()
+        } else if let Some(vector) = &self.vector {
+            if name == DEFAULT_VECTOR_NAME {
+                Some(vector.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 }

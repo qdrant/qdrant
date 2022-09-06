@@ -610,9 +610,10 @@ impl Collection {
                 .vector_name
                 .clone()
                 .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned());
+            //let rec_vectors = rec.get
             let all_vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = all_vectors
                 .iter()
-                .map(|rec| (rec.id, rec.vectors.as_ref().unwrap()[&vector_name].clone()))
+                .map(|rec| (rec.id, rec.get_vector_by_name(&vector_name).unwrap()))
                 .collect();
 
             let reference_vectors_ids = request
@@ -847,9 +848,9 @@ impl Collection {
                 // But it's not a problem, because we don't want to return deleted points.
                 // So we just filter out them.
                 records_map.remove(&scored_point.id).map(|record| {
+                    let vectors = record.get_vectors();
                     scored_point.payload = record.payload;
-                    scored_point.vector =
-                        record.vectors.map(|vectors| vectors[&vector_name].clone());
+                    scored_point.vector = vectors.map(|vectors| vectors[&vector_name].clone());
                     scored_point
                 })
             })
