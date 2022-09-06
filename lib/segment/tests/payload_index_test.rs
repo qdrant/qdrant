@@ -254,7 +254,6 @@ mod tests {
                 estimation
             );
 
-            // warning: report flakiness at https://github.com/qdrant/qdrant/issues/534
             plain_result
                 .iter()
                 .zip(struct_result.iter())

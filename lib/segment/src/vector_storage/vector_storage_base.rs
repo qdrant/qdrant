@@ -18,7 +18,13 @@ impl Eq for ScoredPointOffset {}
 
 impl Ord for ScoredPointOffset {
     fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
+        let res = OrderedFloat(self.score).cmp(&OrderedFloat(other.score));
+        // for identical scores, we fallback to sorting by ids to have a stable output
+        if res == Ordering::Equal {
+            self.idx.cmp(&other.idx)
+        } else {
+            res
+        }
     }
 }
 
@@ -107,7 +113,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ordering() {
+    fn test_ordering_score() {
         assert!(
             ScoredPointOffset {
                 idx: 10,
@@ -115,6 +121,30 @@ mod tests {
             } > ScoredPointOffset {
                 idx: 20,
                 score: 0.6
+            }
+        )
+    }
+
+    #[test]
+    fn test_ordering_fallback() {
+        assert!(
+            ScoredPointOffset {
+                idx: 10,
+                score: 0.9
+            } > ScoredPointOffset { idx: 9, score: 0.9 }
+        )
+    }
+
+    #[test]
+    fn test_ordering_equality() {
+        assert_eq!(
+            ScoredPointOffset {
+                idx: 10,
+                score: 0.9
+            },
+            ScoredPointOffset {
+                idx: 10,
+                score: 0.9
             }
         )
     }
