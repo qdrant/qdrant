@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -5,23 +6,35 @@ use tokio::runtime::Handle;
 
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
-use super::ShardOperation;
+use super::{PeerId, ShardOperation};
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-    SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 
-pub struct Replica<T: ShardOperation> {
-    shard: T,
-    pub is_active: bool,
-}
+pub type IsActive = bool;
 
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 pub struct ReplicaSet {
-    local: Option<Replica<LocalShard>>,
-    remote: Vec<Replica<RemoteShard>>,
+    this_peer_id: PeerId,
+    local: Option<LocalShard>,
+    // TODO: Remote shard should be able to query several peers
+    remote: Option<RemoteShard>,
+    replica_state: HashMap<PeerId, IsActive>,
+}
+
+impl ReplicaSet {
+    pub fn set_active(&mut self, peer_id: &PeerId, active: bool) -> CollectionResult<()> {
+        *self
+            .replica_state
+            .get_mut(peer_id)
+            .ok_or_else(|| CollectionError::NotFound {
+                what: format!("Replica on peer {peer_id}"),
+            })? = active;
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]

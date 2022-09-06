@@ -1,5 +1,5 @@
 use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
-use collection::shard::{CollectionId, ShardTransfer};
+use collection::shard::{CollectionId, PeerId, ShardId, ShardTransfer};
 use schemars::JsonSchema;
 use segment::types::Distance;
 use serde::{Deserialize, Serialize};
@@ -156,6 +156,16 @@ pub enum ShardTransferOperations {
     },
 }
 
+/// Sets the state of shard replica
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+pub struct SetShardReplicaState {
+    pub collection_name: String,
+    pub shard_id: ShardId,
+    pub peer_id: PeerId,
+    /// If `true` then the replica is up to date and can receive updates and answer requests
+    pub active: bool,
+}
+
 /// Enumeration of all possible collection update operations
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -166,4 +176,5 @@ pub enum CollectionMetaOperations {
     DeleteCollection(DeleteCollectionOperation),
     ChangeAliases(ChangeAliasesOperation),
     TransferShard(CollectionId, ShardTransferOperations),
+    SetShardReplicaState(SetShardReplicaState),
 }

@@ -233,6 +233,16 @@ impl Collection {
         }
     }
 
+    pub async fn set_shard_replica_state(
+        &self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        active: bool,
+    ) -> CollectionResult<()> {
+        let mut shard_holder = self.shards_holder.write().await;
+        shard_holder.set_shard_replica_state(shard_id, peer_id, active)
+    }
+
     pub async fn contains_shard(&self, shard_id: &ShardId) -> bool {
         let shard_holder_read = self.shards_holder.read().await;
         shard_holder_read.contains_shard(shard_id)
