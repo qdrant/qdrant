@@ -365,10 +365,12 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
         } = value;
 
         let converted_payload = proto_to_payloads(payload)?;
-        let vectors = Some(vectors
-            .into_iter()
-            .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
-            .collect());
+        let vectors = Some(
+            vectors
+                .into_iter()
+                .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
+                .collect(),
+        );
 
         Ok(Self {
             id: id

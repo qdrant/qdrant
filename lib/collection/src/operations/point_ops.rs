@@ -183,13 +183,14 @@ impl Validate for PointOperations {
 
 impl Validate for PointInsertOperations {
     fn validate(&self) -> CollectionResult<()> {
-        let bad_input_error = |ids_len: usize, vectors_len: usize| Err(CollectionError::BadInput {
-            description: format!(
-                "Amount of ids ({}) and vectors ({}) does not match",
-                ids_len,
-                vectors_len,
-            ),
-        });
+        let bad_input_error = |ids_len: usize, vectors_len: usize| {
+            Err(CollectionError::BadInput {
+                description: format!(
+                    "Amount of ids ({}) and vectors ({}) does not match",
+                    ids_len, vectors_len,
+                ),
+            })
+        };
 
         match self {
             PointInsertOperations::PointsList(_) => Ok(()),
@@ -203,7 +204,9 @@ impl Validate for PointInsertOperations {
                         return bad_input_error(batch.ids.len(), all_vectors.len());
                     }
                 } else {
-                    return Err(CollectionError::BadInput { description: "No vector data".to_owned() })
+                    return Err(CollectionError::BadInput {
+                        description: "No vector data".to_owned(),
+                    });
                 }
                 if let Some(payload_vector) = &batch.payloads {
                     if payload_vector.len() != batch.ids.len() {
@@ -332,7 +335,10 @@ impl Batch {
         if let Some(all_vectors) = &self.all_vectors {
             all_vectors.clone()
         } else if let Some(vectors) = &self.vectors {
-            vectors.iter().map(|vector| only_default_vector(vector)).collect()
+            vectors
+                .iter()
+                .map(|vector| only_default_vector(vector))
+                .collect()
         } else {
             panic!("PointStruct does not have vector data")
         }
