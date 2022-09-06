@@ -16,13 +16,18 @@ WORKDIR /qdrant
 
 COPY --from=planner /qdrant/recipe.json recipe.json
 
-# RUN sudo add-apt-repository --remove ppa:ubuntu-toolchain-r/test -y
+RUN cat /etc/issue
+
+# RUN apt-get install software-properties-common
+# RUN add-apt-repository ppa:jonathonf/ffmpeg-4
+
+# RUN add-apt-repository 
+RUN grep ^[^#] /etc/apt/sources.list /etc/apt/sources.list.d/*
 RUN apt-get update
 RUN apt-get upgrade -y
 RUN env ACCEPT_EULA=Y apt upgrade -y
 RUN apt-get install -y clang cmake
 RUN rustup component add rustfmt
-
 
 
 RUN apt-get install -y g++-multilib
