@@ -35,10 +35,11 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
-                vectors: vec![
+                vectors: None,
+                all_vectors: Some(vec![
                     only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
                     only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
-                ],
+                ]),
                 payloads: None,
             })),
         );
@@ -73,10 +74,11 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
-                vectors: vec![
+                vectors: None,
+                all_vectors: Some(vec![
                     only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
                     only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
-                ],
+                ]),
                 payloads: serde_json::from_str(r#"[{ "k": "v1" } , { "k": "v2"}]"#).unwrap(),
             })),
         );
@@ -141,10 +143,11 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0.into(), 1.into()],
-                vectors: vec![
+                vectors: None,
+                all_vectors: Some(vec![
                     only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
                     only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
-                ],
+                ]),
                 payloads: serde_json::from_str(
                     r#"[{ "k1": "v1" }, { "k1": "v2" , "k2": "v3", "k3": "v4"}]"#,
                 )

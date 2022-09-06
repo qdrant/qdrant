@@ -447,11 +447,12 @@ mod tests {
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![501.into(), 502.into(), 503.into()],
-                vectors: vec![
+                vectors: None,
+                all_vectors: Some(vec![
                     only_default_vector(&random_vector(&mut rng, dim)),
                     only_default_vector(&random_vector(&mut rng, dim)),
                     only_default_vector(&random_vector(&mut rng, dim)),
-                ],
+                ]),
                 payloads: Some(vec![
                     Some(point_payload.clone()),
                     Some(point_payload.clone()),
@@ -519,11 +520,12 @@ mod tests {
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![601.into(), 602.into(), 603.into()],
-                vectors: vec![
+                vectors: None,
+                all_vectors: Some(vec![
                     only_default_vector(&random_vector(&mut rng, dim)),
                     only_default_vector(&random_vector(&mut rng, dim)),
                     only_default_vector(&random_vector(&mut rng, dim)),
-                ],
+                ]),
                 payloads: None,
             }));
 

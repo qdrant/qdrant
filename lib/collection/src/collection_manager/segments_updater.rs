@@ -10,7 +10,7 @@ use segment::types::{
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations, PointStruct};
+use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::FieldIndexOperations;
 
@@ -203,7 +203,7 @@ pub(crate) fn sync_points(
         let all_vectors = segment.all_vectors(id)?;
         let payload = segment.payload(id)?;
         let point = id_to_point.get(&id).unwrap();
-        if point.vectors != all_vectors {
+        if point.get_vectors() != all_vectors {
             points_to_update.push(*point);
             Ok(true)
         } else {
@@ -264,7 +264,7 @@ where
                 write_segment,
                 op_num,
                 id,
-                &point.vectors,
+                &point.get_vectors(),
                 point.payload.as_ref(),
             )
         })?;
@@ -292,7 +292,7 @@ where
                 &mut write_segment,
                 op_num,
                 point_id,
-                &point.vectors,
+                &point.get_vectors(),
                 point.payload.as_ref(),
             )? as usize;
         }
@@ -310,17 +310,15 @@ pub(crate) fn process_point_operation(
         PointOperations::DeletePoints { ids, .. } => delete_points(&segments.read(), op_num, &ids),
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
-                PointInsertOperations::PointsBatch(Batch {
-                    ids,
-                    vectors,
-                    payloads,
-                }) => {
-                    let vectors_iter = ids.into_iter().zip(vectors.into_iter());
-                    match payloads {
+                PointInsertOperations::PointsBatch(batch) => {
+                    let all_vectors = batch.get_vectors();
+                    let vectors_iter = batch.ids.into_iter().zip(all_vectors.into_iter());
+                    match batch.payloads {
                         None => vectors_iter
                             .map(|(id, vectors)| PointStruct {
                                 id,
-                                vectors,
+                                vector: None,
+                                vectors: Some(vectors),
                                 payload: None,
                             })
                             .collect(),
@@ -328,7 +326,8 @@ pub(crate) fn process_point_operation(
                             .zip(payloads.into_iter())
                             .map(|((id, vectors), payload)| PointStruct {
                                 id,
-                                vectors,
+                                vector: None,
+                                vectors: Some(vectors),
                                 payload,
                             })
                             .collect(),

@@ -25,6 +25,9 @@ use crate::save_on_disk;
 use crate::shard::{PeerId, ShardId};
 use crate::wal::WalError;
 
+/// Type of vector in API
+pub type VectorType = Vec<VectorElementType>;
+
 /// Current state of the collection
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone,

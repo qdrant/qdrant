@@ -29,7 +29,8 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     for i in 0..1000 {
         points.push(PointStruct {
             id: i.into(),
-            vectors: only_default_vector(&[i as f32, 0.0, 0.0, 0.0]),
+            vector: None,
+            vectors: Some(only_default_vector(&[i as f32, 0.0, 0.0, 0.0])),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }

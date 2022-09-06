@@ -68,12 +68,14 @@ fn test_update_proxy_segments() {
         let points = vec![
             PointStruct {
                 id: (100 * i + 1).into(),
-                vectors: vectors[0].clone(),
+                vector: None,
+                vectors: Some(vectors[0].clone()),
                 payload: None,
             },
             PointStruct {
                 id: (100 * i + 2).into(),
-                vectors: vectors[1].clone(),
+                vector: None,
+                vectors: Some(vectors[1].clone()),
                 payload: None,
             },
         ];
@@ -112,12 +114,14 @@ fn test_move_points_to_copy_on_write() {
     let points = vec![
         PointStruct {
             id: 1.into(),
-            vectors: only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            vector: None,
+            vectors: Some(only_default_vector(&[0.0, 0.0, 0.0, 0.0])),
             payload: None,
         },
         PointStruct {
             id: 2.into(),
-            vectors: only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            vector: None,
+            vectors: Some(only_default_vector(&[0.0, 0.0, 0.0, 0.0])),
             payload: None,
         },
     ];
@@ -127,12 +131,14 @@ fn test_move_points_to_copy_on_write() {
     let points = vec![
         PointStruct {
             id: 2.into(),
-            vectors: only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            vector: None,
+            vectors: Some(only_default_vector(&[0.0, 0.0, 0.0, 0.0])),
             payload: None,
         },
         PointStruct {
             id: 3.into(),
-            vectors: only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            vector: None,
+            vectors: Some(only_default_vector(&[0.0, 0.0, 0.0, 0.0])),
             payload: None,
         },
     ];

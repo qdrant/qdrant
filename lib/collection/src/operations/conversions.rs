@@ -365,15 +365,16 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
         } = value;
 
         let converted_payload = proto_to_payloads(payload)?;
-        let vectors = vectors
+        let vectors = Some(vectors
             .into_iter()
             .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
-            .collect();
+            .collect());
 
         Ok(Self {
             id: id
                 .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
                 .try_into()?,
+            vector: None,
             vectors,
             payload: Some(converted_payload),
         })
@@ -384,11 +385,9 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        let PointStruct {
-            id,
-            vectors,
-            payload,
-        } = value;
+        let vectors = value.get_vectors();
+        let id = value.id;
+        let payload = value.payload;
 
         let converted_payload = match payload {
             None => HashMap::new(),
@@ -414,9 +413,10 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
 
     fn try_from(value: Batch) -> Result<Self, Self::Error> {
         let mut points = Vec::new();
+        let all_vectors = value.get_vectors();
         for (i, p_id) in value.ids.into_iter().enumerate() {
             let id = Some(p_id.into());
-            let vector = value.vectors.get(i).cloned();
+            let vector = all_vectors.get(i).cloned();
             let payload = value.payloads.as_ref().and_then(|payloads| {
                 payloads.get(i).map(|payload| match payload {
                     None => HashMap::new(),
