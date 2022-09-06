@@ -33,4 +33,4 @@ jobs:
         TAGS="-t generall/qdrant:${{ github.ref_name }}"
         TAGS="${TAGS} -t docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
         
-        docker buildx build --platform='linux/arm64' $TAGS --push .
+        docker buildx build --platform='linux/amd64,linux/arm64' $TAGS --push .
