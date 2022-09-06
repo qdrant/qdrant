@@ -263,7 +263,6 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         vector_size: params
                             .vector_size
                             .map(|size| NonZeroU64::new(size).unwrap()),
-                        // todo(ivan) copypaste conversion
                         distance: if let Some(distance) = params.distance {
                             match api::grpc::qdrant::Distance::from_i32(distance) {
                                 None => {

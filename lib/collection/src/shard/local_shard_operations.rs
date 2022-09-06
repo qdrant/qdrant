@@ -167,14 +167,17 @@ impl ShardOperation for LocalShard {
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let collection_params = self.config.read().await.params.clone();
+        // check vector names existing
+        for req in &request.searches {
+            collection_params.get_vector_params(req.vector_name.as_ref())?;
+        }
         let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
             .await?;
-        let collection_params = self.config.read().await.params.clone();
         let top_results = res
             .into_iter()
             .zip(request.searches.iter())
             .map(|(vector_res, req)| {
-                // todo(ivan): remove unwrap
                 let distance = collection_params
                     .get_vector_params(req.vector_name.as_ref())
                     .unwrap()

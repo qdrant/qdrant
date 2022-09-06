@@ -57,7 +57,6 @@ impl SegmentBuilder {
             Some(self_segment) => {
                 self_segment.version = cmp::max(self_segment.version(), other.version());
 
-                // todo(ivan) remove DEFAULT_VECTOR_NAME
                 let other_id_tracker = other.id_tracker.borrow();
                 let other_vector_storages: HashMap<_, _> = other
                     .vector_data
