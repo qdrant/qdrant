@@ -18,11 +18,6 @@ COPY --from=planner /qdrant/recipe.json recipe.json
 
 RUN cat /etc/issue
 
-# RUN apt-get install software-properties-common
-# RUN add-apt-repository ppa:jonathonf/ffmpeg-4
-
-# RUN add-apt-repository 
-RUN grep ^[^#] /etc/apt/sources.list /etc/apt/sources.list.d/*
 RUN apt-get update
 RUN apt-get upgrade -y
 RUN env ACCEPT_EULA=Y apt upgrade -y
