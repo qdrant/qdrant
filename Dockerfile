@@ -16,7 +16,7 @@ WORKDIR /qdrant
 
 COPY --from=planner /qdrant/recipe.json recipe.json
 
-RUN apt-get update && apt-get install -y gcc-multilib && apt-get install -y clang cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu && rustup component add rustfmt
+RUN apt-get update && apt-get install -y clang cmake gcc-multilib g++-multilib gcc-aarch64-linux-gnu g++-aarch64-linux-gnu && rustup component add rustfmt
 
 COPY ./tools/target_arch.sh ./target_arch.sh
 RUN rustup target add $(bash target_arch.sh)
