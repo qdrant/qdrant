@@ -92,7 +92,6 @@ pub struct CreateVectorData {
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
     pub vector: Option<CreateVectorData>,
-    // todo(ivan): Cannot use HashMap because of Hash trait
     pub vectors: Option<Vec<(String, CreateVectorData)>>,
     pub vector_size: Option<usize>,
     pub distance: Option<Distance>,
