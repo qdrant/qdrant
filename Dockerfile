@@ -17,12 +17,13 @@ WORKDIR /qdrant
 COPY --from=planner /qdrant/recipe.json recipe.json
 
 RUN apt-get update
+RUN env ACCEPT_EULA=Y apt upgrade
 RUN apt-get install -y clang cmake
 RUN rustup component add rustfmt
 
 
 
-RUN apt-get install -y gcc-multilib
+RUN apt-get install -y g++-multilib
 RUN apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 RUN apt-get install -y binutils binutils-aarch64-linux-gnu
 
