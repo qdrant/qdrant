@@ -16,8 +16,34 @@ WORKDIR /qdrant
 
 COPY --from=planner /qdrant/recipe.json recipe.json
 
-RUN apt-get update && apt-get install -y clang cmake gcc-multilib g++-multilib gcc-aarch64-linux-gnu g++-aarch64-linux-gnu && rustup component add rustfmt
+RUN apt-get update
+RUN apt-get install -y clang cmake
+RUN rustup component add rustfmt
 
+
+
+RUN apt-get install -y gcc-multilib
+RUN apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+RUN apt-get install -y binutils binutils-aarch64-linux-gnu
+
+#RUN apt-get update && apt-get install -y \
+#    g++-aarch64-linux-gnu \
+#    libc6-dev-arm64-cross \
+#    binutils \
+#    binutils-aarch64-linux-gnu \
+    # gcc-multilib \
+#    gcc-multilib \
+#    gcc-aarch64-linux-gnu \
+#    g++-aarch64-linux-gnu
+
+# COPY tools/deny-debian-packages.sh /
+# RUN TARGET_ARCH=arm64 /deny-debian-packages.sh \
+#    binutils \
+#    binutils-aarch64-linux-gnu
+
+
+
+RUN dpkg -S libc-header-start.h
 COPY ./tools/target_arch.sh ./target_arch.sh
 RUN rustup target add $(bash target_arch.sh)
 
