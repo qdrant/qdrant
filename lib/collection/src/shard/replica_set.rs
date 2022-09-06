@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::DerefMut;
 use std::sync::Arc;
 
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -13,63 +14,26 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 
-pub struct Replica<T: ShardOperation> {
-    shard: T,
-    // TODO: include into consensus snapshot
-    pub is_active: bool,
-}
-
-impl<T: ShardOperation> Replica<T> {
-    pub fn get(&self) -> &dyn ShardOperation {
-        &self.shard
-    }
-
-    pub fn get_mut(&mut self) -> &mut dyn ShardOperation {
-        &mut self.shard
-    }
-}
+pub type IsActive = bool;
 
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 pub struct ReplicaSet {
     this_peer_id: PeerId,
-    local: Option<Replica<LocalShard>>,
-    remote: HashMap<PeerId, Replica<RemoteShard>>,
+    local: Option<LocalShard>,
+    // TODO: Remote shard should be able to query several peers
+    remote: Option<RemoteShard>,
+    replica_state: HashMap<PeerId, IsActive>,
 }
 
 impl ReplicaSet {
-    pub fn get(&self, peer_id: &PeerId) -> Option<&dyn ShardOperation> {
-        if *peer_id == self.this_peer_id {
-            self.local.as_ref().map(Replica::get)
-        } else {
-            self.remote.get(peer_id).map(Replica::get)
-        }
-    }
-
-    pub fn get_mut(&mut self, peer_id: &PeerId) -> Option<&mut dyn ShardOperation> {
-        if *peer_id == self.this_peer_id {
-            self.local.as_mut().map(Replica::get_mut)
-        } else {
-            self.remote.get_mut(peer_id).map(Replica::get_mut)
-        }
-    }
-
     pub fn set_active(&mut self, peer_id: &PeerId, active: bool) -> CollectionResult<()> {
-        if *peer_id == self.this_peer_id {
-            self.local
-                .as_mut()
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Replica on peer {peer_id}"),
-                })?
-                .is_active = active;
-        } else {
-            self.remote
-                .get_mut(peer_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Replica on peer {peer_id}"),
-                })?
-                .is_active = active;
-        }
+        *self
+            .replica_state
+            .get_mut(peer_id)
+            .ok_or_else(|| CollectionError::NotFound {
+                what: format!("Replica on peer {peer_id}"),
+            })? = active;
         Ok(())
     }
 }
