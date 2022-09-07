@@ -21,7 +21,7 @@ schemars = { version = "0.8.10", features = ["uuid1", "preserve_order"] }
 itertools = "0.10"
 async-trait = "0.1.57"
 log = "0.4"
-tonic = "0.7.2"
+tonic = "0.8.1"
 http = "0.2"
 parking_lot = { version = "0.12.1", features=["deadlock_detection", "serde"]}
 tar = "0.4.38"
