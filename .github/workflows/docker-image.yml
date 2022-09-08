@@ -28,8 +28,6 @@ jobs:
         images: |
           generall/qdrant
           docker.pkg.github.com/qdrant/qdrant/qdrant
-        tags: |
-          suffix=${{ github.ref_name }}
 
     - name: Set up Docker QEMU
       uses: docker/setup-qemu-action@v2
