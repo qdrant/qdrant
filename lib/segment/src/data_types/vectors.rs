@@ -53,6 +53,19 @@ impl From<NamedVectors> for VectorStruct {
 }
 
 impl VectorStruct {
+    pub fn get(&self, name: &str) -> Option<&VectorType> {
+        match self {
+            VectorStruct::Single(v) => {
+                if name == DEFAULT_VECTOR_NAME {
+                    Some(v)
+                } else {
+                    None
+                }
+            }
+            VectorStruct::Multi(v) => v.get(name),
+        }
+    }
+
     pub fn into_all_vectors(self) -> NamedVectors {
         match self {
             VectorStruct::Single(v) => default_vector(v),

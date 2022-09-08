@@ -95,27 +95,27 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 11.into(),
-                vectors: vec11.into(),
+                vector: vec11.into(),
                 payload: None,
             },
             PointStruct {
                 id: 12.into(),
-                vectors: vec12.into(),
+                vector: vec12.into(),
                 payload: None,
             },
             PointStruct {
                 id: 13.into(),
-                vectors: vec13.into(),
+                vector: vec13.into(),
                 payload: Some(json!({ "color": "red" }).into()),
             },
             PointStruct {
                 id: 14.into(),
-                vectors: vec![0., 0., 0., 0.].into(),
+                vector: vec![0., 0., 0., 0.].into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vectors: vec![2., 0., 2., 0.].into(),
+                vector: vec![2., 0., 2., 0.].into(),
                 payload: None,
             },
         ];
@@ -137,12 +137,12 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 1.into(),
-                vectors: vec![2., 2., 2., 2.].into(),
+                vector: vec![2., 2., 2., 2.].into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vectors: vec![2., 0., 2., 0.].into(),
+                vector: vec![2., 0., 2., 0.].into(),
                 payload: None,
             },
         ];

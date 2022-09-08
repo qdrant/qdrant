@@ -359,8 +359,9 @@ message PointsIdsList {
 
 message PointStruct {
   PointId id = 1;
-  map<string, Vector> vectors = 2;
+  repeated float vector = 2 [deprecated = true];
   map<string, Value> payload = 3;
+  optional Vectors vectors = 4;
 }
 
 

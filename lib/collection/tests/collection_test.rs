@@ -265,12 +265,12 @@ fn test_deserialization2() {
         vec![
             PointStruct {
                 id: 0.into(),
-                vectors: vec![1.0, 0.0, 1.0, 1.0].into(),
+                vector: vec![1.0, 0.0, 1.0, 1.0].into(),
                 payload: None,
             },
             PointStruct {
                 id: 1.into(),
-                vectors: vec![1.0, 0.0, 1.0, 0.0].into(),
+                vector: vec![1.0, 0.0, 1.0, 0.0].into(),
                 payload: None,
             },
         ]

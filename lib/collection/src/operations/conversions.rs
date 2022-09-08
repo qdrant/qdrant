@@ -3,7 +3,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
-use segment::data_types::vectors::{NamedVector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Distance, WithVector};
 use tonic::Status;
 
@@ -375,21 +375,23 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
     fn try_from(value: api::grpc::qdrant::PointStruct) -> Result<Self, Self::Error> {
         let api::grpc::qdrant::PointStruct {
             id,
+            vector,
             vectors,
             payload,
         } = value;
 
         let converted_payload = proto_to_payloads(payload)?;
-        let vectors: HashMap<_, _> = vectors
-            .into_iter()
-            .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
-            .collect();
+
+        let vector_struct: VectorStruct = match vectors {
+            None => vector.into(),
+            Some(vectors) => vectors.try_into()?,
+        };
 
         Ok(Self {
             id: id
                 .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
                 .try_into()?,
-            vectors: vectors.into(),
+            vector: vector_struct,
             payload: Some(converted_payload),
         })
     }
@@ -399,7 +401,14 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        let vectors = value.get_vectors();
+        let deprecated_vector = value
+            .vector
+            .get(DEFAULT_VECTOR_NAME)
+            .cloned()
+            .unwrap_or_default();
+
+        let vectors: api::grpc::qdrant::Vectors = value.vector.into();
+
         let id = value.id;
         let payload = value.payload;
 
@@ -407,17 +416,12 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
             None => HashMap::new(),
             Some(payload) => payload_to_proto(payload),
         };
-        let vectors = vectors
-            .into_iter()
-            .map(|(vector_name, vector_data)| {
-                (vector_name, api::grpc::qdrant::Vector { data: vector_data })
-            })
-            .collect();
 
         Ok(Self {
             id: Some(id.into()),
-            vectors,
+            vectors: Some(vectors),
             payload: converted_payload,
+            vector: deprecated_vector,
         })
     }
 }
@@ -437,16 +441,18 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
                     Some(payload) => payload_to_proto(payload.clone()),
                 })
             });
+            let vectors: Option<VectorStruct> = vector.map(|v| v.into());
+
+            let deprecated_vector = vectors
+                .as_ref()
+                .map(|v| v.get(DEFAULT_VECTOR_NAME).cloned().unwrap_or_default())
+                .unwrap_or_default();
+
             let point = api::grpc::qdrant::PointStruct {
                 id,
-                vectors: vector
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|(vector_name, vector_data)| {
-                        (vector_name, api::grpc::qdrant::Vector { data: vector_data })
-                    })
-                    .collect(),
+                vectors: vectors.map(|v| v.into()),
                 payload: payload.unwrap_or_default(),
+                vector: deprecated_vector,
             };
             points.push(point);
         }

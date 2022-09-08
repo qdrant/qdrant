@@ -33,7 +33,7 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
         let vectors = only_default_vector(&random_vector(&mut rng, dim));
         let point = PointStruct {
             id: i.into(),
-            vectors: vectors.into(),
+            vector: vectors.into(),
             payload: Some(Payload(payload_map)),
         };
         points.push(point);

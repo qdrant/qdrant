@@ -1975,10 +1975,13 @@ pub struct PointsIdsList {
 pub struct PointStruct {
     #[prost(message, optional, tag="1")]
     pub id: ::core::option::Option<PointId>,
-    #[prost(map="string, message", tag="2")]
-    pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
+    #[deprecated]
+    #[prost(float, repeated, packed="false", tag="2")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(map="string, message", tag="3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    #[prost(message, optional, tag="4")]
+    pub vectors: ::core::option::Option<Vectors>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPoint {

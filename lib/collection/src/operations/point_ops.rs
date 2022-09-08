@@ -23,8 +23,8 @@ pub struct PointStruct {
     /// Point id
     pub id: PointIdType,
     /// Vectors
-    #[serde(alias = "vector")]
-    pub vectors: VectorStruct,
+    #[serde(alias = "vectors")]
+    pub vector: VectorStruct,
     /// Payload values (optional)
     pub payload: Option<Payload>,
 }
@@ -37,7 +37,7 @@ impl TryFrom<Record> for PointStruct {
         match record.get_vectors() {
             Some(vectors) => Ok(Self {
                 id: record.id,
-                vectors: vectors.into(),
+                vector: vectors.into(),
                 payload: record.payload,
             }),
             None => Err("Vector is empty".to_string()),
@@ -397,7 +397,7 @@ impl From<Vec<PointStruct>> for PointOperations {
 
 impl PointStruct {
     pub fn get_vectors(&self) -> NamedVectors {
-        match &self.vectors {
+        match &self.vector {
             VectorStruct::Single(vector) => only_default_vector(vector), // ToDo: try to avoid vector copy here
             VectorStruct::Multi(vectors) => vectors.clone(),
         }
