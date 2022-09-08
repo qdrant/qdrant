@@ -2677,16 +2677,10 @@
         "type": "object",
         "properties": {
           "vectors": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/VectorParams"
-            },
-            "nullable": true
-          },
-          "vector": {
+            "description": "Configuration of the vector storage",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/VectorParams"
+                "$ref": "#/components/schemas/VectorParamStruct"
               },
               {
                 "nullable": true
@@ -2695,6 +2689,7 @@
           },
           "vector_size": {
             "description": "Size of a vectors used",
+            "deprecated": true,
             "type": "integer",
             "format": "uint64",
             "minimum": 1,
@@ -2702,6 +2697,7 @@
           },
           "distance": {
             "description": "Type of distance function used for measuring distance between vectors",
+            "deprecated": true,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Distance"
@@ -2724,6 +2720,19 @@
             "type": "boolean"
           }
         }
+      },
+      "VectorParamStruct": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/VectorParams"
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/VectorParams"
+            }
+          }
+        ]
       },
       "VectorParams": {
         "type": "object",
@@ -2978,9 +2987,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": false,
-            "type": "boolean"
+            "$ref": "#/components/schemas/WithVector"
           }
         }
       },
@@ -3060,6 +3067,22 @@
         },
         "additionalProperties": false
       },
+      "WithVector": {
+        "description": "Options for specifying which vector to include",
+        "anyOf": [
+          {
+            "description": "If `true` - return all vector, If `false` - do not return vector",
+            "type": "boolean"
+          },
+          {
+            "description": "Specify which vector to return",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      },
       "Record": {
         "description": "Point data",
         "type": "object",
@@ -3127,17 +3150,8 @@
           "vector"
         ],
         "properties": {
-          "vector_name": {
-            "type": "string",
-            "nullable": true
-          },
           "vector": {
-            "description": "Look for vectors closest to this",
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
+            "$ref": "#/components/schemas/NamedVectorStruct"
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
@@ -3186,15 +3200,46 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": false,
-            "type": "boolean"
+            "$ref": "#/components/schemas/WithVector"
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
             "type": "number",
             "format": "float",
             "nullable": true
+          }
+        }
+      },
+      "NamedVectorStruct": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/NamedVector"
+          }
+        ]
+      },
+      "NamedVector": {
+        "type": "object",
+        "required": [
+          "name",
+          "vector"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "vector": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
           }
         }
       },
@@ -3567,12 +3612,14 @@
           },
           "vector": {
             "description": "Vector of the point",
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            },
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorStruct"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -3671,9 +3718,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": false,
-            "type": "boolean"
+            "$ref": "#/components/schemas/WithVector"
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
@@ -3681,7 +3726,9 @@
             "format": "float",
             "nullable": true
           },
-          "vector_name": {
+          "using": {
+            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
+            "default": null,
             "type": "string",
             "nullable": true
           }
@@ -3732,9 +3779,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": false,
-            "type": "boolean"
+            "$ref": "#/components/schemas/WithVector"
           }
         }
       },
@@ -3769,30 +3814,25 @@
         "description": "Operation for creating new collection and (optionally) specify index params",
         "type": "object",
         "properties": {
-          "vector": {
+          "vectors": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/CreateVectorData"
+                "$ref": "#/components/schemas/VectorParamStruct"
               },
               {
                 "nullable": true
               }
             ]
           },
-          "vectors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CreateVectorData"
-            },
-            "nullable": true
-          },
           "vector_size": {
+            "deprecated": true,
             "type": "integer",
             "format": "uint",
             "minimum": 0,
             "nullable": true
           },
           "distance": {
+            "deprecated": true,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Distance"
@@ -3848,27 +3888,6 @@
                 "nullable": true
               }
             ]
-          }
-        }
-      },
-      "CreateVectorData": {
-        "type": "object",
-        "required": [
-          "distance",
-          "size"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "nullable": true
-          },
-          "size": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "distance": {
-            "$ref": "#/components/schemas/Distance"
           }
         }
       },
@@ -4178,6 +4197,33 @@
           }
         ]
       },
+      "BatchVectorStruct": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "float"
+                }
+              }
+            }
+          }
+        ]
+      },
       "PointStruct": {
         "type": "object",
         "required": [
@@ -4207,7 +4253,8 @@
       "Batch": {
         "type": "object",
         "required": [
-          "ids"
+          "ids",
+          "vectors"
         ],
         "properties": {
           "ids": {
@@ -4217,29 +4264,7 @@
             }
           },
           "vectors": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "number",
-                "format": "float"
-              }
-            },
-            "nullable": true
-          },
-          "all_vectors": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "float"
-                }
-              }
-            },
-            "nullable": true
+            "$ref": "#/components/schemas/BatchVectorStruct"
           },
           "payloads": {
             "type": "array",
