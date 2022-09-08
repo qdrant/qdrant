@@ -20,8 +20,18 @@ jobs:
     - name: Get current tag
       id: vars
       run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+  
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: |
+          generall/qdrant
+          docker.pkg.github.com/qdrant/qdrant/qdrant
+        tags: |
+          suffix=${{ github.ref_name }}
 
-    - name: Set up QEMU
+    - name: Set up Docker QEMU
       uses: docker/setup-qemu-action@v2
 
     - name: Set up Docker Buildx
@@ -45,8 +55,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: .
-        tags: |
-          generall/qdrant:${{ github.ref_name }}
-          docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
         platforms: linux/amd64,linux/arm64
         push: true
