@@ -3083,15 +3083,31 @@
           },
           "vector": {
             "description": "Vector of the point",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorStruct"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "Payload": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "VectorStruct": {
+        "anyOf": [
+          {
             "type": "array",
             "items": {
               "type": "number",
               "format": "float"
-            },
-            "nullable": true
+            }
           },
-          "vectors": {
-            "description": "Vectors of the point",
+          {
             "type": "object",
             "additionalProperties": {
               "type": "array",
@@ -3099,14 +3115,9 @@
                 "type": "number",
                 "format": "float"
               }
-            },
-            "nullable": true
+            }
           }
-        }
-      },
-      "Payload": {
-        "type": "object",
-        "additionalProperties": true
+        ]
       },
       "SearchRequest": {
         "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
@@ -4170,32 +4181,15 @@
       "PointStruct": {
         "type": "object",
         "required": [
-          "id"
+          "id",
+          "vectors"
         ],
         "properties": {
           "id": {
             "$ref": "#/components/schemas/ExtendedPointId"
           },
-          "vector": {
-            "description": "Vector",
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            },
-            "nullable": true
-          },
           "vectors": {
-            "description": "Vectors",
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "number",
-                "format": "float"
-              }
-            },
-            "nullable": true
+            "$ref": "#/components/schemas/VectorStruct"
           },
           "payload": {
             "description": "Payload values (optional)",

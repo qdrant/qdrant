@@ -4,13 +4,14 @@ use std::sync::atomic::AtomicBool;
 use serde_json::Value;
 
 use crate::common::Flusher;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
 use crate::telemetry::VectorIndexTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType, SearchParams, VectorElementType,
+    PointOffsetType, SearchParams,
 };
 use crate::vector_storage::ScoredPointOffset;
 

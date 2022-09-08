@@ -1,6 +1,9 @@
+use std::collections::BTreeMap;
+
+use api::grpc::conversions::from_grpc_dist;
+use collection::config::VectorParamStruct;
 use tonic::Status;
 
-use super::collection_meta_ops::CreateVectorData;
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
     CreateAliasOperation, CreateCollection, CreateCollectionOperation, DeleteAlias,
@@ -23,45 +26,31 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::CreateCollection) -> Result<Self, Self::Error> {
-        let convert_distance = |distance| match api::grpc::qdrant::Distance::from_i32(distance) {
-            Some(api::grpc::qdrant::Distance::Cosine) => Ok(segment::types::Distance::Cosine),
-            Some(api::grpc::qdrant::Distance::Euclid) => Ok(segment::types::Distance::Euclid),
-            Some(api::grpc::qdrant::Distance::Dot) => Ok(segment::types::Distance::Dot),
-            Some(_) => Err(Status::failed_precondition("Unknown distance")),
-            _ => Err(Status::failed_precondition("Bad value of distance field!")),
-        };
-
         Ok(Self::CreateCollection(CreateCollectionOperation {
             collection_name: value.collection_name,
             create_collection: CreateCollection {
-                vector: if let Some(vector) = value.vector {
-                    Some(CreateVectorData {
-                        name: None,
-                        size: vector.size as usize,
-                        distance: convert_distance(vector.distance)?,
-                    })
-                } else {
-                    None
-                },
-                vectors: if let Some(vectors) = value.vectors {
-                    let mut vec = Vec::new();
-                    for (vector_name, vector) in vectors.map {
-                        vec.push(CreateVectorData {
-                            name: Some(vector_name),
-                            size: vector.size as usize,
-                            distance: convert_distance(vector.distance)?,
-                        });
-                    }
-                    Some(vec)
-                } else {
-                    None
+                vectors: match value.vectors_config {
+                    Some(vectors) => match vectors.config {
+                        None => None,
+                        Some(params) => match params {
+                            api::grpc::qdrant::vectors_config::Config::Params(vector_params) => {
+                                Some(VectorParamStruct::Single(vector_params.try_into()?))
+                            }
+                            api::grpc::qdrant::vectors_config::Config::ParamsMap(
+                                vectors_params,
+                            ) => {
+                                let mut params_map = BTreeMap::new();
+                                for (name, params) in vectors_params.map {
+                                    params_map.insert(name, params.try_into()?);
+                                }
+                                Some(VectorParamStruct::Multi(params_map))
+                            }
+                        },
+                    },
+                    None => None,
                 },
                 vector_size: value.vector_size.map(|size| size as usize),
-                distance: if let Some(distance) = value.distance {
-                    Some(convert_distance(distance)?)
-                } else {
-                    None
-                },
+                distance: value.distance.map(from_grpc_dist).transpose()?,
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),

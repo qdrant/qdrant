@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::hash::Hash;
+
 use serde_json::Value;
 
 pub fn rev_range(a: usize, b: usize) -> impl Iterator<Item = usize> {
@@ -39,4 +42,15 @@ pub fn remove_value_from_json_map(
         }
         None => value.remove(path),
     }
+}
+
+pub fn transpose_map<T: Clone + Hash + Eq, K>(map: HashMap<T, Vec<K>>) -> Vec<HashMap<T, K>> {
+    let mut result = Vec::new();
+    for (key, values) in map {
+        result.resize_with(values.len(), HashMap::default);
+        for (i, value) in values.into_iter().enumerate() {
+            result[i].insert(key.clone(), value);
+        }
+    }
+    result
 }

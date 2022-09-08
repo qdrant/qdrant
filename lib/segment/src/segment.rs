@@ -13,10 +13,10 @@ use tar::Builder;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::StorageVersion;
 use crate::common::{check_vector_name, check_vectors_set};
+use crate::data_types::vectors::{NamedVectors, VectorElementType};
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
-    get_service_error, AllVectors, OperationError, OperationResult, SegmentEntry,
-    SegmentFailedState,
+    get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
@@ -26,12 +26,11 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
+    SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
-pub const DEFAULT_VECTOR_NAME: &str = "";
 
 pub struct SegmentVersion;
 
@@ -79,7 +78,7 @@ impl Segment {
     fn update_vector(
         &mut self,
         old_internal_id: PointOffsetType,
-        vectors: AllVectors,
+        vectors: NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         check_vectors_set(&vectors, &self.segment_config)?;
         let mut new_internal_index = 0;
@@ -241,6 +240,24 @@ impl Segment {
             .unwrap())
     }
 
+    fn all_vectors_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+    ) -> OperationResult<NamedVectors> {
+        let mut vectors = NamedVectors::new();
+        for (vector_name, vector_data) in &self.vector_data {
+            vectors.insert(
+                vector_name.clone(),
+                vector_data
+                    .vector_storage
+                    .borrow()
+                    .get_vector(point_offset)
+                    .unwrap(),
+            );
+        }
+        Ok(vectors)
+    }
+
     /// Retrieve payload by internal ID
     #[inline]
     fn payload_by_offset(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
@@ -297,10 +314,9 @@ impl Segment {
     /// Converts raw ScoredPointOffset search result into ScoredPoint result
     fn process_search_result(
         &self,
-        vector_name: &str,
         internal_result: &[ScoredPointOffset],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let id_tracker = self.id_tracker.borrow();
         internal_result
@@ -330,11 +346,21 @@ impl Segment {
                 } else {
                     None
                 };
-
-                let vector = if with_vector {
-                    Some(self.vector_by_offset(vector_name, point_offset)?)
-                } else {
-                    None
+                let vector = match with_vector {
+                    WithVector::Bool(false) => None,
+                    WithVector::Bool(true) => {
+                        Some(self.all_vectors_by_offset(point_offset)?.into())
+                    }
+                    WithVector::Selector(vectors) => {
+                        let mut result = NamedVectors::new();
+                        for vector_name in vectors {
+                            result.insert(
+                                vector_name.clone(),
+                                self.vector_by_offset(vector_name, point_offset)?,
+                            );
+                        }
+                        Some(result.into())
+                    }
                 };
 
                 Ok(ScoredPoint {
@@ -365,7 +391,7 @@ impl SegmentEntry for Segment {
         vector_name: &str,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -386,7 +412,7 @@ impl SegmentEntry for Segment {
                 .borrow()
                 .search(&[vector], filter, top, params)[0];
 
-        self.process_search_result(vector_name, internal_result, with_payload, with_vector)
+        self.process_search_result(internal_result, with_payload, with_vector)
     }
 
     fn search_batch(
@@ -394,7 +420,7 @@ impl SegmentEntry for Segment {
         vector_name: &str,
         vectors: &[&[VectorElementType]],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -419,7 +445,7 @@ impl SegmentEntry for Segment {
         let res = internal_results
             .iter()
             .map(|internal_result| {
-                self.process_search_result(vector_name, internal_result, with_payload, with_vector)
+                self.process_search_result(internal_result, with_payload, with_vector)
             })
             .collect();
 
@@ -430,11 +456,11 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &AllVectors,
+        vectors: &NamedVectors,
     ) -> OperationResult<bool> {
         check_vectors_set(vectors, &self.segment_config)?;
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            let mut processed_vectors = AllVectors::new();
+            let mut processed_vectors = NamedVectors::new();
             for (vector_name, vector) in vectors {
                 let vector_data = &segment.vector_data[vector_name];
                 let vector_dim = vector_data.vector_storage.borrow().vector_dim();
@@ -575,8 +601,8 @@ impl SegmentEntry for Segment {
         self.vector_by_offset(vector_name, internal_id)
     }
 
-    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<AllVectors> {
-        let mut result = AllVectors::new();
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
+        let mut result = NamedVectors::new();
         for vector_name in self.vector_data.keys() {
             result.insert(vector_name.clone(), self.vector(vector_name, point_id)?);
         }
@@ -972,7 +998,7 @@ mod tests {
     use walkdir::WalkDir;
 
     use super::*;
-    use crate::common::only_default_vector;
+    use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, SegmentConfig, StorageType, VectorDataConfig};
 
@@ -1044,7 +1070,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 10,
                 None,
@@ -1057,7 +1083,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &[&query_vector],
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 10,
                 None,
@@ -1136,7 +1162,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &[1.0, 1.0],
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 Some(&filter_valid),
                 1,
                 None,
@@ -1149,7 +1175,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &[1.0, 1.0],
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 Some(&filter_invalid),
                 1,
                 None,

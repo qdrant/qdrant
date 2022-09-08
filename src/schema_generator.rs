@@ -12,7 +12,7 @@ use schemars::{schema_for, JsonSchema};
 use segment::types::ScoredPoint;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_meta_ops::{
-    ChangeAliasesOperation, CreateCollection, CreateVectorData, UpdateCollection,
+    ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
 use storage::types::ClusterStatus;
 
@@ -54,7 +54,6 @@ struct AllDefinitions {
     ar: ClusterOperations,
     at: SearchRequestBatch,
     au: RecommendRequestBatch,
-    av: CreateVectorData,
 }
 
 fn save_schema<T: JsonSchema>() {

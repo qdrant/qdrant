@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use segment::common::only_default_vector;
-use segment::entry::entry_point::{AllVectors, SegmentEntry};
+use segment::data_types::vectors::{only_default_vector, NamedVectors, VectorElementType};
+use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorElementType};
+use segment::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
 use serde_json::json;
 
 pub fn empty_segment(path: &Path) -> Segment {
@@ -141,7 +141,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
     .unwrap();
 
     let collect_points_data = |vectors: &[Vec<VectorElementType>]| {
-        AllVectors::from([
+        NamedVectors::from([
             ("vector1".to_owned(), vectors[0].clone()),
             ("vector2".to_owned(), vectors[1].clone()),
             ("vector3".to_owned(), vectors[2].clone()),

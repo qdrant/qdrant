@@ -5,8 +5,8 @@ mod tests {
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
-    use segment::entry::entry_point::{AllVectors, OperationError, SegmentEntry};
-    use segment::segment::DEFAULT_VECTOR_NAME;
+    use segment::data_types::vectors::{NamedVectors, DEFAULT_VECTOR_NAME};
+    use segment::entry::entry_point::{OperationError, SegmentEntry};
     use segment::types::{Condition, Filter, WithPayload};
     use tempfile::Builder;
 
@@ -27,7 +27,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 1,
                 None,
@@ -50,7 +50,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 Some(&frt),
                 1,
                 None,
@@ -84,7 +84,7 @@ mod tests {
                 "vector1",
                 &query_vector,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 1,
                 None,
@@ -107,7 +107,7 @@ mod tests {
                 "vector1",
                 &query_vector,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 Some(&frt),
                 1,
                 None,
@@ -134,7 +134,7 @@ mod tests {
         let result = segment.upsert_vector(
             6,
             6.into(),
-            &AllVectors::from([
+            &NamedVectors::from([
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
@@ -155,7 +155,7 @@ mod tests {
         let result = segment.upsert_vector(
             6,
             6.into(),
-            &AllVectors::from([
+            &NamedVectors::from([
                 ("vector1".to_owned(), vec![5., 6., 7., 8.]),
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),

@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
+use std::hash::Hash;
 use std::io::{Read, Write};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
@@ -7,8 +8,8 @@ use std::path::Path;
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
-use segment::segment::DEFAULT_VECTOR_NAME;
-use segment::types::{Distance, HnswConfig};
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use segment::types::{Distance, HnswConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
 use wal::WalOptions;
 
@@ -46,10 +47,12 @@ impl Default for WalConfig {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
-    pub vectors: Option<HashMap<String, VectorParams>>,
-    pub vector: Option<VectorParams>,
+    /// Configuration of the vector storage
+    pub vectors: Option<VectorParamStruct>,
+    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
     /// Size of a vectors used
     pub vector_size: Option<NonZeroU64>,
+    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
     /// Type of distance function used for measuring distance between vectors
     pub distance: Option<Distance>,
     /// Number of shards the collection has
@@ -75,6 +78,44 @@ pub struct VectorParams {
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+}
+
+// {
+//      "default": {
+//          "size": 128,
+//          "distance": "Cosine"
+//      }
+// }
+//
+// or
+// { "size": 128, "distance": "Cosine" }
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum VectorParamStruct {
+    Single(VectorParams),
+    Multi(BTreeMap<String, VectorParams>),
+}
+
+impl From<VectorParams> for VectorParamStruct {
+    fn from(params: VectorParams) -> Self {
+        VectorParamStruct::Single(params)
+    }
+}
+
+impl VectorParamStruct {
+    fn get_params(&self, name: &str) -> Option<&VectorParams> {
+        match self {
+            VectorParamStruct::Single(params) => {
+                if name == DEFAULT_VECTOR_NAME {
+                    Some(params)
+                } else {
+                    None
+                }
+            }
+            VectorParamStruct::Multi(params) => params.get(name),
+        }
+    }
 }
 
 fn default_shard_number() -> NonZeroU32 {
@@ -119,56 +160,90 @@ impl CollectionConfig {
 }
 
 impl CollectionParams {
-    pub fn get_vector_params(
-        &self,
-        vector_name: Option<&String>,
-    ) -> CollectionResult<VectorParams> {
-        if let Some(vector_name) = vector_name {
-            Ok(self
-                .vectors
-                .as_ref()
-                .ok_or(CollectionError::BadInput {
-                    description: String::new(),
-                })?
-                .get(vector_name)
-                .ok_or(CollectionError::BadInput {
-                    description: String::new(),
-                })?
-                .clone())
-        } else if let Some(vector_params) = &self.vector {
-            Ok(vector_params.clone())
+    pub fn get_vector_params(&self, vector_name: &str) -> CollectionResult<VectorParams> {
+        if vector_name == DEFAULT_VECTOR_NAME {
+            if let Some(vector_params) = &self.vectors {
+                vector_params
+                    .get_params(vector_name)
+                    .cloned()
+                    .ok_or_else(|| CollectionError::BadInput {
+                        description: "Default vector params are not specified in config"
+                            .to_string(),
+                    })
+            } else {
+                // ToDo: remove deprecated
+                let vector_size = self.vector_size.ok_or_else(|| CollectionError::BadInput {
+                    description: "vector size is not specified in config".to_string(),
+                })?;
+                let distance = self.distance.ok_or_else(|| CollectionError::BadInput {
+                    description: "distance is not specified in config".to_string(),
+                })?;
+
+                Ok(VectorParams {
+                    size: vector_size,
+                    distance,
+                })
+            }
+        } else if let Some(vector_params) = &self.vectors {
+            vector_params
+                .get_params(vector_name)
+                .cloned()
+                .ok_or_else(|| CollectionError::BadInput {
+                    description: format!(
+                        "vector params for {vector_name} are not specified in config"
+                    ),
+                })
         } else {
-            Ok(VectorParams {
-                distance: self.distance.ok_or(CollectionError::BadInput {
-                    description: String::new(),
-                })?,
-                size: self.vector_size.ok_or(CollectionError::BadInput {
-                    description: String::new(),
-                })?,
+            Err(CollectionError::BadInput {
+                description: format!("vector params for {vector_name} are not specified in config"),
             })
         }
     }
 
-    pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorParams>> {
-        if let Some(vectors) = &self.vectors {
-            Ok(vectors.clone())
-        } else if let Some(vector) = &self.vector {
-            Ok(HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                vector.clone(),
-            )]))
-        } else {
-            Ok(HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorParams {
-                    distance: self.distance.ok_or(CollectionError::BadInput {
-                        description: String::new(),
-                    })?,
-                    size: self.vector_size.ok_or(CollectionError::BadInput {
-                        description: String::new(),
-                    })?,
-                },
-            )]))
-        }
+    pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
+        let vector_config = match &self.vectors {
+            Some(VectorParamStruct::Single(params)) => {
+                let mut map = HashMap::new();
+                map.insert(
+                    DEFAULT_VECTOR_NAME.to_string(),
+                    VectorDataConfig {
+                        size: params.size.get() as usize,
+                        distance: params.distance,
+                    },
+                );
+                map
+            }
+            Some(VectorParamStruct::Multi(ref map)) => map
+                .iter()
+                .map(|(name, params)| {
+                    (
+                        name.clone(),
+                        VectorDataConfig {
+                            size: params.size.get() as usize,
+                            distance: params.distance,
+                        },
+                    )
+                })
+                .collect(),
+            None => {
+                let vector_size = self.vector_size.ok_or_else(|| CollectionError::BadInput {
+                    description: "vector size is not specified in config".to_string(),
+                })?;
+                let distance = self.distance.ok_or_else(|| CollectionError::BadInput {
+                    description: "distance is not specified in config".to_string(),
+                })?;
+
+                let mut map = HashMap::new();
+                map.insert(
+                    DEFAULT_VECTOR_NAME.to_string(),
+                    VectorDataConfig {
+                        size: vector_size.get() as usize,
+                        distance,
+                    },
+                );
+                map
+            }
+        };
+        Ok(vector_config)
     }
 }

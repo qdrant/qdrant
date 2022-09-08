@@ -12,7 +12,9 @@ use api::grpc::qdrant::{
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
-use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use segment::types::{
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+};
 use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
@@ -286,7 +288,7 @@ impl ShardOperation for RemoteShard {
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>> {
         let scroll_points = ScrollPoints {
@@ -294,8 +296,9 @@ impl ShardOperation for RemoteShard {
             filter: filter.map(|f| f.clone().into()),
             offset: offset.map(|o| o.into()),
             limit: Some(limit as u32),
-            with_vector: Some(with_vector),
+            with_vector: None,
             with_payload: Some(with_payload_interface.clone().into()),
+            with_vectors: Some(with_vector.clone().into()),
         };
         let request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
@@ -407,13 +410,14 @@ impl ShardOperation for RemoteShard {
         &self,
         request: Arc<PointRequest>,
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
         let get_points = GetPoints {
             collection_name: self.collection_id.clone(),
             ids: request.ids.iter().copied().map(|v| v.into()).collect(),
-            with_vector: Some(request.with_vector),
+            with_vector: None,
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
+            with_vectors: Some(with_vector.clone().into()),
         };
         let request = &GetPointsInternal {
             get_points: Some(get_points),

@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::common::version::StorageVersion;
+use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
@@ -21,9 +22,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexSS;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::segment::{
-    Segment, SegmentVersion, VectorData, DEFAULT_VECTOR_NAME, SEGMENT_STATE_FILE,
-};
+use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
     StorageType, VectorDataConfig,

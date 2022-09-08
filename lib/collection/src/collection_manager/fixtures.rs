@@ -3,7 +3,7 @@ use std::path::Path;
 
 use parking_lot::RwLock;
 use rand::Rng;
-use segment::common::only_default_vector;
+use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -14,7 +14,7 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
-use crate::config::CollectionParams;
+use crate::config::{CollectionParams, VectorParamStruct, VectorParams};
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
@@ -143,8 +143,10 @@ pub(crate) fn get_merge_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vectors: None,
-            vector: None,
+            vectors: Some(VectorParamStruct::Single(VectorParams {
+                size: NonZeroU64::new(dim as u64).unwrap(),
+                distance: Distance::Dot,
+            })),
             vector_size: Some(NonZeroU64::new(dim as u64).unwrap()),
             distance: Some(Distance::Dot),
             shard_number: NonZeroU32::new(1).unwrap(),
@@ -169,8 +171,10 @@ pub(crate) fn get_indexing_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vectors: None,
-            vector: None,
+            vectors: Some(VectorParamStruct::Single(VectorParams {
+                size: NonZeroU64::new(dim as u64).unwrap(),
+                distance: Distance::Dot,
+            })),
             vector_size: Some(NonZeroU64::new(dim as u64).unwrap()),
             distance: Some(Distance::Dot),
             shard_number: NonZeroU32::new(1).unwrap(),

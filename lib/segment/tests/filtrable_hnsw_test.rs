@@ -5,12 +5,11 @@ mod tests {
 
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
-    use segment::common::only_default_vector;
+    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
     use segment::index::hnsw_index::hnsw::HNSWIndex;
     use segment::index::{PayloadIndex, VectorIndex};
-    use segment::segment::DEFAULT_VECTOR_NAME;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,

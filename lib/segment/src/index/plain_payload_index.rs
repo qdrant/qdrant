@@ -9,6 +9,7 @@ use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::Flusher;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -19,7 +20,7 @@ use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::{TelemetryOperationStatistics, VectorIndexTelemetry};
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType, SearchParams, VectorElementType,
+    PointOffsetType, SearchParams,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 

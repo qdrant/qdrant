@@ -1,3 +1,4 @@
+use collection::config::VectorParamStruct;
 use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use collection::shard::{CollectionId, ShardTransfer};
 use schemars::JsonSchema;
@@ -80,21 +81,14 @@ impl From<RenameAlias> for AliasOperations {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct CreateVectorData {
-    pub name: Option<String>,
-    pub size: usize,
-    pub distance: Distance,
-}
-
 /// Operation for creating new collection and (optionally) specify index params
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
-    pub vector: Option<CreateVectorData>,
-    pub vectors: Option<Vec<CreateVectorData>>,
+    pub vectors: Option<VectorParamStruct>,
+    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
     pub vector_size: Option<usize>,
+    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
     pub distance: Option<Distance>,
     /// Number of shards in collection.
     /// Default is 1 for standalone, otherwise equal to the number of nodes

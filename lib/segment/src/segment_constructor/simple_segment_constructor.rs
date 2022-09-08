@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::entry::entry_point::OperationResult;
-use crate::segment::{Segment, DEFAULT_VECTOR_NAME};
+use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
 use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
 
@@ -40,7 +41,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::only_default_vector;
+    use crate::data_types::vectors::only_default_vector;
     use crate::entry::entry_point::{OperationError, SegmentEntry};
 
     #[test]

@@ -14,11 +14,12 @@ use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_scores_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
+use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
 /// In-memory vector storage with on-update persistence using `store`

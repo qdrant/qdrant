@@ -4,9 +4,8 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::RwLock;
-use segment::common::only_default_vector;
+use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
-use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, PointIdType};
 use tempfile::Builder;
 
@@ -68,14 +67,12 @@ fn test_update_proxy_segments() {
         let points = vec![
             PointStruct {
                 id: (100 * i + 1).into(),
-                vector: None,
-                vectors: Some(vectors[0].clone()),
+                vectors: vectors[0].clone().into(),
                 payload: None,
             },
             PointStruct {
                 id: (100 * i + 2).into(),
-                vector: None,
-                vectors: Some(vectors[1].clone()),
+                vectors: vectors[1].clone().into(),
                 payload: None,
             },
         ];
@@ -114,14 +111,12 @@ fn test_move_points_to_copy_on_write() {
     let points = vec![
         PointStruct {
             id: 1.into(),
-            vector: None,
-            vectors: Some(only_default_vector(&[0.0, 0.0, 0.0, 0.0])),
+            vectors: vec![0.0, 0.0, 0.0, 0.0].into(),
             payload: None,
         },
         PointStruct {
             id: 2.into(),
-            vector: None,
-            vectors: Some(only_default_vector(&[0.0, 0.0, 0.0, 0.0])),
+            vectors: vec![0.0, 0.0, 0.0, 0.0].into(),
             payload: None,
         },
     ];
@@ -131,14 +126,12 @@ fn test_move_points_to_copy_on_write() {
     let points = vec![
         PointStruct {
             id: 2.into(),
-            vector: None,
-            vectors: Some(only_default_vector(&[0.0, 0.0, 0.0, 0.0])),
+            vectors: vec![0.0, 0.0, 0.0, 0.0].into(),
             payload: None,
         },
         PointStruct {
             id: 3.into(),
-            vector: None,
-            vectors: Some(only_default_vector(&[0.0, 0.0, 0.0, 0.0])),
+            vectors: vec![0.0, 0.0, 0.0, 0.0].into(),
             payload: None,
         },
     ];

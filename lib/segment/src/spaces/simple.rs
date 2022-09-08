@@ -5,7 +5,8 @@ use super::simple_avx::*;
 use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::simple_sse::*;
-use crate::types::{Distance, ScoreType, VectorElementType};
+use crate::data_types::vectors::VectorElementType;
+use crate::types::{Distance, ScoreType};
 
 #[cfg(target_arch = "x86_64")]
 const MIN_DIM_SIZE_AVX: usize = 32;

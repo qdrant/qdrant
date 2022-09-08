@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::common::utils;
 use crate::data_types::text_index::TextIndexParams;
+use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 
@@ -29,8 +30,6 @@ pub type SeqNumberType = u64;
 pub type ScoreType = f32;
 /// Type of vector matching score
 pub type TagType = u64;
-/// Type of vector element.
-pub type VectorElementType = f32;
 /// Type of float point payload
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
@@ -149,7 +148,7 @@ pub struct ScoredPoint {
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
     /// Vector of the point
-    pub vector: Option<Vec<VectorElementType>>,
+    pub vector: Option<VectorStruct>,
 }
 
 impl Eq for ScoredPoint {}
@@ -951,6 +950,39 @@ pub enum WithPayloadInterface {
     Fields(Vec<String>),
     /// Specify included or excluded fields
     Selector(PayloadSelector),
+}
+
+/// Options for specifying which vector to include
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum WithVector {
+    /// If `true` - return all vector,
+    /// If `false` - do not return vector
+    Bool(bool),
+    /// Specify which vector to return
+    Selector(Vec<String>),
+}
+
+impl WithVector {
+    pub fn is_some(&self) -> bool {
+        match self {
+            WithVector::Bool(b) => *b,
+            WithVector::Selector(_) => true,
+        }
+    }
+}
+
+impl From<bool> for WithVector {
+    fn from(b: bool) -> Self {
+        WithVector::Bool(b)
+    }
+}
+
+impl Default for WithVector {
+    fn default() -> Self {
+        WithVector::Bool(false)
+    }
 }
 
 impl WithPayloadInterface {

@@ -12,7 +12,7 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use segment::types::{
     HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
-    SegmentConfig, StorageType, VectorDataConfig, VECTOR_ELEMENT_SIZE,
+    SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -71,19 +71,7 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
-            vector_data: collection_params
-                .get_all_vector_params()?
-                .iter()
-                .map(|(name, params)| {
-                    (
-                        name.to_owned(),
-                        VectorDataConfig {
-                            size: params.size.get() as usize,
-                            distance: params.distance,
-                        },
-                    )
-                })
-                .collect(),
+            vector_data: collection_params.get_all_vector_params()?,
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
@@ -123,19 +111,7 @@ pub trait SegmentOptimizer {
             total_vectors_size >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let optimized_config = SegmentConfig {
-            vector_data: collection_params
-                .get_all_vector_params()?
-                .iter()
-                .map(|(name, params)| {
-                    (
-                        name.to_owned(),
-                        VectorDataConfig {
-                            size: params.size.get() as usize,
-                            distance: params.distance,
-                        },
-                    )
-                })
-                .collect(),
+            vector_data: collection_params.get_all_vector_params()?,
             index: if is_indexed {
                 Indexes::Hnsw(self.hnsw_config())
             } else {

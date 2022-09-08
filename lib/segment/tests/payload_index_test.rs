@@ -6,14 +6,14 @@ mod tests {
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
-    use segment::common::only_default_vector;
+    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{
         generate_diverse_payload, random_filter, random_vector, FLICKING_KEY, GEO_KEY, INT_KEY,
         INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY, TEXT_KEY,
     };
     use segment::index::PayloadIndex;
-    use segment::segment::{Segment, DEFAULT_VECTOR_NAME};
+    use segment::segment::Segment;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes,
@@ -236,7 +236,7 @@ mod tests {
                     DEFAULT_VECTOR_NAME,
                     &query_vector,
                     &WithPayload::default(),
-                    false,
+                    &false.into(),
                     Some(&query_filter),
                     5,
                     None,
@@ -247,7 +247,7 @@ mod tests {
                     DEFAULT_VECTOR_NAME,
                     &query_vector,
                     &WithPayload::default(),
-                    false,
+                    &false.into(),
                     Some(&query_filter),
                     5,
                     None,
@@ -322,7 +322,7 @@ mod tests {
                     DEFAULT_VECTOR_NAME,
                     &query_vector,
                     &WithPayload::default(),
-                    false,
+                    &false.into(),
                     Some(&query_filter),
                     5,
                     None,
@@ -351,7 +351,7 @@ mod tests {
                     DEFAULT_VECTOR_NAME,
                     &query_vector,
                     &WithPayload::default(),
-                    false,
+                    &false.into(),
                     Some(&query_filter),
                     5,
                     None,

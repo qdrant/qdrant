@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 #[cfg(feature = "web")]
 mod actix;
 pub mod common;

@@ -6,7 +6,7 @@ use itertools::Itertools;
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
     ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, ScoredPoint, SegmentType,
-    WithPayload, WithPayloadInterface,
+    WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -71,7 +71,7 @@ impl ShardOperation for LocalShard {
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>> {
         // ToDo: Make faster points selection with a set
@@ -170,7 +170,7 @@ impl ShardOperation for LocalShard {
         let collection_params = self.config.read().await.params.clone();
         // check vector names existing
         for req in &request.searches {
-            collection_params.get_vector_params(req.vector_name.as_ref())?;
+            collection_params.get_vector_params(req.vector.get_name())?;
         }
         let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
             .await?;
@@ -178,8 +178,9 @@ impl ShardOperation for LocalShard {
             .into_iter()
             .zip(request.searches.iter())
             .map(|(vector_res, req)| {
+                let vector_name = req.vector.get_name();
                 let distance = collection_params
-                    .get_vector_params(req.vector_name.as_ref())
+                    .get_vector_params(vector_name)
                     .unwrap()
                     .distance;
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
@@ -217,7 +218,7 @@ impl ShardOperation for LocalShard {
         &self,
         request: Arc<PointRequest>,
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
         SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector).await
     }

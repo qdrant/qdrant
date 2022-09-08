@@ -19,6 +19,7 @@ use collection::operations::types::{
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
+use segment::data_types::vectors::NamedVector;
 use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
@@ -349,18 +350,23 @@ pub async fn search(
         params,
         score_threshold,
         vector_name,
+        with_vectors,
     } = search_points;
 
     let search_request = SearchRequest {
-        vector,
+        vector: match vector_name {
+            None => vector.into(),
+            Some(name) => NamedVector { name, vector }.into(),
+        },
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
         offset: offset.unwrap_or_default() as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vector.unwrap_or(false),
+        with_vector: with_vectors
+            .map(|selector| selector.into())
+            .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
         score_threshold,
-        vector_name,
     };
 
     let timing = Instant::now();
@@ -428,7 +434,8 @@ pub async fn recommend(
         with_payload,
         params,
         score_threshold,
-        vector_name,
+        using,
+        with_vectors,
     } = recommend_points;
 
     let request = collection::operations::types::RecommendRequest {
@@ -445,9 +452,11 @@ pub async fn recommend(
         limit: limit as usize,
         offset: offset.unwrap_or_default() as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vector.unwrap_or(false),
+        with_vector: with_vectors
+            .map(|selector| selector.into())
+            .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
         score_threshold,
-        vector_name,
+        using,
     };
 
     let timing = Instant::now();
@@ -512,6 +521,7 @@ pub async fn scroll(
         limit,
         with_vector,
         with_payload,
+        with_vectors,
     } = scroll_points;
 
     let scroll_request = ScrollRequest {
@@ -519,7 +529,9 @@ pub async fn scroll(
         limit: limit.map(|l| l as usize),
         filter: filter.map(|f| f.try_into()).transpose()?,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vector.unwrap_or(false),
+        with_vector: with_vectors
+            .map(|selector| selector.into())
+            .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
     };
 
     let timing = Instant::now();
@@ -579,6 +591,7 @@ pub async fn get(
         ids,
         with_vector,
         with_payload,
+        with_vectors,
     } = get_points;
 
     let point_request = PointRequest {
@@ -587,7 +600,9 @@ pub async fn get(
             .map(|p| p.try_into())
             .collect::<Result<_, _>>()?,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vector.unwrap_or(false),
+        with_vector: with_vectors
+            .map(|selector| selector.into())
+            .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
     };
 
     let timing = Instant::now();

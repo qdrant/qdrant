@@ -13,6 +13,21 @@ pub struct VectorParamsMap {
     pub map: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorsConfig {
+    #[prost(oneof="vectors_config::Config", tags="1, 2")]
+    pub config: ::core::option::Option<vectors_config::Config>,
+}
+/// Nested message and enum types in `VectorsConfig`.
+pub mod vectors_config {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Config {
+        #[prost(message, tag="1")]
+        Params(super::VectorParams),
+        #[prost(message, tag="2")]
+        ParamsMap(super::VectorParamsMap),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoRequest {
     /// Name of the collection
     #[prost(string, tag="1")]
@@ -140,9 +155,11 @@ pub struct CreateCollection {
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
     /// Size of the vectors
+    #[deprecated]
     #[prost(uint64, optional, tag="2")]
     pub vector_size: ::core::option::Option<u64>,
     /// Distance function used for comparing vectors
+    #[deprecated]
     #[prost(enumeration="Distance", optional, tag="3")]
     pub distance: ::core::option::Option<i32>,
     /// Configuration of vector index
@@ -163,10 +180,9 @@ pub struct CreateCollection {
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag="9")]
     pub timeout: ::core::option::Option<u64>,
+    /// Configuration for vectors
     #[prost(message, optional, tag="10")]
-    pub vector: ::core::option::Option<VectorParams>,
-    #[prost(message, optional, tag="11")]
-    pub vectors: ::core::option::Option<VectorParamsMap>,
+    pub vectors_config: ::core::option::Option<VectorsConfig>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
@@ -201,9 +217,11 @@ pub struct CollectionOperationResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
     /// Size of the vectors
+    #[deprecated]
     #[prost(uint64, optional, tag="1")]
     pub vector_size: ::core::option::Option<u64>,
     /// Distance function used for comparing vectors
+    #[deprecated]
     #[prost(enumeration="Distance", optional, tag="2")]
     pub distance: ::core::option::Option<i32>,
     /// Number of shards in collection
@@ -212,10 +230,9 @@ pub struct CollectionParams {
     /// If true - point's payload will not be stored in memory
     #[prost(bool, tag="4")]
     pub on_disk_payload: bool,
+    /// Configuration for vectors
     #[prost(message, optional, tag="5")]
-    pub vector: ::core::option::Option<VectorParams>,
-    #[prost(message, optional, tag="6")]
-    pub vectors: ::core::option::Option<VectorParamsMap>,
+    pub vectors_config: ::core::option::Option<VectorsConfig>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
@@ -1385,11 +1402,15 @@ pub struct GetPoints {
     #[prost(message, repeated, tag="2")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
     /// Return point vector with the result.
+    #[deprecated]
     #[prost(bool, optional, tag="3")]
     pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag="4")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag="5")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPoints {
@@ -1494,6 +1515,49 @@ pub mod with_payload_selector {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NamedVectors {
+    #[prost(map="string, message", tag="1")]
+    pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Vectors {
+    #[prost(oneof="vectors::VectorsOptions", tags="1, 2")]
+    pub vectors_options: ::core::option::Option<vectors::VectorsOptions>,
+}
+/// Nested message and enum types in `Vectors`.
+pub mod vectors {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum VectorsOptions {
+        #[prost(message, tag="1")]
+        Vector(super::Vector),
+        #[prost(message, tag="2")]
+        Vectors(super::NamedVectors),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorsSelector {
+    /// List of vectors to include into result
+    #[prost(string, repeated, tag="1")]
+    pub names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WithVectorsSelector {
+    #[prost(oneof="with_vectors_selector::SelectorOptions", tags="1, 2")]
+    pub selector_options: ::core::option::Option<with_vectors_selector::SelectorOptions>,
+}
+/// Nested message and enum types in `WithVectorsSelector`.
+pub mod with_vectors_selector {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum SelectorOptions {
+        /// If `true` - return all vectors, if `false` - none
+        #[prost(bool, tag="1")]
+        Enable(bool),
+        /// List of payload keys to include into result
+        #[prost(message, tag="2")]
+        Include(super::VectorsSelector),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
     ///
     ///Params relevant to HNSW index. Size of the beam in a beam-search.
@@ -1516,6 +1580,7 @@ pub struct SearchPoints {
     #[prost(uint64, tag="4")]
     pub limit: u64,
     /// Return point vector with the result.
+    #[deprecated]
     #[prost(bool, optional, tag="5")]
     pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
@@ -1530,9 +1595,12 @@ pub struct SearchPoints {
     /// Offset of the result
     #[prost(uint64, optional, tag="9")]
     pub offset: ::core::option::Option<u64>,
-    /// vector name
+    /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag="10")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag="11")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchPoints {
@@ -1556,11 +1624,15 @@ pub struct ScrollPoints {
     #[prost(uint32, optional, tag="4")]
     pub limit: ::core::option::Option<u32>,
     /// Return point vector with the result.
+    #[deprecated]
     #[prost(bool, optional, tag="5")]
     pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag="6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag="7")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPoints {
@@ -1580,6 +1652,7 @@ pub struct RecommendPoints {
     #[prost(uint64, tag="5")]
     pub limit: u64,
     /// Return point vector with the result.
+    #[deprecated]
     #[prost(bool, optional, tag="6")]
     pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
@@ -1594,9 +1667,12 @@ pub struct RecommendPoints {
     /// Offset of the result
     #[prost(uint64, optional, tag="10")]
     pub offset: ::core::option::Option<u64>,
-    /// vector name
+    /// Define which vector to use for recommendation, if not specified - default vector
     #[prost(string, optional, tag="11")]
-    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag="12")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchPoints {
@@ -1651,11 +1727,15 @@ pub struct ScoredPoint {
     #[prost(float, tag="3")]
     pub score: f32,
     /// Vector
-    #[prost(float, repeated, tag="4")]
+    #[deprecated]
+    #[prost(float, repeated, packed="false", tag="4")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
     /// Last update operation applied to this point
     #[prost(uint64, tag="5")]
     pub version: u64,
+    /// Vectors to search
+    #[prost(message, optional, tag="6")]
+    pub vectors: ::core::option::Option<Vectors>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {

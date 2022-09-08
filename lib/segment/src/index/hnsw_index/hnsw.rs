@@ -11,6 +11,7 @@ use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -25,9 +26,7 @@ use crate::telemetry::{
     TelemetryOperationAggregator, TelemetryOperationTimer, VectorIndexTelemetry,
 };
 use crate::types::Condition::Field;
-use crate::types::{
-    FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType, VECTOR_ELEMENT_SIZE,
-};
+use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 const HNSW_USE_HEURISTIC: bool = true;

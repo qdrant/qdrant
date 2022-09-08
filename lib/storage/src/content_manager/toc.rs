@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use collection::collection::Collection;
 use collection::collection_state;
-use collection::config::{CollectionConfig, CollectionParams, VectorParams};
+use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -17,7 +17,6 @@ use collection::operations::CollectionUpdateOperations;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
 use collection::shard::{ChannelService, CollectionId, PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
-use segment::segment::DEFAULT_VECTOR_NAME;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -200,7 +199,6 @@ impl TableOfContent {
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
         let CreateCollection {
-            vector,
             vectors,
             vector_size,
             distance,
@@ -228,46 +226,17 @@ impl TableOfContent {
             )
         }
 
-        let convert_vector_size_err = StorageError::BadInput {
-            description: "`vector_size` cannot be 0".to_string(),
-        };
+        let vector_size = vector_size
+            .map(|size| {
+                NonZeroU64::new(size as u64).ok_or(StorageError::BadInput {
+                    description: "`vector_size` cannot be 0".to_string(),
+                })
+            })
+            .transpose()?;
 
         let collection_params = CollectionParams {
-            vector: if let Some(vector) = vector {
-                Some(VectorParams {
-                    distance: vector.distance,
-                    size: NonZeroU64::new(vector.size as u64)
-                        .ok_or_else(|| convert_vector_size_err.clone())?,
-                })
-            } else {
-                None
-            },
-            vectors: if let Some(vectors) = vectors {
-                let mut map = HashMap::new();
-                for vector in vectors {
-                    map.insert(
-                        vector
-                            .name
-                            .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned()),
-                        VectorParams {
-                            distance: vector.distance,
-                            size: NonZeroU64::new(vector.size as u64)
-                                .ok_or_else(|| convert_vector_size_err.clone())?,
-                        },
-                    );
-                }
-                Some(map)
-            } else {
-                None
-            },
-            vector_size: if let Some(vector_size) = vector_size {
-                Some(
-                    NonZeroU64::new(vector_size as u64)
-                        .ok_or_else(|| convert_vector_size_err.clone())?,
-                )
-            } else {
-                None
-            },
+            vectors,
+            vector_size,
             distance,
             shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
                 .ok_or(StorageError::BadInput {

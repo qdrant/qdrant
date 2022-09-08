@@ -3,13 +3,14 @@ mod prof;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
+use segment::data_types::vectors::VectorElementType;
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::CosineMetric;
-use segment::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
+use segment::types::{Distance, PointOffsetType, ScoreType};
 
 const NUM_VECTORS: usize = 5_000;
 const DIM: usize = 16;

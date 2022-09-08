@@ -343,13 +343,13 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
-    use crate::types::VectorElementType;
 
     fn search_in_graph(
         query: &[VectorElementType],

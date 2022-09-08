@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 mod prof;
 
 use std::num::{NonZeroU32, NonZeroU64};
@@ -12,7 +14,7 @@ use collection::shard::local_shard::LocalShard;
 use collection::shard::ShardOperation;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
-use segment::common::only_default_vector;
+use segment::data_types::vectors::only_default_vector;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Condition, Distance, FieldCondition, Filter, Payload, Range};
 use serde_json::Map;
@@ -31,8 +33,7 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
         let vectors = only_default_vector(&random_vector(&mut rng, dim));
         let point = PointStruct {
             id: i.into(),
-            vector: None,
-            vectors: Some(vectors),
+            vectors: vectors.into(),
             payload: Some(Payload(payload_map)),
         };
         points.push(point);
@@ -56,7 +57,6 @@ fn batch_search_bench(c: &mut Criterion) {
     };
 
     let collection_params = CollectionParams {
-        vector: None,
         vectors: None,
         vector_size: Some(NonZeroU64::new(100).unwrap()),
         distance: Some(Distance::Dot),
@@ -126,14 +126,13 @@ fn batch_search_bench(c: &mut Criterion) {
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequest {
-                            vector_name: None,
-                            vector: query,
+                            vector: query.into(),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,
                             offset: 0,
                             with_payload: None,
-                            with_vector: false,
+                            with_vector: false.into(),
                             score_threshold: None,
                         };
                         let result = (&shard)
@@ -159,14 +158,13 @@ fn batch_search_bench(c: &mut Criterion) {
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequest {
-                            vector_name: None,
-                            vector: query,
+                            vector: query.into(),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,
                             offset: 0,
                             with_payload: None,
-                            with_vector: false,
+                            with_vector: false.into(),
                             score_threshold: None,
                         };
                         searches.push(search_query);

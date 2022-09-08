@@ -70,7 +70,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use segment::common::only_default_vector;
+    use segment::data_types::vectors::only_default_vector;
     use segment::types::{Payload, WithPayload};
     use serde_json::json;
     use tempfile::Builder;
@@ -95,32 +95,27 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 11.into(),
-                vector: None,
-                vectors: Some(vec11),
+                vectors: vec11.into(),
                 payload: None,
             },
             PointStruct {
                 id: 12.into(),
-                vector: None,
-                vectors: Some(vec12),
+                vectors: vec12.into(),
                 payload: None,
             },
             PointStruct {
                 id: 13.into(),
-                vector: None,
-                vectors: Some(vec13),
+                vectors: vec13.into(),
                 payload: Some(json!({ "color": "red" }).into()),
             },
             PointStruct {
                 id: 14.into(),
-                vector: None,
-                vectors: Some(only_default_vector(&[0., 0., 0., 0.])),
+                vectors: vec![0., 0., 0., 0.].into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: None,
-                vectors: Some(only_default_vector(&[2., 0., 2., 0.])),
+                vectors: vec![2., 0., 2., 0.].into(),
                 payload: None,
             },
         ];
@@ -142,14 +137,12 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 1.into(),
-                vector: None,
-                vectors: Some(only_default_vector(&[2., 2., 2., 2.])),
+                vectors: vec![2., 2., 2., 2.].into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: None,
-                vectors: Some(only_default_vector(&[2., 0., 2., 0.])),
+                vectors: vec![2., 0., 2., 0.].into(),
                 payload: None,
             },
         ];
@@ -161,7 +154,7 @@ mod tests {
             &segments,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
-            true,
+            &true.into(),
         )
         .await
         .unwrap();
@@ -192,7 +185,7 @@ mod tests {
             &segments,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
-            true,
+            &true.into(),
         )
         .await
         .unwrap();
@@ -222,9 +215,10 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), false)
-            .await
-            .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), &false.into())
+                .await
+                .unwrap();
 
         assert_eq!(res.len(), 3);
 
@@ -249,19 +243,27 @@ mod tests {
         )
         .unwrap();
 
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[3.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            &[3.into()],
+            &WithPayload::from(true),
+            &false.into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
         // Test clear payload
 
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            &[2.into()],
+            &WithPayload::from(true),
+            &false.into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
@@ -273,10 +275,14 @@ mod tests {
             },
         )
         .unwrap();
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            &[2.into()],
+            &WithPayload::from(true),
+            &false.into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
     }

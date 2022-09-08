@@ -1,7 +1,6 @@
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use collection::operations::types::SearchRequest;
 use collection::operations::CollectionUpdateOperations;
-use segment::common::only_default_vector;
 use segment::types::WithPayloadInterface;
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -29,8 +28,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     for i in 0..1000 {
         points.push(PointStruct {
             id: i.into(),
-            vector: None,
-            vectors: Some(only_default_vector(&[i as f32, 0.0, 0.0, 0.0])),
+            vectors: vec![i as f32, 0.0, 0.0, 0.0].into(),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }
@@ -45,13 +43,12 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let query_vector = vec![1.0, 0.0, 0.0, 0.0];
 
     let full_search_request = SearchRequest {
-        vector_name: None,
-        vector: query_vector.clone(),
+        vector: query_vector.clone().into(),
         filter: None,
         limit: 100,
         offset: 0,
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: false,
+        with_vector: false.into(),
         params: None,
         score_threshold: None,
     };
@@ -69,13 +66,12 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let page_size = 10;
 
     let page_1_request = SearchRequest {
-        vector_name: None,
-        vector: query_vector.clone(),
+        vector: query_vector.clone().into(),
         filter: None,
         limit: 10,
         offset: page_size,
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: false,
+        with_vector: false.into(),
         params: None,
         score_threshold: None,
     };
@@ -92,13 +88,12 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     }
 
     let page_9_request = SearchRequest {
-        vector_name: None,
-        vector: query_vector.clone(),
+        vector: query_vector.into(),
         filter: None,
         limit: 10,
         offset: page_size * 9,
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: false,
+        with_vector: false.into(),
         params: None,
         score_threshold: None,
     };

@@ -8,15 +8,14 @@ use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
 use crate::common::file_operations::FileStorageError;
+use crate::data_types::vectors::{NamedVectors, VectorElementType};
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorElementType, WithPayload,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
+    WithVector,
 };
-
-pub type AllVectors = HashMap<String, Vec<VectorElementType>>;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -158,7 +157,7 @@ pub trait SegmentEntry {
         vector_name: &str,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -170,7 +169,7 @@ pub trait SegmentEntry {
         vector_name: &str,
         vectors: &[&[VectorElementType]],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -180,7 +179,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &AllVectors,
+        vectors: &NamedVectors,
     ) -> OperationResult<bool>;
 
     fn delete_point(
@@ -222,7 +221,7 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<Vec<VectorElementType>>;
 
-    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<AllVectors>;
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 

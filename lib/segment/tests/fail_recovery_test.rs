@@ -2,7 +2,7 @@ mod fixtures;
 
 #[cfg(test)]
 mod tests {
-    use segment::common::only_default_vector;
+    use segment::data_types::vectors::only_default_vector;
     use segment::entry::entry_point::{OperationError, SegmentEntry, SegmentFailedState};
     use serde_json::json;
     use tempfile::Builder;

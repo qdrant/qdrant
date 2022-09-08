@@ -8,11 +8,11 @@ use std::sync::Arc;
 use futures::future::{join_all, try_join_all};
 use itertools::Itertools;
 use segment::common::version::StorageVersion;
-use segment::segment::DEFAULT_VECTOR_NAME;
+use segment::data_types::vectors::{NamedVector, VectorElementType, DEFAULT_VECTOR_NAME};
 use segment::spaces::tools::{peek_top_largest_scores_iterable, peek_top_smallest_scores_iterable};
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, VectorElementType,
-    WithPayload, WithPayloadInterface,
+    Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use semver::{Version, VersionReq};
 use tar::Builder as TarBuilder;
@@ -597,7 +597,7 @@ impl Collection {
                 PointRequest {
                     ids: all_reference_vectors_ids.into_iter().collect(),
                     with_payload: Some(WithPayloadInterface::Bool(true)),
-                    with_vector: true,
+                    with_vector: true.into(),
                 },
                 shard_selection,
             )
@@ -607,11 +607,11 @@ impl Collection {
 
         for request in request_batch.searches {
             let vector_name = request
-                .vector_name
+                .using
                 .clone()
                 .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned());
             //let rec_vectors = rec.get
-            let all_vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = all_vectors
+            let all_vectors_map: HashMap<ExtendedPointId, &Vec<VectorElementType>> = all_vectors
                 .iter()
                 .map(|rec| (rec.id, rec.get_vector_by_name(&vector_name).unwrap()))
                 .collect();
@@ -635,7 +635,7 @@ impl Collection {
                 request
                     .positive
                     .iter()
-                    .map(|vid| all_vectors_map.get(vid).unwrap()),
+                    .map(|vid| *all_vectors_map.get(vid).unwrap()),
             );
 
             let search_vector = if request.negative.is_empty() {
@@ -645,7 +645,7 @@ impl Collection {
                     request
                         .negative
                         .iter()
-                        .map(|vid| all_vectors_map.get(vid).unwrap()),
+                        .map(|vid| *all_vectors_map.get(vid).unwrap()),
                 );
 
                 avg_positive
@@ -657,8 +657,11 @@ impl Collection {
             };
 
             let search_request = SearchRequest {
-                vector_name: request.vector_name,
-                vector: search_vector,
+                vector: NamedVector {
+                    name: vector_name,
+                    vector: search_vector,
+                }
+                .into(),
                 filter: Some(Filter {
                     should: None,
                     must: request
@@ -701,7 +704,7 @@ impl Collection {
                 .map(|p| p.is_required())
                 .unwrap_or_default()
         });
-        let with_vectors = request.searches.iter().all(|s| s.with_vector);
+        let with_vectors = request.searches.iter().all(|s| s.with_vector.is_some());
 
         let metadata_required = is_payload_required || with_vectors;
 
@@ -725,7 +728,7 @@ impl Collection {
             for search in &request.searches {
                 let mut without_payload_request = search.clone();
                 without_payload_request.with_payload = None;
-                without_payload_request.with_vector = false;
+                without_payload_request.with_vector = false.into();
                 without_payload_requests.push(without_payload_request);
             }
             let without_payload_batch = SearchRequestBatch {
@@ -742,12 +745,7 @@ impl Collection {
                 .into_iter()
                 .zip(request.clone().searches.into_iter())
                 .map(|(without_payload_result, req)| {
-                    let vector_name: String = req
-                        .vector_name
-                        .clone()
-                        .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned());
                     self.fill_search_result_with_payload(
-                        vector_name,
                         without_payload_result,
                         req.with_payload.clone(),
                         req.with_vector,
@@ -769,6 +767,7 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let batch_size = request.searches.len();
         let request = Arc::new(request);
 
         // query all shards concurrently
@@ -782,21 +781,19 @@ impl Collection {
         };
 
         // merge results from shards in order
-        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.searches.len()];
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
         for shard_searches_results in all_searches_res.iter_mut() {
             for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
                 merged_results[index].append(shard_searches_result)
             }
         }
         let collection_params = self.config.read().await.params.clone();
-        let top_results: Vec<Vec<ScoredPoint>> = merged_results
+        let top_results: Vec<_> = merged_results
             .into_iter()
             .zip(request.searches.iter())
             .map(|(res, request)| {
-                // todo(ivan): remove unwrap
                 let distance = collection_params
-                    .get_vector_params(request.vector_name.as_ref())
-                    .unwrap()
+                    .get_vector_params(request.vector.get_name())?
                     .distance;
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {
@@ -816,19 +813,18 @@ impl Collection {
                         top_res.clear()
                     }
                 }
-                top_res
+                Ok(top_res)
             })
-            .collect();
+            .collect::<CollectionResult<Vec<_>>>()?;
 
         Ok(top_results)
     }
 
     async fn fill_search_result_with_payload(
         &self,
-        vector_name: String,
         search_result: Vec<ScoredPoint>,
         with_payload: Option<WithPayloadInterface>,
-        with_vector: bool,
+        with_vector: WithVector,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let retrieve_request = PointRequest {
@@ -850,7 +846,7 @@ impl Collection {
                 records_map.remove(&scored_point.id).map(|record| {
                     let vectors = record.get_vectors();
                     scored_point.payload = record.payload;
-                    scored_point.vector = vectors.map(|vectors| vectors[&vector_name].clone());
+                    scored_point.vector = vectors.map(|vectors| vectors.into());
                     scored_point
                 })
             })
@@ -907,7 +903,7 @@ impl Collection {
                     offset,
                     limit,
                     &with_payload_interface,
-                    with_vector,
+                    &with_vector,
                     request.filter.as_ref(),
                 )
             });
@@ -965,7 +961,6 @@ impl Collection {
             .as_ref()
             .unwrap_or(&WithPayloadInterface::Bool(false));
         let with_payload = WithPayload::from(with_payload_interface);
-        let with_vector = request.with_vector;
         let request = Arc::new(request);
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
@@ -973,7 +968,7 @@ impl Collection {
             let retrieve_futures = target_shards.into_iter().map(|shard| {
                 shard
                     .get()
-                    .retrieve(request.clone(), &with_payload, with_vector)
+                    .retrieve(request.clone(), &with_payload, &request.with_vector)
             });
             try_join_all(retrieve_futures).await?
         };

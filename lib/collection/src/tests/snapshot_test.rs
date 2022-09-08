@@ -28,7 +28,6 @@ async fn test_snapshot_collection() {
     };
 
     let collection_params = CollectionParams {
-        vector: None,
         vectors: None,
         vector_size: Some(NonZeroU64::new(4).unwrap()),
         distance: Some(Distance::Dot),

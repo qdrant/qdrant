@@ -1,4 +1,5 @@
-use crate::types::{Distance, ScoreType, VectorElementType};
+use crate::data_types::vectors::VectorElementType;
+use crate::types::{Distance, ScoreType};
 
 /// Defines how to compare vectors
 pub trait Metric {

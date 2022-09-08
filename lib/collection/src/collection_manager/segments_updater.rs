@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
-use segment::entry::entry_point::{AllVectors, OperationResult, SegmentEntry};
+use segment::data_types::vectors::NamedVectors;
+use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType,
@@ -152,7 +153,7 @@ fn upsert_with_payload(
     segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
     op_num: SeqNumberType,
     point_id: PointIdType,
-    vectors: &AllVectors,
+    vectors: &NamedVectors,
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
     let mut res = segment.upsert_vector(op_num, point_id, vectors)?;
@@ -311,14 +312,13 @@ pub(crate) fn process_point_operation(
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
                 PointInsertOperations::PointsBatch(batch) => {
-                    let all_vectors = batch.get_vectors();
+                    let all_vectors = batch.vectors.into_all_vectors();
                     let vectors_iter = batch.ids.into_iter().zip(all_vectors.into_iter());
                     match batch.payloads {
                         None => vectors_iter
                             .map(|(id, vectors)| PointStruct {
                                 id,
-                                vector: None,
-                                vectors: Some(vectors),
+                                vectors: vectors.into(),
                                 payload: None,
                             })
                             .collect(),
@@ -326,8 +326,7 @@ pub(crate) fn process_point_operation(
                             .zip(payloads.into_iter())
                             .map(|((id, vectors), payload)| PointStruct {
                                 id,
-                                vector: None,
-                                vectors: Some(vectors),
+                                vectors: vectors.into(),
                                 payload,
                             })
                             .collect(),

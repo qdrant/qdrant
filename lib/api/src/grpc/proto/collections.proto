@@ -10,6 +10,13 @@ message VectorParamsMap {
   map<string, VectorParams> map = 1;
 }
 
+message VectorsConfig {
+  oneof config {
+    VectorParams params = 1;
+    VectorParamsMap params_map = 2;
+  }
+}
+
 message GetCollectionInfoRequest {
   string collection_name = 1; // Name of the collection
 }
@@ -141,16 +148,15 @@ message OptimizersConfigDiff {
 
 message CreateCollection {
   string collection_name = 1; // Name of the collection
-  optional uint64 vector_size = 2; // Size of the vectors
-  optional Distance distance = 3; // Distance function used for comparing vectors
+  optional uint64 vector_size = 2 [deprecated = true]; // Size of the vectors
+  optional Distance distance = 3 [deprecated = true]; // Distance function used for comparing vectors
   optional HnswConfigDiff hnsw_config = 4; // Configuration of vector index
   optional WalConfigDiff wal_config = 5; // Configuration of the Write-Ahead-Log
   optional OptimizersConfigDiff optimizers_config = 6; // Configuration of the optimizers
   optional uint32 shard_number = 7; // Number of shards in the collection, default = 1
   optional bool on_disk_payload = 8; // If true - point's payload will not be stored in memory
   optional uint64 timeout = 9; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
-  optional VectorParams vector = 10;
-  optional VectorParamsMap vectors = 11;
+  optional VectorsConfig vectors_config = 10; // Configuration for vectors
 }
 
 message UpdateCollection {
@@ -170,12 +176,11 @@ message CollectionOperationResponse {
 }
 
 message CollectionParams {
-  optional uint64 vector_size = 1; // Size of the vectors
-  optional Distance distance = 2; // Distance function used for comparing vectors
+  optional uint64 vector_size = 1 [deprecated = true]; // Size of the vectors
+  optional Distance distance = 2 [deprecated = true]; // Distance function used for comparing vectors
   uint32 shard_number = 3; // Number of shards in collection
   bool on_disk_payload = 4; // If true - point's payload will not be stored in memory
-  optional VectorParams vector = 5;
-  optional VectorParamsMap vectors = 6;
+  optional VectorsConfig vectors_config = 5; // Configuration for vectors
 }
 
 message CollectionConfig {

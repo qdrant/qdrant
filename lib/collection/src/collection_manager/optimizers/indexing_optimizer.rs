@@ -246,9 +246,8 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
-    use segment::common::only_default_vector;
+    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
-    use segment::segment::DEFAULT_VECTOR_NAME;
     use segment::types::{Payload, PayloadSchemaType, StorageType};
     use serde_json::json;
     use tempfile::Builder;
@@ -259,6 +258,7 @@ mod tests {
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
+    use crate::config::{VectorParamStruct, VectorParams};
     use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
     use crate::operations::{CreateIndex, FieldIndexOperations};
 
@@ -307,8 +307,13 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: None,
-                vector: None,
+                vectors: Some(VectorParamStruct::Single(VectorParams {
+                    size: NonZeroU64::new(
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
+                    )
+                    .unwrap(),
+                    distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                })),
                 vector_size: Some(
                     NonZeroU64::new(segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64)
                         .unwrap(),
@@ -447,12 +452,12 @@ mod tests {
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![501.into(), 502.into(), 503.into()],
-                vectors: None,
-                all_vectors: Some(vec![
-                    only_default_vector(&random_vector(&mut rng, dim)),
-                    only_default_vector(&random_vector(&mut rng, dim)),
-                    only_default_vector(&random_vector(&mut rng, dim)),
-                ]),
+                vectors: vec![
+                    random_vector(&mut rng, dim),
+                    random_vector(&mut rng, dim),
+                    random_vector(&mut rng, dim),
+                ]
+                .into(),
                 payloads: Some(vec![
                     Some(point_payload.clone()),
                     Some(point_payload.clone()),
@@ -520,12 +525,12 @@ mod tests {
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![601.into(), 602.into(), 603.into()],
-                vectors: None,
-                all_vectors: Some(vec![
-                    only_default_vector(&random_vector(&mut rng, dim)),
-                    only_default_vector(&random_vector(&mut rng, dim)),
-                    only_default_vector(&random_vector(&mut rng, dim)),
-                ]),
+                vectors: vec![
+                    random_vector(&mut rng, dim),
+                    random_vector(&mut rng, dim),
+                    random_vector(&mut rng, dim),
+                ]
+                .into(),
                 payloads: None,
             }));
 

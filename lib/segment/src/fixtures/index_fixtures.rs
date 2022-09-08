@@ -3,9 +3,10 @@ use std::marker::PhantomData;
 use bitvec::prelude::BitVec;
 use rand::Rng;
 
+use crate::data_types::vectors::VectorElementType;
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
-use crate::types::{PointOffsetType, VectorElementType};
+use crate::types::PointOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
 

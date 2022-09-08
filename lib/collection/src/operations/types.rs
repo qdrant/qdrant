@@ -6,12 +6,14 @@ use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
-use segment::common::only_default_vector;
-use segment::entry::entry_point::{AllVectors, OperationError};
-use segment::segment::DEFAULT_VECTOR_NAME;
+use segment::data_types::vectors::{
+    only_default_vector, NamedVectorStruct, NamedVectors, VectorStruct, VectorType,
+    DEFAULT_VECTOR_NAME,
+};
+use segment::entry::entry_point::OperationError;
 use segment::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
-    SeqNumberType, VectorElementType, WithPayloadInterface,
+    SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -26,9 +28,6 @@ use crate::config::CollectionConfig;
 use crate::save_on_disk;
 use crate::shard::{PeerId, ShardId};
 use crate::wal::WalError;
-
-/// Type of vector in API
-pub type VectorType = Vec<VectorElementType>;
 
 /// Current state of the collection
 #[derive(
@@ -64,9 +63,7 @@ pub struct Record {
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
     /// Vector of the point
-    pub vector: Option<Vec<VectorElementType>>,
-    /// Vectors of the point
-    pub vectors: Option<AllVectors>,
+    pub vector: Option<VectorStruct>,
 }
 
 /// Current statistics and configuration of the collection
@@ -166,7 +163,7 @@ pub struct ScrollRequest {
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
     #[serde(default)]
-    pub with_vector: bool,
+    pub with_vector: WithVector,
 }
 
 impl Default for ScrollRequest {
@@ -176,7 +173,7 @@ impl Default for ScrollRequest {
             limit: Some(10),
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
-            with_vector: false,
+            with_vector: WithVector::Bool(false),
         }
     }
 }
@@ -197,10 +194,8 @@ pub struct ScrollResult {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
-    ///
-    pub vector_name: Option<String>,
     /// Look for vectors closest to this
-    pub vector: Vec<VectorElementType>,
+    pub vector: NamedVectorStruct,
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
     /// Additional search params
@@ -217,7 +212,7 @@ pub struct SearchRequest {
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
     #[serde(default)]
-    pub with_vector: bool,
+    pub with_vector: WithVector,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
@@ -240,7 +235,7 @@ pub struct PointRequest {
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
     #[serde(default)]
-    pub with_vector: bool,
+    pub with_vector: WithVector,
 }
 
 /// Recommendation request.
@@ -273,14 +268,15 @@ pub struct RecommendRequest {
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
     #[serde(default)]
-    pub with_vector: bool,
+    pub with_vector: WithVector,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
-    ///
-    pub vector_name: Option<String>,
+    /// Define which vector to use for recommendation, if not specified - try to use default vector
+    #[serde(default)]
+    pub using: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -528,27 +524,25 @@ pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
 }
 
 impl Record {
-    pub fn get_vectors(&self) -> Option<AllVectors> {
-        if let Some(vectors) = &self.vectors {
-            Some(vectors.clone())
-        } else {
-            self.vector
-                .as_ref()
-                .map(|vector| only_default_vector(vector))
+    pub fn get_vectors(&self) -> Option<NamedVectors> {
+        match &self.vector {
+            Some(VectorStruct::Single(vector)) => Some(only_default_vector(vector)),
+            Some(VectorStruct::Multi(vectors)) => Some(vectors.clone()),
+            None => None,
         }
     }
 
-    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorType> {
-        if let Some(vectors) = &self.vectors {
-            vectors.get(name).cloned()
-        } else if let Some(vector) = &self.vector {
-            if name == DEFAULT_VECTOR_NAME {
-                Some(vector.clone())
-            } else {
-                None
+    pub fn get_vector_by_name(&self, name: &str) -> Option<&VectorType> {
+        match &self.vector {
+            Some(VectorStruct::Single(vector)) => {
+                if name == DEFAULT_VECTOR_NAME {
+                    Some(vector)
+                } else {
+                    None
+                }
             }
-        } else {
-            None
+            Some(VectorStruct::Multi(vectors)) => vectors.get(name),
+            None => None,
         }
     }
 }

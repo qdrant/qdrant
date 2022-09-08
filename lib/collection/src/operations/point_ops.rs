@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 
+use itertools::izip;
 use schemars::gen::SchemaGenerator;
 use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
-use segment::common::only_default_vector;
-use segment::entry::entry_point::AllVectors;
+use segment::common::utils::transpose_map;
+use segment::data_types::vectors::{
+    only_default_vector, BatchVectorStruct, NamedVectors, VectorStruct,
+};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 
 use super::types::{CollectionError, CollectionResult};
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard, Validate};
 use crate::hash_ring::HashRing;
-use crate::operations::types::{Record, VectorType};
+use crate::operations::types::Record;
 use crate::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -19,10 +22,9 @@ use crate::shard::ShardId;
 pub struct PointStruct {
     /// Point id
     pub id: PointIdType,
-    /// Vector
-    pub vector: Option<VectorType>,
     /// Vectors
-    pub vectors: Option<AllVectors>,
+    #[serde(alias = "vector")]
+    pub vectors: VectorStruct,
     /// Payload values (optional)
     pub payload: Option<Payload>,
 }
@@ -35,8 +37,7 @@ impl TryFrom<Record> for PointStruct {
         match record.get_vectors() {
             Some(vectors) => Ok(Self {
                 id: record.id,
-                vector: None,
-                vectors: Some(vectors),
+                vectors: vectors.into(),
                 payload: record.payload,
             }),
             None => Err("Vector is empty".to_string()),
@@ -44,13 +45,30 @@ impl TryFrom<Record> for PointStruct {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Batch {
     pub ids: Vec<PointIdType>,
-    pub vectors: Option<Vec<VectorType>>,
-    pub all_vectors: Option<Vec<AllVectors>>,
+    pub vectors: BatchVectorStruct,
     pub payloads: Option<Vec<Option<Payload>>>,
+}
+
+impl Batch {
+    pub fn empty() -> Self {
+        Self {
+            ids: vec![],
+            vectors: BatchVectorStruct::Multi(HashMap::new()),
+            payloads: Some(vec![]),
+        }
+    }
+
+    pub fn empty_no_payload() -> Self {
+        Self {
+            ids: vec![],
+            vectors: BatchVectorStruct::Multi(HashMap::new()),
+            payloads: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -195,18 +213,19 @@ impl Validate for PointInsertOperations {
         match self {
             PointInsertOperations::PointsList(_) => Ok(()),
             PointInsertOperations::PointsBatch(batch) => {
-                if let Some(vectors) = &batch.vectors {
-                    if batch.ids.len() != vectors.len() {
-                        return bad_input_error(batch.ids.len(), vectors.len());
+                match &batch.vectors {
+                    BatchVectorStruct::Single(vectors) => {
+                        if batch.ids.len() != vectors.len() {
+                            return bad_input_error(batch.ids.len(), vectors.len());
+                        }
                     }
-                } else if let Some(all_vectors) = &batch.all_vectors {
-                    if batch.ids.len() != all_vectors.len() {
-                        return bad_input_error(batch.ids.len(), all_vectors.len());
+                    BatchVectorStruct::Multi(named_vectors) => {
+                        for vectors in named_vectors.values() {
+                            if batch.ids.len() != vectors.len() {
+                                return bad_input_error(batch.ids.len(), vectors.len());
+                            }
+                        }
                     }
-                } else {
-                    return Err(CollectionError::BadInput {
-                        description: "No vector data".to_owned(),
-                    });
                 }
                 if let Some(payload_vector) = &batch.payloads {
                     if payload_vector.len() != batch.ids.len() {
@@ -229,26 +248,84 @@ impl SplitByShard for Batch {
     fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         let batch = self;
         let mut batch_by_shard: HashMap<ShardId, Batch> = HashMap::new();
-        let all_vectors = batch.get_vectors();
-        for i in 0..batch.ids.len() {
-            let shard_id = point_to_shard(batch.ids[i], ring);
-            let shard_batch = batch_by_shard
-                .entry(shard_id)
-                .or_insert_with(Batch::default);
-            shard_batch.ids.push(batch.ids[i]);
-            if shard_batch.all_vectors.is_none() {
-                shard_batch.all_vectors = Some(Vec::new());
+        let Batch {
+            ids,
+            vectors,
+            payloads,
+        } = batch;
+
+        if let Some(payloads) = payloads {
+            match vectors {
+                BatchVectorStruct::Single(vectors) => {
+                    for (id, vector, payload) in izip!(ids, vectors, payloads) {
+                        let shard_id = point_to_shard(id, ring);
+                        let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                            ids: vec![],
+                            vectors: BatchVectorStruct::Single(vec![]),
+                            payloads: Some(vec![]),
+                        });
+                        batch.ids.push(id);
+                        batch.vectors.single().push(vector);
+                        batch.payloads.as_mut().unwrap().push(payload);
+                    }
+                }
+                BatchVectorStruct::Multi(named_vectors) => {
+                    let named_vectors_list = transpose_map(named_vectors);
+                    for (id, named_vector, payload) in izip!(ids, named_vectors_list, payloads) {
+                        let shard_id = point_to_shard(id, ring);
+                        let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                            ids: vec![],
+                            vectors: BatchVectorStruct::Multi(HashMap::new()),
+                            payloads: Some(vec![]),
+                        });
+                        batch.ids.push(id);
+                        let batch_vectors = batch.vectors.multi();
+                        for (name, vector) in named_vector {
+                            batch_vectors
+                                .entry(name)
+                                .or_insert_with(Vec::new)
+                                .push(vector);
+                        }
+                        batch.payloads.as_mut().unwrap().push(payload);
+                    }
+                }
             }
-            if let Some(shard_all_vectors) = &mut shard_batch.all_vectors {
-                shard_all_vectors.push(all_vectors[i].clone());
-            }
-            if let Some(payloads) = &batch.payloads {
-                shard_batch
-                    .payloads
-                    .get_or_insert(Vec::new())
-                    .push(payloads[i].clone())
+        } else {
+            match vectors {
+                BatchVectorStruct::Single(vectors) => {
+                    for (id, vector) in izip!(ids, vectors) {
+                        let shard_id = point_to_shard(id, ring);
+                        let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                            ids: vec![],
+                            vectors: BatchVectorStruct::Single(vec![]),
+                            payloads: None,
+                        });
+                        batch.ids.push(id);
+                        batch.vectors.single().push(vector);
+                    }
+                }
+                BatchVectorStruct::Multi(named_vectors) => {
+                    let named_vectors_list = transpose_map(named_vectors);
+                    for (id, named_vector) in izip!(ids, named_vectors_list) {
+                        let shard_id = point_to_shard(id, ring);
+                        let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                            ids: vec![],
+                            vectors: BatchVectorStruct::Multi(HashMap::new()),
+                            payloads: None,
+                        });
+                        batch.ids.push(id);
+                        let batch_vectors = batch.vectors.multi();
+                        for (name, vector) in named_vector {
+                            batch_vectors
+                                .entry(name)
+                                .or_insert_with(Vec::new)
+                                .push(vector);
+                        }
+                    }
+                }
             }
         }
+
         OperationToShard::by_shard(batch_by_shard)
     }
 }
@@ -319,44 +396,23 @@ impl From<Vec<PointStruct>> for PointOperations {
 }
 
 impl PointStruct {
-    pub fn get_vectors(&self) -> AllVectors {
-        if let Some(vectors) = &self.vectors {
-            vectors.clone()
-        } else if let Some(vector) = &self.vector {
-            only_default_vector(vector)
-        } else {
-            panic!("PointStruct does not have vector data")
-        }
-    }
-}
-
-impl Batch {
-    pub fn get_vectors(&self) -> Vec<AllVectors> {
-        if let Some(all_vectors) = &self.all_vectors {
-            all_vectors.clone()
-        } else if let Some(vectors) = &self.vectors {
-            vectors
-                .iter()
-                .map(|vector| only_default_vector(vector))
-                .collect()
-        } else {
-            panic!("PointStruct does not have vector data")
+    pub fn get_vectors(&self) -> NamedVectors {
+        match &self.vectors {
+            VectorStruct::Single(vector) => only_default_vector(vector), // ToDo: try to avoid vector copy here
+            VectorStruct::Multi(vectors) => vectors.clone(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use segment::common::only_default_vector;
-
     use super::*;
 
     #[test]
     fn validate_batch() {
         let batch = PointInsertOperations::PointsBatch(Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: Some(vec![]),
-            all_vectors: None,
+            vectors: vec![].into(),
             payloads: None,
         });
         assert!(matches!(
@@ -366,16 +422,14 @@ mod tests {
 
         let batch = PointInsertOperations::PointsBatch(Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: None,
-            all_vectors: Some(vec![only_default_vector(&[0.1])]),
+            vectors: vec![vec![0.1]].into(),
             payloads: None,
         });
         assert!(matches!(batch.validate(), Ok(())));
 
         let batch = PointInsertOperations::PointsBatch(Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: None,
-            all_vectors: Some(vec![only_default_vector(&[0.1])]),
+            vectors: vec![vec![0.1]].into(),
             payloads: Some(vec![]),
         });
         assert!(matches!(

@@ -8,9 +8,9 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use itertools::Itertools;
-    use segment::common::only_default_vector;
+    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::entry::entry_point::{OperationError, SegmentEntry};
-    use segment::segment::{Segment, DEFAULT_VECTOR_NAME};
+    use segment::segment::Segment;
     use segment::segment_constructor::segment_builder::SegmentBuilder;
     use segment::types::{Indexes, SegmentConfig, VectorDataConfig};
     use tempfile::Builder;

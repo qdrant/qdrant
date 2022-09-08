@@ -3,7 +3,8 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-use crate::types::{ScoreType, VectorElementType};
+use crate::data_types::vectors::VectorElementType;
+use crate::types::ScoreType;
 
 #[target_feature(enable = "sse")]
 unsafe fn hsum128_ps_sse(x: __m128) -> f32 {

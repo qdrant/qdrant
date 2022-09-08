@@ -6,16 +6,17 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use segment::data_types::vectors::{NamedVectors, VectorElementType};
 use segment::entry::entry_point::{
-    AllVectors, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
+    OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorElementType, WithPayload,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
+    WithVector,
 };
 use uuid::Uuid;
 
@@ -149,7 +150,7 @@ impl SegmentEntry for ProxySegment {
         vector_name: &str,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -207,7 +208,7 @@ impl SegmentEntry for ProxySegment {
         vector_name: &str,
         vectors: &[&[VectorElementType]],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -264,7 +265,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &AllVectors,
+        vectors: &NamedVectors,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
@@ -368,8 +369,8 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
-    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<AllVectors> {
-        let mut result = AllVectors::new();
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
+        let mut result = NamedVectors::new();
         for vector_name in self
             .wrapped_segment
             .get()
@@ -706,8 +707,7 @@ impl SegmentEntry for ProxySegment {
 mod tests {
     use std::fs::read_dir;
 
-    use segment::common::only_default_vector;
-    use segment::segment::DEFAULT_VECTOR_NAME;
+    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::types::FieldCondition;
     use serde_json::json;
     use tempfile::{Builder, TempDir};
@@ -753,7 +753,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 10,
                 None,
@@ -820,7 +820,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 10,
                 None,
@@ -834,7 +834,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &[&query_vector],
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 10,
                 None,
@@ -873,7 +873,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 10,
                 None,
@@ -887,7 +887,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 &[&query_vector],
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 10,
                 None,
@@ -935,7 +935,7 @@ mod tests {
                     DEFAULT_VECTOR_NAME,
                     query_vector,
                     &WithPayload::default(),
-                    false,
+                    &false.into(),
                     None,
                     10,
                     None,
@@ -951,7 +951,7 @@ mod tests {
                 DEFAULT_VECTOR_NAME,
                 query_vectors,
                 &WithPayload::default(),
-                false,
+                &false.into(),
                 None,
                 10,
                 None,
