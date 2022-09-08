@@ -14,7 +14,7 @@ use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
-use tokio::fs::{copy, create_dir_all};
+use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
@@ -44,7 +44,7 @@ pub struct LocalShard {
     pub(super) runtime_handle: Option<Runtime>,
     pub(super) update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
     pub(super) path: PathBuf,
-    pub(super) before_drop_called: bool,
+    before_drop_called: bool,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
 }
 
@@ -549,10 +549,8 @@ impl LocalShard {
             optimizers,
         }
     }
-}
 
-impl Drop for LocalShard {
-    fn drop(&mut self) {
+    fn assert_before_drop_called(&self) {
         if !self.before_drop_called {
             // Panic is used to get fast feedback in unit and integration tests
             // in cases where `before_drop` was not added.
@@ -562,5 +560,18 @@ impl Drop for LocalShard {
                 log::error!("Collection `before_drop` was not called.")
             }
         }
+    }
+
+    pub async fn delete_from_disk(&self) -> CollectionResult<()> {
+        // Assert before drop called so that we are sure all updates were finished
+        self.assert_before_drop_called();
+        remove_dir_all(self.shard_path()).await?;
+        Ok(())
+    }
+}
+
+impl Drop for LocalShard {
+    fn drop(&mut self) {
+        self.assert_before_drop_called()
     }
 }
