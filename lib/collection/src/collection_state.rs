@@ -8,7 +8,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shard::replica_set::IsActive;
 use crate::shard::{PeerId, Shard, ShardId, ShardTransfer};
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ShardInfo {
     ReplicaSet { replicas: HashMap<PeerId, IsActive> },
     Single(PeerId),
