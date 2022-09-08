@@ -20,17 +20,32 @@ jobs:
     - name: Get current tag
       id: vars
       run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
-    - name: Build the Docker image
+
+    - name: Create docker buildx and qemu
       env:
         RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
       run: |
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
         docker buildx create --use
-        
-        docker --config ~/.github.config login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
-        docker --config ~/.dockerhub.config login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
-        
-        TAGS="-t generall/qdrant:${{ github.ref_name }}"
-        TAGS="${TAGS} -t docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
-        
-        docker buildx build --platform='linux/amd64,linux/arm64' $TAGS --push .
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: generall
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Login to Github
+      uses: docker/login-action@v2
+      with:
+        registry: https://docker.pkg.github.com
+        username: qdrant
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build the Docker image
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        tags: |
+          generall/qdrant:${{ github.ref_name }}
+          ghcr.io/docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}
+        push: true
