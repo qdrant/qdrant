@@ -1226,7 +1226,7 @@ impl Collection {
                 .map(|(shard_id, shard)| {
                     let shard_info = match shard {
                         Shard::ReplicaSet(replicas) => ShardInfo::ReplicaSet {
-                            replicas: replicas.replica_state.clone(),
+                            replicas: replicas.replica_state.read().clone(),
                         },
                         shard => ShardInfo::Single(
                             *shard
