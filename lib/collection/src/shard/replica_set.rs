@@ -56,6 +56,8 @@ impl ReplicaSet {
                 if let Some(shard) = &mut self.local {
                     shard.before_drop().await;
                     shard.delete_from_disk().await?;
+                } else {
+                    debug_assert!(false, "inconsistent `replica_set` map with actual shards")
                 }
             } else if let Some(_remote_shard) = &mut self.remote {
                 todo!("remote_shard.remove_peer(peer_id)")
