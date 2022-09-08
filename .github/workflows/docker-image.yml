@@ -47,5 +47,5 @@ jobs:
         context: .
         tags: |
           generall/qdrant:${{ github.ref_name }}
-          ghcr.io/docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}
+          docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}
         push: true
