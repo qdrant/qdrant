@@ -96,7 +96,7 @@ pub trait SegmentOptimizer {
                 let segment = s.get();
                 let locked_segment = segment.read();
                 locked_segment.points_count()
-                    * locked_segment.vector_dims().values().product::<usize>()
+                    * locked_segment.vector_dims().values().sum::<usize>()
                     * VECTOR_ELEMENT_SIZE
             })
             .sum();
