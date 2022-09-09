@@ -6,8 +6,9 @@ use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
+use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    only_default_vector, NamedVectorStruct, NamedVectors, VectorStruct, VectorType,
+    only_default_vector, NamedVectorStruct, VectorStruct, VectorType,
     DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;

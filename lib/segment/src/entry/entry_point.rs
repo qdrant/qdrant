@@ -8,7 +8,8 @@ use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
 use crate::common::file_operations::FileStorageError;
-use crate::data_types::vectors::{NamedVectors, VectorElementType};
+use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::vectors::VectorElementType;
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{

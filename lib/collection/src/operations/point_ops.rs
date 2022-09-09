@@ -5,8 +5,9 @@ use schemars::gen::SchemaGenerator;
 use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map;
+use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    only_default_vector, BatchVectorStruct, NamedVectors, VectorStruct,
+    only_default_vector, BatchVectorStruct, VectorStruct,
 };
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};

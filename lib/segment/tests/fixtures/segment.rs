@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use segment::data_types::vectors::{only_default_vector, NamedVectors, VectorElementType};
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{only_default_vector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;

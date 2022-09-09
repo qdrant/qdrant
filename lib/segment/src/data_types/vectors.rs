@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::utils::transpose_map;
 
+use super::named_vectors::NamedVectors;
+
 /// Type of vector element.
 pub type VectorElementType = f32;
 
-pub type NamedVectors = HashMap<String, Vec<VectorElementType>>;
 pub const DEFAULT_VECTOR_NAME: &str = "";
 
 /// Type for vector

@@ -6,7 +6,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use segment::data_types::vectors::{NamedVectors, VectorElementType};
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::{
     OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };

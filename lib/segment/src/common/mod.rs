@@ -5,7 +5,7 @@ pub mod rocksdb_wrapper;
 pub mod utils;
 pub mod version;
 
-use crate::data_types::vectors::NamedVectors;
+use crate::data_types::named_vectors::NamedVectors;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::SegmentConfig;
 
