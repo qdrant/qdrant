@@ -258,7 +258,7 @@ mod tests {
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
-    use crate::config::{VectorParamStruct, VectorParams};
+    use crate::config::{VectorParams, VectorsConfig};
     use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
     use crate::operations::{CreateIndex, FieldIndexOperations};
 
@@ -307,7 +307,7 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: Some(VectorParamStruct::Single(VectorParams {
+                vectors: Some(VectorsConfig::Single(VectorParams {
                     size: NonZeroU64::new(
                         segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
                     )

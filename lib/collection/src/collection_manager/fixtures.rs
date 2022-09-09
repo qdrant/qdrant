@@ -14,7 +14,7 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
-use crate::config::{CollectionParams, VectorParamStruct, VectorParams};
+use crate::config::{CollectionParams, VectorParams, VectorsConfig};
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
@@ -143,7 +143,7 @@ pub(crate) fn get_merge_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vectors: Some(VectorParamStruct::Single(VectorParams {
+            vectors: Some(VectorsConfig::Single(VectorParams {
                 size: NonZeroU64::new(dim as u64).unwrap(),
                 distance: Distance::Dot,
             })),
@@ -171,7 +171,7 @@ pub(crate) fn get_indexing_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vectors: Some(VectorParamStruct::Single(VectorParams {
+            vectors: Some(VectorsConfig::Single(VectorParams {
                 size: NonZeroU64::new(dim as u64).unwrap(),
                 distance: Distance::Dot,
             })),

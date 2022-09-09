@@ -1,4 +1,4 @@
-use collection::config::VectorParamStruct;
+use collection::config::VectorsConfig;
 use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use collection::shard::{CollectionId, ShardTransfer};
 use schemars::JsonSchema;
@@ -85,7 +85,7 @@ impl From<RenameAlias> for AliasOperations {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
-    pub vectors: Option<VectorParamStruct>,
+    pub vectors: Option<VectorsConfig>,
     #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
     pub vector_size: Option<usize>,
     #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]

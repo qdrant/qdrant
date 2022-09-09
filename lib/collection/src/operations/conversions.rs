@@ -8,8 +8,8 @@ use segment::types::{Distance, WithVector};
 use tonic::Status;
 
 use crate::config::{
-    default_replication_factor, CollectionConfig, CollectionParams, VectorParamStruct,
-    VectorParams, WalConfig,
+    default_replication_factor, CollectionConfig, CollectionParams, VectorParams, VectorsConfig,
+    WalConfig,
 };
 use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
@@ -98,12 +98,12 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 params: Some(api::grpc::qdrant::CollectionParams {
                     vectors_config: if let Some(vectors_struct) = config.params.vectors {
                         let config = match vectors_struct {
-                            VectorParamStruct::Single(vector_params) => {
+                            VectorsConfig::Single(vector_params) => {
                                 Some(api::grpc::qdrant::vectors_config::Config::Params(
                                     vector_params.into(),
                                 ))
                             }
-                            VectorParamStruct::Multi(vectors_params) => {
+                            VectorsConfig::Multi(vectors_params) => {
                                 Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
                                     api::grpc::qdrant::VectorParamsMap {
                                         map: vectors_params
@@ -278,11 +278,11 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             Some(vector_config) => match vector_config.config {
                                 None => None, // ToDo: fail if config is None
                                 Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
-                                    Some(VectorParamStruct::Single(params.try_into()?))
+                                    Some(VectorsConfig::Single(params.try_into()?))
                                 }
                                 Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
                                     params_map,
-                                )) => Some(VectorParamStruct::Multi(
+                                )) => Some(VectorsConfig::Multi(
                                     params_map
                                         .map
                                         .into_iter()

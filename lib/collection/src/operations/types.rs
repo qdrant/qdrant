@@ -7,8 +7,7 @@ use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
 use segment::data_types::vectors::{
-    only_default_vector, NamedVectorStruct, NamedVectors, VectorStruct, VectorType,
-    DEFAULT_VECTOR_NAME,
+    NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
@@ -524,14 +523,6 @@ pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
 }
 
 impl Record {
-    pub fn get_vectors(&self) -> Option<NamedVectors> {
-        match &self.vector {
-            Some(VectorStruct::Single(vector)) => Some(only_default_vector(vector)),
-            Some(VectorStruct::Multi(vectors)) => Some(vectors.clone()),
-            None => None,
-        }
-    }
-
     pub fn get_vector_by_name(&self, name: &str) -> Option<&VectorType> {
         match &self.vector {
             Some(VectorStruct::Single(vector)) => {

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use collection::collection::Collection;
 use collection::collection_state;
-use collection::config::{CollectionConfig, CollectionParams};
+use collection::config::{CollectionConfig, CollectionParams, VectorParams};
 use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -233,6 +233,26 @@ impl TableOfContent {
                 })
             })
             .transpose()?;
+
+        let vectors = match vectors {
+            None => {
+                let vector_size = vector_size.ok_or(StorageError::BadInput {
+                    description: "`vector_size` is required if `vectors` is not provided"
+                        .to_string(),
+                })?;
+                let distance = distance.ok_or(StorageError::BadInput {
+                    description: "`distance` is required if `vectors` is not provided".to_string(),
+                })?;
+                Some(
+                    VectorParams {
+                        size: vector_size,
+                        distance,
+                    }
+                    .into(),
+                )
+            }
+            Some(v) => Some(v),
+        };
 
         let collection_params = CollectionParams {
             vectors,

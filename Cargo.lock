@@ -809,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "collection"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "api",
  "arc-swap",

@@ -21,7 +21,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::collection_state::State;
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, VectorParams};
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
 use crate::operations::snapshot_ops::{
@@ -165,6 +165,34 @@ impl Collection {
         .matches(app)
     }
 
+    fn upgrade_collection_40_to_41(path: &Path) {
+        let mut config = CollectionConfig::load(path).unwrap_or_else(|err| {
+            panic!(
+                "Can't read collection config due to {}\nat {}",
+                err,
+                path.to_str().unwrap()
+            )
+        });
+
+        if config.params.vectors.is_none() {
+            config.params.vectors = Some(
+                VectorParams {
+                    size: config.params.vector_size.unwrap(),
+                    distance: config.params.distance.unwrap(),
+                }
+                .into(),
+            );
+        }
+
+        config.save(path).unwrap_or_else(|err| {
+            panic!(
+                "Can't save collection config due to {}\nat {}",
+                err,
+                path.to_str().unwrap()
+            )
+        });
+    }
+
     pub async fn load(
         collection_id: CollectionId,
         path: &Path,
@@ -172,19 +200,22 @@ impl Collection {
         channel_service: ChannelService,
     ) -> Self {
         let start_time = std::time::Instant::now();
-        let mut stored_version = CollectionVersion::load(path)
+        let stored_version = CollectionVersion::load(path)
             .expect("Can't read collection version")
             .parse()
             .expect("Failed to parse stored collection version as semver");
+
         let app_version: Version = CollectionVersion::current()
             .parse()
             .expect("Failed to parse current collection version as semver");
         if stored_version != app_version {
             if Self::can_upgrade_storage(&stored_version, &app_version) {
                 log::info!("Migrating collection {stored_version} -> {app_version}",);
+
+                Self::upgrade_collection_40_to_41(path);
+
                 CollectionVersion::save(path)
                     .unwrap_or_else(|err| panic!("Can't save collection version {}", err));
-                stored_version = app_version;
             } else {
                 log::info!("Cannot upgrade version {stored_version} to {app_version}. Attempting to use {stored_version}")
             }
@@ -198,14 +229,7 @@ impl Collection {
             )
         });
 
-        // 0.4.0 is the collection version at which we introduced fair hash ring
-        let ring = if stored_version >= Version::new(0, 4, 0) {
-            log::debug!("Using fair hash ring with scale: {HASH_RING_SHARD_SCALE}");
-            HashRing::fair(HASH_RING_SHARD_SCALE)
-        } else {
-            log::debug!("Using raw hash ring");
-            HashRing::raw()
-        };
+        let ring = HashRing::fair(HASH_RING_SHARD_SCALE);
         let mut shard_holder = ShardHolder::new(path, ring).expect("Can not create shard holder");
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
