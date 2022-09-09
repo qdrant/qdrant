@@ -4,7 +4,7 @@ use std::sync::Arc;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use tokio::runtime::Handle;
 
-use super::local_shard::LocalShard;
+use super::local_shard::{drop_and_delete_from_disk, LocalShard};
 use super::remote_shard::RemoteShard;
 use super::{PeerId, ShardId, ShardOperation};
 use crate::operations::types::{
@@ -53,9 +53,9 @@ impl ReplicaSet {
             .collect::<Vec<_>>();
         for peer_id in removed_peers {
             if peer_id == self.this_peer_id {
-                if let Some(shard) = &mut self.local {
+                if let Some(mut shard) = self.local.take() {
                     shard.before_drop().await;
-                    shard.delete_from_disk().await?;
+                    drop_and_delete_from_disk(shard).await?;
                 } else {
                     debug_assert!(false, "inconsistent `replica_set` map with actual shards")
                 }
