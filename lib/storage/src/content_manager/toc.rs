@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use collection::collection::Collection;
-use collection::collection_state;
 use collection::config::{CollectionConfig, CollectionParams, VectorParams};
+use collection::collection_state::ShardInfo;
 use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -20,8 +20,11 @@ use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
+use collection::collection_state;
 
-use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
+use super::collection_meta_ops::{
+    CreateCollectionOperation, SetShardReplicaState, ShardTransferOperations,
+};
 use super::{consensus_state, CollectionContainer};
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::{
@@ -435,7 +438,21 @@ impl TableOfContent {
                 .handle_transfer(collection, operation)
                 .await
                 .map(|()| true),
+            CollectionMetaOperations::SetShardReplicaState(operation) => {
+                self.set_shard_replica_state(operation).await.map(|()| true)
+            }
         }
+    }
+
+    pub async fn set_shard_replica_state(
+        &self,
+        operation: SetShardReplicaState,
+    ) -> Result<(), StorageError> {
+        self.get_collection(&operation.collection_name)
+            .await?
+            .set_shard_replica_state(operation.shard_id, operation.peer_id, operation.active)
+            .await?;
+        Ok(())
     }
 
     /// Cancels all transfers where the source peer is the current peer.
@@ -457,12 +474,7 @@ impl TableOfContent {
         collection_id: CollectionId,
         transfer_operation: ShardTransferOperations,
     ) -> Result<(), StorageError> {
-        let collections = self.collections.read().await;
-        let collection = collections.get(&collection_id).ok_or_else(|| {
-            StorageError::service_error(&format!(
-                "Collection {collection_id} should be present at the time of shard transfer."
-            ))
-        })?;
+        let collection = self.get_collection(&collection_id).await?;
         match transfer_operation {
             ShardTransferOperations::Start(transfer) => {
                 // check that transfer can be performed
@@ -554,11 +566,7 @@ impl TableOfContent {
             collection_name,
             shard_id
         );
-        let real_collection_name = self.resolve_name(&collection_name).await?;
-        let read_collections = self.collections.read().await;
-
-        // safe 'unwrap' because the collection's existence is checked in `resolve_name`
-        let collection = read_collections.get(&real_collection_name).unwrap();
+        let collection = self.get_collection(&collection_name).await?;
         collection.initiate_temporary_shard(shard_id).await?;
         Ok(())
     }
@@ -829,13 +837,7 @@ impl TableOfContent {
                                 };
                             };
                             collection
-                                .apply_state(
-                                    state.clone(),
-                                    self.this_peer_id(),
-                                    &self.get_collection_path(&collection.name()),
-                                    self.channel_service.clone(),
-                                    abort_transfer,
-                                )
+                                .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
                                 .await?;
                         }
                     }
@@ -845,7 +847,16 @@ impl TableOfContent {
                         let snapshots_path = self.create_snapshots_path(id).await?;
                         let shard_distribution = CollectionShardDistribution::from_shard_to_peer(
                             self.this_peer_id,
-                            &state.shard_to_peer,
+                            &state
+                                .shards
+                                .iter()
+                                .map(|(id, info)| match info {
+                                    ShardInfo::ReplicaSet { replicas: _ } => {
+                                        todo!("Handle multiple replicas in shard distribution")
+                                    }
+                                    ShardInfo::Single(peer_id) => (*id, *peer_id),
+                                })
+                                .collect(),
                         );
                         let collection = Collection::new(
                             id.to_string(),
@@ -941,7 +952,14 @@ impl TableOfContent {
     pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         for collection in self.collections.read().await.values() {
             let state = collection.state(self.this_peer_id()).await;
-            let peers_with_shards: HashSet<_> = state.shard_to_peer.values().collect();
+            let peers_with_shards: HashSet<_> = state
+                .shards
+                .into_values()
+                .flat_map(|shard_info| match shard_info {
+                    ShardInfo::ReplicaSet { replicas } => replicas.into_keys().collect::<Vec<_>>(),
+                    ShardInfo::Single(peer_id) => vec![peer_id],
+                })
+                .collect();
             if peers_with_shards.contains(&peer_id) {
                 return true;
             }

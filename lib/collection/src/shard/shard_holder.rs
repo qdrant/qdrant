@@ -6,6 +6,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use super::PeerId;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -144,6 +145,26 @@ impl ShardHolder {
         Ok(self
             .shard_transfers
             .write(|transfers| transfers.remove(transfer))?)
+    }
+
+    pub fn set_shard_replica_state(
+        &mut self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        active: bool,
+    ) -> CollectionResult<()> {
+        if let Shard::ReplicaSet(replica_set) =
+            self.get_mut_shard(&shard_id)
+                .ok_or_else(|| CollectionError::NotFound {
+                    what: format!("Shard {shard_id}"),
+                })?
+        {
+            replica_set.set_active(&peer_id, active)
+        } else {
+            Err(CollectionError::ServiceError {
+                error: format!("Shard {shard_id} is not a replica set"),
+            })
+        }
     }
 
     pub fn target_shards(&self, shard_selection: Option<ShardId>) -> CollectionResult<Vec<&Shard>> {
