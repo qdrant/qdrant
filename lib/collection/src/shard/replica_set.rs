@@ -161,8 +161,7 @@ impl ReplicaSet {
                 return ok;
             }
         }
-        // at this point `captured_error` must be defined by construction
-        captured_error.unwrap()
+        captured_error.expect("at this point `captured_error` must be defined by construction")
     }
 }
 
