@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use collection::collection::Collection;
-use collection::config::{CollectionConfig, CollectionParams, VectorParams};
+use collection::collection_state;
 use collection::collection_state::ShardInfo;
+use collection::config::{CollectionConfig, CollectionParams, VectorParams};
 use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -20,7 +21,6 @@ use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
-use collection::collection_state;
 
 use super::collection_meta_ops::{
     CreateCollectionOperation, SetShardReplicaState, ShardTransferOperations,

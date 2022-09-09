@@ -19,8 +19,8 @@ use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
-use crate::collection_state::{ShardInfo, State};
 
+use crate::collection_state::{ShardInfo, State};
 use crate::config::{CollectionConfig, VectorParams};
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
