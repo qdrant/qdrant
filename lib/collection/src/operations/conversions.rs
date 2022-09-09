@@ -191,12 +191,14 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
 
     fn try_from(retrieved_point: api::grpc::qdrant::RetrievedPoint) -> Result<Self, Self::Error> {
         let vectors = match retrieved_point.vectors {
-            None => if retrieved_point.vector.is_empty() {
-                None
-            } else {
-                Some(retrieved_point.vector.into())
+            None => {
+                if retrieved_point.vector.is_empty() {
+                    None
+                } else {
+                    Some(retrieved_point.vector.into())
+                }
             }
-            Some(vectors) => Some(vectors.try_into()?)
+            Some(vectors) => Some(vectors.try_into()?),
         };
 
         Ok(Self {

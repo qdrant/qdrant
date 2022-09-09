@@ -70,7 +70,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
+    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::types::{Payload, WithPayload};
     use serde_json::json;
     use tempfile::Builder;

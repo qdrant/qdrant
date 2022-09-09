@@ -35,7 +35,9 @@ impl TryFrom<Record> for PointStruct {
 
     fn try_from(record: Record) -> Result<Self, Self::Error> {
         let Record {
-            id, payload, vector
+            id,
+            payload,
+            vector,
         } = record;
 
         if vector.is_none() {
