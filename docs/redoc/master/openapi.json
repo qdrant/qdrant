@@ -4228,13 +4228,13 @@
         "type": "object",
         "required": [
           "id",
-          "vectors"
+          "vector"
         ],
         "properties": {
           "id": {
             "$ref": "#/components/schemas/ExtendedPointId"
           },
-          "vectors": {
+          "vector": {
             "$ref": "#/components/schemas/VectorStruct"
           },
           "payload": {
