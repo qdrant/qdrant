@@ -70,7 +70,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::only_default_vector;
+    use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
     use segment::types::{Payload, WithPayload};
     use serde_json::json;
     use tempfile::Builder;
@@ -162,13 +162,13 @@ mod tests {
         assert_eq!(records.len(), 3);
 
         for record in records {
-            let v = record.get_vectors().unwrap();
+            let v = record.vector.unwrap();
 
             if record.id == 1.into() {
-                assert_eq!(&v, &only_default_vector(&[2., 2., 2., 2.]))
+                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some(&vec![2., 2., 2., 2.]))
             }
             if record.id == 500.into() {
-                assert_eq!(&v, &only_default_vector(&[2., 0., 2., 0.]))
+                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some(&vec![2., 0., 2., 0.]))
             }
         }
 
@@ -191,7 +191,7 @@ mod tests {
         .unwrap();
 
         for record in records {
-            let _v = record.get_vectors().unwrap();
+            assert!(record.vector.is_some());
             assert_ne!(record.id, 500.into());
         }
     }

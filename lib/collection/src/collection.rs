@@ -844,9 +844,8 @@ impl Collection {
                 // But it's not a problem, because we don't want to return deleted points.
                 // So we just filter out them.
                 records_map.remove(&scored_point.id).map(|record| {
-                    let vectors = record.get_vectors();
                     scored_point.payload = record.payload;
-                    scored_point.vector = vectors.map(|vectors| vectors.into());
+                    scored_point.vector = record.vector;
                     scored_point
                 })
             })

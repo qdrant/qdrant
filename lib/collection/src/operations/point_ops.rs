@@ -34,14 +34,19 @@ impl TryFrom<Record> for PointStruct {
     type Error = String;
 
     fn try_from(record: Record) -> Result<Self, Self::Error> {
-        match record.get_vectors() {
-            Some(vectors) => Ok(Self {
-                id: record.id,
-                vector: vectors.into(),
-                payload: record.payload,
-            }),
-            None => Err("Vector is empty".to_string()),
+        let Record {
+            id, payload, vector
+        } = record;
+
+        if vector.is_none() {
+            return Err("Vector is empty".to_string());
         }
+
+        Ok(Self {
+            id,
+            payload,
+            vector: vector.unwrap(),
+        })
     }
 }
 

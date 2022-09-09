@@ -169,17 +169,19 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
 
 impl From<Record> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: Record) -> Self {
-        let vectors = record.get_vectors();
+        let deprecated_vector = record
+            .vector
+            .as_ref()
+            .map(|v| v.get(DEFAULT_VECTOR_NAME).cloned().unwrap_or_default())
+            .unwrap_or_default();
+
+        let vectors = record.vector.map(|vector_struct| vector_struct.into());
+
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vectors: vectors
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(vector_name, vector_data)| {
-                    (vector_name, api::grpc::qdrant::Vector { data: vector_data })
-                })
-                .collect(),
+            vector: deprecated_vector,
+            vectors,
         }
     }
 }
@@ -188,17 +190,19 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
     type Error = Status;
 
     fn try_from(retrieved_point: api::grpc::qdrant::RetrievedPoint) -> Result<Self, Self::Error> {
+        let vectors = match retrieved_point.vectors {
+            None => if retrieved_point.vector.is_empty() {
+                None
+            } else {
+                Some(retrieved_point.vector.into())
+            }
+            Some(vectors) => Some(vectors.try_into()?)
+        };
+
         Ok(Self {
             id: retrieved_point.id.unwrap().try_into()?,
             payload: Some(proto_to_payloads(retrieved_point.payload)?),
-            vector: Some(
-                retrieved_point
-                    .vectors
-                    .into_iter()
-                    .map(|(vector_name, vector_data)| (vector_name, vector_data.data))
-                    .collect::<HashMap<_, _>>()
-                    .into(),
-            ),
+            vector: vectors,
         })
     }
 }

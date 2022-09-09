@@ -250,7 +250,8 @@ message CountResult {
 message RetrievedPoint {
   PointId id = 1;
   map<string, Value> payload = 2;
-  map<string, Vector> vectors = 3;
+  repeated float vector = 3 [deprecated = true];
+  optional Vectors vectors = 4;
 }
 
 message GetResponse {
