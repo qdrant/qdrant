@@ -11,7 +11,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef as builder
 
-ARG TARGETARCH=arm64
+ARG TARGETARCH=amd64
 
 WORKDIR /qdrant
 
