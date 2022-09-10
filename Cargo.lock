@@ -3062,6 +3062,7 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror",
+ "tinyvec",
  "uuid",
  "walkdir",
 ]

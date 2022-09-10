@@ -44,6 +44,8 @@ json-patch = "0.2.6"
 tar = "0.4.38"
 fs_extra = "1.2.0"
 semver = "1.0.13"
+tinyvec = { version = "1.6.0", features = ["alloc"] }
+
 
 [[bench]]
 name = "vector_search"
@@ -72,3 +74,8 @@ harness = false
 [[bench]]
 name = "id_type_benchmark"
 harness = false
+
+[[bench]]
+name = "map_benchmark"
+harness = false
+
