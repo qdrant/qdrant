@@ -3,16 +3,22 @@
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
-use collection::operations::CollectionUpdateOperations;
-use tempfile::Builder;
-use tokio::runtime::Handle;
+
 use collection::collection::Collection;
-use collection::config::{CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig};
-use collection::operations::types::{CollectionError, PointRequest, RecommendRequest, SearchRequest};
+use collection::config::{
+    CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig,
+};
+use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use collection::operations::types::{
+    CollectionError, PointRequest, RecommendRequest, SearchRequest,
+};
+use collection::operations::CollectionUpdateOperations;
 use segment::data_types::vectors::{NamedVector, NamedVectors, VectorStruct};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
-use crate::common::{N_SHARDS, TEST_OPTIMIZERS_CONFIG, new_local_collection};
+use tempfile::Builder;
+use tokio::runtime::Handle;
+
+use crate::common::{new_local_collection, N_SHARDS, TEST_OPTIMIZERS_CONFIG};
 
 mod common;
 
@@ -70,8 +76,8 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
         &snapshot_path,
         &collection_config,
     )
-        .await
-        .unwrap()
+    .await
+    .unwrap()
 }
 
 async fn test_multi_vec_with_shards(shard_number: u32) {
@@ -105,12 +111,12 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
     let query_vector = vec![6.0, 0.0, 0.0, 0.0];
 
-
     let full_search_request = SearchRequest {
         vector: NamedVector {
             name: VEC_NAME1.to_string(),
-            vector: query_vector
-        }.into(),
+            vector: query_vector,
+        }
+        .into(),
         filter: None,
         limit: 10,
         offset: 0,
@@ -152,14 +158,14 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         .search(failed_search_request, &Handle::current(), None)
         .await;
 
-    assert!(matches!(result, Err(CollectionError::BadInput{ .. })));
-
+    assert!(matches!(result, Err(CollectionError::BadInput { .. })));
 
     let full_search_request = SearchRequest {
         vector: NamedVector {
             name: VEC_NAME2.to_string(),
-            vector: query_vector
-        }.into(),
+            vector: query_vector,
+        }
+        .into(),
         filter: None,
         limit: 10,
         offset: 0,
@@ -184,14 +190,17 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         }
     }
 
-    let retrieve = collection.retrieve(
-        PointRequest {
-            ids: vec![6.into()],
-            with_payload: Some(WithPayloadInterface::Bool(false)),
-            with_vector: WithVector::Selector(vec![VEC_NAME1.to_string()]),
-        },
-        None,
-    ).await.unwrap();
+    let retrieve = collection
+        .retrieve(
+            PointRequest {
+                ids: vec![6.into()],
+                with_payload: Some(WithPayloadInterface::Bool(false)),
+                with_vector: WithVector::Selector(vec![VEC_NAME1.to_string()]),
+            },
+            None,
+        )
+        .await
+        .unwrap();
 
     assert_eq!(retrieve.len(), 1);
     match retrieve[0].vector.as_ref().unwrap() {
@@ -202,47 +211,52 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         }
     }
 
-    let recommend_result = collection.recommend_by(
-        RecommendRequest {
-            positive: vec![6.into()],
-            negative: vec![],
-            with_payload: Some(WithPayloadInterface::Bool(false)),
-            with_vector: WithVector::Selector(vec![VEC_NAME2.to_string()]),
-            score_threshold: None,
-            limit: 10,
-            offset: 0,
-            filter: None,
-            params: None,
-            using: None,
-        },
-        &Handle::current(),
-        None,
-    ).await;
+    let recommend_result = collection
+        .recommend_by(
+            RecommendRequest {
+                positive: vec![6.into()],
+                negative: vec![],
+                with_payload: Some(WithPayloadInterface::Bool(false)),
+                with_vector: WithVector::Selector(vec![VEC_NAME2.to_string()]),
+                score_threshold: None,
+                limit: 10,
+                offset: 0,
+                filter: None,
+                params: None,
+                using: None,
+            },
+            &Handle::current(),
+            None,
+        )
+        .await;
 
     match recommend_result {
         Ok(_) => panic!("Error expected"),
         Err(err) => match err {
             CollectionError::BadRequest { .. } => {}
             _ => panic!("Unexpected error"),
-        }
+        },
     }
 
-    let recommend_result = collection.recommend_by(
-        RecommendRequest {
-            positive: vec![6.into()],
-            negative: vec![],
-            with_payload: Some(WithPayloadInterface::Bool(false)),
-            with_vector: WithVector::Selector(vec![VEC_NAME2.to_string()]),
-            score_threshold: None,
-            limit: 10,
-            offset: 0,
-            filter: None,
-            params: None,
-            using: Some(VEC_NAME1.to_string()),
-        },
-        &Handle::current(),
-        None,
-    ).await.unwrap();
+    let recommend_result = collection
+        .recommend_by(
+            RecommendRequest {
+                positive: vec![6.into()],
+                negative: vec![],
+                with_payload: Some(WithPayloadInterface::Bool(false)),
+                with_vector: WithVector::Selector(vec![VEC_NAME2.to_string()]),
+                score_threshold: None,
+                limit: 10,
+                offset: 0,
+                filter: None,
+                params: None,
+                using: Some(VEC_NAME1.to_string()),
+            },
+            &Handle::current(),
+            None,
+        )
+        .await
+        .unwrap();
 
     assert_eq!(recommend_result.len(), 10);
     for hit in recommend_result {

@@ -65,7 +65,12 @@ impl IndexingOptimizer {
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.points_count();
                 let vector_size = vector_count
-                    * read_segment.vector_dims().values().max().copied().unwrap_or(0)
+                    * read_segment
+                        .vector_dims()
+                        .values()
+                        .max()
+                        .copied()
+                        .unwrap_or(0)
                     * VECTOR_ELEMENT_SIZE;
 
                 if read_segment.segment_type() == SegmentType::Special {
@@ -112,7 +117,12 @@ impl IndexingOptimizer {
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.points_count();
                 let vector_size = vector_count
-                    * read_segment.vector_dims().values().max().copied().unwrap_or(0)
+                    * read_segment
+                        .vector_dims()
+                        .values()
+                        .max()
+                        .copied()
+                        .unwrap_or(0)
                     * VECTOR_ELEMENT_SIZE;
 
                 let segment_config = read_segment.config();
@@ -283,22 +293,26 @@ mod tests {
             .unwrap();
         let mut opnum = 101..1000000;
 
-        let large_segment = random_multi_vec_segment(
-            segments_dir.path(),
-            opnum.next().unwrap(),
-            200,
-            dim1,
-            dim2
-        );
+        let large_segment =
+            random_multi_vec_segment(segments_dir.path(), opnum.next().unwrap(), 200, dim1, dim2);
 
         let segment_config = large_segment.segment_config.clone();
 
         let large_segment_id = holder.add(large_segment);
 
-        let vectors_config: BTreeMap<String, VectorParams> = segment_config.vector_data.iter().map(|(name, params)|  (name.to_string(), VectorParams {
-            size: NonZeroU64::new(params.size as u64).unwrap(),
-            distance: params.distance,
-        })).collect();
+        let vectors_config: BTreeMap<String, VectorParams> = segment_config
+            .vector_data
+            .iter()
+            .map(|(name, params)| {
+                (
+                    name.to_string(),
+                    VectorParams {
+                        size: NonZeroU64::new(params.size as u64).unwrap(),
+                        distance: params.distance,
+                    },
+                )
+            })
+            .collect();
 
         let mut index_optimizer = IndexingOptimizer::new(
             OptimizerThresholds {
@@ -329,15 +343,13 @@ mod tests {
         index_optimizer.thresholds_config.memmap_threshold = 1000;
         index_optimizer.thresholds_config.indexing_threshold = 50;
 
-
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
-        index_optimizer.optimize(
-            locked_holder.clone(),
-            suggested_to_optimize,
-            &stopped).unwrap();
+        index_optimizer
+            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
+            .unwrap();
 
         let infos = locked_holder
             .read()

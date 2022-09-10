@@ -189,7 +189,7 @@ impl BatchVectorStruct {
                 } else {
                     transpose_map(named_vectors)
                 }
-            },
+            }
         }
     }
 }

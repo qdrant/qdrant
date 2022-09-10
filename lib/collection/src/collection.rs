@@ -653,7 +653,11 @@ impl Collection {
                     all_vectors_map.insert(rec.id, vector);
                 } else {
                     return Err(CollectionError::BadRequest {
-                        description: format!("Vector '{}' not found, expected one of {:?}", vector_name, rec.vector_names()),
+                        description: format!(
+                            "Vector '{}' not found, expected one of {:?}",
+                            vector_name,
+                            rec.vector_names()
+                        ),
                     });
                 }
             }

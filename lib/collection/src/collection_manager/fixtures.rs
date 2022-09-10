@@ -3,10 +3,12 @@ use std::path::Path;
 
 use parking_lot::RwLock;
 use rand::Rng;
-use segment::data_types::vectors::{NamedVectors, only_default_vector};
+use segment::data_types::vectors::{only_default_vector, NamedVectors};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
-use segment::segment_constructor::simple_segment_constructor::{build_multivec_segment, build_simple_segment};
+use segment::segment_constructor::simple_segment_constructor::{
+    build_multivec_segment, build_simple_segment,
+};
 use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
 use serde_json::json;
 
@@ -40,9 +42,7 @@ pub fn random_multi_vec_segment(
         let point_id: PointIdType = rnd.gen_range(1..100_000_000).into();
         let payload_value = rnd.gen_range(1..1_000);
         let payload: Payload = json!({ payload_key: vec![payload_value] }).into();
-        segment
-            .upsert_vector(opnum, point_id, &vectors)
-            .unwrap();
+        segment.upsert_vector(opnum, point_id, &vectors).unwrap();
         segment.set_payload(opnum, point_id, &payload).unwrap();
     }
     segment
