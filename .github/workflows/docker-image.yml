@@ -6,7 +6,6 @@ on:
     # Pattern matched against refs/tags
     tags:        
       - '*'           # Push events to every tag not containing /
-    branches: [ multiplatform-build-fix-2 ]
 
 jobs:
 
@@ -32,8 +31,8 @@ jobs:
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
         TAGS="-t ${DOCKERHUB_TAG}"
         
-        # DOCKERHUB_TAG_LATEST="qdrant/qdrant:latest"
-        # TAGS="${TAGS} -t ${DOCKERHUB_TAG_LATEST}"
+        DOCKERHUB_TAG_LATEST="qdrant/qdrant:latest"
+        TAGS="${TAGS} -t ${DOCKERHUB_TAG_LATEST}"
         
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
                 
