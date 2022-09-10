@@ -35,6 +35,39 @@ pub fn build_simple_segment(
     )
 }
 
+pub fn build_multivec_segment(
+    path: &Path,
+    dim1: usize,
+    dim2: usize,
+    distance: Distance,
+) -> OperationResult<Segment> {
+    let mut vectors_config = HashMap::new();
+    vectors_config.insert(
+        "vector1".to_owned(),
+        VectorDataConfig {
+            size: dim1,
+            distance,
+        },
+    );
+    vectors_config.insert(
+        "vector2".to_owned(),
+        VectorDataConfig {
+            size: dim2,
+            distance,
+        },
+    );
+
+    build_segment(
+        path,
+        &SegmentConfig {
+            vector_data: vectors_config,
+            index: Indexes::Plain {},
+            storage_type: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

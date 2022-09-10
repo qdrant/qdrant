@@ -523,6 +523,16 @@ pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
 }
 
 impl Record {
+    pub fn vector_names(&self) -> Vec<&str> {
+        match &self.vector {
+            None => vec![],
+            Some(vectors) => match vectors {
+                VectorStruct::Single(_) => vec![DEFAULT_VECTOR_NAME],
+                VectorStruct::Multi(vectors) => vectors.keys().map(|x| x.as_str()).collect(),
+            },
+        }
+    }
+
     pub fn get_vector_by_name(&self, name: &str) -> Option<&VectorType> {
         match &self.vector {
             Some(VectorStruct::Single(vector)) => {

@@ -3,10 +3,10 @@ use std::path::Path;
 
 use parking_lot::RwLock;
 use rand::Rng;
-use segment::data_types::vectors::only_default_vector;
+use segment::data_types::vectors::{NamedVectors, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::segment_constructor::simple_segment_constructor::{build_multivec_segment, build_simple_segment};
 use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
 use serde_json::json;
 
@@ -18,6 +18,34 @@ use crate::config::{CollectionParams, VectorParams, VectorsConfig};
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
+}
+
+pub fn random_multi_vec_segment(
+    path: &Path,
+    opnum: SeqNumberType,
+    num_vectors: u64,
+    dim1: usize,
+    dim2: usize,
+) -> Segment {
+    let mut segment = build_multivec_segment(path, dim1, dim2, Distance::Dot).unwrap();
+    let mut rnd = rand::thread_rng();
+    let payload_key = "number";
+    for _ in 0..num_vectors {
+        let random_vector1: Vec<_> = (0..dim1).map(|_| rnd.gen_range(0.0..1.0)).collect();
+        let random_vector2: Vec<_> = (0..dim2).map(|_| rnd.gen_range(0.0..1.0)).collect();
+        let mut vectors = NamedVectors::new();
+        vectors.insert("vector1".to_owned(), random_vector1);
+        vectors.insert("vector2".to_owned(), random_vector2);
+
+        let point_id: PointIdType = rnd.gen_range(1..100_000_000).into();
+        let payload_value = rnd.gen_range(1..1_000);
+        let payload: Payload = json!({ payload_key: vec![payload_value] }).into();
+        segment
+            .upsert_vector(opnum, point_id, &vectors)
+            .unwrap();
+        segment.set_payload(opnum, point_id, &payload).unwrap();
+    }
+    segment
 }
 
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {

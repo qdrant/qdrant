@@ -686,8 +686,12 @@ impl SegmentEntry for Segment {
     }
 
     fn deleted_count(&self) -> usize {
-        let vector_data = self.vector_data.values().next().unwrap();
-        vector_data.vector_storage.borrow().deleted_count()
+        let vector_data = self.vector_data.values().next();
+        if let Some(vector_data) = vector_data {
+            vector_data.vector_storage.borrow().deleted_count()
+        } else {
+            0
+        }
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -705,7 +709,7 @@ impl SegmentEntry for Segment {
 
         SegmentInfo {
             segment_type: self.segment_type,
-            num_vectors: self.points_count(),
+            num_vectors: self.points_count() *  self.vector_data.len(),
             num_points: self.points_count(),
             num_deleted_vectors: self.deleted_count(),
             ram_usage_bytes: 0,  // ToDo: Implement

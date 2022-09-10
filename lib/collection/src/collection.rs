@@ -645,10 +645,18 @@ impl Collection {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned());
             //let rec_vectors = rec.get
-            let all_vectors_map: HashMap<ExtendedPointId, &Vec<VectorElementType>> = all_vectors
-                .iter()
-                .map(|rec| (rec.id, rec.get_vector_by_name(&vector_name).unwrap()))
-                .collect();
+            let mut all_vectors_map = HashMap::new();
+
+            for rec in all_vectors.iter() {
+                let vector = rec.get_vector_by_name(&vector_name);
+                if let Some(vector) = vector {
+                    all_vectors_map.insert(rec.id, vector);
+                } else {
+                    return Err(CollectionError::BadRequest {
+                        description: format!("Vector '{}' not found, expected one of {:?}", vector_name, rec.vector_names()),
+                    });
+                }
+            }
 
             let reference_vectors_ids = request
                 .positive

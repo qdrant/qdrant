@@ -277,7 +277,11 @@ impl SplitByShard for Batch {
                     }
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
-                    let named_vectors_list = transpose_map(named_vectors);
+                    let named_vectors_list = if !named_vectors.is_empty() {
+                        transpose_map(named_vectors)
+                    } else {
+                        vec![HashMap::new(); ids.len()]
+                    };
                     for (id, named_vector, payload) in izip!(ids, named_vectors_list, payloads) {
                         let shard_id = point_to_shard(id, ring);
                         let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
@@ -312,7 +316,11 @@ impl SplitByShard for Batch {
                     }
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
-                    let named_vectors_list = transpose_map(named_vectors);
+                    let named_vectors_list = if !named_vectors.is_empty() {
+                        transpose_map(named_vectors)
+                    } else {
+                        vec![HashMap::new(); ids.len()]
+                    };
                     for (id, named_vector) in izip!(ids, named_vectors_list) {
                         let shard_id = point_to_shard(id, ring);
                         let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {

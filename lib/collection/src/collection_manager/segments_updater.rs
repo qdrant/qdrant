@@ -312,7 +312,7 @@ pub(crate) fn process_point_operation(
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
                 PointInsertOperations::PointsBatch(batch) => {
-                    let all_vectors = batch.vectors.into_all_vectors();
+                    let all_vectors = batch.vectors.into_all_vectors(batch.ids.len());
                     let vectors_iter = batch.ids.into_iter().zip(all_vectors.into_iter());
                     match batch.payloads {
                         None => vectors_iter

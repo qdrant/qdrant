@@ -180,10 +180,16 @@ impl BatchVectorStruct {
         }
     }
 
-    pub fn into_all_vectors(self) -> Vec<NamedVectors> {
+    pub fn into_all_vectors(self, num_records: usize) -> Vec<NamedVectors> {
         match self {
             BatchVectorStruct::Single(vectors) => vectors.into_iter().map(default_vector).collect(),
-            BatchVectorStruct::Multi(named_vectors) => transpose_map(named_vectors),
+            BatchVectorStruct::Multi(named_vectors) => {
+                if named_vectors.is_empty() {
+                    vec![NamedVectors::default(); num_records]
+                } else {
+                    transpose_map(named_vectors)
+                }
+            },
         }
     }
 }

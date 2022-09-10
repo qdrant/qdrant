@@ -437,7 +437,7 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
 
     fn try_from(batch: Batch) -> Result<Self, Self::Error> {
         let mut points = Vec::new();
-        let all_vectors = batch.vectors.into_all_vectors();
+        let all_vectors = batch.vectors.into_all_vectors(batch.ids.len());
         for (i, p_id) in batch.ids.into_iter().enumerate() {
             let id = Some(p_id.into());
             let vector = all_vectors.get(i).cloned();

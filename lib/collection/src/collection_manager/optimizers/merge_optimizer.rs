@@ -107,7 +107,7 @@ impl SegmentOptimizer for MergeOptimizer {
                     true => Some((
                         *idx,
                         read_segment.points_count()
-                            * read_segment.vector_dims().values().sum::<usize>()
+                            * read_segment.vector_dims().values().max().copied().unwrap_or(0)
                             * VECTOR_ELEMENT_SIZE,
                     )),
                     false => None,
