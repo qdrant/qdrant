@@ -50,6 +50,10 @@ impl<'a> NamedVectors<'a> {
         self.map.insert(CowKey::from(name), CowValue::from(vector));
     }
 
+    pub fn insert_ref(&mut self, name: &'a str, vector: &'a [VectorElementType]) {
+        self.map.insert(CowKey::from(name), CowValue::from(vector));
+    }
+
     pub fn contains_key(&self, key: &str) -> bool {
         self.map.contains_key(key)
     }
@@ -78,29 +82,9 @@ impl<'a> NamedVectors<'a> {
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect()
     }
-}
 
-#[allow(clippy::into_iter_on_ref)]
-impl<'a> IntoIterator for &'a NamedVectors<'a> {
-    type Item = (&'a CowKey<'a>, &'a CowValue<'a>);
-
-    type IntoIter = std::collections::hash_map::Iter<'a, CowKey<'a>, CowValue<'a>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let map: &'a HashMapType = &self.map;
-        map.into_iter()
-    }
-}
-
-#[allow(clippy::into_iter_on_ref)]
-impl<'a> IntoIterator for &'a mut NamedVectors<'a> {
-    type Item = (&'a CowKey<'a>, &'a mut CowValue<'a>);
-
-    type IntoIter = std::collections::hash_map::IterMut<'a, CowKey<'a>, CowValue<'a>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let map: &'a mut HashMapType = &mut self.map;
-        map.into_iter()
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &[VectorElementType])> {
+        self.map.iter().map(|(k, v)| (k.as_ref(), v.as_ref()))
     }
 }
 

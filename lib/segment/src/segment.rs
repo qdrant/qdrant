@@ -464,7 +464,7 @@ impl SegmentEntry for Segment {
         check_vectors_set(vectors, &self.segment_config)?;
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let mut processed_vectors = NamedVectors::default();
-            for (vector_name, vector) in vectors {
+            for (vector_name, vector) in vectors.iter() {
                 let vector_name: &str = vector_name;
                 let vector: &[VectorElementType] = vector;
                 let vector_data = &segment.vector_data[vector_name];
@@ -476,11 +476,15 @@ impl SegmentEntry for Segment {
                     });
                 }
 
-                let processed_vector = segment.segment_config.vector_data[vector_name]
+                let processed_vector_opt = segment.segment_config.vector_data[vector_name]
                     .distance
-                    .preprocess_vector(vector)
-                    .unwrap_or_else(|| vector.to_owned());
-                processed_vectors.insert(vector_name.to_owned(), processed_vector);
+                    .preprocess_vector(vector);
+                match processed_vector_opt {
+                    None => processed_vectors.insert_ref(vector_name, vector),
+                    Some(preprocess_vector) => {
+                        processed_vectors.insert(vector_name.to_string(), preprocess_vector)
+                    }
+                }
             }
 
             let stored_internal_point = segment.id_tracker.borrow().internal_id(point_id);
