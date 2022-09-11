@@ -13,6 +13,12 @@ pub struct NamedVectors<'a> {
 }
 
 impl<'a> NamedVectors<'a> {
+    pub fn from_ref(key: &'a str, value: &'a [VectorElementType]) -> Self {
+        let mut map = HashMap::new();
+        map.insert(Cow::Borrowed(key), Cow::Borrowed(value));
+        Self { map }
+    }
+
     pub fn from<const N: usize>(arr: [(String, Vec<VectorElementType>); N]) -> Self {
         NamedVectors {
             map: arr
@@ -26,6 +32,15 @@ impl<'a> NamedVectors<'a> {
         Self {
             map: map
                 .into_iter()
+                .map(|(k, v)| (CowKey::from(k), CowValue::from(v)))
+                .collect(),
+        }
+    }
+
+    pub fn from_map_ref(map: &'a HashMap<String, Vec<VectorElementType>>) -> Self {
+        Self {
+            map: map
+                .iter()
                 .map(|(k, v)| (CowKey::from(k), CowValue::from(v)))
                 .collect(),
         }

@@ -19,7 +19,7 @@ pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
 }
 
 pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
-    default_vector(vec.to_vec())
+    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec)
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

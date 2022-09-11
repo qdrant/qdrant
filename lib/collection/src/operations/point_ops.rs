@@ -416,8 +416,8 @@ impl From<Vec<PointStruct>> for PointOperations {
 impl PointStruct {
     pub fn get_vectors(&self) -> NamedVectors {
         match &self.vector {
-            VectorStruct::Single(vector) => only_default_vector(vector), // ToDo: try to avoid vector copy here
-            VectorStruct::Multi(vectors) => NamedVectors::from_map(vectors.clone()),
+            VectorStruct::Single(vector) => only_default_vector(vector),
+            VectorStruct::Multi(vectors) => NamedVectors::from_map_ref(vectors),
         }
     }
 }
