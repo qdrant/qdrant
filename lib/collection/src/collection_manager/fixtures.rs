@@ -3,7 +3,8 @@ use std::path::Path;
 
 use parking_lot::RwLock;
 use rand::Rng;
-use segment::data_types::vectors::{only_default_vector, NamedVectors};
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
@@ -35,7 +36,7 @@ pub fn random_multi_vec_segment(
     for _ in 0..num_vectors {
         let random_vector1: Vec<_> = (0..dim1).map(|_| rnd.gen_range(0.0..1.0)).collect();
         let random_vector2: Vec<_> = (0..dim2).map(|_| rnd.gen_range(0.0..1.0)).collect();
-        let mut vectors = NamedVectors::new();
+        let mut vectors = NamedVectors::default();
         vectors.insert("vector1".to_owned(), random_vector1);
         vectors.insert("vector2".to_owned(), random_vector2);
 

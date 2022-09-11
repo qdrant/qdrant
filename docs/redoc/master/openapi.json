@@ -2680,7 +2680,7 @@
             "description": "Configuration of the vector storage",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/VectorParamStruct"
+                "$ref": "#/components/schemas/VectorsConfig"
               },
               {
                 "nullable": true
@@ -2721,7 +2721,7 @@
           }
         }
       },
-      "VectorParamStruct": {
+      "VectorsConfig": {
         "anyOf": [
           {
             "$ref": "#/components/schemas/VectorParams"
@@ -3817,7 +3817,7 @@
           "vectors": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/VectorParamStruct"
+                "$ref": "#/components/schemas/VectorsConfig"
               },
               {
                 "nullable": true

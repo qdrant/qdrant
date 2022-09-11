@@ -4,10 +4,9 @@ use itertools::izip;
 use schemars::gen::SchemaGenerator;
 use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
-use segment::common::utils::transpose_map;
-use segment::data_types::vectors::{
-    only_default_vector, BatchVectorStruct, NamedVectors, VectorStruct,
-};
+use segment::common::utils::transpose_map_into_named_vector;
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{only_default_vector, BatchVectorStruct, VectorStruct};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 
@@ -278,9 +277,9 @@ impl SplitByShard for Batch {
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
                     let named_vectors_list = if !named_vectors.is_empty() {
-                        transpose_map(named_vectors)
+                        transpose_map_into_named_vector(named_vectors)
                     } else {
-                        vec![HashMap::new(); ids.len()]
+                        vec![NamedVectors::default(); ids.len()]
                     };
                     for (id, named_vector, payload) in izip!(ids, named_vectors_list, payloads) {
                         let shard_id = point_to_shard(id, ring);
@@ -292,6 +291,8 @@ impl SplitByShard for Batch {
                         batch.ids.push(id);
                         let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
+                            let name = name.into_owned();
+                            let vector = vector.into_owned();
                             batch_vectors
                                 .entry(name)
                                 .or_insert_with(Vec::new)
@@ -317,9 +318,9 @@ impl SplitByShard for Batch {
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
                     let named_vectors_list = if !named_vectors.is_empty() {
-                        transpose_map(named_vectors)
+                        transpose_map_into_named_vector(named_vectors)
                     } else {
-                        vec![HashMap::new(); ids.len()]
+                        vec![NamedVectors::default(); ids.len()]
                     };
                     for (id, named_vector) in izip!(ids, named_vectors_list) {
                         let shard_id = point_to_shard(id, ring);
@@ -331,6 +332,8 @@ impl SplitByShard for Batch {
                         batch.ids.push(id);
                         let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
+                            let name = name.into_owned();
+                            let vector = vector.into_owned();
                             batch_vectors
                                 .entry(name)
                                 .or_insert_with(Vec::new)
@@ -413,8 +416,8 @@ impl From<Vec<PointStruct>> for PointOperations {
 impl PointStruct {
     pub fn get_vectors(&self) -> NamedVectors {
         match &self.vector {
-            VectorStruct::Single(vector) => only_default_vector(vector), // ToDo: try to avoid vector copy here
-            VectorStruct::Multi(vectors) => vectors.clone(),
+            VectorStruct::Single(vector) => only_default_vector(vector),
+            VectorStruct::Multi(vectors) => NamedVectors::from_map_ref(vectors),
         }
     }
 }

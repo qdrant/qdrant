@@ -30,7 +30,8 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
     for i in 0..num_points {
         let mut payload_map = Map::new();
         payload_map.insert("a".to_string(), (i % 5).into());
-        let vectors = only_default_vector(&random_vector(&mut rng, dim));
+        let vector = random_vector(&mut rng, dim);
+        let vectors = only_default_vector(&vector);
         let point = PointStruct {
             id: i.into(),
             vector: vectors.into(),

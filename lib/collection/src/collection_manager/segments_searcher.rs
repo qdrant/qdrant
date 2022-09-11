@@ -4,7 +4,8 @@ use std::sync::Arc;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use segment::data_types::vectors::{NamedVectors, VectorElementType};
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
 use segment::spaces::tools::peek_top_largest_scores_iterable;
 use segment::types::{
@@ -122,7 +123,7 @@ impl SegmentsSearcher {
                             WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
                             WithVector::Bool(false) => None,
                             WithVector::Selector(vector_names) => {
-                                let mut selected_vectors = NamedVectors::new();
+                                let mut selected_vectors = NamedVectors::default();
                                 for vector_name in vector_names {
                                     selected_vectors.insert(
                                         vector_name.clone(),

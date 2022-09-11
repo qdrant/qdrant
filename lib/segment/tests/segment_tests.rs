@@ -5,7 +5,8 @@ mod tests {
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
-    use segment::data_types::vectors::{NamedVectors, DEFAULT_VECTOR_NAME};
+    use segment::data_types::named_vectors::NamedVectors;
+    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::{OperationError, SegmentEntry};
     use segment::types::{Condition, Filter, WithPayload};
     use tempfile::Builder;

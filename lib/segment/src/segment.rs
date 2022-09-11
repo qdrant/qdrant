@@ -13,7 +13,8 @@ use tar::Builder;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::StorageVersion;
 use crate::common::{check_vector_name, check_vectors_set};
-use crate::data_types::vectors::{NamedVectors, VectorElementType};
+use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
@@ -83,7 +84,9 @@ impl Segment {
         check_vectors_set(&vectors, &self.segment_config)?;
         let mut new_internal_index = 0;
         for (vector_name, vector) in vectors {
-            let vector_data = &self.vector_data[&vector_name];
+            let vector_name: &str = &vector_name;
+            let vector = vector.into_owned();
+            let vector_data = &self.vector_data[vector_name];
             new_internal_index = {
                 let mut vector_storage = vector_data.vector_storage.borrow_mut();
                 vector_storage.update_vector(old_internal_id, vector)
@@ -244,7 +247,7 @@ impl Segment {
         &self,
         point_offset: PointOffsetType,
     ) -> OperationResult<NamedVectors> {
-        let mut vectors = NamedVectors::new();
+        let mut vectors = NamedVectors::default();
         for (vector_name, vector_data) in &self.vector_data {
             vectors.insert(
                 vector_name.clone(),
@@ -352,7 +355,7 @@ impl Segment {
                         Some(self.all_vectors_by_offset(point_offset)?.into())
                     }
                     WithVector::Selector(vectors) => {
-                        let mut result = NamedVectors::new();
+                        let mut result = NamedVectors::default();
                         for vector_name in vectors {
                             result.insert(
                                 vector_name.clone(),
@@ -460,8 +463,10 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         check_vectors_set(vectors, &self.segment_config)?;
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            let mut processed_vectors = NamedVectors::new();
-            for (vector_name, vector) in vectors {
+            let mut processed_vectors = NamedVectors::default();
+            for (vector_name, vector) in vectors.iter() {
+                let vector_name: &str = vector_name;
+                let vector: &[VectorElementType] = vector;
                 let vector_data = &segment.vector_data[vector_name];
                 let vector_dim = vector_data.vector_storage.borrow().vector_dim();
                 if vector_dim != vector.len() {
@@ -471,11 +476,15 @@ impl SegmentEntry for Segment {
                     });
                 }
 
-                let processed_vector = segment.segment_config.vector_data[vector_name]
+                let processed_vector_opt = segment.segment_config.vector_data[vector_name]
                     .distance
-                    .preprocess_vector(vector)
-                    .unwrap_or_else(|| vector.to_owned());
-                processed_vectors.insert(vector_name.to_owned(), processed_vector);
+                    .preprocess_vector(vector);
+                match processed_vector_opt {
+                    None => processed_vectors.insert_ref(vector_name, vector),
+                    Some(preprocess_vector) => {
+                        processed_vectors.insert(vector_name.to_string(), preprocess_vector)
+                    }
+                }
             }
 
             let stored_internal_point = segment.id_tracker.borrow().internal_id(point_id);
@@ -491,7 +500,9 @@ impl SegmentEntry for Segment {
             } else {
                 let mut new_index = 0;
                 for (vector_name, processed_vector) in processed_vectors {
-                    new_index = segment.vector_data[&vector_name]
+                    let vector_name: &str = &vector_name;
+                    let processed_vector = processed_vector.into_owned();
+                    new_index = segment.vector_data[vector_name]
                         .vector_storage
                         .borrow_mut()
                         .put_vector(processed_vector)?;
@@ -602,7 +613,7 @@ impl SegmentEntry for Segment {
     }
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
-        let mut result = NamedVectors::new();
+        let mut result = NamedVectors::default();
         for vector_name in self.vector_data.keys() {
             result.insert(vector_name.clone(), self.vector(vector_name, point_id)?);
         }
