@@ -1,6 +1,6 @@
 use tinyvec::TinyVec;
 
-const CAPACITY: usize = 6;
+const CAPACITY: usize = 3;
 
 pub struct TinyMap<K: Default, V: Default> {
     list: TinyVec<[(K, V); CAPACITY]>,
