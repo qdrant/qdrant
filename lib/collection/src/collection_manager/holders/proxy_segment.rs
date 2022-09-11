@@ -371,7 +371,7 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
-        let mut result = NamedVectors::new();
+        let mut result = NamedVectors::default();
         for vector_name in self
             .wrapped_segment
             .get()

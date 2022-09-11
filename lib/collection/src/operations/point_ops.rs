@@ -4,11 +4,9 @@ use itertools::izip;
 use schemars::gen::SchemaGenerator;
 use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
-use segment::common::utils::transpose_map;
+use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{
-    only_default_vector, BatchVectorStruct, VectorStruct,
-};
+use segment::data_types::vectors::{only_default_vector, BatchVectorStruct, VectorStruct};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 
@@ -278,7 +276,7 @@ impl SplitByShard for Batch {
                     }
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
-                    let named_vectors_list = transpose_map(named_vectors);
+                    let named_vectors_list = transpose_map_into_named_vector(named_vectors);
                     for (id, named_vector, payload) in izip!(ids, named_vectors_list, payloads) {
                         let shard_id = point_to_shard(id, ring);
                         let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
@@ -313,7 +311,7 @@ impl SplitByShard for Batch {
                     }
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
-                    let named_vectors_list = transpose_map(named_vectors);
+                    let named_vectors_list = transpose_map_into_named_vector(named_vectors);
                     for (id, named_vector) in izip!(ids, named_vectors_list) {
                         let shard_id = point_to_shard(id, ring);
                         let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
@@ -407,7 +405,9 @@ impl PointStruct {
     pub fn get_vectors(&self) -> NamedVectors {
         match &self.vector {
             VectorStruct::Single(vector) => only_default_vector(vector), // ToDo: try to avoid vector copy here
-            VectorStruct::Multi(vectors) => vectors.clone(),
+            VectorStruct::Multi(vectors) => NamedVectors {
+                map: vectors.clone(),
+            },
         }
     }
 }

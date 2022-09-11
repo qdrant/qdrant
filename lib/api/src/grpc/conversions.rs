@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
+use segment::data_types::vectors::VectorElementType;
 use segment::types::{PayloadSelector, WithPayloadInterface};
 use tonic::Status;
 use uuid::Uuid;
@@ -353,8 +354,8 @@ impl From<segment::data_types::vectors::VectorType> for Vector {
     }
 }
 
-impl From<segment::data_types::named_vectors::NamedVectors> for NamedVectors {
-    fn from(vectors: segment::data_types::named_vectors::NamedVectors) -> Self {
+impl From<HashMap<String, Vec<VectorElementType>>> for NamedVectors {
+    fn from(vectors: HashMap<String, Vec<VectorElementType>>) -> Self {
         Self {
             vectors: vectors
                 .into_iter()
@@ -398,7 +399,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
     }
 }
 
-impl From<NamedVectors> for segment::data_types::named_vectors::NamedVectors {
+impl From<NamedVectors> for HashMap<String, Vec<VectorElementType>> {
     fn from(vectors: NamedVectors) -> Self {
         vectors
             .vectors

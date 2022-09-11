@@ -3,9 +3,8 @@ use std::collections::HashMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::utils::transpose_map;
-
 use super::named_vectors::NamedVectors;
+use crate::common::utils::transpose_map_into_named_vector;
 
 /// Type of vector element.
 pub type VectorElementType = f32;
@@ -28,7 +27,7 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 #[serde(untagged)]
 pub enum VectorStruct {
     Single(VectorType),
-    Multi(NamedVectors),
+    Multi(HashMap<String, Vec<VectorElementType>>),
 }
 
 impl From<VectorType> for VectorStruct {
@@ -46,9 +45,9 @@ impl From<&[VectorElementType]> for VectorStruct {
 impl From<NamedVectors> for VectorStruct {
     fn from(v: NamedVectors) -> Self {
         if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
-            VectorStruct::Single(v.into_iter().next().unwrap().1)
+            VectorStruct::Single(v.into_default_vector().unwrap())
         } else {
-            VectorStruct::Multi(v)
+            VectorStruct::Multi(v.into_owned_map())
         }
     }
 }
@@ -70,7 +69,7 @@ impl VectorStruct {
     pub fn into_all_vectors(self) -> NamedVectors {
         match self {
             VectorStruct::Single(v) => default_vector(v),
-            VectorStruct::Multi(v) => v,
+            VectorStruct::Multi(v) => NamedVectors::from_map(v),
         }
     }
 }
@@ -184,7 +183,9 @@ impl BatchVectorStruct {
     pub fn into_all_vectors(self) -> Vec<NamedVectors> {
         match self {
             BatchVectorStruct::Single(vectors) => vectors.into_iter().map(default_vector).collect(),
-            BatchVectorStruct::Multi(named_vectors) => transpose_map(named_vectors),
+            BatchVectorStruct::Multi(named_vectors) => {
+                transpose_map_into_named_vector(named_vectors)
+            }
         }
     }
 }

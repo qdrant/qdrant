@@ -123,7 +123,7 @@ impl SegmentsSearcher {
                             WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
                             WithVector::Bool(false) => None,
                             WithVector::Selector(vector_names) => {
-                                let mut selected_vectors = NamedVectors::new();
+                                let mut selected_vectors = NamedVectors::default();
                                 for vector_name in vector_names {
                                     selected_vectors.insert(
                                         vector_name.clone(),

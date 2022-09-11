@@ -245,7 +245,7 @@ impl Segment {
         &self,
         point_offset: PointOffsetType,
     ) -> OperationResult<NamedVectors> {
-        let mut vectors = NamedVectors::new();
+        let mut vectors = NamedVectors::default();
         for (vector_name, vector_data) in &self.vector_data {
             vectors.insert(
                 vector_name.clone(),
@@ -353,7 +353,7 @@ impl Segment {
                         Some(self.all_vectors_by_offset(point_offset)?.into())
                     }
                     WithVector::Selector(vectors) => {
-                        let mut result = NamedVectors::new();
+                        let mut result = NamedVectors::default();
                         for vector_name in vectors {
                             result.insert(
                                 vector_name.clone(),
@@ -461,7 +461,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         check_vectors_set(vectors, &self.segment_config)?;
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            let mut processed_vectors = NamedVectors::new();
+            let mut processed_vectors = NamedVectors::default();
             for (vector_name, vector) in vectors {
                 let vector_data = &segment.vector_data[vector_name];
                 let vector_dim = vector_data.vector_storage.borrow().vector_dim();
@@ -603,7 +603,7 @@ impl SegmentEntry for Segment {
     }
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
-        let mut result = NamedVectors::new();
+        let mut result = NamedVectors::default();
         for vector_name in self.vector_data.keys() {
             result.insert(vector_name.clone(), self.vector(vector_name, point_id)?);
         }
