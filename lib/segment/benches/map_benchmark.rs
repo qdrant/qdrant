@@ -7,7 +7,6 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::data_types::tiny_map::TinyMap;
 use segment::fixtures::index_fixtures::random_vector;
-use tinyvec::*;
 
 const DIM: usize = 100;
 
@@ -40,6 +39,7 @@ fn small_map_obj(c: &mut Criterion) {
         });
     });
 
+    #[allow(clippy::vec_init_then_push)]
     group.bench_function("vec-map", |b| {
         b.iter(|| {
             let mut map = Vec::with_capacity(3);

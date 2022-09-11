@@ -102,7 +102,7 @@ mod tests {
         // Create dummy data
         let mut map: TinyMap<String, String> = TinyMap::new();
         let key = "key".to_string();
-        let value = "value".to_string();
+        let mut value = "value".to_string();
         let key2 = "key2".to_string();
         let value2 = "value2".to_string();
         let key3 = "key3".to_string();
@@ -131,7 +131,7 @@ mod tests {
         // Test get_mut
         map.clear();
         map.insert(key.clone(), value.clone());
-        assert_eq!(map.get_mut(&key), Some(&mut value.clone()));
+        assert_eq!(map.get_mut(&key), Some(&mut value));
         *map.get_mut(&key).unwrap() = value3.clone();
         assert_eq!(map.get(&key), Some(&value3));
 
@@ -140,7 +140,7 @@ mod tests {
         map.insert(key2.clone(), value2.clone());
         map.insert(key3.clone(), value3.clone());
         let mut iter = map.iter();
-        assert_eq!(iter.next(), Some(&(key2.clone(), value2.clone())));
-        assert_eq!(iter.next(), Some(&(key3.clone(), value3.clone())));
+        assert_eq!(iter.next(), Some(&(key2, value2)));
+        assert_eq!(iter.next(), Some(&(key3, value3)));
     }
 }
