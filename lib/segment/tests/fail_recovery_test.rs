@@ -2,6 +2,7 @@ mod fixtures;
 
 #[cfg(test)]
 mod tests {
+    use segment::data_types::vectors::only_default_vector;
     use segment::entry::entry_point::{OperationError, SegmentEntry, SegmentFailedState};
     use serde_json::json;
     use tempfile::Builder;
@@ -16,8 +17,12 @@ mod tests {
 
         let mut segment = empty_segment(dir.path());
 
-        segment.upsert_vector(1, 1.into(), &vec1).unwrap();
-        segment.upsert_vector(1, 2.into(), &vec1).unwrap();
+        segment
+            .upsert_vector(1, 1.into(), &only_default_vector(&vec1))
+            .unwrap();
+        segment
+            .upsert_vector(1, 2.into(), &only_default_vector(&vec1))
+            .unwrap();
 
         segment.error_status = Some(SegmentFailedState {
             version: 2,

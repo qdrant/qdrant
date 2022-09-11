@@ -1,4 +1,5 @@
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -7,7 +8,7 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{SegmentConfig, SegmentInfo};
+use crate::types::{SegmentConfig, SegmentInfo, VectorDataConfig};
 
 const AVG_DATASET_LEN: usize = 128;
 const SLIDING_WINDOW_LEN: usize = 8;
@@ -20,7 +21,7 @@ pub trait Anonymize {
 pub struct SegmentTelemetry {
     pub info: SegmentInfo,
     pub config: SegmentConfig,
-    pub vector_index: VectorIndexTelemetry,
+    pub vector_index: HashMap<String, VectorIndexTelemetry>,
     pub payload_field_indices: Vec<PayloadIndexTelemetry>,
 }
 
@@ -65,7 +66,11 @@ impl Anonymize for SegmentTelemetry {
         Self {
             info: self.info.anonymize(),
             config: self.config.anonymize(),
-            vector_index: self.vector_index.anonymize(),
+            vector_index: self
+                .vector_index
+                .iter()
+                .map(|(k, v)| (telemetry_hash(k), v.anonymize()))
+                .collect(),
             payload_field_indices: self
                 .payload_field_indices
                 .iter()
@@ -203,11 +208,23 @@ impl Anonymize for SegmentInfo {
 impl Anonymize for SegmentConfig {
     fn anonymize(&self) -> Self {
         SegmentConfig {
-            vector_size: telemetry_round(self.vector_size),
-            distance: self.distance,
+            vector_data: self
+                .vector_data
+                .iter()
+                .map(|(k, v)| (telemetry_hash(k), v.anonymize()))
+                .collect(),
             index: self.index,
             storage_type: self.storage_type,
             payload_storage_type: self.payload_storage_type,
+        }
+    }
+}
+
+impl Anonymize for VectorDataConfig {
+    fn anonymize(&self) -> Self {
+        VectorDataConfig {
+            size: telemetry_round(self.size),
+            distance: self.distance,
         }
     }
 }

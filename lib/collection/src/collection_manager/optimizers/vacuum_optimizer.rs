@@ -145,6 +145,7 @@ mod tests {
     use super::*;
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
+    use crate::config::{VectorParams, VectorsConfig};
 
     #[test]
     fn test_vacuum_conditions() {
@@ -216,8 +217,12 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             CollectionParams {
-                vector_size: NonZeroU64::new(4).unwrap(),
-                distance: Distance::Dot,
+                vectors: Some(VectorsConfig::Single(VectorParams {
+                    size: NonZeroU64::new(4).unwrap(),
+                    distance: Distance::Dot,
+                })),
+                vector_size: Some(NonZeroU64::new(4).unwrap()),
+                distance: Some(Distance::Dot),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
                 replication_factor: NonZeroU32::new(1).unwrap(),

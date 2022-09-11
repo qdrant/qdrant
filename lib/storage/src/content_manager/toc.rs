@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use collection::collection::Collection;
-use collection::collection_state::{self, ShardInfo};
-use collection::config::{CollectionConfig, CollectionParams};
+use collection::collection_state;
+use collection::collection_state::ShardInfo;
+use collection::config::{CollectionConfig, CollectionParams, VectorParams};
 use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -201,6 +202,7 @@ impl TableOfContent {
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
         let CreateCollection {
+            vectors,
             vector_size,
             distance,
             shard_number,
@@ -226,10 +228,38 @@ impl TableOfContent {
                 "If shard number was supplied then this exact number should be used in a distribution"
             )
         }
+
+        let vector_size = vector_size
+            .map(|size| {
+                NonZeroU64::new(size as u64).ok_or(StorageError::BadInput {
+                    description: "`vector_size` cannot be 0".to_string(),
+                })
+            })
+            .transpose()?;
+
+        let vectors = match vectors {
+            None => {
+                let vector_size = vector_size.ok_or(StorageError::BadInput {
+                    description: "`vector_size` is required if `vectors` is not provided"
+                        .to_string(),
+                })?;
+                let distance = distance.ok_or(StorageError::BadInput {
+                    description: "`distance` is required if `vectors` is not provided".to_string(),
+                })?;
+                Some(
+                    VectorParams {
+                        size: vector_size,
+                        distance,
+                    }
+                    .into(),
+                )
+            }
+            Some(v) => Some(v),
+        };
+
         let collection_params = CollectionParams {
-            vector_size: NonZeroU64::new(vector_size as u64).ok_or(StorageError::BadInput {
-                description: "`vector_size` cannot be 0".to_string(),
-            })?,
+            vectors,
+            vector_size,
             distance,
             shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
                 .ok_or(StorageError::BadInput {

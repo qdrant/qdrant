@@ -2,15 +2,16 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
+use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    SeqNumberType, VectorElementType,
+    SeqNumberType,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations, PointStruct};
+use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::FieldIndexOperations;
 
@@ -152,10 +153,10 @@ fn upsert_with_payload(
     segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
     op_num: SeqNumberType,
     point_id: PointIdType,
-    vector: &[VectorElementType],
+    vectors: &NamedVectors,
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
-    let mut res = segment.upsert_vector(op_num, point_id, vector)?;
+    let mut res = segment.upsert_vector(op_num, point_id, vectors)?;
     if let Some(full_payload) = payload {
         res &= segment.set_payload(op_num, point_id, full_payload)?;
     }
@@ -200,10 +201,10 @@ pub(crate) fn sync_points(
 
     let mut points_to_update: Vec<_> = Vec::new();
     let _num_updated = segments.read_points(existing_point_ids.as_slice(), |id, segment| {
-        let vector = segment.vector(id)?;
+        let all_vectors = segment.all_vectors(id)?;
         let payload = segment.payload(id)?;
         let point = id_to_point.get(&id).unwrap();
-        if point.vector != vector {
+        if point.get_vectors() != all_vectors {
             points_to_update.push(*point);
             Ok(true)
         } else {
@@ -264,7 +265,7 @@ where
                 write_segment,
                 op_num,
                 id,
-                point.vector.as_slice(),
+                &point.get_vectors(),
                 point.payload.as_ref(),
             )
         })?;
@@ -292,7 +293,7 @@ where
                 &mut write_segment,
                 op_num,
                 point_id,
-                point.vector.as_slice(),
+                &point.get_vectors(),
                 point.payload.as_ref(),
             )? as usize;
         }
@@ -310,25 +311,22 @@ pub(crate) fn process_point_operation(
         PointOperations::DeletePoints { ids, .. } => delete_points(&segments.read(), op_num, &ids),
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
-                PointInsertOperations::PointsBatch(Batch {
-                    ids,
-                    vectors,
-                    payloads,
-                }) => {
-                    let vectors_iter = ids.into_iter().zip(vectors.into_iter());
-                    match payloads {
+                PointInsertOperations::PointsBatch(batch) => {
+                    let all_vectors = batch.vectors.into_all_vectors(batch.ids.len());
+                    let vectors_iter = batch.ids.into_iter().zip(all_vectors.into_iter());
+                    match batch.payloads {
                         None => vectors_iter
-                            .map(|(id, vector)| PointStruct {
+                            .map(|(id, vectors)| PointStruct {
                                 id,
-                                vector,
+                                vector: vectors.into(),
                                 payload: None,
                             })
                             .collect(),
                         Some(payloads) => vectors_iter
                             .zip(payloads.into_iter())
-                            .map(|((id, vector), payload)| PointStruct {
+                            .map(|((id, vectors), payload)| PointStruct {
                                 id,
-                                vector,
+                                vector: vectors.into(),
                                 payload,
                             })
                             .collect(),

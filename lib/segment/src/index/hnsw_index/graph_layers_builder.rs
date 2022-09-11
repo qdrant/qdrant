@@ -384,13 +384,13 @@ mod tests {
     use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
     use super::*;
+    use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
-    use crate::types::VectorElementType;
     use crate::vector_storage::RawScorer;
 
     const M: usize = 8;

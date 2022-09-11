@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::path::Path;
 
+use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::entry::entry_point::OperationResult;
 use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
-use crate::types::{Distance, Indexes, SegmentConfig};
+use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
 
 /// Build new segment with plain index in given directory
 ///
@@ -19,9 +21,47 @@ pub fn build_simple_segment(
     build_segment(
         path,
         &SegmentConfig {
-            vector_size: dim,
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance,
+                },
+            )]),
             index: Indexes::Plain {},
+            storage_type: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+    )
+}
+
+pub fn build_multivec_segment(
+    path: &Path,
+    dim1: usize,
+    dim2: usize,
+    distance: Distance,
+) -> OperationResult<Segment> {
+    let mut vectors_config = HashMap::new();
+    vectors_config.insert(
+        "vector1".to_owned(),
+        VectorDataConfig {
+            size: dim1,
             distance,
+        },
+    );
+    vectors_config.insert(
+        "vector2".to_owned(),
+        VectorDataConfig {
+            size: dim2,
+            distance,
+        },
+    );
+
+    build_segment(
+        path,
+        &SegmentConfig {
+            vector_data: vectors_config,
+            index: Indexes::Plain {},
             storage_type: Default::default(),
             payload_storage_type: Default::default(),
         },
@@ -34,6 +74,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::data_types::vectors::only_default_vector;
     use crate::entry::entry_point::{OperationError, SegmentEntry};
 
     #[test]
@@ -56,17 +97,27 @@ mod tests {
         let vec4 = vec![1.0, 1.0, 0.0, 1.0];
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-        match segment.upsert_vector(1, 120.into(), &wrong_vec) {
+        match segment.upsert_vector(1, 120.into(), &only_default_vector(&wrong_vec)) {
             Err(OperationError::WrongVector { .. }) => (),
             Err(_) => panic!("Wrong error"),
             Ok(_) => panic!("Operation with wrong vector should fail"),
         };
 
-        segment.upsert_vector(2, 1.into(), &vec1).unwrap();
-        segment.upsert_vector(2, 2.into(), &vec2).unwrap();
-        segment.upsert_vector(2, 3.into(), &vec3).unwrap();
-        segment.upsert_vector(2, 4.into(), &vec4).unwrap();
-        segment.upsert_vector(2, 5.into(), &vec5).unwrap();
+        segment
+            .upsert_vector(2, 1.into(), &only_default_vector(&vec1))
+            .unwrap();
+        segment
+            .upsert_vector(2, 2.into(), &only_default_vector(&vec2))
+            .unwrap();
+        segment
+            .upsert_vector(2, 3.into(), &only_default_vector(&vec3))
+            .unwrap();
+        segment
+            .upsert_vector(2, 4.into(), &only_default_vector(&vec4))
+            .unwrap();
+        segment
+            .upsert_vector(2, 5.into(), &only_default_vector(&vec5))
+            .unwrap();
 
         segment
             .set_payload(
@@ -101,15 +152,28 @@ mod tests {
             .unwrap();
 
         // Replace vectors
-        segment.upsert_vector(4, 1.into(), &vec1).unwrap();
-        segment.upsert_vector(5, 2.into(), &vec2).unwrap();
-        segment.upsert_vector(6, 3.into(), &vec3).unwrap();
-        segment.upsert_vector(7, 4.into(), &vec4).unwrap();
-        segment.upsert_vector(8, 5.into(), &vec5).unwrap();
+        segment
+            .upsert_vector(4, 1.into(), &only_default_vector(&vec1))
+            .unwrap();
+        segment
+            .upsert_vector(5, 2.into(), &only_default_vector(&vec2))
+            .unwrap();
+        segment
+            .upsert_vector(6, 3.into(), &only_default_vector(&vec3))
+            .unwrap();
+        segment
+            .upsert_vector(7, 4.into(), &only_default_vector(&vec4))
+            .unwrap();
+        segment
+            .upsert_vector(8, 5.into(), &only_default_vector(&vec5))
+            .unwrap();
 
         assert_eq!(segment.version(), 8);
 
-        let declined = segment.upsert_vector(3, 5.into(), &vec5).unwrap();
+        let declined = segment
+            .upsert_vector(3, 5.into(), &only_default_vector(&vec5))
+            .unwrap();
+
         // Should not be processed due to operation number
         assert!(!declined);
     }

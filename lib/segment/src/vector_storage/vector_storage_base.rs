@@ -5,8 +5,9 @@ use ordered_float::OrderedFloat;
 use rand::Rng;
 
 use crate::common::Flusher;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{PointOffsetType, ScoreType, VectorElementType};
+use crate::types::{PointOffsetType, ScoreType};
 
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub struct ScoredPointOffset {

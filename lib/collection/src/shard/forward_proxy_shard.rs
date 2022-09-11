@@ -4,6 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -73,7 +74,13 @@ impl ForwardProxyShard {
         let _update_lock = self.update_lock.lock().await;
         let mut batch = self
             .wrapped_shard
-            .scroll_by(offset, limit, &WithPayloadInterface::Bool(true), true, None)
+            .scroll_by(
+                offset,
+                limit,
+                &WithPayloadInterface::Bool(true),
+                &true.into(),
+                None,
+            )
             .await?;
         let next_page_offset = if batch.len() < limit {
             // This was the last page
@@ -149,7 +156,7 @@ impl ShardOperation for ForwardProxyShard {
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
@@ -181,7 +188,7 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         request: Arc<PointRequest>,
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard

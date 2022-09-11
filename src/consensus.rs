@@ -663,9 +663,11 @@ async fn send_message(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU64;
     use std::sync::Arc;
     use std::thread;
 
+    use collection::config::VectorParams;
     use collection::shard::ChannelService;
     use segment::types::Distance;
     use slog::Drain;
@@ -750,21 +752,30 @@ mod tests {
         // New runtime is used as timers need to be enabled.
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(dispatcher.submit_collection_meta_op(
-                CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
-                    collection_name: "test".to_string(),
-                    create_collection: CreateCollection {
-                        vector_size: 10,
-                        distance: Distance::Cosine,
-                        hnsw_config: None,
-                        wal_config: None,
-                        optimizers_config: None,
-                        shard_number: Some(2),
-                        on_disk_payload: None,
-                    },
-                }),
-                None,
-            ))
+            .block_on(
+                dispatcher.submit_collection_meta_op(
+                    CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
+                        collection_name: "test".to_string(),
+                        create_collection: CreateCollection {
+                            vectors: Some(
+                                VectorParams {
+                                    size: NonZeroU64::new(10).unwrap(),
+                                    distance: Distance::Cosine,
+                                }
+                                .into(),
+                            ),
+                            vector_size: Some(10),
+                            distance: Some(Distance::Cosine),
+                            hnsw_config: None,
+                            wal_config: None,
+                            optimizers_config: None,
+                            shard_number: Some(2),
+                            on_disk_payload: None,
+                        },
+                    }),
+                    None,
+                ),
+            )
             .unwrap();
 
         // Then

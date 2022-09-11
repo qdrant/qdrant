@@ -9,11 +9,12 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 
 use crate::common::Flusher;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_scores_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
+use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 
@@ -317,7 +318,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 
     #[test]
@@ -336,8 +337,8 @@ mod tests {
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path()).unwrap();
-            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec1).unwrap();
@@ -359,8 +360,8 @@ mod tests {
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path()).unwrap();
-            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec4).unwrap();
@@ -402,8 +403,8 @@ mod tests {
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path()).unwrap();
-            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec1).unwrap();

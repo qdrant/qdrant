@@ -214,7 +214,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_condition_checker() {
         let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
         let payload: Payload = json!(
             {

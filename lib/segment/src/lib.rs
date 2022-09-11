@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 pub mod common;
 pub mod entry;
 pub mod fixtures;

@@ -4,11 +4,13 @@ use std::sync::Arc;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use parking_lot::RwLock;
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
 use segment::spaces::tools::peek_top_largest_scores_iterable;
 use segment::types::{
-    Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, VectorElementType, WithPayload,
-    WithPayloadInterface,
+    Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 
@@ -93,7 +95,7 @@ impl SegmentsSearcher {
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
@@ -117,10 +119,19 @@ impl SegmentsSearcher {
                         } else {
                             None
                         },
-                        vector: if with_vector {
-                            Some(segment.vector(id)?)
-                        } else {
-                            None
+                        vector: match with_vector {
+                            WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
+                            WithVector::Bool(false) => None,
+                            WithVector::Selector(vector_names) => {
+                                let mut selected_vectors = NamedVectors::default();
+                                for vector_name in vector_names {
+                                    selected_vectors.insert(
+                                        vector_name.clone(),
+                                        segment.vector(vector_name, id)?,
+                                    );
+                                }
+                                Some(selected_vectors.into())
+                            }
                         },
                     },
                 );
@@ -134,9 +145,10 @@ impl SegmentsSearcher {
 
 #[derive(PartialEq, Default)]
 struct BatchSearchParams<'a> {
+    pub vector_name: &'a str,
     pub filter: Option<&'a Filter>,
     pub with_payload: WithPayload,
-    pub with_vector: bool,
+    pub with_vector: WithVector,
     pub top: usize,
     pub params: Option<&'a SearchParams>,
 }
@@ -157,24 +169,26 @@ async fn search_in_segment(
             .unwrap_or(&WithPayloadInterface::Bool(false));
 
         let params = BatchSearchParams {
+            vector_name: search_query.vector.get_name(),
             filter: search_query.filter.as_ref(),
             with_payload: WithPayload::from(with_payload_interface),
-            with_vector: search_query.with_vector,
+            with_vector: search_query.with_vector.clone(),
             top: search_query.limit + search_query.offset,
             params: search_query.params.as_ref(),
         };
 
         // same params enables batching
         if params == prev_params {
-            vectors_batch.push(search_query.vector.as_ref());
+            vectors_batch.push(search_query.vector.get_vector().as_slice());
         } else {
             // different params means different batches
             // execute what has been batched so far
             if !vectors_batch.is_empty() {
                 let mut res = segment.get().read().search_batch(
+                    prev_params.vector_name,
                     &vectors_batch,
                     &prev_params.with_payload,
-                    prev_params.with_vector,
+                    &prev_params.with_vector,
                     prev_params.filter,
                     prev_params.top,
                     prev_params.params,
@@ -184,7 +198,7 @@ async fn search_in_segment(
                 vectors_batch.clear();
             }
             // start new batch for current search query
-            vectors_batch.push(search_query.vector.as_ref());
+            vectors_batch.push(search_query.vector.get_vector().as_slice());
             prev_params = params;
         }
     }
@@ -192,9 +206,10 @@ async fn search_in_segment(
     // run last batch if any
     if !vectors_batch.is_empty() {
         let mut res = segment.get().read().search_batch(
+            prev_params.vector_name,
             &vectors_batch,
             &prev_params.with_payload,
-            prev_params.with_vector,
+            &prev_params.with_vector,
             prev_params.filter,
             prev_params.top,
             prev_params.params,
@@ -222,9 +237,9 @@ mod tests {
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
         let req = SearchRequest {
-            vector: query,
+            vector: query.into(),
             with_payload: None,
-            with_vector: false,
+            with_vector: false.into(),
             filter: None,
             params: None,
             limit: 5,
@@ -261,7 +276,7 @@ mod tests {
             &segment_holder,
             &[1.into(), 2.into(), 3.into()],
             &WithPayload::from(true),
-            true,
+            &true.into(),
         )
         .await
         .unwrap();

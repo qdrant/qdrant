@@ -8,10 +8,11 @@ use std::sync::Arc;
 use futures::future::{join_all, try_join_all};
 use itertools::Itertools;
 use segment::common::version::StorageVersion;
+use segment::data_types::vectors::{NamedVector, VectorElementType, DEFAULT_VECTOR_NAME};
 use segment::spaces::tools::{peek_top_largest_scores_iterable, peek_top_smallest_scores_iterable};
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, VectorElementType,
-    WithPayload, WithPayloadInterface,
+    Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use semver::{Version, VersionReq};
 use tar::Builder as TarBuilder;
@@ -20,7 +21,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::collection_state::{ShardInfo, State};
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, VectorParams};
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
 use crate::operations::snapshot_ops::{
@@ -164,6 +165,34 @@ impl Collection {
         .matches(app)
     }
 
+    fn upgrade_collection_40_to_41(path: &Path) {
+        let mut config = CollectionConfig::load(path).unwrap_or_else(|err| {
+            panic!(
+                "Can't read collection config due to {}\nat {}",
+                err,
+                path.to_str().unwrap()
+            )
+        });
+
+        if config.params.vectors.is_none() {
+            config.params.vectors = Some(
+                VectorParams {
+                    size: config.params.vector_size.unwrap(),
+                    distance: config.params.distance.unwrap(),
+                }
+                .into(),
+            );
+        }
+
+        config.save(path).unwrap_or_else(|err| {
+            panic!(
+                "Can't save collection config due to {}\nat {}",
+                err,
+                path.to_str().unwrap()
+            )
+        });
+    }
+
     pub async fn load(
         collection_id: CollectionId,
         path: &Path,
@@ -171,19 +200,22 @@ impl Collection {
         channel_service: ChannelService,
     ) -> Self {
         let start_time = std::time::Instant::now();
-        let mut stored_version = CollectionVersion::load(path)
+        let stored_version = CollectionVersion::load(path)
             .expect("Can't read collection version")
             .parse()
             .expect("Failed to parse stored collection version as semver");
+
         let app_version: Version = CollectionVersion::current()
             .parse()
             .expect("Failed to parse current collection version as semver");
         if stored_version != app_version {
             if Self::can_upgrade_storage(&stored_version, &app_version) {
                 log::info!("Migrating collection {stored_version} -> {app_version}",);
+
+                Self::upgrade_collection_40_to_41(path);
+
                 CollectionVersion::save(path)
                     .unwrap_or_else(|err| panic!("Can't save collection version {}", err));
-                stored_version = app_version;
             } else {
                 log::info!("Cannot upgrade version {stored_version} to {app_version}. Attempting to use {stored_version}")
             }
@@ -197,14 +229,7 @@ impl Collection {
             )
         });
 
-        // 0.4.0 is the collection version at which we introduced fair hash ring
-        let ring = if stored_version >= Version::new(0, 4, 0) {
-            log::debug!("Using fair hash ring with scale: {HASH_RING_SHARD_SCALE}");
-            HashRing::fair(HASH_RING_SHARD_SCALE)
-        } else {
-            log::debug!("Using raw hash ring");
-            HashRing::raw()
-        };
+        let ring = HashRing::fair(HASH_RING_SHARD_SCALE);
         let mut shard_holder = ShardHolder::new(path, ring).expect("Can not create shard holder");
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
@@ -606,20 +631,37 @@ impl Collection {
                 PointRequest {
                     ids: all_reference_vectors_ids.into_iter().collect(),
                     with_payload: Some(WithPayloadInterface::Bool(true)),
-                    with_vector: true,
+                    with_vector: true.into(),
                 },
                 shard_selection,
             )
             .await?;
 
-        let all_vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = all_vectors
-            .into_iter()
-            .map(|rec| (rec.id, rec.vector.unwrap()))
-            .collect();
-
         let mut searches = Vec::with_capacity(request_batch.searches.len());
 
         for request in request_batch.searches {
+            let vector_name = request
+                .using
+                .clone()
+                .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned());
+            //let rec_vectors = rec.get
+            let mut all_vectors_map = HashMap::new();
+
+            for rec in all_vectors.iter() {
+                let vector = rec.get_vector_by_name(&vector_name);
+                if let Some(vector) = vector {
+                    all_vectors_map.insert(rec.id, vector);
+                } else {
+                    return Err(CollectionError::BadRequest {
+                        description: format!(
+                            "Vector '{}' not found, expected one of {:?}",
+                            vector_name,
+                            rec.vector_names()
+                        ),
+                    });
+                }
+            }
+
             let reference_vectors_ids = request
                 .positive
                 .iter()
@@ -639,7 +681,7 @@ impl Collection {
                 request
                     .positive
                     .iter()
-                    .map(|vid| all_vectors_map.get(vid).unwrap()),
+                    .map(|vid| *all_vectors_map.get(vid).unwrap()),
             );
 
             let search_vector = if request.negative.is_empty() {
@@ -649,7 +691,7 @@ impl Collection {
                     request
                         .negative
                         .iter()
-                        .map(|vid| all_vectors_map.get(vid).unwrap()),
+                        .map(|vid| *all_vectors_map.get(vid).unwrap()),
                 );
 
                 avg_positive
@@ -661,7 +703,11 @@ impl Collection {
             };
 
             let search_request = SearchRequest {
-                vector: search_vector,
+                vector: NamedVector {
+                    name: vector_name,
+                    vector: search_vector,
+                }
+                .into(),
                 filter: Some(Filter {
                     should: None,
                     must: request
@@ -704,7 +750,7 @@ impl Collection {
                 .map(|p| p.is_required())
                 .unwrap_or_default()
         });
-        let with_vectors = request.searches.iter().all(|s| s.with_vector);
+        let with_vectors = request.searches.iter().all(|s| s.with_vector.is_some());
 
         let metadata_required = is_payload_required || with_vectors;
 
@@ -728,7 +774,7 @@ impl Collection {
             for search in &request.searches {
                 let mut without_payload_request = search.clone();
                 without_payload_request.with_payload = None;
-                without_payload_request.with_vector = false;
+                without_payload_request.with_vector = false.into();
                 without_payload_requests.push(without_payload_request);
             }
             let without_payload_batch = SearchRequestBatch {
@@ -767,6 +813,7 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let batch_size = request.searches.len();
         let request = Arc::new(request);
 
         // query all shards concurrently
@@ -780,17 +827,20 @@ impl Collection {
         };
 
         // merge results from shards in order
-        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.searches.len()];
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
         for shard_searches_results in all_searches_res.iter_mut() {
             for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
                 merged_results[index].append(shard_searches_result)
             }
         }
-        let distance = self.config.read().await.params.distance;
-        let top_results: Vec<Vec<ScoredPoint>> = merged_results
+        let collection_params = self.config.read().await.params.clone();
+        let top_results: Vec<_> = merged_results
             .into_iter()
             .zip(request.searches.iter())
             .map(|(res, request)| {
+                let distance = collection_params
+                    .get_vector_params(request.vector.get_name())?
+                    .distance;
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {
                         peek_top_largest_scores_iterable(res, request.limit + request.offset)
@@ -809,9 +859,9 @@ impl Collection {
                         top_res.clear()
                     }
                 }
-                top_res
+                Ok(top_res)
             })
-            .collect();
+            .collect::<CollectionResult<Vec<_>>>()?;
 
         Ok(top_results)
     }
@@ -820,7 +870,7 @@ impl Collection {
         &self,
         search_result: Vec<ScoredPoint>,
         with_payload: Option<WithPayloadInterface>,
-        with_vector: bool,
+        with_vector: WithVector,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let retrieve_request = PointRequest {
@@ -898,7 +948,7 @@ impl Collection {
                     offset,
                     limit,
                     &with_payload_interface,
-                    with_vector,
+                    &with_vector,
                     request.filter.as_ref(),
                 )
             });
@@ -956,7 +1006,6 @@ impl Collection {
             .as_ref()
             .unwrap_or(&WithPayloadInterface::Bool(false));
         let with_payload = WithPayload::from(with_payload_interface);
-        let with_vector = request.with_vector;
         let request = Arc::new(request);
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
@@ -964,7 +1013,7 @@ impl Collection {
             let retrieve_futures = target_shards.into_iter().map(|shard| {
                 shard
                     .get()
-                    .retrieve(request.clone(), &with_payload, with_vector)
+                    .retrieve(request.clone(), &with_payload, &request.with_vector)
             });
             try_join_all(retrieve_futures).await?
         };

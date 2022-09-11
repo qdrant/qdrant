@@ -12,13 +12,14 @@ use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_VECTOR_CF};
+use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_scores_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
+use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
 /// In-memory vector storage with on-update persistence using `store`
@@ -86,6 +87,7 @@ where
 
 pub fn open_simple_vector_storage(
     database: Arc<RwLock<DB>>,
+    database_column_name: &str,
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
@@ -93,7 +95,7 @@ pub fn open_simple_vector_storage(
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
 
-    let db_wrapper = DatabaseColumnWrapper::new(database, DB_VECTOR_CF);
+    let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
@@ -329,15 +331,15 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 
     #[test]
     fn test_score_points() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
         let distance = Distance::Dot;
         let dim = 4;
-        let storage = open_simple_vector_storage(db, dim, distance).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, distance).unwrap();
         let mut borrowed_storage = storage.borrow_mut();
 
         let vec0 = vec![1.0, 0.0, 1.0, 1.0];

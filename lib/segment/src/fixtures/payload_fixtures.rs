@@ -5,9 +5,10 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::{json, Value};
 
+use crate::data_types::vectors::VectorElementType;
 use crate::types::{
     Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, IsEmptyCondition, Match,
-    Payload, PayloadField, Range as RangeCondition, ValuesCount, VectorElementType,
+    Payload, PayloadField, Range as RangeCondition, ValuesCount,
 };
 
 const ADJECTIVE: &[&str] = &[

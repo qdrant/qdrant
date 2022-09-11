@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
+use segment::data_types::vectors::VectorElementType;
 use segment::types::{PayloadSelector, WithPayloadInterface};
 use tonic::Status;
 use uuid::Uuid;
@@ -12,14 +13,16 @@ use crate::grpc::qdrant::payload_index_params::IndexParams;
 use crate::grpc::qdrant::point_id::PointIdOptions;
 use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::value::Kind;
+use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
-    CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
-    GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, HnswConfigDiff,
-    IsEmptyCondition, ListCollectionsResponse, ListValue, Match, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    Range, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount,
-    WithPayloadSelector,
+    with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
+    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
+    HnswConfigDiff, IsEmptyCondition, ListCollectionsResponse, ListValue, Match, NamedVectors,
+    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
+    PayloadSchemaType, PointId, Range, ScoredPoint, SearchParams, Struct, TextIndexParams,
+    TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector,
+    WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -345,14 +348,81 @@ impl From<segment::types::PointIdType> for PointId {
     }
 }
 
+impl From<segment::data_types::vectors::VectorType> for Vector {
+    fn from(vector: segment::data_types::vectors::VectorType) -> Self {
+        Self { data: vector }
+    }
+}
+
+impl From<HashMap<String, Vec<VectorElementType>>> for NamedVectors {
+    fn from(vectors: HashMap<String, Vec<VectorElementType>>) -> Self {
+        Self {
+            vectors: vectors
+                .into_iter()
+                .map(|(name, vector)| (name, vector.into()))
+                .collect(),
+        }
+    }
+}
+
+impl From<segment::data_types::vectors::VectorStruct> for Vectors {
+    fn from(vector_struct: segment::data_types::vectors::VectorStruct) -> Self {
+        match vector_struct {
+            segment::data_types::vectors::VectorStruct::Single(vector) => Self {
+                vectors_options: Some(VectorsOptions::Vector(vector.into())),
+            },
+            segment::data_types::vectors::VectorStruct::Multi(vectors) => Self {
+                vectors_options: Some(VectorsOptions::Vectors(vectors.into())),
+            },
+        }
+    }
+}
+
 impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
+        let deprecated_vector = match &point.vector {
+            None => vec![],
+            Some(vector_struct) => match vector_struct {
+                segment::data_types::vectors::VectorStruct::Single(vector) => vector.clone(),
+                segment::data_types::vectors::VectorStruct::Multi(_) => vec![],
+            },
+        };
+
         Self {
             id: Some(point.id.into()),
             payload: point.payload.map(payload_to_proto).unwrap_or_default(),
             score: point.score,
-            vector: point.vector.unwrap_or_default(),
+            vector: deprecated_vector,
             version: point.version,
+            vectors: point.vector.map(|v| v.into()),
+        }
+    }
+}
+
+impl From<NamedVectors> for HashMap<String, Vec<VectorElementType>> {
+    fn from(vectors: NamedVectors) -> Self {
+        vectors
+            .vectors
+            .into_iter()
+            .map(|(name, vector)| (name, vector.data))
+            .collect()
+    }
+}
+
+impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
+    type Error = Status;
+
+    fn try_from(vectors: Vectors) -> Result<Self, Self::Error> {
+        match vectors.vectors_options {
+            Some(vectors_options) => Ok(match vectors_options {
+                VectorsOptions::Vector(vector) => {
+                    segment::data_types::vectors::VectorStruct::Single(vector.data)
+                }
+                VectorsOptions::Vectors(vectors) => {
+                    segment::data_types::vectors::VectorStruct::Multi(vectors.into())
+                }
+            }),
+            None => Err(Status::invalid_argument("No Provided")),
         }
     }
 }
@@ -361,6 +431,17 @@ impl TryFrom<ScoredPoint> for segment::types::ScoredPoint {
     type Error = Status;
 
     fn try_from(point: ScoredPoint) -> Result<Self, Self::Error> {
+        let vector = if !point.vector.is_empty() {
+            Some(segment::data_types::vectors::VectorStruct::Single(
+                point.vector,
+            ))
+        } else {
+            point
+                .vectors
+                .map(|vectors| vectors.try_into())
+                .transpose()?
+        };
+
         Ok(Self {
             id: match point.id {
                 None => return Err(Status::invalid_argument("Point does not have an ID")),
@@ -368,9 +449,37 @@ impl TryFrom<ScoredPoint> for segment::types::ScoredPoint {
             },
             payload: Some(proto_to_payloads(point.payload)?),
             score: point.score,
-            vector: Some(point.vector),
+            vector,
             version: point.version,
         })
+    }
+}
+
+impl From<segment::types::WithVector> for WithVectorsSelector {
+    fn from(with_vectors: segment::types::WithVector) -> Self {
+        let selector_options = match with_vectors {
+            segment::types::WithVector::Bool(enabled) => {
+                with_vectors_selector::SelectorOptions::Enable(enabled)
+            }
+            segment::types::WithVector::Selector(include) => {
+                with_vectors_selector::SelectorOptions::Include(VectorsSelector { names: include })
+            }
+        };
+        Self {
+            selector_options: Some(selector_options),
+        }
+    }
+}
+
+impl From<WithVectorsSelector> for segment::types::WithVector {
+    fn from(with_vectors_selector: WithVectorsSelector) -> Self {
+        match with_vectors_selector.selector_options {
+            None => Self::default(),
+            Some(with_vectors_selector::SelectorOptions::Enable(enabled)) => Self::Bool(enabled),
+            Some(with_vectors_selector::SelectorOptions::Include(include)) => {
+                Self::Selector(include.names)
+            }
+        }
     }
 }
 
@@ -690,7 +799,6 @@ impl TryFrom<Match> for segment::types::Match {
     }
 }
 
-#[allow(deprecated)]
 impl From<segment::types::Match> for Match {
     fn from(value: segment::types::Match) -> Self {
         let match_value = match value {
@@ -724,5 +832,31 @@ pub fn date_time_to_proto(date_time: NaiveDateTime) -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: date_time.timestamp(), // number of non-leap seconds since the midnight on January 1, 1970.
         nanos: date_time.nanosecond() as i32,
+    }
+}
+
+impl TryFrom<Distance> for segment::types::Distance {
+    type Error = Status;
+
+    fn try_from(value: Distance) -> Result<Self, Self::Error> {
+        Ok(match value {
+            Distance::UnknownDistance => {
+                return Err(Status::invalid_argument(
+                    "Malformed distance parameter: UnknownDistance",
+                ))
+            }
+            Distance::Cosine => segment::types::Distance::Cosine,
+            Distance::Euclid => segment::types::Distance::Euclid,
+            Distance::Dot => segment::types::Distance::Dot,
+        })
+    }
+}
+
+pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
+    match Distance::from_i32(dist) {
+        None => Err(Status::invalid_argument(format!(
+            "Malformed distance parameter, unexpected value: {dist}"
+        ))),
+        Some(grpc_distance) => Ok(grpc_distance.try_into()?),
     }
 }

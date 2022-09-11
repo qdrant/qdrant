@@ -2675,19 +2675,37 @@
       },
       "CollectionParams": {
         "type": "object",
-        "required": [
-          "distance",
-          "vector_size"
-        ],
         "properties": {
+          "vectors": {
+            "description": "Configuration of the vector storage",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorsConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "vector_size": {
             "description": "Size of a vectors used",
+            "deprecated": true,
             "type": "integer",
             "format": "uint64",
-            "minimum": 1
+            "minimum": 1,
+            "nullable": true
           },
           "distance": {
-            "$ref": "#/components/schemas/Distance"
+            "description": "Type of distance function used for measuring distance between vectors",
+            "deprecated": true,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Distance"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "shard_number": {
             "description": "Number of shards the collection has",
@@ -2700,6 +2718,37 @@
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": false,
             "type": "boolean"
+          }
+        }
+      },
+      "VectorsConfig": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/VectorParams"
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/VectorParams"
+            }
+          }
+        ]
+      },
+      "VectorParams": {
+        "type": "object",
+        "required": [
+          "distance",
+          "size"
+        ],
+        "properties": {
+          "size": {
+            "description": "Size of a vectors used",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1
+          },
+          "distance": {
+            "$ref": "#/components/schemas/Distance"
           }
         }
       },
@@ -2897,6 +2946,7 @@
                 "nullable": true
               },
               "lowercase": {
+                "description": "If true, lowercase all tokens. Default: true",
                 "type": "boolean",
                 "nullable": true
               }
@@ -2907,7 +2957,7 @@
       "TokenizerType": {
         "type": "string",
         "enum": [
-          "ngram",
+          "prefix",
           "whitespace",
           "word"
         ]
@@ -2937,9 +2987,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": false,
-            "type": "boolean"
+            "$ref": "#/components/schemas/WithVector"
           }
         }
       },
@@ -3019,6 +3067,22 @@
         },
         "additionalProperties": false
       },
+      "WithVector": {
+        "description": "Options for specifying which vector to include",
+        "anyOf": [
+          {
+            "description": "If `true` - return all vector, If `false` - do not return vector",
+            "type": "boolean"
+          },
+          {
+            "description": "Specify which vector to return",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      },
       "Record": {
         "description": "Point data",
         "type": "object",
@@ -3042,18 +3106,41 @@
           },
           "vector": {
             "description": "Vector of the point",
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            },
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorStruct"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
       "Payload": {
         "type": "object",
         "additionalProperties": true
+      },
+      "VectorStruct": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          }
+        ]
       },
       "SearchRequest": {
         "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
@@ -3064,12 +3151,7 @@
         ],
         "properties": {
           "vector": {
-            "description": "Look for vectors closest to this",
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
+            "$ref": "#/components/schemas/NamedVectorStruct"
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
@@ -3118,15 +3200,46 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": false,
-            "type": "boolean"
+            "$ref": "#/components/schemas/WithVector"
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
             "type": "number",
             "format": "float",
             "nullable": true
+          }
+        }
+      },
+      "NamedVectorStruct": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/NamedVector"
+          }
+        ]
+      },
+      "NamedVector": {
+        "type": "object",
+        "required": [
+          "name",
+          "vector"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "vector": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
           }
         }
       },
@@ -3251,14 +3364,12 @@
             "$ref": "#/components/schemas/MatchValue"
           },
           {
-            "$ref": "#/components/schemas/MatchKeyword"
-          },
-          {
-            "$ref": "#/components/schemas/MatchInteger"
+            "$ref": "#/components/schemas/MatchText"
           }
         ]
       },
       "MatchValue": {
+        "description": "Exact match of the given value",
         "type": "object",
         "required": [
           "value"
@@ -3283,34 +3394,15 @@
           }
         ]
       },
-      "MatchKeyword": {
-        "description": "Match by keyword (deprecated)",
-        "deprecated": true,
+      "MatchText": {
+        "description": "Full-text match of the strings.",
         "type": "object",
         "required": [
-          "keyword"
+          "text"
         ],
         "properties": {
-          "keyword": {
-            "description": "Keyword value to match",
-            "deprecated": true,
+          "text": {
             "type": "string"
-          }
-        }
-      },
-      "MatchInteger": {
-        "description": "Match filter request (deprecated)",
-        "deprecated": true,
-        "type": "object",
-        "required": [
-          "integer"
-        ],
-        "properties": {
-          "integer": {
-            "description": "Integer value to match",
-            "deprecated": true,
-            "type": "integer",
-            "format": "int64"
           }
         }
       },
@@ -3520,12 +3612,14 @@
           },
           "vector": {
             "description": "Vector of the point",
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            },
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorStruct"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -3624,14 +3718,18 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": false,
-            "type": "boolean"
+            "$ref": "#/components/schemas/WithVector"
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
             "type": "number",
             "format": "float",
+            "nullable": true
+          },
+          "using": {
+            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
+            "default": null,
+            "type": "string",
             "nullable": true
           }
         }
@@ -3681,9 +3779,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": false,
-            "type": "boolean"
+            "$ref": "#/components/schemas/WithVector"
           }
         }
       },
@@ -3717,18 +3813,34 @@
       "CreateCollection": {
         "description": "Operation for creating new collection and (optionally) specify index params",
         "type": "object",
-        "required": [
-          "distance",
-          "vector_size"
-        ],
         "properties": {
+          "vectors": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorsConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "vector_size": {
+            "deprecated": true,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "distance": {
-            "$ref": "#/components/schemas/Distance"
+            "deprecated": true,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Distance"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "shard_number": {
             "description": "Number of shards in collection. Default is 1 for standalone, otherwise equal to the number of nodes Minimum is 1",
@@ -4085,6 +4197,33 @@
           }
         ]
       },
+      "BatchVectorStruct": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "float"
+                }
+              }
+            }
+          }
+        ]
+      },
       "PointStruct": {
         "type": "object",
         "required": [
@@ -4096,12 +4235,7 @@
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "vector": {
-            "description": "Vector",
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
+            "$ref": "#/components/schemas/VectorStruct"
           },
           "payload": {
             "description": "Payload values (optional)",
@@ -4130,14 +4264,7 @@
             }
           },
           "vectors": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "number",
-                "format": "float"
-              }
-            }
+            "$ref": "#/components/schemas/BatchVectorStruct"
           },
           "payloads": {
             "type": "array",
@@ -4955,7 +5082,10 @@
             "$ref": "#/components/schemas/SegmentConfig"
           },
           "vector_index": {
-            "$ref": "#/components/schemas/VectorIndexTelemetry"
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/VectorIndexTelemetry"
+            }
           },
           "payload_field_indices": {
             "type": "array",
@@ -5030,20 +5160,16 @@
       "SegmentConfig": {
         "type": "object",
         "required": [
-          "distance",
           "index",
           "storage_type",
-          "vector_size"
+          "vector_data"
         ],
         "properties": {
-          "vector_size": {
-            "description": "Size of a vectors used",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "distance": {
-            "$ref": "#/components/schemas/Distance"
+          "vector_data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/VectorDataConfig"
+            }
           },
           "index": {
             "$ref": "#/components/schemas/Indexes"
@@ -5053,6 +5179,24 @@
           },
           "payload_storage_type": {
             "$ref": "#/components/schemas/PayloadStorageType"
+          }
+        }
+      },
+      "VectorDataConfig": {
+        "type": "object",
+        "required": [
+          "distance",
+          "size"
+        ],
+        "properties": {
+          "size": {
+            "description": "Size of a vectors used",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "distance": {
+            "$ref": "#/components/schemas/Distance"
           }
         }
       },

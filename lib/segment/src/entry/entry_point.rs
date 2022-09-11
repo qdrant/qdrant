@@ -8,12 +8,14 @@ use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
 use crate::common::file_operations::FileStorageError;
+use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::vectors::VectorElementType;
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorElementType, WithPayload,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
+    WithVector,
 };
 
 #[derive(Error, Debug, Clone)]
@@ -24,6 +26,10 @@ pub enum OperationError {
         expected_dim: usize,
         received_dim: usize,
     },
+    #[error("Not existing vector name error: {received_name}")]
+    VectorNameNotExists { received_name: String },
+    #[error("Missed vector name error: {received_name}")]
+    MissedVectorName { received_name: String },
     #[error("No point with id {missed_point_id} found")]
     PointIdError { missed_point_id: PointIdType },
     #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]
@@ -55,6 +61,14 @@ pub struct SegmentFailedState {
     pub version: SeqNumberType,
     pub point_id: Option<PointIdType>,
     pub error: OperationError,
+}
+
+impl From<semver::Error> for OperationError {
+    fn from(error: semver::Error) -> Self {
+        OperationError::ServiceError {
+            description: error.to_string(),
+        }
+    }
 }
 
 impl From<ThreadPoolBuildError> for OperationError {
@@ -138,21 +152,25 @@ pub trait SegmentEntry {
     /// Get version of specified point
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType>;
 
+    #[allow(clippy::too_many_arguments)]
     fn search(
         &self,
+        vector_name: &str,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
+    #[allow(clippy::too_many_arguments)]
     fn search_batch(
         &self,
+        vector_name: &str,
         vectors: &[&[VectorElementType]],
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -162,7 +180,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector: &[VectorElementType],
+        vectors: &NamedVectors,
     ) -> OperationResult<bool>;
 
     fn delete_point(
@@ -198,7 +216,13 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<bool>;
 
-    fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>>;
+    fn vector(
+        &self,
+        vector_name: &str,
+        point_id: PointIdType,
+    ) -> OperationResult<Vec<VectorElementType>>;
+
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
@@ -223,7 +247,9 @@ pub trait SegmentEntry {
     /// Estimate points count in this segment for given filter.
     fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
-    fn vector_dim(&self) -> usize;
+    fn vector_dim(&self, vector_name: &str) -> OperationResult<usize>;
+
+    fn vector_dims(&self) -> HashMap<String, usize>;
 
     /// Number of vectors, marked as deleted
     fn deleted_count(&self) -> usize;

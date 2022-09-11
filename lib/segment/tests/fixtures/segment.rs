@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::path::Path;
 
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{only_default_vector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
+use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::Distance;
+use segment::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
 use serde_json::json;
 
 pub fn empty_segment(path: &Path) -> Segment {
@@ -20,11 +24,21 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-    segment1.upsert_vector(1, 1.into(), &vec1).unwrap();
-    segment1.upsert_vector(2, 2.into(), &vec2).unwrap();
-    segment1.upsert_vector(3, 3.into(), &vec3).unwrap();
-    segment1.upsert_vector(4, 4.into(), &vec4).unwrap();
-    segment1.upsert_vector(5, 5.into(), &vec5).unwrap();
+    segment1
+        .upsert_vector(1, 1.into(), &only_default_vector(&vec1))
+        .unwrap();
+    segment1
+        .upsert_vector(2, 2.into(), &only_default_vector(&vec2))
+        .unwrap();
+    segment1
+        .upsert_vector(3, 3.into(), &only_default_vector(&vec3))
+        .unwrap();
+    segment1
+        .upsert_vector(4, 4.into(), &only_default_vector(&vec4))
+        .unwrap();
+    segment1
+        .upsert_vector(5, 5.into(), &only_default_vector(&vec5))
+        .unwrap();
 
     let payload_key = "color";
 
@@ -51,11 +65,21 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec4 = vec![-1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![-1.0, 0.0, 0.0, 0.0];
 
-    segment2.upsert_vector(11, 11.into(), &vec1).unwrap();
-    segment2.upsert_vector(12, 12.into(), &vec2).unwrap();
-    segment2.upsert_vector(13, 13.into(), &vec3).unwrap();
-    segment2.upsert_vector(14, 14.into(), &vec4).unwrap();
-    segment2.upsert_vector(15, 15.into(), &vec5).unwrap();
+    segment2
+        .upsert_vector(11, 11.into(), &only_default_vector(&vec1))
+        .unwrap();
+    segment2
+        .upsert_vector(12, 12.into(), &only_default_vector(&vec2))
+        .unwrap();
+    segment2
+        .upsert_vector(13, 13.into(), &only_default_vector(&vec3))
+        .unwrap();
+    segment2
+        .upsert_vector(14, 14.into(), &only_default_vector(&vec4))
+        .unwrap();
+    segment2
+        .upsert_vector(15, 15.into(), &only_default_vector(&vec5))
+        .unwrap();
 
     let payload_key = "color";
 
@@ -80,4 +104,104 @@ pub fn build_segment_2(path: &Path) -> Segment {
         .unwrap();
 
     segment2
+}
+
+#[allow(dead_code)]
+pub fn build_segment_3(path: &Path) -> Segment {
+    let mut segment3 = build_segment(
+        path,
+        &SegmentConfig {
+            vector_data: HashMap::from([
+                (
+                    "vector1".to_owned(),
+                    VectorDataConfig {
+                        size: 4,
+                        distance: Distance::Dot,
+                    },
+                ),
+                (
+                    "vector2".to_owned(),
+                    VectorDataConfig {
+                        size: 1,
+                        distance: Distance::Dot,
+                    },
+                ),
+                (
+                    "vector3".to_owned(),
+                    VectorDataConfig {
+                        size: 4,
+                        distance: Distance::Euclid,
+                    },
+                ),
+            ]),
+            index: Indexes::Plain {},
+            storage_type: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+    )
+    .unwrap();
+
+    let collect_points_data = |vectors: &[Vec<VectorElementType>]| {
+        NamedVectors::from([
+            ("vector1".to_owned(), vectors[0].clone()),
+            ("vector2".to_owned(), vectors[1].clone()),
+            ("vector3".to_owned(), vectors[2].clone()),
+        ])
+    };
+
+    let vec1 = [
+        vec![1.0, 0.0, 1.0, 1.0],
+        vec![0.0],
+        vec![-1.0, 0.0, 1.0, 1.0],
+    ];
+    let vec2 = [
+        vec![1.0, 0.0, 1.0, 0.0],
+        vec![1.0],
+        vec![-1.0, 0.0, 1.0, 1.0],
+    ];
+    let vec3 = [
+        vec![1.0, 1.0, 1.0, 1.0],
+        vec![2.0],
+        vec![-1.0, 0.0, 1.0, 1.0],
+    ];
+    let vec4 = [
+        vec![1.0, 1.0, 0.0, 1.0],
+        vec![3.0],
+        vec![-1.0, 0.0, 1.0, 1.0],
+    ];
+    let vec5 = [
+        vec![1.0, 0.0, 0.0, 0.0],
+        vec![4.0],
+        vec![-1.0, 0.0, 1.0, 1.0],
+    ];
+
+    segment3
+        .upsert_vector(1, 1.into(), &collect_points_data(&vec1))
+        .unwrap();
+    segment3
+        .upsert_vector(2, 2.into(), &collect_points_data(&vec2))
+        .unwrap();
+    segment3
+        .upsert_vector(3, 3.into(), &collect_points_data(&vec3))
+        .unwrap();
+    segment3
+        .upsert_vector(4, 4.into(), &collect_points_data(&vec4))
+        .unwrap();
+    segment3
+        .upsert_vector(5, 5.into(), &collect_points_data(&vec5))
+        .unwrap();
+
+    let payload_key = "color";
+
+    let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
+    let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
+    let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
+
+    segment3.set_payload(6, 1.into(), &payload_option1).unwrap();
+    segment3.set_payload(6, 2.into(), &payload_option1).unwrap();
+    segment3.set_payload(6, 3.into(), &payload_option3).unwrap();
+    segment3.set_payload(6, 4.into(), &payload_option2).unwrap();
+    segment3.set_payload(6, 5.into(), &payload_option2).unwrap();
+
+    segment3
 }

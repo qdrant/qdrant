@@ -1,7 +1,8 @@
 use std::cmp::max;
 use std::mem;
 
-use crate::types::{PointOffsetType, VectorElementType};
+use crate::data_types::vectors::VectorElementType;
+use crate::types::PointOffsetType;
 
 type Chunk = Vec<VectorElementType>;
 

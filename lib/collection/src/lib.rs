@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 pub mod collection;
 pub mod collection_manager;
 pub mod collection_state;

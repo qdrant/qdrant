@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use segment::types::{
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+};
 use tokio::runtime::Handle;
 
 use super::local_shard::LocalShard;
@@ -93,7 +95,7 @@ impl ShardOperation for ReplicaSet {
         _offset: Option<ExtendedPointId>,
         _limit: usize,
         _with_payload_interface: &WithPayloadInterface,
-        _with_vector: bool,
+        _with_vector: &WithVector,
         _filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>> {
         todo!()
@@ -119,7 +121,7 @@ impl ShardOperation for ReplicaSet {
         &self,
         _request: Arc<PointRequest>,
         _with_payload: &WithPayload,
-        _with_vector: bool,
+        _with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
         todo!()
     }

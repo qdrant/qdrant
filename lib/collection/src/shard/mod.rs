@@ -19,7 +19,9 @@ use std::sync::Arc;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use async_trait::async_trait;
 use schemars::JsonSchema;
-use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use segment::types::{
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tonic::transport::Uri;
@@ -108,7 +110,7 @@ pub trait ShardOperation {
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
-        with_vector: bool,
+        with_vector: &WithVector,
         filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>>;
 
@@ -126,7 +128,7 @@ pub trait ShardOperation {
         &self,
         request: Arc<PointRequest>,
         with_payload: &WithPayload,
-        with_vector: bool,
+        with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>>;
 }
 

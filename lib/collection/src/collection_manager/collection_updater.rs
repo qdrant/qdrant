@@ -70,6 +70,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
+    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::types::{Payload, WithPayload};
     use serde_json::json;
     use tempfile::Builder;
@@ -87,34 +88,34 @@ mod tests {
 
         let segments = build_test_holder(dir.path());
 
-        let vec11 = vec![1.0, 1.0, 1.0, 1.0];
-        let vec12 = vec![1.0, 1.0, 1.0, 0.0];
-        let vec13 = vec![1.0, 0.0, 1.0, 1.0];
+        let vec11 = only_default_vector(&[1.0, 1.0, 1.0, 1.0]);
+        let vec12 = only_default_vector(&[1.0, 1.0, 1.0, 0.0]);
+        let vec13 = only_default_vector(&[1.0, 0.0, 1.0, 1.0]);
 
         let points = vec![
             PointStruct {
                 id: 11.into(),
-                vector: vec11,
+                vector: vec11.into(),
                 payload: None,
             },
             PointStruct {
                 id: 12.into(),
-                vector: vec12,
+                vector: vec12.into(),
                 payload: None,
             },
             PointStruct {
                 id: 13.into(),
-                vector: vec13,
+                vector: vec13.into(),
                 payload: Some(json!({ "color": "red" }).into()),
             },
             PointStruct {
                 id: 14.into(),
-                vector: vec![0., 0., 0., 0.],
+                vector: vec![0., 0., 0., 0.].into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: vec![2., 0., 2., 0.],
+                vector: vec![2., 0., 2., 0.].into(),
                 payload: None,
             },
         ];
@@ -136,12 +137,12 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 1.into(),
-                vector: vec![2., 2., 2., 2.],
+                vector: vec![2., 2., 2., 2.].into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: vec![2., 0., 2., 0.],
+                vector: vec![2., 0., 2., 0.].into(),
                 payload: None,
             },
         ];
@@ -153,7 +154,7 @@ mod tests {
             &segments,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
-            true,
+            &true.into(),
         )
         .await
         .unwrap();
@@ -164,10 +165,10 @@ mod tests {
             let v = record.vector.unwrap();
 
             if record.id == 1.into() {
-                assert_eq!(&v, &vec![2., 2., 2., 2.])
+                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some(&vec![2., 2., 2., 2.]))
             }
             if record.id == 500.into() {
-                assert_eq!(&v, &vec![2., 0., 2., 0.])
+                assert_eq!(v.get(DEFAULT_VECTOR_NAME), Some(&vec![2., 0., 2., 0.]))
             }
         }
 
@@ -184,13 +185,13 @@ mod tests {
             &segments,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
-            true,
+            &true.into(),
         )
         .await
         .unwrap();
 
         for record in records {
-            let _v = record.vector.unwrap();
+            assert!(record.vector.is_some());
             assert_ne!(record.id, 500.into());
         }
     }
@@ -214,9 +215,10 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), false)
-            .await
-            .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), &false.into())
+                .await
+                .unwrap();
 
         assert_eq!(res.len(), 3);
 
@@ -241,19 +243,27 @@ mod tests {
         )
         .unwrap();
 
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[3.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            &[3.into()],
+            &WithPayload::from(true),
+            &false.into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
         // Test clear payload
 
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            &[2.into()],
+            &WithPayload::from(true),
+            &false.into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
@@ -265,10 +275,14 @@ mod tests {
             },
         )
         .unwrap();
-        let res =
-            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-                .await
-                .unwrap();
+        let res = SegmentsSearcher::retrieve(
+            &segments,
+            &[2.into()],
+            &WithPayload::from(true),
+            &false.into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
     }

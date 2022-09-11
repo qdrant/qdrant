@@ -1,3 +1,7 @@
+use std::collections::BTreeMap;
+
+use api::grpc::conversions::from_grpc_dist;
+use collection::config::VectorsConfig;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -22,19 +26,31 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::CreateCollection) -> Result<Self, Self::Error> {
-        let internal_distance = match api::grpc::qdrant::Distance::from_i32(value.distance) {
-            Some(api::grpc::qdrant::Distance::Cosine) => segment::types::Distance::Cosine,
-            Some(api::grpc::qdrant::Distance::Euclid) => segment::types::Distance::Euclid,
-            Some(api::grpc::qdrant::Distance::Dot) => segment::types::Distance::Dot,
-            Some(_) => return Err(Status::failed_precondition("Unknown distance")),
-            _ => return Err(Status::failed_precondition("Bad value of distance field!")),
-        };
-
         Ok(Self::CreateCollection(CreateCollectionOperation {
             collection_name: value.collection_name,
             create_collection: CreateCollection {
-                vector_size: value.vector_size as usize,
-                distance: internal_distance,
+                vectors: match value.vectors_config {
+                    Some(vectors) => match vectors.config {
+                        None => None,
+                        Some(params) => match params {
+                            api::grpc::qdrant::vectors_config::Config::Params(vector_params) => {
+                                Some(VectorsConfig::Single(vector_params.try_into()?))
+                            }
+                            api::grpc::qdrant::vectors_config::Config::ParamsMap(
+                                vectors_params,
+                            ) => {
+                                let mut params_map = BTreeMap::new();
+                                for (name, params) in vectors_params.map {
+                                    params_map.insert(name, params.try_into()?);
+                                }
+                                Some(VectorsConfig::Multi(params_map))
+                            }
+                        },
+                    },
+                    None => None,
+                },
+                vector_size: value.vector_size.map(|size| size as usize),
+                distance: value.distance.map(from_grpc_dist).transpose()?,
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),

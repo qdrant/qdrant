@@ -58,18 +58,56 @@ impl SegmentBuilder {
                 self_segment.version = cmp::max(self_segment.version(), other.version());
 
                 let other_id_tracker = other.id_tracker.borrow();
-                let other_vector_storage = other.vector_storage.borrow();
+                let other_vector_storages: HashMap<_, _> = other
+                    .vector_data
+                    .iter()
+                    .map(|(vector_name, vector_data)| {
+                        (vector_name.to_owned(), vector_data.vector_storage.borrow())
+                    })
+                    .collect();
                 let other_payload_index = other.payload_index.borrow();
 
                 let mut id_tracker = self_segment.id_tracker.borrow_mut();
-                let mut vector_storage = self_segment.vector_storage.borrow_mut();
+                let mut vector_storages: HashMap<_, _> = self_segment
+                    .vector_data
+                    .iter()
+                    .map(|(vector_name, vector_data)| {
+                        (
+                            vector_name.to_owned(),
+                            vector_data.vector_storage.borrow_mut(),
+                        )
+                    })
+                    .collect();
                 let mut payload_index = self_segment.payload_index.borrow_mut();
 
-                let new_internal_range = vector_storage.update_from(&*other_vector_storage)?;
+                if vector_storages.len() != other_vector_storages.len() {
+                    return Err(OperationError::ServiceError {
+                        description: format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
+                    });
+                }
 
-                for (new_internal_id, old_internal_id) in
-                    new_internal_range.zip(other_vector_storage.iter_ids())
-                {
+                let mut internal_id_iter = None;
+                for (vector_name, vector_storage) in &mut vector_storages {
+                    let other_vector_storage = other_vector_storages.get(vector_name);
+                    if other_vector_storage.is_none() {
+                        return Err(OperationError::ServiceError {
+                            description: format!("Cannot update from other segment because if missing vector name {}", vector_name),
+                        });
+                    }
+                    let other_vector_storage = other_vector_storage.unwrap();
+                    let new_internal_range = vector_storage.update_from(&**other_vector_storage)?;
+                    internal_id_iter =
+                        Some(new_internal_range.zip(other_vector_storage.iter_ids()));
+                }
+                if internal_id_iter.is_none() {
+                    return Err(OperationError::ServiceError {
+                        description:
+                            "Empty intersection between self segment names and other segment names"
+                                .to_owned(),
+                    });
+                }
+
+                for (new_internal_id, old_internal_id) in internal_id_iter.unwrap() {
                     if stopped.load(Ordering::Relaxed) {
                         return Err(OperationError::Cancelled {
                             description: "Cancelled by external thread".to_string(),
@@ -89,11 +127,10 @@ impl SegmentBuilder {
                             )?;
                         }
                         Some(existing_version) => {
-                            if existing_version < other_version {
+                            let remove_id = if existing_version < other_version {
                                 // Other version is the newest, remove the existing one and replace
                                 let existing_internal_id =
                                     id_tracker.internal_id(external_id).unwrap();
-                                vector_storage.delete(existing_internal_id)?;
                                 id_tracker.drop(external_id)?;
                                 id_tracker.set_link(external_id, new_internal_id)?;
                                 id_tracker.set_version(external_id, other_version)?;
@@ -101,11 +138,15 @@ impl SegmentBuilder {
                                     new_internal_id,
                                     &other_payload_index.payload(old_internal_id)?,
                                 )?;
+                                existing_internal_id
                             } else {
                                 // Old version is still good, do not move anything else
                                 // Mark newly added vector as removed
-                                vector_storage.delete(new_internal_id)?;
+                                new_internal_id
                             };
+                            for vector_storage in vector_storages.values_mut() {
+                                vector_storage.delete(remove_id)?;
+                            }
                         }
                     }
                 }
@@ -135,7 +176,9 @@ impl SegmentBuilder {
                 }
             }
 
-            segment.vector_index.borrow_mut().build_index(stopped)?;
+            for vector_data in segment.vector_data.values_mut() {
+                vector_data.vector_index.borrow_mut().build_index(stopped)?;
+            }
 
             segment.flush(true)?;
             // Now segment is going to be evicted from RAM

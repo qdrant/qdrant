@@ -1,8 +1,10 @@
+#![allow(deprecated)]
+
 use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
 
 use collection::collection::Collection;
-use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
@@ -34,8 +36,15 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     };
 
     let collection_params = CollectionParams {
-        vector_size: NonZeroU64::new(4).unwrap(),
-        distance: Distance::Dot,
+        vectors: Some(
+            VectorParams {
+                size: NonZeroU64::new(4).unwrap(),
+                distance: Distance::Dot,
+            }
+            .into(),
+        ),
+        vector_size: None,
+        distance: None,
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
         replication_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,

@@ -16,7 +16,7 @@ async fn do_get_point(
     let request = PointRequest {
         ids: vec![point_id],
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: true,
+        with_vector: true.into(),
     };
     toc.retrieve(collection_name, request, None)
         .await

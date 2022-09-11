@@ -9,8 +9,9 @@ use parking_lot::{RwLock, RwLockReadGuard};
 
 use crate::common::error_logging::LogError;
 use crate::common::Flusher;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{PointOffsetType, VectorElementType};
+use crate::types::PointOffsetType;
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";

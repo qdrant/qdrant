@@ -104,13 +104,13 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::types::Payload;
 
     #[test]
     fn test_storage() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
         let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn test_on_disk_storage() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
         {
             let mut storage: PayloadStorageEnum =
