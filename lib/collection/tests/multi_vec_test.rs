@@ -13,7 +13,8 @@ use collection::operations::types::{
     CollectionError, PointRequest, RecommendRequest, SearchRequest,
 };
 use collection::operations::CollectionUpdateOperations;
-use segment::data_types::vectors::{NamedVector, NamedVectors, VectorStruct};
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{NamedVector, VectorStruct};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -91,7 +92,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     // Upload 1000 random vectors to the collection
     let mut points = Vec::new();
     for i in 0..1000 {
-        let mut vectors = NamedVectors::new();
+        let mut vectors = NamedVectors::default();
         vectors.insert(VEC_NAME1.to_string(), vec![i as f32, 0.0, 0.0, 0.0]);
         vectors.insert(VEC_NAME2.to_string(), vec![0.0, i as f32, 0.0, 0.0]);
 
