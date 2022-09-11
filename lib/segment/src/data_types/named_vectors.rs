@@ -47,18 +47,14 @@ impl<'a> NamedVectors<'a> {
         self.map.is_empty()
     }
 
-    pub fn keys(&self) -> Vec<String> {
-        self.map
-            .iter()
-            .map(|(k, _)| k.clone().into_owned())
-            .collect()
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.map.keys().map(|k| k.as_ref())
     }
 
     pub fn into_default_vector(mut self) -> Option<Vec<VectorElementType>> {
-        let mut result = CowValue::default();
-        let src = self.map.get_mut(DEFAULT_VECTOR_NAME)?;
-        std::mem::swap(&mut result, src);
-        Some(result.into_owned())
+        self.map
+            .get_mut(DEFAULT_VECTOR_NAME)
+            .map(|src| std::mem::take(src).into_owned())
     }
 
     pub fn into_owned_map(self) -> HashMap<String, Vec<VectorElementType>> {
