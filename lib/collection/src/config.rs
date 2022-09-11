@@ -48,7 +48,7 @@ impl Default for WalConfig {
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
-    pub vectors: Option<VectorParamStruct>,
+    pub vectors: Option<VectorsConfig>,
     #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
     /// Size of a vectors used
     pub vector_size: Option<NonZeroU64>,
@@ -92,28 +92,28 @@ pub struct VectorParams {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
-pub enum VectorParamStruct {
+pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
 }
 
-impl From<VectorParams> for VectorParamStruct {
+impl From<VectorParams> for VectorsConfig {
     fn from(params: VectorParams) -> Self {
-        VectorParamStruct::Single(params)
+        VectorsConfig::Single(params)
     }
 }
 
-impl VectorParamStruct {
+impl VectorsConfig {
     fn get_params(&self, name: &str) -> Option<&VectorParams> {
         match self {
-            VectorParamStruct::Single(params) => {
+            VectorsConfig::Single(params) => {
                 if name == DEFAULT_VECTOR_NAME {
                     Some(params)
                 } else {
                     None
                 }
             }
-            VectorParamStruct::Multi(params) => params.get(name),
+            VectorsConfig::Multi(params) => params.get(name),
         }
     }
 }
@@ -202,7 +202,7 @@ impl CollectionParams {
 
     pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         let vector_config = match &self.vectors {
-            Some(VectorParamStruct::Single(params)) => {
+            Some(VectorsConfig::Single(params)) => {
                 let mut map = HashMap::new();
                 map.insert(
                     DEFAULT_VECTOR_NAME.to_string(),
@@ -213,7 +213,7 @@ impl CollectionParams {
                 );
                 map
             }
-            Some(VectorParamStruct::Multi(ref map)) => map
+            Some(VectorsConfig::Multi(ref map)) => map
                 .iter()
                 .map(|(name, params)| {
                     (

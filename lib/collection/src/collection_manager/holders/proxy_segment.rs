@@ -504,10 +504,11 @@ impl SegmentEntry for ProxySegment {
     fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
+        let num_vectors = self.wrapped_segment.get().read().config().vector_data.len();
 
         SegmentInfo {
             segment_type: SegmentType::Special,
-            num_vectors: self.points_count(), // ToDo: account number of vector storages
+            num_vectors: self.points_count() * num_vectors, // ToDo: account number of vector storages
             num_points: self.points_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,

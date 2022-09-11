@@ -1,18 +1,23 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::collection::Collection;
 use crate::config::CollectionConfig;
-use crate::operations::types::CollectionResult;
-use crate::shard::remote_shard::RemoteShard;
-use crate::shard::{create_shard_dir, ChannelService, PeerId, Shard, ShardId, ShardTransfer};
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shard::replica_set::IsActive;
+use crate::shard::{PeerId, Shard, ShardId, ShardTransfer};
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum ShardInfo {
+    ReplicaSet { replicas: HashMap<PeerId, IsActive> },
+    Single(PeerId),
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct State {
     pub config: CollectionConfig,
-    pub shard_to_peer: HashMap<ShardId, PeerId>,
+    pub shards: HashMap<ShardId, ShardInfo>,
     #[serde(default)]
     pub transfers: HashSet<ShardTransfer>,
 }
@@ -22,21 +27,12 @@ impl State {
         self,
         this_peer_id: PeerId,
         collection: &Collection,
-        collection_path: &Path,
-        channel_service: ChannelService,
         abort_transfer: impl FnMut(ShardTransfer),
     ) -> CollectionResult<()> {
         Self::apply_config(self.config, collection).await?;
         Self::apply_shard_transfers(self.transfers, collection, this_peer_id, abort_transfer)
             .await?;
-        Self::apply_shard_to_peer(
-            self.shard_to_peer,
-            this_peer_id,
-            collection,
-            collection_path,
-            channel_service,
-        )
-        .await?;
+        Self::apply_shard_info(self.shards, this_peer_id, collection).await?;
         Ok(())
     }
 
@@ -84,18 +80,19 @@ impl State {
         Ok(())
     }
 
-    async fn apply_shard_to_peer(
-        shard_to_peer: HashMap<ShardId, PeerId>,
+    async fn apply_shard_info(
+        shards: HashMap<ShardId, ShardInfo>,
         this_peer_id: PeerId,
         collection: &Collection,
-        collection_path: &Path,
-        channel_service: ChannelService,
     ) -> CollectionResult<()> {
-        for (shard_id, peer_id) in shard_to_peer {
+        for (shard_id, shard_info) in shards {
             let mut shards_holder = collection.shards_holder.write().await;
-            match shards_holder.get_shard(&shard_id) {
-                Some(shard) => {
-                    let old_peer_id = shard.peer_id(this_peer_id);
+            match (shards_holder.get_mut_shard(&shard_id), shard_info) {
+                (Some(shard), ShardInfo::Single(peer_id)) => {
+                    let old_peer_id = match &shard.peer_ids(this_peer_id)[..] {
+                        [id] => *id,
+                        _ => return Err(CollectionError::ServiceError { error: format!("Shard {shard_id} should have only 1 peer id as it is not a replica set") }),
+                    };
                     // shard was moved to a different peer
                     if old_peer_id != peer_id {
                         collection
@@ -107,23 +104,17 @@ impl State {
                             .await?;
                     }
                 }
-                None => {
-                    if peer_id == this_peer_id {
-                        // missing local shard
-                        log::warn!("Shard addition is not yet implemented. Failed to add local shard {shard_id}");
+                (Some(shard), ShardInfo::ReplicaSet { replicas }) => {
+                    if let Shard::ReplicaSet(replica_set) = shard {
+                        replica_set.apply_state(replicas).await?;
                     } else {
-                        // missing remote shard
-                        let collection_id = collection.id.clone();
-                        let shard_path = create_shard_dir(collection_path, shard_id).await?;
-                        let shard = RemoteShard::init(
-                            shard_id,
-                            collection_id,
-                            peer_id,
-                            shard_path,
-                            channel_service.clone(),
-                        )?;
-                        shards_holder.add_shard(shard_id, Shard::Remote(shard));
+                        todo!("check if replication factor was increased and upgrade shard to replica set")
                     }
+                }
+                (None, _) => {
+                    // If collection exists - it means it should know about all of its shards.
+                    // This holds true until shard number scaling is implemented.
+                    log::warn!("Shard number scaling is not yet implemented. Failed to add shard {shard_id} to an initialized collection {}", collection.name());
                 }
             }
         }

@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    only_default_vector, NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
+    NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
@@ -524,11 +524,13 @@ pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
 }
 
 impl Record {
-    pub fn get_vectors(&self) -> Option<NamedVectors> {
+    pub fn vector_names(&self) -> Vec<&str> {
         match &self.vector {
-            Some(VectorStruct::Single(vector)) => Some(only_default_vector(vector)),
-            Some(VectorStruct::Multi(vectors)) => Some(NamedVectors::from_map(vectors.clone())),
-            None => None,
+            None => vec![],
+            Some(vectors) => match vectors {
+                VectorStruct::Single(_) => vec![DEFAULT_VECTOR_NAME],
+                VectorStruct::Multi(vectors) => vectors.keys().map(|x| x.as_str()).collect(),
+            },
         }
     }
 

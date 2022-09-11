@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use api::grpc::conversions::from_grpc_dist;
-use collection::config::VectorParamStruct;
+use collection::config::VectorsConfig;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -34,7 +34,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                         None => None,
                         Some(params) => match params {
                             api::grpc::qdrant::vectors_config::Config::Params(vector_params) => {
-                                Some(VectorParamStruct::Single(vector_params.try_into()?))
+                                Some(VectorsConfig::Single(vector_params.try_into()?))
                             }
                             api::grpc::qdrant::vectors_config::Config::ParamsMap(
                                 vectors_params,
@@ -43,7 +43,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                                 for (name, params) in vectors_params.map {
                                     params_map.insert(name, params.try_into()?);
                                 }
-                                Some(VectorParamStruct::Multi(params_map))
+                                Some(VectorsConfig::Multi(params_map))
                             }
                         },
                     },
