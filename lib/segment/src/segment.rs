@@ -84,7 +84,9 @@ impl Segment {
         check_vectors_set(&vectors, &self.segment_config)?;
         let mut new_internal_index = 0;
         for (vector_name, vector) in vectors {
-            let vector_data = &self.vector_data[&vector_name];
+            let vector_name: &str = &vector_name;
+            let vector = vector.into_owned();
+            let vector_data = &self.vector_data[vector_name];
             new_internal_index = {
                 let mut vector_storage = vector_data.vector_storage.borrow_mut();
                 vector_storage.update_vector(old_internal_id, vector)
@@ -463,6 +465,8 @@ impl SegmentEntry for Segment {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let mut processed_vectors = NamedVectors::default();
             for (vector_name, vector) in vectors {
+                let vector_name: &str = vector_name;
+                let vector: &[VectorElementType] = vector;
                 let vector_data = &segment.vector_data[vector_name];
                 let vector_dim = vector_data.vector_storage.borrow().vector_dim();
                 if vector_dim != vector.len() {
@@ -492,7 +496,9 @@ impl SegmentEntry for Segment {
             } else {
                 let mut new_index = 0;
                 for (vector_name, processed_vector) in processed_vectors {
-                    new_index = segment.vector_data[&vector_name]
+                    let vector_name: &str = &vector_name;
+                    let processed_vector = processed_vector.into_owned();
+                    new_index = segment.vector_data[vector_name]
                         .vector_storage
                         .borrow_mut()
                         .put_vector(processed_vector)?;

@@ -25,9 +25,9 @@ pub fn check_vectors_set(
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     for vector_name in vectors.keys() {
-        if !segment_config.vector_data.contains_key(vector_name) {
+        if !segment_config.vector_data.contains_key(&vector_name) {
             return Err(OperationError::VectorNameNotExists {
-                received_name: vector_name.to_owned(),
+                received_name: vector_name,
             });
         }
     }

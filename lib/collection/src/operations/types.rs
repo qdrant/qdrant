@@ -527,9 +527,7 @@ impl Record {
     pub fn get_vectors(&self) -> Option<NamedVectors> {
         match &self.vector {
             Some(VectorStruct::Single(vector)) => Some(only_default_vector(vector)),
-            Some(VectorStruct::Multi(vectors)) => Some(NamedVectors {
-                map: vectors.clone(),
-            }),
+            Some(VectorStruct::Multi(vectors)) => Some(NamedVectors::from_map(vectors.clone())),
             None => None,
         }
     }

@@ -48,14 +48,14 @@ pub fn remove_value_from_json_map(
 
 pub fn transpose_map_into_named_vector(
     map: HashMap<String, Vec<Vec<VectorElementType>>>,
-) -> Vec<NamedVectors> {
+) -> Vec<NamedVectors<'static>> {
     let mut result = Vec::new();
     for (key, values) in map {
         result.resize_with(values.len(), || NamedVectors {
             map: HashMap::new(),
         });
         for (i, value) in values.into_iter().enumerate() {
-            result[i].map.insert(key.clone(), value);
+            result[i].insert(key.clone(), value);
         }
     }
     result

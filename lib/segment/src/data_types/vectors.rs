@@ -14,7 +14,7 @@ pub const DEFAULT_VECTOR_NAME: &str = "";
 /// Type for vector
 pub type VectorType = Vec<VectorElementType>;
 
-pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors {
+pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
     NamedVectors::from([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
 }
 
@@ -42,7 +42,7 @@ impl From<&[VectorElementType]> for VectorStruct {
     }
 }
 
-impl From<NamedVectors> for VectorStruct {
+impl<'a> From<NamedVectors<'a>> for VectorStruct {
     fn from(v: NamedVectors) -> Self {
         if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
             VectorStruct::Single(v.into_default_vector().unwrap())
@@ -66,7 +66,7 @@ impl VectorStruct {
         }
     }
 
-    pub fn into_all_vectors(self) -> NamedVectors {
+    pub fn into_all_vectors(self) -> NamedVectors<'static> {
         match self {
             VectorStruct::Single(v) => default_vector(v),
             VectorStruct::Multi(v) => NamedVectors::from_map(v),
@@ -180,7 +180,7 @@ impl BatchVectorStruct {
         }
     }
 
-    pub fn into_all_vectors(self) -> Vec<NamedVectors> {
+    pub fn into_all_vectors(self) -> Vec<NamedVectors<'static>> {
         match self {
             BatchVectorStruct::Single(vectors) => vectors.into_iter().map(default_vector).collect(),
             BatchVectorStruct::Multi(named_vectors) => {

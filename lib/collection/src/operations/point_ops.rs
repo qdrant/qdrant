@@ -287,6 +287,8 @@ impl SplitByShard for Batch {
                         batch.ids.push(id);
                         let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
+                            let name = name.into_owned();
+                            let vector = vector.into_owned();
                             batch_vectors
                                 .entry(name)
                                 .or_insert_with(Vec::new)
@@ -322,6 +324,8 @@ impl SplitByShard for Batch {
                         batch.ids.push(id);
                         let batch_vectors = batch.vectors.multi();
                         for (name, vector) in named_vector {
+                            let name = name.into_owned();
+                            let vector = vector.into_owned();
                             batch_vectors
                                 .entry(name)
                                 .or_insert_with(Vec::new)
@@ -405,9 +409,7 @@ impl PointStruct {
     pub fn get_vectors(&self) -> NamedVectors {
         match &self.vector {
             VectorStruct::Single(vector) => only_default_vector(vector), // ToDo: try to avoid vector copy here
-            VectorStruct::Multi(vectors) => NamedVectors {
-                map: vectors.clone(),
-            },
+            VectorStruct::Multi(vectors) => NamedVectors::from_map(vectors.clone()),
         }
     }
 }
