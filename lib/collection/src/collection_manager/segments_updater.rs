@@ -108,7 +108,7 @@ pub(crate) fn clear_payload_by_filter(
     let mut points_to_clear: Vec<PointIdType> = Vec::new();
 
     segments.apply_segments(|s| {
-        let points = s.read_filtered(None, usize::MAX, Some(filter));
+        let points = s.read_filtered(None, None, Some(filter));
         points_to_clear.extend_from_slice(points.as_slice());
         Ok(true)
     })?;

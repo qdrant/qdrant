@@ -232,7 +232,7 @@ pub trait SegmentEntry {
     fn read_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
-        limit: usize,
+        limit: Option<usize>,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType>;
 

@@ -9,7 +9,7 @@ use futures::future::{join_all, try_join_all};
 use itertools::Itertools;
 use segment::common::version::StorageVersion;
 use segment::data_types::vectors::{NamedVector, VectorElementType, DEFAULT_VECTOR_NAME};
-use segment::spaces::tools::{peek_top_largest_scores_iterable, peek_top_smallest_scores_iterable};
+use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, WithPayload,
     WithPayloadInterface, WithVector,
@@ -843,10 +843,10 @@ impl Collection {
                     .distance;
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {
-                        peek_top_largest_scores_iterable(res, request.limit + request.offset)
+                        peek_top_largest_iterable(res, request.limit + request.offset)
                     }
                     Order::SmallBetter => {
-                        peek_top_smallest_scores_iterable(res, request.limit + request.offset)
+                        peek_top_smallest_iterable(res, request.limit + request.offset)
                     }
                 };
                 // Remove `offset` from top result only for client requests

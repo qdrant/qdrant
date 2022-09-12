@@ -23,6 +23,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
+use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
@@ -376,6 +377,53 @@ impl Segment {
             })
             .collect()
     }
+
+    pub fn filtered_read_by_index(
+        &self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        condition: &Filter,
+    ) -> Vec<PointIdType> {
+        let payload_index = self.payload_index.borrow();
+        let id_tracker = self.id_tracker.borrow();
+
+        let ids_iterator = payload_index
+            .query_points(condition)
+            .filter_map(|internal_id| {
+                let external_id = id_tracker.external_id(internal_id);
+                match external_id {
+                    Some(external_id) => match offset {
+                        Some(offset) if external_id < offset => None,
+                        _ => Some(external_id),
+                    },
+                    None => None,
+                }
+            });
+
+        let mut page = match limit {
+            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
+            None => ids_iterator.collect(),
+        };
+        page.sort_unstable();
+        page
+    }
+
+    pub fn filtered_read_by_id_stream(
+        &self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        condition: &Filter,
+    ) -> Vec<PointIdType> {
+        let payload_index = self.payload_index.borrow();
+        let filter_context = payload_index.filter_context(condition);
+        self.id_tracker
+            .borrow()
+            .iter_from(offset)
+            .filter(move |(_, internal_id)| filter_context.check(*internal_id))
+            .map(|(external_id, _)| external_id)
+            .take(limit.unwrap_or(usize::MAX))
+            .collect()
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -636,7 +684,7 @@ impl SegmentEntry for Segment {
     fn read_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
-        limit: usize,
+        limit: Option<usize>,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
         match filter {
@@ -645,18 +693,48 @@ impl SegmentEntry for Segment {
                 .borrow()
                 .iter_from(offset)
                 .map(|x| x.0)
-                .take(limit)
+                .take(limit.unwrap_or(usize::MAX))
                 .collect(),
             Some(condition) => {
-                let payload_index = self.payload_index.borrow();
-                let filter_context = payload_index.filter_context(condition);
-                self.id_tracker
-                    .borrow()
-                    .iter_from(offset)
-                    .filter(move |(_, internal_id)| filter_context.check(*internal_id))
-                    .map(|x| x.0)
-                    .take(limit)
-                    .collect()
+                let query_cardinality = {
+                    let payload_index = self.payload_index.borrow();
+                    payload_index.estimate_cardinality(condition)
+                };
+
+                // ToDo: Add telemetry for this heuristics
+
+                // Calculate expected number of condition checks required for
+                // this scroll request with is stream strategy.
+                // Example:
+                //  - cardinality = 1000
+                //  - limit = 10
+                //  - total = 10000
+                //  - point filter prob = 1000 / 10000 = 0.1
+                //  - expected_checks = 10 / 0.1  = 100
+                //  -------------------------------
+                //  - cardinality = 10
+                //  - limit = 10
+                //  - total = 10000
+                //  - point filter prob = 10 / 10000 = 0.001
+                //  - expected_checks = 10 / 0.001  = 10000
+
+                let total_points = self.points_count() + 1 /* + 1 for division-by-zero */;
+                // Expected number of successful checks per point
+                let check_probability = (query_cardinality.exp as f64 + 1.0/* protect from zero */)
+                    / total_points as f64;
+                let exp_stream_checks =
+                    (limit.unwrap_or(total_points) as f64 / check_probability) as usize;
+
+                // Assume it would require about `query cardinality` checks.
+                // We are interested in approximate number of checks, so we can
+                // use `query cardinality` as a starting point.
+                let exp_index_checks = query_cardinality.max;
+
+                if exp_stream_checks > exp_index_checks {
+                    self.filtered_read_by_index(offset, limit, condition)
+                } else {
+                    self.filtered_read_by_id_stream(offset, limit, condition)
+                }
             }
         }
     }
@@ -881,7 +959,7 @@ impl SegmentEntry for Segment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
-        for point_id in self.read_filtered(None, usize::MAX, Some(filter)) {
+        for point_id in self.read_filtered(None, None, Some(filter)) {
             deleted_points += self.delete_point(op_num, point_id)? as usize;
         }
 
