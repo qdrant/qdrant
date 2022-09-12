@@ -23,11 +23,13 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
+use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
     SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
+    DEFAULT_SCROLL_SCAN_THRESHOLD,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
@@ -636,7 +638,7 @@ impl SegmentEntry for Segment {
     fn read_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
-        limit: usize,
+        limit: Option<usize>,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
         match filter {
@@ -645,18 +647,48 @@ impl SegmentEntry for Segment {
                 .borrow()
                 .iter_from(offset)
                 .map(|x| x.0)
-                .take(limit)
+                .take(limit.unwrap_or(usize::MAX))
                 .collect(),
             Some(condition) => {
                 let payload_index = self.payload_index.borrow();
-                let filter_context = payload_index.filter_context(condition);
-                self.id_tracker
-                    .borrow()
-                    .iter_from(offset)
-                    .filter(move |(_, internal_id)| filter_context.check(*internal_id))
-                    .map(|x| x.0)
-                    .take(limit)
-                    .collect()
+                let query_cardinality = payload_index.estimate_cardinality(condition);
+
+                // ToDo: update this threshold based on telemetry
+                let full_scan_threshold = DEFAULT_SCROLL_SCAN_THRESHOLD;
+
+                if query_cardinality.max < full_scan_threshold {
+                    let id_tracker = self.id_tracker.borrow();
+
+                    let ids_iterator =
+                        payload_index
+                            .query_points(condition)
+                            .filter_map(|internal_id| {
+                                let external_id = id_tracker.external_id(internal_id);
+                                match external_id {
+                                    Some(external_id) => match offset {
+                                        Some(offset) if external_id < offset => None,
+                                        _ => Some(external_id),
+                                    },
+                                    None => None,
+                                }
+                            });
+
+                    let mut page = match limit {
+                        Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
+                        None => ids_iterator.collect(),
+                    };
+                    page.sort_unstable();
+                    page
+                } else {
+                    let filter_context = payload_index.filter_context(condition);
+                    self.id_tracker
+                        .borrow()
+                        .iter_from(offset)
+                        .filter(move |(_, internal_id)| filter_context.check(*internal_id))
+                        .map(|x| x.0)
+                        .take(limit.unwrap_or(usize::MAX))
+                        .collect()
+                }
             }
         }
     }
@@ -881,7 +913,7 @@ impl SegmentEntry for Segment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
-        for point_id in self.read_filtered(None, usize::MAX, Some(filter)) {
+        for point_id in self.read_filtered(None, None, Some(filter)) {
             deleted_points += self.delete_point(op_num, point_id)? as usize;
         }
 

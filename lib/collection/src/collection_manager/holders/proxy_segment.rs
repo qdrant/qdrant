@@ -410,7 +410,7 @@ impl SegmentEntry for ProxySegment {
     fn read_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
-        limit: usize,
+        limit: Option<usize>,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
         let deleted_points = self.deleted_points.read();
@@ -993,20 +993,23 @@ mod tests {
             "blue".to_string().into(),
         )));
 
-        let original_points = original_segment.get().read().read_filtered(None, 100, None);
+        let original_points = original_segment
+            .get()
+            .read()
+            .read_filtered(None, Some(100), None);
 
         let original_points_filtered =
             original_segment
                 .get()
                 .read()
-                .read_filtered(None, 100, Some(&filter));
+                .read_filtered(None, Some(100), Some(&filter));
 
         let mut proxy_segment = wrap_proxy(&dir, original_segment);
 
         proxy_segment.delete_point(100, 2.into()).unwrap();
 
-        let proxy_res = proxy_segment.read_filtered(None, 100, None);
-        let proxy_res_filtered = proxy_segment.read_filtered(None, 100, Some(&filter));
+        let proxy_res = proxy_segment.read_filtered(None, Some(100), None);
+        let proxy_res_filtered = proxy_segment.read_filtered(None, Some(100), Some(&filter));
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
         assert_eq!(original_points.len() - 1, proxy_res.len());

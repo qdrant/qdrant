@@ -13,7 +13,7 @@ use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
-use crate::spaces::tools::peek_top_largest_scores_iterable;
+use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
@@ -281,7 +281,7 @@ where
                     score: TMetric::similarity(preprocessed_vector, other_vector),
                 }
             });
-        peek_top_largest_scores_iterable(scores, top)
+        peek_top_largest_iterable(scores, top)
     }
 
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
@@ -297,7 +297,7 @@ where
             }
         });
 
-        peek_top_largest_scores_iterable(scores, top)
+        peek_top_largest_iterable(scores, top)
     }
 
     fn score_internal(

@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
-use segment::spaces::tools::peek_top_largest_scores_iterable;
+use segment::spaces::tools::peek_top_largest_iterable;
 use segment::types::{
     Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, WithPayload,
     WithPayloadInterface, WithVector,
@@ -73,7 +73,7 @@ impl SegmentsSearcher {
             .zip(request.searches.iter())
             .map(|(all_search_results_per_vector, req)| {
                 let mut seen_idx: HashSet<PointIdType> = HashSet::new();
-                peek_top_largest_scores_iterable(
+                peek_top_largest_iterable(
                     all_search_results_per_vector
                         .into_iter()
                         .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first

@@ -79,7 +79,12 @@ impl ShardOperation for LocalShard {
         let point_ids = segments
             .read()
             .iter()
-            .flat_map(|(_, segment)| segment.get().read().read_filtered(offset, limit, filter))
+            .flat_map(|(_, segment)| {
+                segment
+                    .get()
+                    .read()
+                    .read_filtered(offset, Some(limit), filter)
+            })
             .sorted()
             .dedup()
             .take(limit)
