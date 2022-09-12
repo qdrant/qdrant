@@ -84,6 +84,7 @@ pub async fn new_local_collection(
         config,
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into())),
         ChannelService::default(),
+        todo!(),
     )
     .await
 }

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::ops::Deref;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::future::{try_join, try_join_all};
@@ -20,6 +22,7 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 
 pub type IsActive = bool;
+pub type OnPeerFailure = Box<dyn Fn(PeerId) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
 
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
@@ -32,13 +35,23 @@ pub struct ReplicaSet {
     remotes: Vec<RemoteShard>,
     pub(crate) replica_state: HashMap<PeerId, IsActive>,
     read_fan_out_ratio: f32,
-    notify_peer_failure_cb: Box<dyn Fn(PeerId) -> (dyn Future<Output = ()>) + Send + Sync>,
+    notify_peer_failure_cb: OnPeerFailure,
 }
 
 impl ReplicaSet {
+    pub fn new(on_peer_failure: OnPeerFailure) -> Self {
+        Self {
+            shard_id: todo!(),
+            this_peer_id: todo!(),
+            local: todo!(),
+            remotes: todo!(),
+            replica_state: todo!(),
+            read_fan_out_ratio: todo!(),
+            notify_peer_failure_cb: on_peer_failure,
+        }
+    }
     pub async fn notify_peer_failure(&self, peer_id: PeerId) {
-        //FIXME fails with `call expression requires function`
-        (*self.notify_peer_failure_cb)(peer_id)
+        Box::into_pin(self.notify_peer_failure_cb.deref()(peer_id)).await
     }
 
     pub fn peer_ids(&self) -> Vec<PeerId> {
@@ -106,7 +119,7 @@ impl ReplicaSet {
     pub async fn execute_read_operation<'a, F, Fut, Res>(&'a self, read: F) -> CollectionResult<Res>
     where
         F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
-        Fut: Future<Output = CollectionResult<Res>> + Unpin,
+        Fut: Future<Output = CollectionResult<Res>>,
     {
         // 1 - prefer the local shard if it is active
         if let Some(local) = &self.local {

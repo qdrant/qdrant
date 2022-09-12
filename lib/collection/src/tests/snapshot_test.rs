@@ -59,6 +59,7 @@ async fn test_snapshot_collection() {
         &config,
         CollectionShardDistribution::new(vec![0, 1], vec![(2, 10000)]),
         ChannelService::default(),
+        todo!(),
     )
     .await
     .unwrap();
