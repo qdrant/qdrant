@@ -7,9 +7,7 @@ pub struct TinyMap<K: Clone + PartialEq + Default, V: Clone + PartialEq + Defaul
     pub list: TinyVec<[(K, V); CAPACITY]>,
 }
 
-impl<K: Clone + PartialEq + Default, V: Clone + PartialEq + Default>
-    TinyMap<K, V>
-{
+impl<K: Clone + PartialEq + Default, V: Clone + PartialEq + Default> TinyMap<K, V> {
     pub fn new() -> Self {
         Self {
             list: TinyVec::new(),
@@ -39,7 +37,10 @@ impl<K: Clone + PartialEq + Default, V: Clone + PartialEq + Default>
         K: std::borrow::Borrow<Q>,
         Q: Eq,
     {
-        self.list.iter().find(|(k, _)| k.borrow() == key).map(|(_, v)| v)
+        self.list
+            .iter()
+            .find(|(k, _)| k.borrow() == key)
+            .map(|(_, v)| v)
     }
 
     pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut V>
@@ -47,7 +48,10 @@ impl<K: Clone + PartialEq + Default, V: Clone + PartialEq + Default>
         K: std::borrow::Borrow<Q>,
         Q: Eq,
     {
-        self.list.iter_mut().find(|(k, _)| k.borrow() == key).map(|(_, v)| v)
+        self.list
+            .iter_mut()
+            .find(|(k, _)| k.borrow() == key)
+            .map(|(_, v)| v)
     }
 
     pub fn remove(&mut self, key: &K) -> Option<V> {
@@ -106,9 +110,7 @@ impl<K: Clone + PartialEq + Default, V: Clone + PartialEq + Default>
     }
 }
 
-impl<K: Clone + PartialEq + Default, V: Clone + PartialEq + Default> Default
-    for TinyMap<K, V>
-{
+impl<K: Clone + PartialEq + Default, V: Clone + PartialEq + Default> Default for TinyMap<K, V> {
     fn default() -> Self {
         Self::new()
     }

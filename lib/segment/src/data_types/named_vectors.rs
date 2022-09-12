@@ -92,7 +92,8 @@ impl<'a> NamedVectors<'a> {
 impl<'a> IntoIterator for NamedVectors<'a> {
     type Item = (CowKey<'a>, CowValue<'a>);
 
-    type IntoIter = tinyvec::TinyVecIterator<[(CowKey<'a>, CowValue<'a>); super::tiny_map::CAPACITY]>;
+    type IntoIter =
+        tinyvec::TinyVecIterator<[(CowKey<'a>, CowValue<'a>); super::tiny_map::CAPACITY]>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.map.into_iter()
