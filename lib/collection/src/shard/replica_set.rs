@@ -33,9 +33,15 @@ pub struct ReplicaSet {
     remotes: Vec<RemoteShard>,
     pub(crate) replica_state: RwLock<HashMap<PeerId, IsActive>>,
     read_fan_out_ratio: f32,
+    notify_peer_failure_cb: Box<dyn Fn(PeerId) -> (dyn Future<Output = ()>) + Send + Sync>,
 }
 
 impl ReplicaSet {
+    pub async fn notify_peer_failure(&self, peer_id: PeerId) {
+        //FIXME fails with `call expression requires function`
+        (*self.notify_peer_failure_cb)(peer_id)
+    }
+
     pub fn peer_ids(&self) -> Vec<PeerId> {
         todo!()
     }
@@ -231,7 +237,7 @@ impl ShardOperation for ReplicaSet {
             }
             Err((peer_id, err)) => {
                 // report failing `peer_id`
-                self.set_active(&peer_id, false)?;
+                self.notify_peer_failure(peer_id).await;
                 Err(err)
             }
         }
