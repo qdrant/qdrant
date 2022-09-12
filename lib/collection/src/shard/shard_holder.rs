@@ -154,7 +154,7 @@ impl ShardHolder {
         active: bool,
     ) -> CollectionResult<()> {
         if let Shard::ReplicaSet(replica_set) =
-            self.get_shard(&shard_id)
+            self.get_mut_shard(&shard_id)
                 .ok_or_else(|| CollectionError::NotFound {
                     what: format!("Shard {shard_id}"),
                 })?

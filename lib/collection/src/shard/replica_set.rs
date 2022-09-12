@@ -5,7 +5,6 @@ use std::sync::Arc;
 use futures::future::{try_join, try_join_all};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use parking_lot::RwLock;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -31,7 +30,7 @@ pub struct ReplicaSet {
     this_peer_id: PeerId,
     local: Option<LocalShard>,
     remotes: Vec<RemoteShard>,
-    pub(crate) replica_state: RwLock<HashMap<PeerId, IsActive>>,
+    pub(crate) replica_state: HashMap<PeerId, IsActive>,
     read_fan_out_ratio: f32,
     notify_peer_failure_cb: Box<dyn Fn(PeerId) -> (dyn Future<Output = ()>) + Send + Sync>,
 }
@@ -46,12 +45,13 @@ impl ReplicaSet {
         todo!()
     }
 
-    pub fn set_active(&self, peer_id: &PeerId, active: bool) -> CollectionResult<()> {
-        *self.replica_state.write().get_mut(peer_id).ok_or_else(|| {
-            CollectionError::NotFound {
+    pub fn set_active(&mut self, peer_id: &PeerId, active: bool) -> CollectionResult<()> {
+        *self
+            .replica_state
+            .get_mut(peer_id)
+            .ok_or_else(|| CollectionError::NotFound {
                 what: format!("Shard {} replica on peer {peer_id}", self.shard_id),
-            }
-        })? = active;
+            })? = active;
         Ok(())
     }
 
@@ -61,7 +61,6 @@ impl ReplicaSet {
     ) -> CollectionResult<()> {
         let removed_peers = self
             .replica_state
-            .read()
             .keys()
             .filter(|peer_id| !replicas.contains_key(peer_id))
             .copied()
@@ -79,10 +78,10 @@ impl ReplicaSet {
             {
                 todo!("remote_shard.remove_peer(peer_id)")
             }
-            self.replica_state.write().remove(&peer_id);
+            self.replica_state.remove(&peer_id);
         }
         for (peer_id, is_active) in replicas {
-            if let Some(state) = self.replica_state.write().get_mut(&peer_id) {
+            if let Some(state) = self.replica_state.get_mut(&peer_id) {
                 *state = is_active;
             } else if peer_id == self.this_peer_id {
                 todo!("clone replica from another peer or log error that it should be cloned with normal operation")
@@ -96,7 +95,7 @@ impl ReplicaSet {
     /// Check whether a peer is registered as `active`.
     /// Unknown peers are not active.
     pub fn peer_is_active(&self, peer_id: &PeerId) -> bool {
-        self.replica_state.read().get(peer_id) == Some(&true)
+        self.replica_state.get(peer_id) == Some(&true)
     }
 
     /// Execute read operation on replica set:
