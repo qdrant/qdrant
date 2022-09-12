@@ -378,6 +378,53 @@ impl Segment {
             })
             .collect()
     }
+
+    pub fn filtered_read_by_index(
+        &self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        condition: &Filter,
+    ) -> Vec<PointIdType> {
+        let payload_index = self.payload_index.borrow();
+        let id_tracker = self.id_tracker.borrow();
+
+        let ids_iterator = payload_index
+            .query_points(condition)
+            .filter_map(|internal_id| {
+                let external_id = id_tracker.external_id(internal_id);
+                match external_id {
+                    Some(external_id) => match offset {
+                        Some(offset) if external_id < offset => None,
+                        _ => Some(external_id),
+                    },
+                    None => None,
+                }
+            });
+
+        let mut page = match limit {
+            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
+            None => ids_iterator.collect(),
+        };
+        page.sort_unstable();
+        page
+    }
+
+    pub fn filtered_read_by_id_stream(
+        &self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        condition: &Filter,
+    ) -> Vec<PointIdType> {
+        let payload_index = self.payload_index.borrow();
+        let filter_context = payload_index.filter_context(condition);
+        self.id_tracker
+            .borrow()
+            .iter_from(offset)
+            .filter(move |(_, internal_id)| filter_context.check(*internal_id))
+            .map(|x| x.0)
+            .take(limit.unwrap_or(usize::MAX))
+            .collect()
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -650,44 +697,18 @@ impl SegmentEntry for Segment {
                 .take(limit.unwrap_or(usize::MAX))
                 .collect(),
             Some(condition) => {
-                let payload_index = self.payload_index.borrow();
-                let query_cardinality = payload_index.estimate_cardinality(condition);
+                let query_cardinality = {
+                    let payload_index = self.payload_index.borrow();
+                    payload_index.estimate_cardinality(condition)
+                };
 
                 // ToDo: update this threshold based on telemetry
                 let full_scan_threshold = DEFAULT_SCROLL_SCAN_THRESHOLD;
 
                 if query_cardinality.max < full_scan_threshold {
-                    let id_tracker = self.id_tracker.borrow();
-
-                    let ids_iterator =
-                        payload_index
-                            .query_points(condition)
-                            .filter_map(|internal_id| {
-                                let external_id = id_tracker.external_id(internal_id);
-                                match external_id {
-                                    Some(external_id) => match offset {
-                                        Some(offset) if external_id < offset => None,
-                                        _ => Some(external_id),
-                                    },
-                                    None => None,
-                                }
-                            });
-
-                    let mut page = match limit {
-                        Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
-                        None => ids_iterator.collect(),
-                    };
-                    page.sort_unstable();
-                    page
+                    self.filtered_read_by_index(offset, limit, condition)
                 } else {
-                    let filter_context = payload_index.filter_context(condition);
-                    self.id_tracker
-                        .borrow()
-                        .iter_from(offset)
-                        .filter(move |(_, internal_id)| filter_context.check(*internal_id))
-                        .map(|x| x.0)
-                        .take(limit.unwrap_or(usize::MAX))
-                        .collect()
+                    self.filtered_read_by_id_stream(offset, limit, condition)
                 }
             }
         }
