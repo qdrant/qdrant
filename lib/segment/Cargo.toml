@@ -9,7 +9,7 @@ edition = "2021"
 [dev-dependencies]
 pprof = { version = "0.10", features = ["flamegraph", "prost-codec"] }
 tempfile = "3.3.0"
-criterion = "0.3"
+criterion = "0.4"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
 walkdir = "2.3.2"
