@@ -29,7 +29,6 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
     SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
-    DEFAULT_SCROLL_SCAN_THRESHOLD,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
@@ -421,7 +420,7 @@ impl Segment {
             .borrow()
             .iter_from(offset)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
-            .map(|x| x.0)
+            .map(|(external_id, _)| external_id)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
     }
@@ -702,10 +701,36 @@ impl SegmentEntry for Segment {
                     payload_index.estimate_cardinality(condition)
                 };
 
-                // ToDo: update this threshold based on telemetry
-                let full_scan_threshold = DEFAULT_SCROLL_SCAN_THRESHOLD;
+                // ToDo: Add telemetry for this heuristics
 
-                if query_cardinality.max < full_scan_threshold {
+                // Calculate expected number of condition checks required for
+                // this scroll request with is stream strategy.
+                // Example:
+                //  - cardinality = 1000
+                //  - limit = 10
+                //  - total = 10000
+                //  - point filter prob = 1000 / 10000 = 0.1
+                //  - expected_checks = 10 / 0.1  = 100
+                //  -------------------------------
+                //  - cardinality = 10
+                //  - limit = 10
+                //  - total = 10000
+                //  - point filter prob = 10 / 10000 = 0.001
+                //  - expected_checks = 10 / 0.001  = 10000
+
+                let total_points = self.points_count() + 1 /* + 1 for division-by-zero */;
+                // Expected number of successful checks per point
+                let check_probability = (query_cardinality.exp as f64 + 1.0/* protect from zero */)
+                    / total_points as f64;
+                let exp_stream_checks =
+                    (limit.unwrap_or(total_points) as f64 / check_probability) as usize;
+
+                // Assume it would require about `query cardinality` checks.
+                // We are interested in approximate number of checks, so we can
+                // use `query cardinality` as a starting point.
+                let exp_index_checks = query_cardinality.max;
+
+                if exp_stream_checks > exp_index_checks {
                     self.filtered_read_by_index(offset, limit, condition)
                 } else {
                     self.filtered_read_by_id_stream(offset, limit, condition)
