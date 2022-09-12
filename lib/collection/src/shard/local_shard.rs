@@ -559,13 +559,13 @@ impl LocalShard {
             }
         }
     }
+}
 
-    pub async fn delete_from_disk(&self) -> CollectionResult<()> {
-        // Assert before drop called so that we are sure all updates were finished
-        self.assert_before_drop_called();
-        remove_dir_all(self.shard_path()).await?;
-        Ok(())
-    }
+pub async fn drop_and_delete_from_disk(shard: LocalShard) -> CollectionResult<()> {
+    let path = shard.shard_path();
+    drop(shard);
+    remove_dir_all(path).await?;
+    Ok(())
 }
 
 impl Drop for LocalShard {
