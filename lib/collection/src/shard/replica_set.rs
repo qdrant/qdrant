@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::ops::Deref;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::future::{try_join, try_join_all};
@@ -39,14 +38,22 @@ pub struct ReplicaSet {
 }
 
 impl ReplicaSet {
-    pub fn new(on_peer_failure: OnPeerFailure) -> Self {
+    pub fn new(
+        shard_id: ShardId,
+        this_peer_id: PeerId,
+        local: Option<LocalShard>,
+        remotes: Vec<RemoteShard>,
+        replica_state: HashMap<PeerId, IsActive>,
+        read_fan_out_ratio: f32,
+        on_peer_failure: OnPeerFailure,
+    ) -> Self {
         Self {
-            shard_id: todo!(),
-            this_peer_id: todo!(),
-            local: todo!(),
-            remotes: todo!(),
-            replica_state: todo!(),
-            read_fan_out_ratio: todo!(),
+            shard_id,
+            this_peer_id,
+            local,
+            remotes,
+            replica_state,
+            read_fan_out_ratio,
             notify_peer_failure_cb: on_peer_failure,
         }
     }

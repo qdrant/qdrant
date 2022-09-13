@@ -142,7 +142,15 @@ impl Collection {
         // It might be worth leaving it here for now until we have an actual impl
         // TODO: Create ReplicaSet shards
         if false {
-            let shard = ReplicaSet::new(on_replica_failure);
+            let shard = ReplicaSet::new(
+                1,
+                1,
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                0.0,
+                on_replica_failure,
+            );
             shard_holder.add_shard(0, Shard::ReplicaSet(shard))
         }
 
