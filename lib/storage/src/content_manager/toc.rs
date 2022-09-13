@@ -16,7 +16,7 @@ use collection::operations::types::{
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
-use collection::shard::{ChannelService, CollectionId, PeerId, ShardId};
+use collection::shard::{replica_set, ChannelService, CollectionId, PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
@@ -297,6 +297,7 @@ impl TableOfContent {
             &collection_config,
             collection_shard_distribution,
             self.channel_service.clone(),
+            self.on_peer_failure_callback(collection_name.to_string()),
         )
         .await?;
 
@@ -306,6 +307,27 @@ impl TableOfContent {
             .await?;
         write_collections.insert(collection_name.to_string(), collection);
         Ok(true)
+    }
+
+    fn on_peer_failure_callback(&self, collection_name: String) -> replica_set::OnPeerFailure {
+        let proposal_sender = self.consensus_proposal_sender.clone();
+        Box::new(move |peer_id, shard_id| {
+            let proposal_sender = proposal_sender.clone();
+            let collection_name = collection_name.clone();
+            Box::new(async move {
+                proposal_sender
+                    .send(ConsensusOperations::CollectionMeta(
+                        CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
+                            collection_name,
+                            shard_id,
+                            peer_id,
+                            active: false,
+                        })
+                        .into(),
+                    ))
+                    .unwrap();
+            })
+        })
     }
 
     async fn update_collection(
@@ -865,6 +887,7 @@ impl TableOfContent {
                             &state.config,
                             shard_distribution,
                             self.channel_service.clone(),
+                            self.on_peer_failure_callback(id.to_string()),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;

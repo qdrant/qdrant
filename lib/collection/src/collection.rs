@@ -38,6 +38,7 @@ use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::CollectionShardDistribution;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
+use crate::shard::replica_set::ReplicaSet;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::shard_versioning::versioned_shard_path;
@@ -47,8 +48,8 @@ use crate::shard::transfer::shard_transfer::{
 };
 use crate::shard::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shard::{
-    create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
-    ShardTransfer, HASH_RING_SHARD_SCALE,
+    create_shard_dir, replica_set, ChannelService, CollectionId, PeerId, Shard, ShardId,
+    ShardOperation, ShardTransfer, HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
 
@@ -86,6 +87,7 @@ impl Collection {
         config: &CollectionConfig,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
+        on_replica_failure: replica_set::OnPeerFailure,
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
@@ -135,6 +137,21 @@ impl Collection {
                 }
             };
             shard_holder.add_shard(shard_id, Shard::Remote(shard));
+        }
+        // This is a stub to check that types and hidden lifetimes fit
+        // It might be worth leaving it here for now until we have an actual impl
+        // TODO: Create ReplicaSet shards
+        if false {
+            let shard = ReplicaSet::new(
+                1,
+                1,
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                0.0,
+                on_replica_failure,
+            );
+            shard_holder.add_shard(0, Shard::ReplicaSet(shard))
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));

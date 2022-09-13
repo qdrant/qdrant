@@ -1,6 +1,11 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::ops::Deref;
 use std::sync::Arc;
 
+use futures::future::{try_join, try_join_all};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -16,19 +21,47 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 
 pub type IsActive = bool;
+pub type OnPeerFailure =
+    Box<dyn Fn(PeerId, ShardId) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
 
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
+/// Prefers local shard for read-only operations.
+/// Perform updates on all replicas and report error if there is at least one failure.
 pub struct ReplicaSet {
     shard_id: ShardId,
     this_peer_id: PeerId,
     local: Option<LocalShard>,
-    // TODO: Remote shard should be able to query several peers
-    remote: Option<RemoteShard>,
+    remotes: Vec<RemoteShard>,
     pub(crate) replica_state: HashMap<PeerId, IsActive>,
+    read_fan_out_ratio: f32,
+    notify_peer_failure_cb: OnPeerFailure,
 }
 
 impl ReplicaSet {
+    pub fn new(
+        shard_id: ShardId,
+        this_peer_id: PeerId,
+        local: Option<LocalShard>,
+        remotes: Vec<RemoteShard>,
+        replica_state: HashMap<PeerId, IsActive>,
+        read_fan_out_ratio: f32,
+        on_peer_failure: OnPeerFailure,
+    ) -> Self {
+        Self {
+            shard_id,
+            this_peer_id,
+            local,
+            remotes,
+            replica_state,
+            read_fan_out_ratio,
+            notify_peer_failure_cb: on_peer_failure,
+        }
+    }
+    pub async fn notify_peer_failure(&self, peer_id: PeerId) {
+        Box::into_pin(self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)).await
+    }
+
     pub fn peer_ids(&self) -> Vec<PeerId> {
         todo!()
     }
@@ -61,7 +94,9 @@ impl ReplicaSet {
                 } else {
                     debug_assert!(false, "inconsistent `replica_set` map with actual shards")
                 }
-            } else if let Some(_remote_shard) = &mut self.remote {
+            } else if let Some(_remote_shard) =
+                &mut self.remotes.iter().find(|rs| rs.peer_id == peer_id)
+            {
                 todo!("remote_shard.remove_peer(peer_id)")
             }
             self.replica_state.remove(&peer_id);
@@ -77,52 +112,199 @@ impl ReplicaSet {
         }
         Ok(())
     }
+
+    /// Check whether a peer is registered as `active`.
+    /// Unknown peers are not active.
+    pub fn peer_is_active(&self, peer_id: &PeerId) -> bool {
+        self.replica_state.get(peer_id) == Some(&true)
+    }
+
+    /// Execute read operation on replica set:
+    /// 1 - Prefer local replica
+    /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
+    /// 3 - Fallbacks to all remaining shards if the optimisations fails.
+    /// It does not report failing peer_ids to the consensus.
+    pub async fn execute_read_operation<'a, F, Fut, Res>(&'a self, read: F) -> CollectionResult<Res>
+    where
+        F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
+        Fut: Future<Output = CollectionResult<Res>>,
+    {
+        // 1 - prefer the local shard if it is active
+        if let Some(local) = &self.local {
+            if self.peer_is_active(&self.this_peer_id) {
+                if let ok @ Ok(_) = read(local).await {
+                    return ok;
+                }
+            }
+        }
+
+        // 2 - try a subset of active remote shards in parallel for fast response
+        let active_remote_shards: Vec<_> = self
+            .remotes
+            .iter()
+            .filter(|rs| self.peer_is_active(&rs.peer_id))
+            .collect();
+
+        if active_remote_shards.is_empty() {
+            return Err(CollectionError::service_error(format!(
+                "The replica set for shard {} on peer {} has no active replica",
+                self.shard_id, self.this_peer_id
+            )));
+        }
+
+        let fan_out_selection =
+            (self.read_fan_out_ratio * active_remote_shards.len() as f32).ceil() as usize;
+
+        let mut futures = FuturesUnordered::new();
+        for remote in &active_remote_shards[0..fan_out_selection] {
+            let fut = read(*remote);
+            futures.push(fut);
+        }
+
+        // shortcut at first successful result
+        let mut captured_error = None;
+        while let Some(result) = futures.next().await {
+            match result {
+                Ok(res) => return Ok(res),
+                err @ Err(_) => captured_error = Some(err), // capture error for possible error reporting
+            }
+        }
+        debug_assert!(
+            captured_error.is_some(),
+            "there must be at least one failure"
+        );
+
+        // 3 - fallback to remaining remote shards as last chance
+        let mut futures = FuturesUnordered::new();
+        for remote in &active_remote_shards[fan_out_selection..] {
+            let fut = read(*remote);
+            futures.push(fut);
+        }
+
+        // shortcut at first successful result
+        while let Some(result) = futures.next().await {
+            if let ok @ Ok(_) = result {
+                return ok;
+            }
+        }
+        captured_error.expect("at this point `captured_error` must be defined by construction")
+    }
 }
 
 #[async_trait::async_trait]
 impl ShardOperation for ReplicaSet {
     async fn update(
         &self,
-        _operation: CollectionUpdateOperations,
-        _wait: bool,
+        operation: CollectionUpdateOperations,
+        wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        todo!()
+        // target all remote peers that are active
+        let active_remote_shards: Vec<_> = self
+            .remotes
+            .iter()
+            .filter(|rs| self.peer_is_active(&rs.peer_id))
+            .collect();
+
+        // local is defined AND the peer itself is active
+        let local_is_active = self.local.is_some() && self.peer_is_active(&self.this_peer_id);
+
+        if active_remote_shards.is_empty() && !local_is_active {
+            return Err(CollectionError::service_error(format!(
+                "The replica set for shard {} on peer {} has no active replica",
+                self.shard_id, self.this_peer_id
+            )));
+        }
+
+        let mut remote_futures = Vec::new();
+        for remote in active_remote_shards {
+            let op = operation.clone();
+            remote_futures.push(async move {
+                remote
+                    .update(op, wait)
+                    .await
+                    .map_err(|err| (remote.peer_id, err))
+            });
+        }
+
+        let all_res = match &self.local {
+            Some(local) if self.peer_is_active(&self.this_peer_id) => {
+                let local_update = async move {
+                    local
+                        .update(operation.clone(), wait)
+                        .await
+                        .map_err(|err| (self.this_peer_id, err))
+                };
+                let remote_updates = try_join_all(remote_futures);
+
+                // run local and remote shards read concurrently
+                try_join(remote_updates, local_update)
+                    .await
+                    .map(|(remote_res, _local_res)| remote_res)
+            }
+            _ => try_join_all(remote_futures).await,
+        };
+
+        match all_res {
+            Ok(results) => {
+                // return first result
+                match results.into_iter().next() {
+                    None => Err(CollectionError::service_error(format!(
+                        "None of the replicas replied for Replica set {} on peer {}",
+                        self.shard_id, self.this_peer_id
+                    ))),
+                    Some(res) => Ok(res),
+                }
+            }
+            Err((peer_id, err)) => {
+                // report failing `peer_id`
+                self.notify_peer_failure(peer_id).await;
+                Err(err)
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
     async fn scroll_by(
         &self,
-        _offset: Option<ExtendedPointId>,
-        _limit: usize,
-        _with_payload_interface: &WithPayloadInterface,
-        _with_vector: &WithVector,
-        _filter: Option<&Filter>,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>> {
-        todo!()
+        self.execute_read_operation(|shard| {
+            shard.scroll_by(offset, limit, with_payload_interface, with_vector, filter)
+        })
+        .await
     }
 
     async fn info(&self) -> CollectionResult<CollectionInfo> {
-        todo!()
+        self.execute_read_operation(|shard| shard.info()).await
     }
 
     async fn search(
         &self,
-        _request: Arc<SearchRequestBatch>,
-        _search_runtime_handle: &Handle,
+        request: Arc<SearchRequestBatch>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        todo!()
+        self.execute_read_operation(|shard| shard.search(request.clone(), search_runtime_handle))
+            .await
     }
 
-    async fn count(&self, _request: Arc<CountRequest>) -> CollectionResult<CountResult> {
-        todo!()
+    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+        self.execute_read_operation(|shard| shard.count(request.clone()))
+            .await
     }
 
     async fn retrieve(
         &self,
-        _request: Arc<PointRequest>,
-        _with_payload: &WithPayload,
-        _with_vector: &WithVector,
+        request: Arc<PointRequest>,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
-        todo!()
+        self.execute_read_operation(|shard| {
+            shard.retrieve(request.clone(), with_payload, with_vector)
+        })
+        .await
     }
 }

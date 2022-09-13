@@ -7,6 +7,7 @@ use crate::collection::Collection;
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::CollectionShardDistribution;
+use crate::shard::replica_set::OnPeerFailure;
 use crate::shard::{ChannelService, Shard};
 
 const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
@@ -19,6 +20,10 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     flush_interval_sec: 30,
     max_optimization_threads: 2,
 };
+
+pub fn dummy_on_replica_failure() -> OnPeerFailure {
+    Box::new(move |_peer_id, _shard_id| Box::new(async {}))
+}
 
 #[tokio::test]
 async fn test_snapshot_collection() {
@@ -59,6 +64,7 @@ async fn test_snapshot_collection() {
         &config,
         CollectionShardDistribution::new(vec![0, 1], vec![(2, 10000)]),
         ChannelService::default(),
+        dummy_on_replica_failure(),
     )
     .await
     .unwrap();

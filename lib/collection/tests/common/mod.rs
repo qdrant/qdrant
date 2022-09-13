@@ -8,6 +8,7 @@ use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalCo
 use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
+use collection::shard::replica_set::OnPeerFailure;
 use collection::shard::{ChannelService, CollectionId};
 use segment::types::Distance;
 
@@ -70,6 +71,10 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     .unwrap()
 }
 
+pub fn dummy_on_replica_failure() -> OnPeerFailure {
+    Box::new(move |_peer_id, _shard_id| Box::new(async {}))
+}
+
 /// Default to a collection with all the shards local
 pub async fn new_local_collection(
     id: CollectionId,
@@ -84,6 +89,7 @@ pub async fn new_local_collection(
         config,
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into())),
         ChannelService::default(),
+        dummy_on_replica_failure(),
     )
     .await
 }
