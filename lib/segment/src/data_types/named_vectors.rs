@@ -48,11 +48,13 @@ impl<'a> NamedVectors<'a> {
     }
 
     pub fn insert(&mut self, name: String, vector: Vec<VectorElementType>) {
-        self.map.insert(CowKey::from(name), CowValue::from(vector));
+        self.map
+            .insert(CowKey::Owned(name), CowValue::Owned(vector));
     }
 
     pub fn insert_ref(&mut self, name: &'a str, vector: &'a [VectorElementType]) {
-        self.map.insert(CowKey::from(name), CowValue::from(vector));
+        self.map
+            .insert(CowKey::Borrowed(name), CowValue::Borrowed(vector));
     }
 
     pub fn contains_key(&self, key: &str) -> bool {
