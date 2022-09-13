@@ -297,7 +297,7 @@ impl TableOfContent {
             &collection_config,
             collection_shard_distribution,
             self.channel_service.clone(),
-            self.on_peer_failure_callback(),
+            self.on_peer_failure_callback(collection_name.to_string()),
         )
         .await?;
 
@@ -309,17 +309,17 @@ impl TableOfContent {
         Ok(true)
     }
 
-    fn on_peer_failure_callback(&self) -> replica_set::OnPeerFailure {
+    fn on_peer_failure_callback(&self, collection_name: String) -> replica_set::OnPeerFailure {
         let proposal_sender = self.consensus_proposal_sender.clone();
-        Box::new(move |peer_id| {
+        Box::new(move |peer_id, shard_id| {
             let proposal_sender = proposal_sender.clone();
+            let collection_name = collection_name.clone();
             Box::new(async move {
                 proposal_sender
                     .send(ConsensusOperations::CollectionMeta(
                         CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
-                            // TODO: fill in actual collection name and shard_id
-                            collection_name: "collection".to_string(),
-                            shard_id: 0,
+                            collection_name,
+                            shard_id,
                             peer_id,
                             active: false,
                         })
@@ -887,7 +887,7 @@ impl TableOfContent {
                             &state.config,
                             shard_distribution,
                             self.channel_service.clone(),
-                            self.on_peer_failure_callback(),
+                            self.on_peer_failure_callback(id.to_string()),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;

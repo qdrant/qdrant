@@ -21,7 +21,8 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 
 pub type IsActive = bool;
-pub type OnPeerFailure = Box<dyn Fn(PeerId) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
+pub type OnPeerFailure =
+    Box<dyn Fn(PeerId, ShardId) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
 
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
@@ -58,7 +59,7 @@ impl ReplicaSet {
         }
     }
     pub async fn notify_peer_failure(&self, peer_id: PeerId) {
-        Box::into_pin(self.notify_peer_failure_cb.deref()(peer_id)).await
+        Box::into_pin(self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)).await
     }
 
     pub fn peer_ids(&self) -> Vec<PeerId> {

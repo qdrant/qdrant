@@ -22,7 +22,7 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 };
 
 pub fn dummy_on_replica_failure() -> OnPeerFailure {
-    Box::new(move |_peer_id| Box::new(async {}))
+    Box::new(move |_peer_id, _shard_id| Box::new(async {}))
 }
 
 #[tokio::test]

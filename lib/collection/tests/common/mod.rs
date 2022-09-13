@@ -72,7 +72,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
 }
 
 pub fn dummy_on_replica_failure() -> OnPeerFailure {
-    Box::new(move |_peer_id| Box::new(async {}))
+    Box::new(move |_peer_id, _shard_id| Box::new(async {}))
 }
 
 /// Default to a collection with all the shards local
