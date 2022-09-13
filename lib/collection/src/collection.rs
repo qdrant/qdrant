@@ -80,7 +80,7 @@ impl Collection {
         self.id.clone()
     }
 
-    pub async fn new<'a>(
+    pub async fn new(
         id: CollectionId,
         path: &Path,
         snapshots_path: &Path,
