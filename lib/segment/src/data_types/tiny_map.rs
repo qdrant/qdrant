@@ -2,11 +2,11 @@ use tinyvec::TinyVec;
 
 pub const CAPACITY: usize = 3;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct TinyMap<K, V>
 where
-    K: Clone + PartialEq + Default,
-    V: Clone + PartialEq + Default,
+    K: Clone + Default,
+    V: Clone + Default,
 {
     pub list: TinyVec<[(K, V); CAPACITY]>,
 }
@@ -124,10 +124,30 @@ where
     }
 }
 
+impl<K, V> PartialEq for TinyMap<K, V>
+where
+    K: Clone + PartialEq + Eq + Default,
+    V: Clone + PartialEq + Default,
+{
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+
+        for (k, v) in self.iter() {
+            if other.get(k) != Some(v) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 impl<K, V> IntoIterator for TinyMap<K, V>
 where
-    K: Clone + PartialEq + Default,
-    V: Clone + PartialEq + Default,
+    K: Clone + Default,
+    V: Clone + Default,
 {
     type Item = (K, V);
 
@@ -140,8 +160,8 @@ where
 
 impl<K, V> std::iter::FromIterator<(K, V)> for TinyMap<K, V>
 where
-    K: Clone + PartialEq + Default,
-    V: Clone + PartialEq + Default,
+    K: Clone + Default,
+    V: Clone + Default,
 {
     fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         Self {
