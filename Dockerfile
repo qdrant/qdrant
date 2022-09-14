@@ -1,8 +1,7 @@
 # Leveraging the pre-built Docker images with
 # cargo-chef and the Rust toolchain
 # https://www.lpalmieri.com/posts/fast-rust-docker-builds/
-ARG BUILDPLATFORM=linux/amd64
-FROM --platform=$BUILDPLATFORM lukemathwalker/cargo-chef:latest-rust-1.63.0 AS chef
+FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.63.0 AS chef
 WORKDIR /qdrant
 
 FROM chef AS planner
@@ -11,15 +10,20 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef as builder
 
-ARG TARGETARCH=amd64
+# based on https://github.com/docker/buildx/issues/510
+ARG TARGETARCH
+ENV TARGETARCH=${TARGETARCH:-amd64}
 
 WORKDIR /qdrant
+
+COPY ./tools/target_arch.sh ./target_arch.sh
+RUN echo "Building for $TARGETARCH, arch: $(bash target_arch.sh)"
 
 COPY --from=planner /qdrant/recipe.json recipe.json
 
 RUN apt-get update && apt-get install -y gcc-multilib && apt-get install -y clang cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu && rustup component add rustfmt
 
-COPY ./tools/target_arch.sh ./target_arch.sh
+
 RUN rustup target add $(bash target_arch.sh)
 
 # Build dependencies - this is the caching Docker layer!
