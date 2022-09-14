@@ -3729,10 +3729,23 @@
           "using": {
             "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
             "default": null,
-            "type": "string",
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsingVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "UsingVector": {
+        "anyOf": [
+          {
+            "type": "string"
+          }
+        ]
       },
       "ScrollRequest": {
         "description": "Scroll request - paginate over all points which matches given condition",

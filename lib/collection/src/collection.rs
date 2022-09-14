@@ -31,7 +31,7 @@ use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
     CountResult, LocalShardInfo, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
     RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    ShardTransferInfo, UpdateResult,
+    ShardTransferInfo, UpdateResult, UsingVector,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -657,10 +657,11 @@ impl Collection {
         let mut searches = Vec::with_capacity(request_batch.searches.len());
 
         for request in request_batch.searches {
-            let vector_name = request
-                .using
-                .clone()
-                .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned());
+            let vector_name = match request.using {
+                None => DEFAULT_VECTOR_NAME.to_owned(),
+                Some(UsingVector::Name(name)) => name,
+            };
+
             //let rec_vectors = rec.get
             let mut all_vectors_map = HashMap::new();
 

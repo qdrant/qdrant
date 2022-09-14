@@ -456,7 +456,7 @@ pub async fn recommend(
             .map(|selector| selector.into())
             .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
         score_threshold,
-        using,
+        using: using.map(|u| u.into()),
     };
 
     let timing = Instant::now();
