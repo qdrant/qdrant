@@ -217,7 +217,7 @@ pub struct SearchParams {
 }
 
 /// Vector index configuration of the segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
@@ -276,7 +276,7 @@ impl Default for Indexes {
 }
 
 /// Type of payload index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadIndexType {
@@ -293,7 +293,7 @@ impl Default for PayloadIndexType {
 }
 
 /// Type of vector storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum StorageType {
@@ -310,7 +310,7 @@ impl Default for StorageType {
 }
 
 /// Type of payload storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadStorageType {
@@ -326,7 +326,7 @@ impl Default for PayloadStorageType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_data: HashMap<String, VectorDataConfig>,
@@ -352,7 +352,7 @@ pub struct VectorDataConfig {
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 
 /// Persistable state of segment configuration
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentState {
     pub version: SeqNumberType,

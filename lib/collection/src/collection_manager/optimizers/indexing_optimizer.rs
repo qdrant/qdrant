@@ -13,7 +13,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
-use crate::telemetry::OptimizerTelemetry;
+use crate::telemetry::{OptimizerTelemetry, TelemetryOptimizerType};
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -236,8 +236,9 @@ impl SegmentOptimizer for IndexingOptimizer {
     }
 
     fn get_telemetry_data(&self) -> OptimizerTelemetry {
-        OptimizerTelemetry::Indexing {
-            optimizations: self.get_telemetry_counter().lock().get_statistics(),
+        OptimizerTelemetry {
+            stats: self.get_telemetry_counter().lock().get_statistics(),
+            optimizer_type: TelemetryOptimizerType::Indexer
         }
     }
 

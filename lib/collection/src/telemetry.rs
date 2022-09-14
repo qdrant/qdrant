@@ -7,19 +7,27 @@ use serde::{Deserialize, Serialize};
 use crate::config::CollectionConfig;
 use crate::shard::ShardId;
 
+
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct RemoteShardTelemetry {
+    pub shard_id: ShardId,
+    pub searches: TelemetryOperationStatistics,
+    pub updates: TelemetryOperationStatistics,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct LocalShardTelemetry {
+    pub segments: Vec<SegmentTelemetry>,
+    pub optimizers: Vec<OptimizerTelemetry>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[serde(untagged)]
 pub enum ShardTelemetry {
-    Remote {
-        shard_id: ShardId,
-        searches: TelemetryOperationStatistics,
-        updates: TelemetryOperationStatistics,
-    },
-    Local {
-        segments: Vec<SegmentTelemetry>,
-        optimizers: Vec<OptimizerTelemetry>,
-    },
-    Proxy {},
-    ForwardProxy {},
+    Remote(RemoteShardTelemetry),
+    Local(LocalShardTelemetry),
+    Proxy,
+    ForwardProxy,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -31,16 +39,17 @@ pub struct CollectionTelemetry {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
-pub enum OptimizerTelemetry {
-    Indexing {
-        optimizations: TelemetryOperationStatistics,
-    },
-    Merge {
-        optimizations: TelemetryOperationStatistics,
-    },
-    Vacuum {
-        optimizations: TelemetryOperationStatistics,
-    },
+#[serde(untagged)]
+pub enum TelemetryOptimizerType {
+    Indexer,
+    Merger,
+    Vacuum,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct OptimizerTelemetry {
+    pub stats: TelemetryOperationStatistics,
+    pub optimizer_type: TelemetryOptimizerType,
 }
 
 impl CollectionTelemetry {
@@ -67,16 +76,9 @@ impl Anonymize for CollectionTelemetry {
 
 impl Anonymize for OptimizerTelemetry {
     fn anonymize(&self) -> Self {
-        match self {
-            OptimizerTelemetry::Indexing { optimizations } => OptimizerTelemetry::Indexing {
-                optimizations: optimizations.anonymize(),
-            },
-            OptimizerTelemetry::Merge { optimizations } => OptimizerTelemetry::Merge {
-                optimizations: optimizations.anonymize(),
-            },
-            OptimizerTelemetry::Vacuum { optimizations } => OptimizerTelemetry::Vacuum {
-                optimizations: optimizations.anonymize(),
-            },
+        Self {
+            stats: self.stats.anonymize(),
+            optimizer_type: self.optimizer_type.clone(),
         }
     }
 }
@@ -84,27 +86,27 @@ impl Anonymize for OptimizerTelemetry {
 impl Anonymize for ShardTelemetry {
     fn anonymize(&self) -> Self {
         match self {
-            ShardTelemetry::Local {
+            ShardTelemetry::Local(LocalShardTelemetry {
                 segments,
                 optimizers,
-            } => ShardTelemetry::Local {
+            }) => ShardTelemetry::Local(LocalShardTelemetry {
                 segments: segments.iter().map(|segment| segment.anonymize()).collect(),
                 optimizers: optimizers
                     .iter()
                     .map(|optimizer| optimizer.anonymize())
                     .collect(),
-            },
-            ShardTelemetry::Remote {
+            }),
+            ShardTelemetry::Remote(RemoteShardTelemetry {
                 searches,
                 updates,
                 shard_id,
-            } => ShardTelemetry::Remote {
+            }) => ShardTelemetry::Remote(RemoteShardTelemetry {
                 shard_id: *shard_id,
                 searches: searches.anonymize(),
                 updates: updates.anonymize(),
-            },
-            ShardTelemetry::Proxy {} => ShardTelemetry::Proxy {},
-            ShardTelemetry::ForwardProxy {} => ShardTelemetry::ForwardProxy {},
+            }),
+            ShardTelemetry::Proxy => ShardTelemetry::Proxy,
+            ShardTelemetry::ForwardProxy => ShardTelemetry::ForwardProxy,
         }
     }
 }

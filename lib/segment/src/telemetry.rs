@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{SegmentConfig, SegmentInfo, VectorDataConfig};
+use crate::types::{Indexes, SegmentConfig, SegmentInfo, VectorDataConfig};
 
 const AVG_DATASET_LEN: usize = 128;
 const SLIDING_WINDOW_LEN: usize = 8;
@@ -18,9 +18,52 @@ pub trait Anonymize {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct TelemetrySegmentConfig {
+    storage_type: String,
+    index_type: String,
+}
+
+impl From<SegmentConfig> for TelemetrySegmentConfig {
+    fn from(config: SegmentConfig) -> Self {
+        Self {
+            storage_type: format!("{:?}", config.storage_type),
+            index_type: match config.index {
+                Indexes::Plain { .. } => "plain".to_string(),
+                Indexes::Hnsw(_) => "hnsw".to_string(),
+            },
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct TelemetrySegmentInfo {
+    pub segment_type: String,
+    pub num_vectors: usize,
+    pub num_points: usize,
+    pub num_deleted_vectors: usize,
+    pub ram_usage_bytes: usize,
+    pub disk_usage_bytes: usize,
+    pub is_appendable: bool,
+}
+
+impl From<SegmentInfo> for TelemetrySegmentInfo {
+    fn from(info: SegmentInfo) -> Self {
+        Self {
+            segment_type: format!("{:?}", info.segment_type),
+            num_vectors: info.num_vectors,
+            num_points: info.num_points,
+            num_deleted_vectors: info.num_deleted_vectors,
+            ram_usage_bytes: info.ram_usage_bytes,
+            disk_usage_bytes: info.disk_usage_bytes,
+            is_appendable: info.is_appendable,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct SegmentTelemetry {
-    pub info: SegmentInfo,
-    pub config: SegmentConfig,
+    pub info: TelemetrySegmentInfo,
+    pub config: TelemetrySegmentConfig,
     pub vector_index: HashMap<String, VectorIndexTelemetry>,
     pub payload_field_indices: Vec<PayloadIndexTelemetry>,
 }
@@ -190,32 +233,25 @@ pub fn telemetry_round(cnt: usize) -> usize {
     (cnt >> skip_bytes_count) << skip_bytes_count
 }
 
-impl Anonymize for SegmentInfo {
+impl Anonymize for TelemetrySegmentInfo {
     fn anonymize(&self) -> Self {
-        SegmentInfo {
-            segment_type: self.segment_type,
+        TelemetrySegmentInfo {
+            segment_type: self.segment_type.clone(),
             num_vectors: telemetry_round(self.num_vectors),
             num_points: telemetry_round(self.num_points),
             num_deleted_vectors: telemetry_round(self.num_deleted_vectors),
             ram_usage_bytes: self.ram_usage_bytes,
             disk_usage_bytes: self.disk_usage_bytes,
             is_appendable: self.is_appendable,
-            index_schema: self.index_schema.clone(),
         }
     }
 }
 
-impl Anonymize for SegmentConfig {
+impl Anonymize for TelemetrySegmentConfig {
     fn anonymize(&self) -> Self {
-        SegmentConfig {
-            vector_data: self
-                .vector_data
-                .iter()
-                .map(|(k, v)| (telemetry_hash(k), v.anonymize()))
-                .collect(),
-            index: self.index,
-            storage_type: self.storage_type,
-            payload_storage_type: self.payload_storage_type,
+        TelemetrySegmentConfig {
+            storage_type: self.storage_type.clone(),
+            index_type: self.index_type.clone(),
         }
     }
 }

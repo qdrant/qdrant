@@ -1064,8 +1064,8 @@ impl SegmentEntry for Segment {
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
         SegmentTelemetry {
-            info: self.info(),
-            config: self.config(),
+            info: self.info().into(),
+            config: self.config().into(),
             vector_index: self
                 .vector_data
                 .iter()

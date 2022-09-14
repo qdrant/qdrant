@@ -4956,92 +4956,41 @@
         }
       },
       "ShardTelemetry": {
-        "oneOf": [
+        "anyOf": [
           {
-            "type": "object",
-            "required": [
-              "Remote"
-            ],
-            "properties": {
-              "Remote": {
-                "type": "object",
-                "required": [
-                  "searches",
-                  "shard_id",
-                  "updates"
-                ],
-                "properties": {
-                  "shard_id": {
-                    "type": "integer",
-                    "format": "uint32",
-                    "minimum": 0
-                  },
-                  "searches": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  },
-                  "updates": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/RemoteShardTelemetry"
           },
           {
-            "type": "object",
-            "required": [
-              "Local"
-            ],
-            "properties": {
-              "Local": {
-                "type": "object",
-                "required": [
-                  "optimizers",
-                  "segments"
-                ],
-                "properties": {
-                  "segments": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/SegmentTelemetry"
-                    }
-                  },
-                  "optimizers": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/OptimizerTelemetry"
-                    }
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/LocalShardTelemetry"
           },
           {
-            "type": "object",
-            "required": [
-              "Proxy"
-            ],
-            "properties": {
-              "Proxy": {
-                "type": "object"
-              }
-            },
-            "additionalProperties": false
+            "nullable": true
           },
           {
-            "type": "object",
-            "required": [
-              "ForwardProxy"
-            ],
-            "properties": {
-              "ForwardProxy": {
-                "type": "object"
-              }
-            },
-            "additionalProperties": false
+            "nullable": true
           }
         ]
+      },
+      "RemoteShardTelemetry": {
+        "type": "object",
+        "required": [
+          "searches",
+          "shard_id",
+          "updates"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "updates": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          }
+        }
       },
       "TelemetryOperationStatistics": {
         "type": "object",
@@ -5066,6 +5015,27 @@
           }
         }
       },
+      "LocalShardTelemetry": {
+        "type": "object",
+        "required": [
+          "optimizers",
+          "segments"
+        ],
+        "properties": {
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SegmentTelemetry"
+            }
+          },
+          "optimizers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizerTelemetry"
+            }
+          }
+        }
+      },
       "SegmentTelemetry": {
         "type": "object",
         "required": [
@@ -5076,10 +5046,10 @@
         ],
         "properties": {
           "info": {
-            "$ref": "#/components/schemas/SegmentInfo"
+            "$ref": "#/components/schemas/TelemetrySegmentInfo"
           },
           "config": {
-            "$ref": "#/components/schemas/SegmentConfig"
+            "$ref": "#/components/schemas/TelemetrySegmentConfig"
           },
           "vector_index": {
             "type": "object",
@@ -5095,12 +5065,10 @@
           }
         }
       },
-      "SegmentInfo": {
-        "description": "Aggregated information about segment",
+      "TelemetrySegmentInfo": {
         "type": "object",
         "required": [
           "disk_usage_bytes",
-          "index_schema",
           "is_appendable",
           "num_deleted_vectors",
           "num_points",
@@ -5110,7 +5078,7 @@
         ],
         "properties": {
           "segment_type": {
-            "$ref": "#/components/schemas/SegmentType"
+            "type": "string"
           },
           "num_vectors": {
             "type": "integer",
@@ -5139,179 +5107,23 @@
           },
           "is_appendable": {
             "type": "boolean"
-          },
-          "index_schema": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PayloadIndexInfo"
-            }
           }
         }
       },
-      "SegmentType": {
-        "description": "Type of segment",
-        "type": "string",
-        "enum": [
-          "plain",
-          "indexed",
-          "special"
-        ]
-      },
-      "SegmentConfig": {
+      "TelemetrySegmentConfig": {
         "type": "object",
         "required": [
-          "index",
-          "storage_type",
-          "vector_data"
+          "index_type",
+          "storage_type"
         ],
         "properties": {
-          "vector_data": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/VectorDataConfig"
-            }
-          },
-          "index": {
-            "$ref": "#/components/schemas/Indexes"
-          },
           "storage_type": {
-            "$ref": "#/components/schemas/StorageType"
+            "type": "string"
           },
-          "payload_storage_type": {
-            "$ref": "#/components/schemas/PayloadStorageType"
+          "index_type": {
+            "type": "string"
           }
         }
-      },
-      "VectorDataConfig": {
-        "type": "object",
-        "required": [
-          "distance",
-          "size"
-        ],
-        "properties": {
-          "size": {
-            "description": "Size of a vectors used",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "distance": {
-            "$ref": "#/components/schemas/Distance"
-          }
-        }
-      },
-      "Indexes": {
-        "description": "Vector index configuration of the segment",
-        "oneOf": [
-          {
-            "description": "Do not use any index, scan whole vector collection during search. Guarantee 100% precision, but may be time consuming on large collections.",
-            "type": "object",
-            "required": [
-              "options",
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "plain"
-                ]
-              },
-              "options": {
-                "type": "object"
-              }
-            }
-          },
-          {
-            "description": "Use filterable HNSW index for approximate search. Is very fast even on a very huge collections, but require additional space to store index and additional time to build it.",
-            "type": "object",
-            "required": [
-              "options",
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "hnsw"
-                ]
-              },
-              "options": {
-                "$ref": "#/components/schemas/HnswConfig"
-              }
-            }
-          }
-        ]
-      },
-      "StorageType": {
-        "description": "Type of vector storage",
-        "oneOf": [
-          {
-            "description": "Store vectors in memory and use persistence storage only if vectors are changed",
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "in_memory"
-                ]
-              }
-            }
-          },
-          {
-            "description": "Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM",
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "mmap"
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "PayloadStorageType": {
-        "description": "Type of payload storage",
-        "oneOf": [
-          {
-            "description": "Store payload in memory and use persistence storage only if vectors are changed",
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "in_memory"
-                ]
-              }
-            }
-          },
-          {
-            "description": "Store payload on disk only, read each time it is requested",
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "on_disk"
-                ]
-              }
-            }
-          }
-        ]
       },
       "VectorIndexTelemetry": {
         "type": "object",
@@ -5362,66 +5174,30 @@
         }
       },
       "OptimizerTelemetry": {
-        "oneOf": [
+        "type": "object",
+        "required": [
+          "optimizer_type",
+          "stats"
+        ],
+        "properties": {
+          "stats": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "optimizer_type": {
+            "$ref": "#/components/schemas/TelemetryOptimizerType"
+          }
+        }
+      },
+      "TelemetryOptimizerType": {
+        "anyOf": [
           {
-            "type": "object",
-            "required": [
-              "Indexing"
-            ],
-            "properties": {
-              "Indexing": {
-                "type": "object",
-                "required": [
-                  "optimizations"
-                ],
-                "properties": {
-                  "optimizations": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+            "nullable": true
           },
           {
-            "type": "object",
-            "required": [
-              "Merge"
-            ],
-            "properties": {
-              "Merge": {
-                "type": "object",
-                "required": [
-                  "optimizations"
-                ],
-                "properties": {
-                  "optimizations": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+            "nullable": true
           },
           {
-            "type": "object",
-            "required": [
-              "Vacuum"
-            ],
-            "properties": {
-              "Vacuum": {
-                "type": "object",
-                "required": [
-                  "optimizations"
-                ],
-                "properties": {
-                  "optimizations": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+            "nullable": true
           }
         ]
       },
