@@ -238,7 +238,7 @@ impl SegmentOptimizer for IndexingOptimizer {
     fn get_telemetry_data(&self) -> OptimizerTelemetry {
         OptimizerTelemetry {
             stats: self.get_telemetry_counter().lock().get_statistics(),
-            optimizer_type: TelemetryOptimizerType::Indexer
+            optimizer_type: TelemetryOptimizerType::Indexer,
         }
     }
 

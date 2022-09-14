@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use crate::config::CollectionConfig;
 use crate::shard::ShardId;
 
-
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct RemoteShardTelemetry {
     pub shard_id: ShardId,
