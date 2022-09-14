@@ -97,7 +97,9 @@ impl ShardDistributionProposal {
                         shard_id,
                         ShardType::ReplicaSet {
                             local: peers.contains(&this_peer_id),
-                            remote: peers.iter().copied()
+                            remote: peers
+                                .iter()
+                                .copied()
                                 .filter(|peer| peer != &this_peer_id)
                                 .collect(),
                         },
