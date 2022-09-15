@@ -8,7 +8,7 @@ where
     K: Clone + Default,
     V: Clone + Default,
 {
-    pub list: TinyVec<[(K, V); CAPACITY]>,
+    list: TinyVec<[(K, V); CAPACITY]>,
 }
 
 impl<K, V> TinyMap<K, V>
