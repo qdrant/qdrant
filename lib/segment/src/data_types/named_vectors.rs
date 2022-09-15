@@ -1,21 +1,21 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use super::tiny_map::TinyMap;
+use super::tiny_map;
 use super::vectors::{VectorElementType, DEFAULT_VECTOR_NAME};
 
 type CowKey<'a> = Cow<'a, str>;
 type CowValue<'a> = Cow<'a, [VectorElementType]>;
-type HashMapType<'a> = TinyMap<CowKey<'a>, CowValue<'a>>;
+type TinyMap<'a> = tiny_map::TinyMap<CowKey<'a>, CowValue<'a>>;
 
 #[derive(Clone, PartialEq, Default)]
 pub struct NamedVectors<'a> {
-    map: HashMapType<'a>,
+    map: TinyMap<'a>,
 }
 
 impl<'a> NamedVectors<'a> {
     pub fn from_ref(key: &'a str, value: &'a [VectorElementType]) -> Self {
-        let mut map = HashMapType::new();
+        let mut map = TinyMap::new();
         map.insert(Cow::Borrowed(key), Cow::Borrowed(value));
         Self { map }
     }
