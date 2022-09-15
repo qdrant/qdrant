@@ -43,7 +43,7 @@ seahash = "4.1.0"
 json-patch = "0.2.6"
 tar = "0.4.38"
 fs_extra = "1.2.0"
-semver = "1.0.13"
+semver = "1.0.14"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 
 
