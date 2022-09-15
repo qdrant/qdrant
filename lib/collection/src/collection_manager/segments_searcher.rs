@@ -172,7 +172,7 @@ async fn search_in_segment(
             vector_name: search_query.vector.get_name(),
             filter: search_query.filter.as_ref(),
             with_payload: WithPayload::from(with_payload_interface),
-            with_vector: search_query.with_vector.clone(),
+            with_vector: search_query.with_vector.clone().unwrap_or_default(),
             top: search_query.limit + search_query.offset,
             params: search_query.params.as_ref(),
         };
@@ -239,7 +239,7 @@ mod tests {
         let req = SearchRequest {
             vector: query.into(),
             with_payload: None,
-            with_vector: false.into(),
+            with_vector: None,
             filter: None,
             params: None,
             limit: 5,

@@ -768,7 +768,10 @@ impl Collection {
                 .map(|p| p.is_required())
                 .unwrap_or_default()
         });
-        let with_vectors = request.searches.iter().all(|s| s.with_vector.is_some());
+        let with_vectors = request
+            .searches
+            .iter()
+            .all(|s| s.with_vector.as_ref().map(|wv| wv.is_some()).unwrap_or(false));
 
         let metadata_required = is_payload_required || with_vectors;
 
@@ -792,7 +795,7 @@ impl Collection {
             for search in &request.searches {
                 let mut without_payload_request = search.clone();
                 without_payload_request.with_payload = None;
-                without_payload_request.with_vector = false.into();
+                without_payload_request.with_vector = None;
                 without_payload_requests.push(without_payload_request);
             }
             let without_payload_batch = SearchRequestBatch {
@@ -812,7 +815,7 @@ impl Collection {
                     self.fill_search_result_with_payload(
                         without_payload_result,
                         req.with_payload.clone(),
-                        req.with_vector,
+                        req.with_vector.unwrap_or_default(),
                         shard_selection,
                     )
                 });

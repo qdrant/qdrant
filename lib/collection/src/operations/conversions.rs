@@ -544,8 +544,9 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
         let (collection_id, request) = value.0;
 
         let deprecated_with_vector = match &request.with_vector {
-            WithVector::Bool(enabled) => Some(*enabled),
-            WithVector::Selector(_) => None,
+            None => None,
+            Some(WithVector::Bool(enabled)) => Some(*enabled),
+            Some(WithVector::Selector(_)) => None,
         };
 
         api::grpc::qdrant::SearchPoints {
@@ -554,7 +555,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
             filter: request.filter.clone().map(|f| f.into()),
             limit: request.limit as u64,
             with_vector: deprecated_with_vector,
-            with_vectors: Some(request.with_vector.clone().into()),
+            with_vectors: request.with_vector.clone().map(|wv| wv.into()),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),
             score_threshold: request.score_threshold,
@@ -585,10 +586,12 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
             limit: value.limit as usize,
             offset: value.offset.unwrap_or_default() as usize,
             with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: value
-                .with_vectors
-                .map(|with_vectors| with_vectors.into())
-                .unwrap_or_else(|| value.with_vector.unwrap_or(false).into()),
+            with_vector: Some(
+                value
+                    .with_vectors
+                    .map(|with_vectors| with_vectors.into())
+                    .unwrap_or_else(|| value.with_vector.unwrap_or(false).into()),
+            ),
             score_threshold: value.score_threshold,
         })
     }
@@ -614,10 +617,12 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
             limit: value.limit as usize,
             offset: value.offset.unwrap_or_default() as usize,
             with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: value
-                .with_vectors
-                .map(|with_vectors| with_vectors.into())
-                .unwrap_or_else(|| value.with_vector.unwrap_or(false).into()),
+            with_vector: Some(
+                value
+                    .with_vectors
+                    .map(|with_vectors| with_vectors.into())
+                    .unwrap_or_else(|| value.with_vector.unwrap_or(false).into()),
+            ),
             score_threshold: value.score_threshold,
             using: value.using.map(|name| name.into()),
         })

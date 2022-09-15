@@ -48,7 +48,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         limit: 100,
         offset: 0,
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: false.into(),
+        with_vector: None,
         params: None,
         score_threshold: None,
     };
@@ -71,7 +71,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         limit: 10,
         offset: page_size,
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: false.into(),
+        with_vector: None,
         params: None,
         score_threshold: None,
     };
@@ -93,7 +93,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         limit: 10,
         offset: page_size * 9,
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: false.into(),
+        with_vector: None,
         params: None,
         score_threshold: None,
     };

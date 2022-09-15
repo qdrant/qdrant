@@ -363,9 +363,11 @@ pub async fn search(
         limit: limit as usize,
         offset: offset.unwrap_or_default() as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vectors
-            .map(|selector| selector.into())
-            .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
+        with_vector: Some(
+            with_vectors
+                .map(|selector| selector.into())
+                .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
+        ),
         score_threshold,
     };
 
@@ -452,9 +454,11 @@ pub async fn recommend(
         limit: limit as usize,
         offset: offset.unwrap_or_default() as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vectors
-            .map(|selector| selector.into())
-            .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
+        with_vector: Some(
+            with_vectors
+                .map(|selector| selector.into())
+                .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
+        ),
         score_threshold,
         using: using.map(|u| u.into()),
     };

@@ -211,7 +211,7 @@ pub struct SearchRequest {
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
     #[serde(default)]
-    pub with_vector: WithVector,
+    pub with_vector: Option<WithVector>,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
@@ -280,7 +280,7 @@ pub struct RecommendRequest {
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
     #[serde(default)]
-    pub with_vector: WithVector,
+    pub with_vector: Option<WithVector>,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the

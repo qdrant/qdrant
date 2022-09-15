@@ -2722,6 +2722,7 @@
         }
       },
       "VectorsConfig": {
+        "description": "Vector params separator for single and multiple vector modes Single mode:\n\n{ \"size\": 128, \"distance\": \"Cosine\" }\n\nor multiple mode:\n\n{ \"default\": { \"size\": 128, \"distance\": \"Cosine\" } }",
         "anyOf": [
           {
             "$ref": "#/components/schemas/VectorParams"
@@ -2735,6 +2736,7 @@
         ]
       },
       "VectorParams": {
+        "description": "Params of single vector data storage",
         "type": "object",
         "required": [
           "distance",
@@ -3122,6 +3124,7 @@
         "additionalProperties": true
       },
       "VectorStruct": {
+        "description": "Full vector data per point separator with single and multiple vector modes",
         "anyOf": [
           {
             "type": "array",
@@ -3200,7 +3203,16 @@
             ]
           },
           "with_vector": {
-            "$ref": "#/components/schemas/WithVector"
+            "description": "Whether to return the point vector with the result?",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
@@ -3211,6 +3223,7 @@
         }
       },
       "NamedVectorStruct": {
+        "description": "Vector data separator for named and unnamed modes Unanmed mode:\n\n{ \"vector\": [1.0, 2.0, 3.0] }\n\nor named mode:\n\n{ \"vector\": { \"vector\": [1.0, 2.0, 3.0], \"name\": \"image-embeddings\" } }",
         "anyOf": [
           {
             "type": "array",
@@ -3225,6 +3238,7 @@
         ]
       },
       "NamedVector": {
+        "description": "Vector data with name",
         "type": "object",
         "required": [
           "name",
@@ -3232,9 +3246,11 @@
         ],
         "properties": {
           "name": {
+            "description": "Name of vector data",
             "type": "string"
           },
           "vector": {
+            "description": "Vector data",
             "type": "array",
             "items": {
               "type": "number",
@@ -3718,7 +3734,16 @@
             ]
           },
           "with_vector": {
-            "$ref": "#/components/schemas/WithVector"
+            "description": "Whether to return the point vector with the result?",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
@@ -3828,6 +3853,7 @@
         "type": "object",
         "properties": {
           "vectors": {
+            "description": "Vector data config. It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorsConfig"
@@ -3838,6 +3864,7 @@
             ]
           },
           "vector_size": {
+            "description": "Deprecated size setup for single-vector mode. It's required to set one vector_size or vectors field.",
             "deprecated": true,
             "type": "integer",
             "format": "uint",
@@ -3845,6 +3872,7 @@
             "nullable": true
           },
           "distance": {
+            "description": "Deprecated distance setup for single-vector mode. It's required to set one vector_size or vectors field.",
             "deprecated": true,
             "anyOf": [
               {
@@ -5196,6 +5224,7 @@
         }
       },
       "VectorDataConfig": {
+        "description": "Config of single vector data storage",
         "type": "object",
         "required": [
           "distance",
