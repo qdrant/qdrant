@@ -71,6 +71,7 @@ pub struct CollectionParams {
     pub on_disk_payload: bool,
 }
 
+/// Params of single vector data storage
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorParams {
@@ -80,15 +81,19 @@ pub struct VectorParams {
     pub distance: Distance,
 }
 
-// {
-//      "default": {
-//          "size": 128,
-//          "distance": "Cosine"
-//      }
-// }
-//
-// or
-// { "size": 128, "distance": "Cosine" }
+/// Vector params separator for single and multiple vector modes
+/// Single mode:
+///
+/// { "size": 128, "distance": "Cosine" }
+///
+/// or multiple mode:
+///
+/// {
+///      "default": {
+///          "size": 128,
+///          "distance": "Cosine"
+///      }
+/// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
