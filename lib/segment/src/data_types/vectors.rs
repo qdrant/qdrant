@@ -22,12 +22,13 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
     NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec)
 }
 
+/// Full vector data per point separator with single and multiple vector modes
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum VectorStruct {
     Single(VectorType),
-    Multi(HashMap<String, Vec<VectorElementType>>),
+    Multi(HashMap<String, VectorType>),
 }
 
 impl From<VectorType> for VectorStruct {
@@ -74,25 +75,31 @@ impl VectorStruct {
     }
 }
 
+/// Vector data with name
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedVector {
+    /// Name of vector data
     pub name: String,
+    /// Vector data
     pub vector: VectorType,
 }
 
-// {
-//   "vector": [1.0, 2.0, 3.0]
-// }
-//
-// or
-//
-// {
-//   "vector": {
-//     "vector": [1.0, 2.0, 3.0],
-//     "name": "image-embeddings"
-//   }
-// }
+/// Vector data separator for named and unnamed modes
+/// Unanmed mode:
+///
+/// {
+///   "vector": [1.0, 2.0, 3.0]
+/// }
+///
+/// or named mode:
+///
+/// {
+///   "vector": {
+///     "vector": [1.0, 2.0, 3.0],
+///     "name": "image-embeddings"
+///   }
+/// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]

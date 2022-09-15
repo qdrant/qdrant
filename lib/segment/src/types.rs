@@ -339,6 +339,7 @@ pub struct SegmentConfig {
     pub payload_storage_type: PayloadStorageType,
 }
 
+/// Config of single vector data storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataConfig {

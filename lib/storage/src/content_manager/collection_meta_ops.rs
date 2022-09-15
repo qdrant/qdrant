@@ -85,9 +85,13 @@ impl From<RenameAlias> for AliasOperations {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
+    /// Vector data config.
+    /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
     pub vectors: Option<VectorsConfig>,
+    /// Deprecated size setup for single-vector mode. It's required to set one vector_size or vectors field.
     #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
     pub vector_size: Option<usize>,
+    /// Deprecated distance setup for single-vector mode. It's required to set one vector_size or vectors field.
     #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
     pub distance: Option<Distance>,
     /// Number of shards in collection.
