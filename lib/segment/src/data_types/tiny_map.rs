@@ -1,12 +1,21 @@
 use tinyvec::TinyVec;
 
-const CAPACITY: usize = 3;
+pub const CAPACITY: usize = 3;
 
-pub struct TinyMap<K: Default, V: Default> {
+#[derive(Clone)]
+pub struct TinyMap<K, V>
+where
+    K: Clone + Default,
+    V: Clone + Default,
+{
     list: TinyVec<[(K, V); CAPACITY]>,
 }
 
-impl<K: Default + std::cmp::PartialEq, V: Default> TinyMap<K, V> {
+impl<K, V> TinyMap<K, V>
+where
+    K: Clone + PartialEq + Default,
+    V: Clone + PartialEq + Default,
+{
     pub fn new() -> Self {
         Self {
             list: TinyVec::new(),
@@ -31,12 +40,26 @@ impl<K: Default + std::cmp::PartialEq, V: Default> TinyMap<K, V> {
         }
     }
 
-    pub fn get(&self, key: &K) -> Option<&V> {
-        self.list.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
+    where
+        K: std::borrow::Borrow<Q>,
+        Q: Eq,
+    {
+        self.list
+            .iter()
+            .find(|(k, _)| k.borrow() == key)
+            .map(|(_, v)| v)
     }
 
-    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        self.list.iter_mut().find(|(k, _)| k == key).map(|(_, v)| v)
+    pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut V>
+    where
+        K: std::borrow::Borrow<Q>,
+        Q: Eq,
+    {
+        self.list
+            .iter_mut()
+            .find(|(k, _)| k.borrow() == key)
+            .map(|(_, v)| v)
     }
 
     pub fn remove(&mut self, key: &K) -> Option<V> {
@@ -82,14 +105,68 @@ impl<K: Default + std::cmp::PartialEq, V: Default> TinyMap<K, V> {
         self.list.iter_mut().map(|(_, v)| v)
     }
 
-    pub fn contains_key(&self, key: &K) -> bool {
-        self.list.iter().any(|(k, _)| k == key)
+    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    where
+        K: std::borrow::Borrow<Q>,
+        Q: Eq,
+    {
+        self.list.iter().any(|(k, _)| k.borrow() == key)
     }
 }
 
-impl<K: Default + std::cmp::PartialEq, V: Default> Default for TinyMap<K, V> {
+impl<K, V> Default for TinyMap<K, V>
+where
+    K: Clone + PartialEq + Default,
+    V: Clone + PartialEq + Default,
+{
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<K, V> PartialEq for TinyMap<K, V>
+where
+    K: Clone + PartialEq + Eq + Default,
+    V: Clone + PartialEq + Default,
+{
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+
+        for (k, v) in self.iter() {
+            if other.get(k) != Some(v) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl<K, V> IntoIterator for TinyMap<K, V>
+where
+    K: Clone + Default,
+    V: Clone + Default,
+{
+    type Item = (K, V);
+
+    type IntoIter = tinyvec::TinyVecIterator<[(K, V); CAPACITY]>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.list.into_iter()
+    }
+}
+
+impl<K, V> std::iter::FromIterator<(K, V)> for TinyMap<K, V>
+where
+    K: Clone + Default,
+    V: Clone + Default,
+{
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        Self {
+            list: std::iter::FromIterator::from_iter(iter),
+        }
     }
 }
 

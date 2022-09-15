@@ -1,20 +1,21 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use super::tiny_map;
 use super::vectors::{VectorElementType, DEFAULT_VECTOR_NAME};
 
 type CowKey<'a> = Cow<'a, str>;
 type CowValue<'a> = Cow<'a, [VectorElementType]>;
-type HashMapType<'a> = HashMap<CowKey<'a>, CowValue<'a>>;
+type TinyMap<'a> = tiny_map::TinyMap<CowKey<'a>, CowValue<'a>>;
 
 #[derive(Clone, PartialEq, Default)]
 pub struct NamedVectors<'a> {
-    pub map: HashMapType<'a>,
+    map: TinyMap<'a>,
 }
 
 impl<'a> NamedVectors<'a> {
     pub fn from_ref(key: &'a str, value: &'a [VectorElementType]) -> Self {
-        let mut map = HashMap::new();
+        let mut map = TinyMap::new();
         map.insert(Cow::Borrowed(key), Cow::Borrowed(value));
         Self { map }
     }
@@ -47,11 +48,13 @@ impl<'a> NamedVectors<'a> {
     }
 
     pub fn insert(&mut self, name: String, vector: Vec<VectorElementType>) {
-        self.map.insert(CowKey::from(name), CowValue::from(vector));
+        self.map
+            .insert(CowKey::Owned(name), CowValue::Owned(vector));
     }
 
     pub fn insert_ref(&mut self, name: &'a str, vector: &'a [VectorElementType]) {
-        self.map.insert(CowKey::from(name), CowValue::from(vector));
+        self.map
+            .insert(CowKey::Borrowed(name), CowValue::Borrowed(vector));
     }
 
     pub fn contains_key(&self, key: &str) -> bool {
@@ -67,7 +70,7 @@ impl<'a> NamedVectors<'a> {
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &str> {
-        self.map.keys().map(|k| k.as_ref())
+        self.map.iter().map(|(k, _)| k.as_ref())
     }
 
     pub fn into_default_vector(mut self) -> Option<Vec<VectorElementType>> {
@@ -91,7 +94,8 @@ impl<'a> NamedVectors<'a> {
 impl<'a> IntoIterator for NamedVectors<'a> {
     type Item = (CowKey<'a>, CowValue<'a>);
 
-    type IntoIter = std::collections::hash_map::IntoIter<CowKey<'a>, CowValue<'a>>;
+    type IntoIter =
+        tinyvec::TinyVecIterator<[(CowKey<'a>, CowValue<'a>); super::tiny_map::CAPACITY]>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.map.into_iter()
