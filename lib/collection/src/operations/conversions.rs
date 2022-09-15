@@ -619,7 +619,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
                 .map(|with_vectors| with_vectors.into())
                 .unwrap_or_else(|| value.with_vector.unwrap_or(false).into()),
             score_threshold: value.score_threshold,
-            using: value.using,
+            using: value.using.map(|name| name.into()),
         })
     }
 }

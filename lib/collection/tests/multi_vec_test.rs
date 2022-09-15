@@ -251,7 +251,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
                 offset: 0,
                 filter: None,
                 params: None,
-                using: Some(VEC_NAME1.to_string()),
+                using: Some(VEC_NAME1.to_string().into()),
             },
             &Handle::current(),
             None,

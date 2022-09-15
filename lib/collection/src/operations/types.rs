@@ -237,6 +237,19 @@ pub struct PointRequest {
     pub with_vector: WithVector,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum UsingVector {
+    Name(String),
+}
+
+impl From<String> for UsingVector {
+    fn from(name: String) -> Self {
+        UsingVector::Name(name)
+    }
+}
+
 /// Recommendation request.
 /// Provides positive and negative examples of the vectors, which
 /// are already stored in the collection.
@@ -275,7 +288,7 @@ pub struct RecommendRequest {
     pub score_threshold: Option<ScoreType>,
     /// Define which vector to use for recommendation, if not specified - try to use default vector
     #[serde(default)]
-    pub using: Option<String>,
+    pub using: Option<UsingVector>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
