@@ -768,10 +768,12 @@ impl Collection {
                 .map(|p| p.is_required())
                 .unwrap_or_default()
         });
-        let with_vectors = request
-            .searches
-            .iter()
-            .all(|s| s.with_vector.as_ref().map(|wv| wv.is_some()).unwrap_or(false));
+        let with_vectors = request.searches.iter().all(|s| {
+            s.with_vector
+                .as_ref()
+                .map(|wv| wv.is_some())
+                .unwrap_or(false)
+        });
 
         let metadata_required = is_payload_required || with_vectors;
 
