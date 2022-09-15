@@ -15,7 +15,7 @@ use crate::common::version::StorageVersion;
 use crate::common::{check_vector_name, check_vectors_set};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationError::ServiceError;
+use crate::entry::entry_point::OperationError::TypeInferenceError;
 use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
@@ -931,8 +931,8 @@ impl SegmentEntry for Segment {
                 Ok(true)
             }
             None => match segment.infer_from_payload_data(key)? {
-                None => Err(ServiceError {
-                    description: "cannot infer field data type".to_string(),
+                None => Err(TypeInferenceError {
+                    field_name: key.to_string(),
                 }),
                 Some(schema_type) => {
                     segment
