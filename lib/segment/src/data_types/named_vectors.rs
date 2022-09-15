@@ -70,7 +70,7 @@ impl<'a> NamedVectors<'a> {
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &str> {
-        self.map.list.iter().map(|(k, _)| k.as_ref())
+        self.map.iter().map(|(k, _)| k.as_ref())
     }
 
     pub fn into_default_vector(mut self) -> Option<Vec<VectorElementType>> {
