@@ -561,7 +561,7 @@ pub enum PayloadSchemaType {
 /// Payload type with parameters
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
-#[serde(tag = "type")]
+#[serde(untagged)]
 pub enum PayloadSchemaParams {
     Text(TextIndexParams),
 }

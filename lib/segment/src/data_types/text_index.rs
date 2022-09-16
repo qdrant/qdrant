@@ -21,9 +21,23 @@ impl Default for TokenizerType {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TextIndexType {
+    Text,
+}
+
+impl Default for TextIndexType {
+    fn default() -> Self {
+        TextIndexType::Text
+    }
+}
+
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct TextIndexParams {
+    // Required for OpenAPI pattern matching
+    pub r#type: TextIndexType,
     #[serde(default)]
     pub tokenizer: TokenizerType,
     #[serde(default)]
