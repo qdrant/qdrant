@@ -23,8 +23,10 @@ def test_collection_before_peers_added(tmp_path: pathlib.Path):
     # Create collection
     r = requests.put(
         f"{peer_api_uris[0]}/collections/test_collection", json={
-            "vector_size": 4,
-            "distance": "Dot",
+            "vectors": {
+                "size": 4,
+                "distance": "Dot"
+            },
             "shard_number": N_SHARDS
         })
     assert_http_ok(r)

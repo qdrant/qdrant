@@ -27,8 +27,10 @@ def basic_collection_setup(collection_name='test_collection'):
         method="PUT",
         path_params={'collection_name': collection_name},
         body={
-            "vector_size": 2,
-            "distance": "Euclid"
+            "vectors": {
+                "size": 2,
+                "distance": "Euclid"
+            }
         }
     )
     assert response.ok

@@ -41,8 +41,10 @@ def test_many_collections(tmp_path: pathlib.Path):
         print(f"creating test_collection_{i} on {peer}")
         r = requests.put(
             f"{peer}/collections/test_collection_{i}", json={
-                "vector_size": 4,
-                "distance": "Dot",
+                "vectors": {
+                    "size": 4,
+                    "distance": "Dot"
+                },
                 "shard_number": 1 # single shard
             })
         assert_http_ok(r)

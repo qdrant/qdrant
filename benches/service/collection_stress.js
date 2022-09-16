@@ -10,8 +10,10 @@ let vectors_per_batch = 32;
 
 var create_collection_payload = JSON.stringify(
     {
-        "vector_size": vector_length,
-        "distance": "Cosine"
+        "vectors": {
+            "size": vector_length,
+            "distance": "Cosine"
+        }
     }
 );
 
