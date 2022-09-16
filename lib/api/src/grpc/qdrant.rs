@@ -154,34 +154,26 @@ pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Size of the vectors
-    #[deprecated]
-    #[prost(uint64, optional, tag="2")]
-    pub vector_size: ::core::option::Option<u64>,
-    /// Distance function used for comparing vectors
-    #[deprecated]
-    #[prost(enumeration="Distance", optional, tag="3")]
-    pub distance: ::core::option::Option<i32>,
     /// Configuration of vector index
-    #[prost(message, optional, tag="4")]
+    #[prost(message, optional, tag="2")]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of the Write-Ahead-Log
-    #[prost(message, optional, tag="5")]
+    #[prost(message, optional, tag="3")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
     /// Configuration of the optimizers
-    #[prost(message, optional, tag="6")]
+    #[prost(message, optional, tag="4")]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
     /// Number of shards in the collection, default = 1
-    #[prost(uint32, optional, tag="7")]
+    #[prost(uint32, optional, tag="5")]
     pub shard_number: ::core::option::Option<u32>,
     /// If true - point's payload will not be stored in memory
-    #[prost(bool, optional, tag="8")]
+    #[prost(bool, optional, tag="6")]
     pub on_disk_payload: ::core::option::Option<bool>,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
-    #[prost(uint64, optional, tag="9")]
+    #[prost(uint64, optional, tag="7")]
     pub timeout: ::core::option::Option<u64>,
     /// Configuration for vectors
-    #[prost(message, optional, tag="10")]
+    #[prost(message, optional, tag="8")]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -216,22 +208,14 @@ pub struct CollectionOperationResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
-    /// Size of the vectors
-    #[deprecated]
-    #[prost(uint64, optional, tag="1")]
-    pub vector_size: ::core::option::Option<u64>,
-    /// Distance function used for comparing vectors
-    #[deprecated]
-    #[prost(enumeration="Distance", optional, tag="2")]
-    pub distance: ::core::option::Option<i32>,
     /// Number of shards in collection
-    #[prost(uint32, tag="3")]
+    #[prost(uint32, tag="1")]
     pub shard_number: u32,
     /// If true - point's payload will not be stored in memory
-    #[prost(bool, tag="4")]
+    #[prost(bool, tag="2")]
     pub on_disk_payload: bool,
     /// Configuration for vectors
-    #[prost(message, optional, tag="5")]
+    #[prost(message, optional, tag="3")]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1401,15 +1385,11 @@ pub struct GetPoints {
     /// List of points to retrieve
     #[prost(message, repeated, tag="2")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
-    /// Return point vector with the result.
-    #[deprecated]
-    #[prost(bool, optional, tag="3")]
-    pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
-    #[prost(message, optional, tag="4")]
+    #[prost(message, optional, tag="3")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Options for specifying which vectors to include into response
-    #[prost(message, optional, tag="5")]
+    #[prost(message, optional, tag="4")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1579,27 +1559,23 @@ pub struct SearchPoints {
     /// Max number of result
     #[prost(uint64, tag="4")]
     pub limit: u64,
-    /// Return point vector with the result.
-    #[deprecated]
-    #[prost(bool, optional, tag="5")]
-    pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
-    #[prost(message, optional, tag="6")]
+    #[prost(message, optional, tag="5")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
-    #[prost(message, optional, tag="7")]
+    #[prost(message, optional, tag="6")]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
-    #[prost(float, optional, tag="8")]
+    #[prost(float, optional, tag="7")]
     pub score_threshold: ::core::option::Option<f32>,
     /// Offset of the result
-    #[prost(uint64, optional, tag="9")]
+    #[prost(uint64, optional, tag="8")]
     pub offset: ::core::option::Option<u64>,
     /// Which vector to use for search, if not specified - use default vector
-    #[prost(string, optional, tag="10")]
+    #[prost(string, optional, tag="9")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
-    #[prost(message, optional, tag="11")]
+    #[prost(message, optional, tag="10")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1623,15 +1599,11 @@ pub struct ScrollPoints {
     /// Max number of result
     #[prost(uint32, optional, tag="4")]
     pub limit: ::core::option::Option<u32>,
-    /// Return point vector with the result.
-    #[deprecated]
-    #[prost(bool, optional, tag="5")]
-    pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
-    #[prost(message, optional, tag="6")]
+    #[prost(message, optional, tag="5")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Options for specifying which vectors to include into response
-    #[prost(message, optional, tag="7")]
+    #[prost(message, optional, tag="6")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1651,27 +1623,23 @@ pub struct RecommendPoints {
     /// Max number of result
     #[prost(uint64, tag="5")]
     pub limit: u64,
-    /// Return point vector with the result.
-    #[deprecated]
-    #[prost(bool, optional, tag="6")]
-    pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
-    #[prost(message, optional, tag="7")]
+    #[prost(message, optional, tag="6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
-    #[prost(message, optional, tag="8")]
+    #[prost(message, optional, tag="7")]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
-    #[prost(float, optional, tag="9")]
+    #[prost(float, optional, tag="8")]
     pub score_threshold: ::core::option::Option<f32>,
     /// Offset of the result
-    #[prost(uint64, optional, tag="10")]
+    #[prost(uint64, optional, tag="9")]
     pub offset: ::core::option::Option<u64>,
     /// Define which vector to use for recommendation, if not specified - default vector
-    #[prost(string, optional, tag="11")]
+    #[prost(string, optional, tag="10")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
-    #[prost(message, optional, tag="12")]
+    #[prost(message, optional, tag="11")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1978,12 +1946,9 @@ pub struct PointsIdsList {
 pub struct PointStruct {
     #[prost(message, optional, tag="1")]
     pub id: ::core::option::Option<PointId>,
-    #[deprecated]
-    #[prost(float, repeated, packed="false", tag="2")]
-    pub vector: ::prost::alloc::vec::Vec<f32>,
-    #[prost(map="string, message", tag="3")]
+    #[prost(map="string, message", tag="2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    #[prost(message, optional, tag="4")]
+    #[prost(message, optional, tag="3")]
     pub vectors: ::core::option::Option<Vectors>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

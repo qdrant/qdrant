@@ -148,15 +148,13 @@ message OptimizersConfigDiff {
 
 message CreateCollection {
   string collection_name = 1; // Name of the collection
-  optional uint64 vector_size = 2 [deprecated = true]; // Size of the vectors
-  optional Distance distance = 3 [deprecated = true]; // Distance function used for comparing vectors
-  optional HnswConfigDiff hnsw_config = 4; // Configuration of vector index
-  optional WalConfigDiff wal_config = 5; // Configuration of the Write-Ahead-Log
-  optional OptimizersConfigDiff optimizers_config = 6; // Configuration of the optimizers
-  optional uint32 shard_number = 7; // Number of shards in the collection, default = 1
-  optional bool on_disk_payload = 8; // If true - point's payload will not be stored in memory
-  optional uint64 timeout = 9; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
-  optional VectorsConfig vectors_config = 10; // Configuration for vectors
+  optional HnswConfigDiff hnsw_config = 2; // Configuration of vector index
+  optional WalConfigDiff wal_config = 3; // Configuration of the Write-Ahead-Log
+  optional OptimizersConfigDiff optimizers_config = 4; // Configuration of the optimizers
+  optional uint32 shard_number = 5; // Number of shards in the collection, default = 1
+  optional bool on_disk_payload = 6; // If true - point's payload will not be stored in memory
+  optional uint64 timeout = 7; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+  optional VectorsConfig vectors_config = 8; // Configuration for vectors
 }
 
 message UpdateCollection {
@@ -176,11 +174,9 @@ message CollectionOperationResponse {
 }
 
 message CollectionParams {
-  optional uint64 vector_size = 1 [deprecated = true]; // Size of the vectors
-  optional Distance distance = 2 [deprecated = true]; // Distance function used for comparing vectors
-  uint32 shard_number = 3; // Number of shards in collection
-  bool on_disk_payload = 4; // If true - point's payload will not be stored in memory
-  optional VectorsConfig vectors_config = 5; // Configuration for vectors
+  uint32 shard_number = 1; // Number of shards in collection
+  bool on_disk_payload = 2; // If true - point's payload will not be stored in memory
+  optional VectorsConfig vectors_config = 3; // Configuration for vectors
 }
 
 message CollectionConfig {

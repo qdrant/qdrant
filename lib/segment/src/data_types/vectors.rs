@@ -86,7 +86,7 @@ pub struct NamedVector {
 }
 
 /// Vector data separator for named and unnamed modes
-/// Unanmed mode:
+/// Unnamed mode:
 ///
 /// {
 ///   "vector": [1.0, 2.0, 3.0]

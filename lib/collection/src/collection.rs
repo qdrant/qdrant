@@ -182,34 +182,6 @@ impl Collection {
         .matches(app)
     }
 
-    fn upgrade_collection_40_to_41(path: &Path) {
-        let mut config = CollectionConfig::load(path).unwrap_or_else(|err| {
-            panic!(
-                "Can't read collection config due to {}\nat {}",
-                err,
-                path.to_str().unwrap()
-            )
-        });
-
-        if config.params.vectors.is_none() {
-            config.params.vectors = Some(
-                VectorParams {
-                    size: config.params.vector_size.unwrap(),
-                    distance: config.params.distance.unwrap(),
-                }
-                .into(),
-            );
-        }
-
-        config.save(path).unwrap_or_else(|err| {
-            panic!(
-                "Can't save collection config due to {}\nat {}",
-                err,
-                path.to_str().unwrap()
-            )
-        });
-    }
-
     pub async fn load(
         collection_id: CollectionId,
         path: &Path,
@@ -228,8 +200,6 @@ impl Collection {
         if stored_version != app_version {
             if Self::can_upgrade_storage(&stored_version, &app_version) {
                 log::info!("Migrating collection {stored_version} -> {app_version}",);
-
-                Self::upgrade_collection_40_to_41(path);
 
                 CollectionVersion::save(path)
                     .unwrap_or_else(|err| panic!("Can't save collection version {}", err));

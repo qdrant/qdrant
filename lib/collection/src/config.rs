@@ -48,13 +48,7 @@ impl Default for WalConfig {
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
-    pub vectors: Option<VectorsConfig>,
-    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
-    /// Size of a vectors used
-    pub vector_size: Option<NonZeroU64>,
-    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
-    /// Type of distance function used for measuring distance between vectors
-    pub distance: Option<Distance>,
+    pub vectors: VectorsConfig,
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
     pub shard_number: NonZeroU32,
