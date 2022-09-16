@@ -41,8 +41,12 @@ First - let's create a collection with dot-production metric.
 ```bash
 grpcurl -plaintext -import-path ./lib/api/src/grpc/proto/ -proto qdrant.proto -d '{
         "collection_name": "test_collection",
-        "vector_size": 4,
-        "distance": "Dot"
+        "vectors_config": {
+            "params": {
+                "size": 4,
+                "distance": "Dot"
+            }
+        }
     }' \
 0.0.0.0:6334 qdrant.Collections/Create
 ```
