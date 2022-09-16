@@ -39,8 +39,10 @@ def test_points_recommendation(tmp_path: pathlib.Path):
     # Create collection in first peer
     r_batch = requests.put(
         f"{peer_api_uris[0]}/collections/test_collection", json={
-            "vector_size": 4,
-            "distance": "Dot",
+            "vectors": {
+                "size": 4,
+                "distance": "Dot"
+            },
             "shard_number": N_SHARDS,
         })
     assert_http_ok(r_batch)

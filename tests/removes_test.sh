@@ -16,8 +16,10 @@ curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
   -H 'Content-Type: application/json' \
   --fail -s \
   --data-raw '{
-      "vector_size": 4,
-      "distance": "Dot",
+      "vectors": {
+        "size": 4,
+        "distance": "Dot"
+      },
       "optimizers_config": {
         "default_segment_number": 2
       }
