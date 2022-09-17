@@ -11,8 +11,10 @@ First - let's create a collection with dot-production metric.
 curl -X PUT 'http://localhost:6333/collections/test_collection' \
     -H 'Content-Type: application/json' \
     --data-raw '{
-        "vector_size": 4,
-        "distance": "Dot"
+        "vectors": {
+          "size": 4,
+          "distance": "Dot"
+        }
     }'
 ```
 
@@ -42,8 +44,10 @@ Expected response:
     "ram_data_size": 0,
     "config": {
       "params": {
-        "vector_size": 4,
-        "distance": "Dot"
+        "vectors": {
+          "size": 4,
+          "distance": "Dot"
+        }
       },
       "hnsw_config": {
         "m": 16,
