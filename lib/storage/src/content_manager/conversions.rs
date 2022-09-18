@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+
 use collection::config::VectorsConfig;
 use tonic::Status;
 

@@ -61,7 +61,8 @@ fn batch_search_bench(c: &mut Criterion) {
         vectors: VectorParams {
             size: NonZeroU64::new(100).unwrap(),
             distance: Distance::Dot,
-        }.into(),
+        }
+        .into(),
         shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
         replication_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,

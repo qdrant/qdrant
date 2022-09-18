@@ -139,6 +139,4 @@ fn check_version_upgrade() {
         &"0.4.1".parse().unwrap(),
         &"0.4.2".parse().unwrap()
     ));
-
-
 }
