@@ -385,7 +385,7 @@ pub(crate) fn process_field_index_operation(
             &segments.read(),
             op_num,
             &index_data.field_name,
-            index_data.field_type.as_ref(),
+            index_data.field_schema.as_ref(),
         ),
         FieldIndexOperations::DeleteIndex(field_name) => {
             delete_field_index(&segments.read(), op_num, field_name)

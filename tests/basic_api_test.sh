@@ -29,7 +29,7 @@ curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
   --fail -s \
   --data-raw '{
       "field_name": "city",
-      "field_type": "keyword"
+      "field_schema": "keyword"
     }' | jq
 
 curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
@@ -37,7 +37,7 @@ curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
   --fail -s \
   --data-raw '{
       "field_name": "count",
-      "field_type": "integer"
+      "field_schema": "integer"
     }' | jq
 
 curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq

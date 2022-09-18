@@ -220,8 +220,6 @@
 | optimizer_status | [OptimizerStatus](#qdrant-OptimizerStatus) |  | status of collection optimizers |
 | vectors_count | [uint64](#uint64) |  | number of vectors in the collection |
 | segments_count | [uint64](#uint64) |  | Number of independent segments |
-| disk_data_size | [uint64](#uint64) |  | **Deprecated.** Used disk space |
-| ram_data_size | [uint64](#uint64) |  | **Deprecated.** Used RAM (not implemented) |
 | config | [CollectionConfig](#qdrant-CollectionConfig) |  | Configuration |
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
 | points_count | [uint64](#uint64) |  | number of points in the collection |
@@ -272,8 +270,6 @@
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| vector_size | [uint64](#uint64) | optional | **Deprecated.** Size of the vectors |
-| distance | [Distance](#qdrant-Distance) | optional | **Deprecated.** Distance function used for comparing vectors |
 | shard_number | [uint32](#uint32) |  | Number of shards in collection |
 | on_disk_payload | [bool](#bool) |  | If true - point&#39;s payload will not be stored in memory |
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
@@ -308,8 +304,6 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
-| vector_size | [uint64](#uint64) | optional | **Deprecated.** Size of the vectors |
-| distance | [Distance](#qdrant-Distance) | optional | **Deprecated.** Distance function used for comparing vectors |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Configuration of vector index |
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) | optional | Configuration of the Write-Ahead-Log |
 | optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | Configuration of the optimizers |
@@ -1114,7 +1108,6 @@ The JSON representation for `Value` is JSON value.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | name of the collection |
 | ids | [PointId](#qdrant-PointId) | repeated | List of points to retrieve |
-| with_vector | [bool](#bool) | optional | **Deprecated.** Return point vector with the result. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 
@@ -1273,7 +1266,6 @@ The JSON representation for `Value` is JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | id | [PointId](#qdrant-PointId) |  |  |
-| vector | [float](#float) | repeated | **Deprecated.**  |
 | payload | [PointStruct.PayloadEntry](#qdrant-PointStruct-PayloadEntry) | repeated |  |
 | vectors | [Vectors](#qdrant-Vectors) | optional |  |
 
@@ -1408,7 +1400,6 @@ The JSON representation for `Value` is JSON value.
 | negative | [PointId](#qdrant-PointId) | repeated | Try to avoid vectors like this |
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
 | limit | [uint64](#uint64) |  | Max number of result |
-| with_vector | [bool](#bool) | optional | **Deprecated.** Return point vector with the result. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | params | [SearchParams](#qdrant-SearchParams) |  | Search config |
 | score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
@@ -1447,7 +1438,6 @@ The JSON representation for `Value` is JSON value.
 | ----- | ---- | ----- | ----------- |
 | id | [PointId](#qdrant-PointId) |  |  |
 | payload | [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry) | repeated |  |
-| vector | [float](#float) | repeated | **Deprecated.**  |
 | vectors | [Vectors](#qdrant-Vectors) | optional |  |
 
 
@@ -1482,7 +1472,6 @@ The JSON representation for `Value` is JSON value.
 | id | [PointId](#qdrant-PointId) |  | Point id |
 | payload | [ScoredPoint.PayloadEntry](#qdrant-ScoredPoint-PayloadEntry) | repeated | Payload |
 | score | [float](#float) |  | Similarity score |
-| vector | [float](#float) | repeated | **Deprecated.** Vector |
 | version | [uint64](#uint64) |  | Last update operation applied to this point |
 | vectors | [Vectors](#qdrant-Vectors) | optional | Vectors to search |
 
@@ -1519,7 +1508,6 @@ The JSON representation for `Value` is JSON value.
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
 | offset | [PointId](#qdrant-PointId) | optional | Start with this ID |
 | limit | [uint32](#uint32) | optional | Max number of result |
-| with_vector | [bool](#bool) | optional | **Deprecated.** Return point vector with the result. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 
@@ -1604,7 +1592,6 @@ The JSON representation for `Value` is JSON value.
 | vector | [float](#float) | repeated | vector |
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
 | limit | [uint64](#uint64) |  | Max number of result |
-| with_vector | [bool](#bool) | optional | **Deprecated.** Return point vector with the result. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | params | [SearchParams](#qdrant-SearchParams) |  | Search config |
 | score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |

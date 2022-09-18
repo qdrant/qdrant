@@ -9,7 +9,6 @@ pub mod types;
 
 use std::collections::HashMap;
 
-use schemars::JsonSchema;
 use segment::types::{ExtendedPointId, PayloadFieldSchema};
 use serde::{Deserialize, Serialize};
 
@@ -17,14 +16,14 @@ use self::types::CollectionResult;
 use crate::hash_ring::HashRing;
 use crate::shard::ShardId;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
+#[derive(Debug, Deserialize, Serialize, Default, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateIndex {
     pub field_name: String,
-    pub field_type: Option<PayloadFieldSchema>,
+    pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum FieldIndexOperations {
     /// Create index for payload field
