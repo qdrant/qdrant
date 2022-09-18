@@ -217,12 +217,10 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: Some(VectorsConfig::Single(VectorParams {
+                vectors: VectorsConfig::Single(VectorParams {
                     size: NonZeroU64::new(4).unwrap(),
                     distance: Distance::Dot,
-                })),
-                vector_size: Some(NonZeroU64::new(4).unwrap()),
-                distance: Some(Distance::Dot),
+                }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
                 replication_factor: NonZeroU32::new(1).unwrap(),

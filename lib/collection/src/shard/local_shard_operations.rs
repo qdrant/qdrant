@@ -106,8 +106,6 @@ impl ShardOperation for LocalShard {
         let mut indexed_vectors_count = 0;
         let mut points_count = 0;
         let mut segments_count = 0;
-        let mut ram_size = 0;
-        let mut disk_size = 0;
         let mut status = CollectionStatus::Green;
         let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
         for (_idx, segment) in segments.iter() {
@@ -138,8 +136,6 @@ impl ShardOperation for LocalShard {
             }
             vectors_count += segment_info.num_vectors;
             points_count += segment_info.num_points;
-            disk_size += segment_info.disk_usage_bytes;
-            ram_size += segment_info.ram_usage_bytes;
             for (key, val) in segment_info.index_schema {
                 schema.insert(key, val);
             }
@@ -160,8 +156,6 @@ impl ShardOperation for LocalShard {
             indexed_vectors_count,
             points_count,
             segments_count,
-            disk_data_size: disk_size,
-            ram_data_size: ram_size,
             config: collection_config,
             payload_schema: schema,
         })

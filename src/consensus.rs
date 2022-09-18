@@ -757,15 +757,11 @@ mod tests {
                     CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
                         collection_name: "test".to_string(),
                         create_collection: CreateCollection {
-                            vectors: Some(
-                                VectorParams {
-                                    size: NonZeroU64::new(10).unwrap(),
-                                    distance: Distance::Cosine,
-                                }
-                                .into(),
-                            ),
-                            vector_size: Some(10),
-                            distance: Some(Distance::Cosine),
+                            vectors: VectorParams {
+                                size: NonZeroU64::new(10).unwrap(),
+                                distance: Distance::Cosine,
+                            }
+                            .into(),
                             hnsw_config: None,
                             wal_config: None,
                             optimizers_config: None,

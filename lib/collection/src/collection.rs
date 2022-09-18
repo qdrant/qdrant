@@ -14,14 +14,14 @@ use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, WithPayload,
     WithPayloadInterface, WithVector,
 };
-use semver::{Version, VersionReq};
+use semver::Version;
 use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::collection_state::{ShardInfo, State};
-use crate::config::{CollectionConfig, VectorParams};
+use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
 use crate::operations::snapshot_ops::{
@@ -169,45 +169,28 @@ impl Collection {
         })
     }
 
+
+    /// Check if stored version have consequent version.
+    /// If major version is different, then it is not compatible.
+    /// If the difference in consecutive versions is greater than 1 in patch,
+    /// then the collection is not compatible with the current version.
+    ///
+    /// Example:
+    ///   0.4.0 -> 0.4.1 = true
+    ///   0.4.0 -> 0.4.2 = false
+    ///   0.4.0 -> 0.5.0 = false
+    ///   0.4.0 -> 0.5.1 = false
     pub fn can_upgrade_storage(stored: &Version, app: &Version) -> bool {
-        VersionReq {
-            comparators: vec![semver::Comparator {
-                op: semver::Op::Caret,
-                major: stored.major,
-                minor: Some(stored.minor),
-                patch: Some(stored.patch),
-                pre: stored.pre.clone(),
-            }],
+        if stored.major != app.major {
+            return false;
         }
-        .matches(app)
-    }
-
-    fn upgrade_collection_40_to_41(path: &Path) {
-        let mut config = CollectionConfig::load(path).unwrap_or_else(|err| {
-            panic!(
-                "Can't read collection config due to {}\nat {}",
-                err,
-                path.to_str().unwrap()
-            )
-        });
-
-        if config.params.vectors.is_none() {
-            config.params.vectors = Some(
-                VectorParams {
-                    size: config.params.vector_size.unwrap(),
-                    distance: config.params.distance.unwrap(),
-                }
-                .into(),
-            );
+        if stored.minor != app.minor {
+            return false;
         }
-
-        config.save(path).unwrap_or_else(|err| {
-            panic!(
-                "Can't save collection config due to {}\nat {}",
-                err,
-                path.to_str().unwrap()
-            )
-        });
+        if stored.patch + 1 < app.patch {
+            return false;
+        }
+        true
     }
 
     pub async fn load(
@@ -225,16 +208,19 @@ impl Collection {
         let app_version: Version = CollectionVersion::current()
             .parse()
             .expect("Failed to parse current collection version as semver");
+
+        if stored_version > app_version {
+            panic!("Collection version is greater than application version");
+        }
+
         if stored_version != app_version {
             if Self::can_upgrade_storage(&stored_version, &app_version) {
-                log::info!("Migrating collection {stored_version} -> {app_version}",);
-
-                Self::upgrade_collection_40_to_41(path);
-
+                log::info!("Migrating collection {stored_version} -> {app_version}");
                 CollectionVersion::save(path)
                     .unwrap_or_else(|err| panic!("Can't save collection version {}", err));
             } else {
-                log::info!("Cannot upgrade version {stored_version} to {app_version}. Attempting to use {stored_version}")
+                log::error!("Cannot upgrade version {stored_version} to {app_version}.");
+                panic!("Cannot upgrade version {stored_version} to {app_version}. Try to use older version of Qdrant first.");
             }
         }
 
@@ -1159,8 +1145,6 @@ impl Collection {
                 info.indexed_vectors_count += shard_info.indexed_vectors_count;
                 info.points_count += shard_info.points_count;
                 info.segments_count += shard_info.segments_count;
-                info.disk_data_size += shard_info.disk_data_size;
-                info.ram_data_size += shard_info.ram_data_size;
                 info.payload_schema
                     .extend(shard_info.payload_schema.drain());
             });

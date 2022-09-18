@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-
-use api::grpc::conversions::from_grpc_dist;
 use collection::config::VectorsConfig;
 use tonic::Status;
 
@@ -31,10 +29,10 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
             create_collection: CreateCollection {
                 vectors: match value.vectors_config {
                     Some(vectors) => match vectors.config {
-                        None => None,
+                        None => return Err(Status::invalid_argument("vectors config is required")),
                         Some(params) => match params {
                             api::grpc::qdrant::vectors_config::Config::Params(vector_params) => {
-                                Some(VectorsConfig::Single(vector_params.try_into()?))
+                                VectorsConfig::Single(vector_params.try_into()?)
                             }
                             api::grpc::qdrant::vectors_config::Config::ParamsMap(
                                 vectors_params,
@@ -43,14 +41,12 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                                 for (name, params) in vectors_params.map {
                                     params_map.insert(name, params.try_into()?);
                                 }
-                                Some(VectorsConfig::Multi(params_map))
+                                VectorsConfig::Multi(params_map)
                             }
                         },
                     },
-                    None => None,
+                    None => return Err(Status::invalid_argument("vectors config is required")),
                 },
-                vector_size: value.vector_size.map(|size| size as usize),
-                distance: value.distance.map(from_grpc_dist).transpose()?,
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),

@@ -4,7 +4,7 @@ use segment::types::Distance;
 use tempfile::Builder;
 
 use crate::collection::Collection;
-use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::config::{CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::CollectionShardDistribution;
 use crate::shard::replica_set::OnPeerFailure;
@@ -33,9 +33,10 @@ async fn test_snapshot_collection() {
     };
 
     let collection_params = CollectionParams {
-        vectors: None,
-        vector_size: Some(NonZeroU64::new(4).unwrap()),
-        distance: Some(Distance::Dot),
+        vectors: VectorsConfig::Single(VectorParams {
+            size: NonZeroU64::new(4).unwrap(),
+            distance: Distance::Dot,
+        }),
         shard_number: NonZeroU32::new(3).unwrap(),
         replication_factor: NonZeroU32::new(3).unwrap(),
         on_disk_payload: false,

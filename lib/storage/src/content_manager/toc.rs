@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use collection::collection::Collection;
 use collection::collection_state;
 use collection::collection_state::ShardInfo;
-use collection::config::{CollectionConfig, CollectionParams, VectorParams};
+use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -203,8 +203,6 @@ impl TableOfContent {
     ) -> Result<bool, StorageError> {
         let CreateCollection {
             vectors,
-            vector_size,
-            distance,
             shard_number,
             on_disk_payload,
             hnsw_config: hnsw_config_diff,
@@ -229,38 +227,8 @@ impl TableOfContent {
             )
         }
 
-        let vector_size = vector_size
-            .map(|size| {
-                NonZeroU64::new(size as u64).ok_or(StorageError::BadInput {
-                    description: "`vector_size` cannot be 0".to_string(),
-                })
-            })
-            .transpose()?;
-
-        let vectors = match vectors {
-            None => {
-                let vector_size = vector_size.ok_or(StorageError::BadInput {
-                    description: "`vector_size` is required if `vectors` is not provided"
-                        .to_string(),
-                })?;
-                let distance = distance.ok_or(StorageError::BadInput {
-                    description: "`distance` is required if `vectors` is not provided".to_string(),
-                })?;
-                Some(
-                    VectorParams {
-                        size: vector_size,
-                        distance,
-                    }
-                    .into(),
-                )
-            }
-            Some(v) => Some(v),
-        };
-
         let collection_params = CollectionParams {
             vectors,
-            vector_size,
-            distance,
             shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
                 .ok_or(StorageError::BadInput {
                     description: "`shard_number` cannot be 0".to_string(),
