@@ -14,4 +14,5 @@ Follow those steps to recreate the reference storage data.
 4. compress the storage folder using `tar -cjvf storage.tar.bz2 storage/`.
 5. replace existing `storage.tar.bz2` with `mv storage.tar.bz2 tests/storage-compat/`
 6. run compatibility test with the new archive `./tests/storage-compat/storage-compatibility.sh`
-7. push change
+7. Git push LFS changes `git lfs push origin $branch`
+8. Git push other changes
