@@ -4,7 +4,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{Distance, WithVector};
+use segment::types::Distance;
 use tonic::Status;
 
 use crate::config::{
@@ -66,8 +66,6 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             indexed_vectors_count,
             points_count,
             segments_count,
-            disk_data_size,
-            ram_data_size,
             config,
             payload_schema,
         } = value;
@@ -92,12 +90,10 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             indexed_vectors_count: Some(indexed_vectors_count as u64),
             points_count: points_count as u64,
             segments_count: segments_count as u64,
-            disk_data_size: disk_data_size as u64,
-            ram_data_size: ram_data_size as u64,
             config: Some(api::grpc::qdrant::CollectionConfig {
                 params: Some(api::grpc::qdrant::CollectionParams {
-                    vectors_config: if let Some(vectors_struct) = config.params.vectors {
-                        let config = match vectors_struct {
+                    vectors_config: {
+                        let config = match config.params.vectors {
                             VectorsConfig::Single(vector_params) => {
                                 Some(api::grpc::qdrant::vectors_config::Config::Params(
                                     vector_params.into(),
@@ -117,18 +113,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                             }
                         };
                         Some(api::grpc::qdrant::VectorsConfig { config })
-                    } else {
-                        None
                     },
-                    vector_size: config.params.vector_size.map(|v| v.get()),
-                    distance: config.params.distance.map(|distance| {
-                        match distance {
-                            Distance::Cosine => api::grpc::qdrant::Distance::Cosine,
-                            Distance::Euclid => api::grpc::qdrant::Distance::Euclid,
-                            Distance::Dot => api::grpc::qdrant::Distance::Dot,
-                        }
-                        .into()
-                    }),
                     shard_number: config.params.shard_number.get(),
                     on_disk_payload: config.params.on_disk_payload,
                 }),
@@ -169,18 +154,11 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
 
 impl From<Record> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: Record) -> Self {
-        let deprecated_vector = record
-            .vector
-            .as_ref()
-            .map(|v| v.get(DEFAULT_VECTOR_NAME).cloned().unwrap_or_default())
-            .unwrap_or_default();
-
         let vectors = record.vector.map(|vector_struct| vector_struct.into());
 
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vector: deprecated_vector,
             vectors,
         }
     }
@@ -191,13 +169,7 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
 
     fn try_from(retrieved_point: api::grpc::qdrant::RetrievedPoint) -> Result<Self, Self::Error> {
         let vectors = match retrieved_point.vectors {
-            None => {
-                if retrieved_point.vector.is_empty() {
-                    None
-                } else {
-                    Some(retrieved_point.vector.into())
-                }
-            }
+            None => None,
             Some(vectors) => Some(vectors.try_into()?),
         };
 
@@ -274,37 +246,31 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 Some(params) => {
                     CollectionParams {
                         vectors: match params.vectors_config {
-                            None => None, // ToDo: fail if vectors_config is None
+                            None => {
+                                return Err(Status::invalid_argument(
+                                    "Expected `vectors` - configuration for vector storage",
+                                ))
+                            }
                             Some(vector_config) => match vector_config.config {
-                                None => None, // ToDo: fail if config is None
+                                None => {
+                                    return Err(Status::invalid_argument(
+                                        "Expected `vectors` - configuration for vector storage",
+                                    ))
+                                }
                                 Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
-                                    Some(VectorsConfig::Single(params.try_into()?))
+                                    VectorsConfig::Single(params.try_into()?)
                                 }
                                 Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
                                     params_map,
-                                )) => Some(VectorsConfig::Multi(
+                                )) => VectorsConfig::Multi(
                                     params_map
                                         .map
                                         .into_iter()
                                         .map(|(k, v)| Ok((k, v.try_into()?)))
                                         .collect::<Result<BTreeMap<String, VectorParams>, Status>>(
                                         )?,
-                                )),
+                                ),
                             },
-                        },
-                        vector_size: match params.vector_size {
-                            None => None,
-                            Some(vector_size) => {
-                                Some(NonZeroU64::new(vector_size as u64).ok_or_else(|| {
-                                    Status::invalid_argument(
-                                        "Malformed CollectionParams vector_size",
-                                    )
-                                })?)
-                            }
-                        },
-                        distance: match params.distance {
-                            None => None,
-                            Some(distance) => Some(from_grpc_dist(distance)?),
                         },
                         shard_number: NonZeroU32::new(params.shard_number).ok_or_else(|| {
                             Status::invalid_argument("`shard_number` cannot be zero")
@@ -357,8 +323,6 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     .unwrap_or_default() as usize,
                 points_count: collection_info_response.points_count as usize,
                 segments_count: collection_info_response.segments_count as usize,
-                disk_data_size: collection_info_response.disk_data_size as usize,
-                ram_data_size: collection_info_response.ram_data_size as usize,
                 config: match collection_info_response.config {
                     None => {
                         return Err(Status::invalid_argument("Malformed CollectionConfig type"))
@@ -381,7 +345,6 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
     fn try_from(value: api::grpc::qdrant::PointStruct) -> Result<Self, Self::Error> {
         let api::grpc::qdrant::PointStruct {
             id,
-            vector,
             vectors,
             payload,
         } = value;
@@ -389,7 +352,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
         let converted_payload = proto_to_payloads(payload)?;
 
         let vector_struct: VectorStruct = match vectors {
-            None => vector.into(),
+            None => return Err(Status::invalid_argument("Expected some vectors")),
             Some(vectors) => vectors.try_into()?,
         };
 
@@ -407,12 +370,6 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        let deprecated_vector = value
-            .vector
-            .get(DEFAULT_VECTOR_NAME)
-            .cloned()
-            .unwrap_or_default();
-
         let vectors: api::grpc::qdrant::Vectors = value.vector.into();
 
         let id = value.id;
@@ -427,7 +384,6 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
             id: Some(id.into()),
             vectors: Some(vectors),
             payload: converted_payload,
-            vector: deprecated_vector,
         })
     }
 }
@@ -449,16 +405,10 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
             });
             let vectors: Option<VectorStruct> = vector.map(|v| v.into());
 
-            let deprecated_vector = vectors
-                .as_ref()
-                .map(|v| v.get(DEFAULT_VECTOR_NAME).cloned().unwrap_or_default())
-                .unwrap_or_default();
-
             let point = api::grpc::qdrant::PointStruct {
                 id,
                 vectors: vectors.map(|v| v.into()),
                 payload: payload.unwrap_or_default(),
-                vector: deprecated_vector,
             };
             points.push(point);
         }
@@ -543,18 +493,11 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
 
-        let deprecated_with_vector = match &request.with_vector {
-            None => None,
-            Some(WithVector::Bool(enabled)) => Some(*enabled),
-            Some(WithVector::Selector(_)) => None,
-        };
-
         api::grpc::qdrant::SearchPoints {
             collection_name: collection_id,
             vector: request.vector.get_vector().clone(),
             filter: request.filter.clone().map(|f| f.into()),
             limit: request.limit as u64,
-            with_vector: deprecated_with_vector,
             with_vectors: request.with_vector.clone().map(|wv| wv.into()),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),
@@ -590,7 +533,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
                 value
                     .with_vectors
                     .map(|with_vectors| with_vectors.into())
-                    .unwrap_or_else(|| value.with_vector.unwrap_or(false).into()),
+                    .unwrap_or_default(),
             ),
             score_threshold: value.score_threshold,
         })
@@ -621,7 +564,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
                 value
                     .with_vectors
                     .map(|with_vectors| with_vectors.into())
-                    .unwrap_or_else(|| value.with_vector.unwrap_or(false).into()),
+                    .unwrap_or_default(),
             ),
             score_threshold: value.score_threshold,
             using: value.using.map(|name| name.into()),

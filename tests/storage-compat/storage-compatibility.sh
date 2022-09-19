@@ -9,7 +9,7 @@ cd "$(dirname "$0")/../../"
 QDRANT_HOST='localhost:6333'
 
 # Build
-$(cargo build)
+cargo build
 
 # Sync git large file
 git lfs pull
@@ -18,7 +18,7 @@ git lfs pull
 tar -xvjf ./tests/storage-compat/storage.tar.bz2
 
 # Run in background
-$(./target/debug/qdrant) &
+./target/debug/qdrant &
 
 # Sleep to make sure the process has started (workaround for empty pidof)
 sleep 5
@@ -27,7 +27,7 @@ sleep 5
 PID=$(pidof "./target/debug/qdrant")
 echo $PID
 
-until $(curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections); do
+until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections; do
   printf 'waiting for server to start...'
   sleep 5
 done
@@ -35,5 +35,5 @@ done
 echo "server ready to serve traffic"
 
 echo "server is going down"
-$(kill -9 $PID)
+kill -9 $PID
 echo "END"

@@ -5,7 +5,7 @@ mod prof;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 
-use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use collection::operations::types::{SearchRequest, SearchRequestBatch};
 use collection::operations::CollectionUpdateOperations;
@@ -58,9 +58,11 @@ fn batch_search_bench(c: &mut Criterion) {
     };
 
     let collection_params = CollectionParams {
-        vectors: None,
-        vector_size: Some(NonZeroU64::new(100).unwrap()),
-        distance: Some(Distance::Dot),
+        vectors: VectorParams {
+            size: NonZeroU64::new(100).unwrap(),
+            distance: Distance::Dot,
+        }
+        .into(),
         shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
         replication_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,

@@ -2,7 +2,6 @@ use collection::config::VectorsConfig;
 use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use collection::shard::{CollectionId, PeerId, ShardId, ShardTransfer};
 use schemars::JsonSchema;
-use segment::types::Distance;
 use serde::{Deserialize, Serialize};
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -87,13 +86,7 @@ impl From<RenameAlias> for AliasOperations {
 pub struct CreateCollection {
     /// Vector data config.
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
-    pub vectors: Option<VectorsConfig>,
-    /// Deprecated size setup for single-vector mode. It's required to set one vector_size or vectors field.
-    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
-    pub vector_size: Option<usize>,
-    /// Deprecated distance setup for single-vector mode. It's required to set one vector_size or vectors field.
-    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
-    pub distance: Option<Distance>,
+    pub vectors: VectorsConfig,
     /// Number of shards in collection.
     /// Default is 1 for standalone, otherwise equal to the number of nodes
     /// Minimum is 1

@@ -48,13 +48,7 @@ impl Default for WalConfig {
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
-    pub vectors: Option<VectorsConfig>,
-    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
-    /// Size of a vectors used
-    pub vector_size: Option<NonZeroU64>,
-    #[deprecated(since = "0.10.0", note = "Use `vectors` instead")]
-    /// Type of distance function used for measuring distance between vectors
-    pub distance: Option<Distance>,
+    pub vectors: VectorsConfig,
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
     pub shard_number: NonZeroU32,
@@ -167,30 +161,14 @@ impl CollectionConfig {
 impl CollectionParams {
     pub fn get_vector_params(&self, vector_name: &str) -> CollectionResult<VectorParams> {
         if vector_name == DEFAULT_VECTOR_NAME {
-            if let Some(vector_params) = &self.vectors {
-                vector_params
-                    .get_params(vector_name)
-                    .cloned()
-                    .ok_or_else(|| CollectionError::BadInput {
-                        description: "Default vector params are not specified in config"
-                            .to_string(),
-                    })
-            } else {
-                // ToDo: remove deprecated
-                let vector_size = self.vector_size.ok_or_else(|| CollectionError::BadInput {
-                    description: "vector size is not specified in config".to_string(),
-                })?;
-                let distance = self.distance.ok_or_else(|| CollectionError::BadInput {
-                    description: "distance is not specified in config".to_string(),
-                })?;
-
-                Ok(VectorParams {
-                    size: vector_size,
-                    distance,
+            self.vectors
+                .get_params(vector_name)
+                .cloned()
+                .ok_or_else(|| CollectionError::BadInput {
+                    description: "Default vector params are not specified in config".to_string(),
                 })
-            }
-        } else if let Some(vector_params) = &self.vectors {
-            vector_params
+        } else {
+            self.vectors
                 .get_params(vector_name)
                 .cloned()
                 .ok_or_else(|| CollectionError::BadInput {
@@ -198,16 +176,12 @@ impl CollectionParams {
                         "vector params for {vector_name} are not specified in config"
                     ),
                 })
-        } else {
-            Err(CollectionError::BadInput {
-                description: format!("vector params for {vector_name} are not specified in config"),
-            })
         }
     }
 
     pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         let vector_config = match &self.vectors {
-            Some(VectorsConfig::Single(params)) => {
+            VectorsConfig::Single(params) => {
                 let mut map = HashMap::new();
                 map.insert(
                     DEFAULT_VECTOR_NAME.to_string(),
@@ -218,7 +192,7 @@ impl CollectionParams {
                 );
                 map
             }
-            Some(VectorsConfig::Multi(ref map)) => map
+            VectorsConfig::Multi(ref map) => map
                 .iter()
                 .map(|(name, params)| {
                     (
@@ -230,24 +204,6 @@ impl CollectionParams {
                     )
                 })
                 .collect(),
-            None => {
-                let vector_size = self.vector_size.ok_or_else(|| CollectionError::BadInput {
-                    description: "vector size is not specified in config".to_string(),
-                })?;
-                let distance = self.distance.ok_or_else(|| CollectionError::BadInput {
-                    description: "distance is not specified in config".to_string(),
-                })?;
-
-                let mut map = HashMap::new();
-                map.insert(
-                    DEFAULT_VECTOR_NAME.to_string(),
-                    VectorDataConfig {
-                        size: vector_size.get() as usize,
-                        distance,
-                    },
-                );
-                map
-            }
         };
         Ok(vector_config)
     }

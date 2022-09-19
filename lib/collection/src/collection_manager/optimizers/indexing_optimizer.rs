@@ -323,9 +323,7 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: Some(VectorsConfig::Multi(vectors_config)),
-                vector_size: None,
-                distance: None,
+                vectors: VectorsConfig::Multi(vectors_config),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 replication_factor: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
@@ -418,18 +416,13 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: Some(VectorsConfig::Single(VectorParams {
+                vectors: VectorsConfig::Single(VectorParams {
                     size: NonZeroU64::new(
                         segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
                     )
                     .unwrap(),
                     distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
-                })),
-                vector_size: Some(
-                    NonZeroU64::new(segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64)
-                        .unwrap(),
-                ),
-                distance: Some(segment_config.vector_data[DEFAULT_VECTOR_NAME].distance),
+                }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 replication_factor: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
@@ -477,7 +470,7 @@ mod tests {
             opnum.next().unwrap(),
             &FieldIndexOperations::CreateIndex(CreateIndex {
                 field_name: payload_field.to_owned(),
-                field_type: Some(PayloadSchemaType::Integer.into()),
+                field_schema: Some(PayloadSchemaType::Integer.into()),
             }),
         )
         .unwrap();

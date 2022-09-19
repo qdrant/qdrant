@@ -293,7 +293,7 @@ checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
 
 [[package]]
 name = "api"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "chrono",
  "prost 0.10.4",
@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "collection"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "api",
  "arc-swap",

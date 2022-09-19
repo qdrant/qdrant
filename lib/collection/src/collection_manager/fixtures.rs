@@ -172,12 +172,10 @@ pub(crate) fn get_merge_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vectors: Some(VectorsConfig::Single(VectorParams {
+            vectors: VectorsConfig::Single(VectorParams {
                 size: NonZeroU64::new(dim as u64).unwrap(),
                 distance: Distance::Dot,
-            })),
-            vector_size: Some(NonZeroU64::new(dim as u64).unwrap()),
-            distance: Some(Distance::Dot),
+            }),
             shard_number: NonZeroU32::new(1).unwrap(),
             on_disk_payload: false,
             replication_factor: NonZeroU32::new(1).unwrap(),
@@ -200,12 +198,10 @@ pub(crate) fn get_indexing_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vectors: Some(VectorsConfig::Single(VectorParams {
+            vectors: VectorsConfig::Single(VectorParams {
                 size: NonZeroU64::new(dim as u64).unwrap(),
                 distance: Distance::Dot,
-            })),
-            vector_size: Some(NonZeroU64::new(dim as u64).unwrap()),
-            distance: Some(Distance::Dot),
+            }),
             shard_number: NonZeroU32::new(1).unwrap(),
             on_disk_payload: false,
             replication_factor: NonZeroU32::new(1).unwrap(),

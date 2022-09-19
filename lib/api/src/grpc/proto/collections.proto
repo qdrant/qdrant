@@ -148,8 +148,8 @@ message OptimizersConfigDiff {
 
 message CreateCollection {
   string collection_name = 1; // Name of the collection
-  optional uint64 vector_size = 2 [deprecated = true]; // Size of the vectors
-  optional Distance distance = 3 [deprecated = true]; // Distance function used for comparing vectors
+  reserved 2; // Deprecated
+  reserved 3; // Deprecated
   optional HnswConfigDiff hnsw_config = 4; // Configuration of vector index
   optional WalConfigDiff wal_config = 5; // Configuration of the Write-Ahead-Log
   optional OptimizersConfigDiff optimizers_config = 6; // Configuration of the optimizers
@@ -176,8 +176,8 @@ message CollectionOperationResponse {
 }
 
 message CollectionParams {
-  optional uint64 vector_size = 1 [deprecated = true]; // Size of the vectors
-  optional Distance distance = 2 [deprecated = true]; // Distance function used for comparing vectors
+  reserved 1; // Deprecated
+  reserved 2; // Deprecated
   uint32 shard_number = 3; // Number of shards in collection
   bool on_disk_payload = 4; // If true - point's payload will not be stored in memory
   optional VectorsConfig vectors_config = 5; // Configuration for vectors
@@ -220,8 +220,8 @@ message CollectionInfo {
   OptimizerStatus optimizer_status = 2; // status of collection optimizers
   uint64 vectors_count = 3; // number of vectors in the collection
   uint64 segments_count = 4; // Number of independent segments
-  uint64 disk_data_size = 5 [deprecated = true]; // Used disk space
-  uint64 ram_data_size = 6 [deprecated = true]; // Used RAM (not implemented)
+  reserved 5; // Deprecated
+  reserved 6; // Deprecated
   CollectionConfig config = 7; // Configuration
   map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
   uint64 points_count = 9; // number of points in the collection

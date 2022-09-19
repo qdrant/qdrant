@@ -154,14 +154,6 @@ pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Size of the vectors
-    #[deprecated]
-    #[prost(uint64, optional, tag="2")]
-    pub vector_size: ::core::option::Option<u64>,
-    /// Distance function used for comparing vectors
-    #[deprecated]
-    #[prost(enumeration="Distance", optional, tag="3")]
-    pub distance: ::core::option::Option<i32>,
     /// Configuration of vector index
     #[prost(message, optional, tag="4")]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
@@ -216,14 +208,6 @@ pub struct CollectionOperationResponse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
-    /// Size of the vectors
-    #[deprecated]
-    #[prost(uint64, optional, tag="1")]
-    pub vector_size: ::core::option::Option<u64>,
-    /// Distance function used for comparing vectors
-    #[deprecated]
-    #[prost(enumeration="Distance", optional, tag="2")]
-    pub distance: ::core::option::Option<i32>,
     /// Number of shards in collection
     #[prost(uint32, tag="3")]
     pub shard_number: u32,
@@ -301,14 +285,6 @@ pub struct CollectionInfo {
     /// Number of independent segments
     #[prost(uint64, tag="4")]
     pub segments_count: u64,
-    /// Used disk space
-    #[deprecated]
-    #[prost(uint64, tag="5")]
-    pub disk_data_size: u64,
-    /// Used RAM (not implemented)
-    #[deprecated]
-    #[prost(uint64, tag="6")]
-    pub ram_data_size: u64,
     /// Configuration
     #[prost(message, optional, tag="7")]
     pub config: ::core::option::Option<CollectionConfig>,
@@ -1401,10 +1377,6 @@ pub struct GetPoints {
     /// List of points to retrieve
     #[prost(message, repeated, tag="2")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
-    /// Return point vector with the result.
-    #[deprecated]
-    #[prost(bool, optional, tag="3")]
-    pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag="4")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
@@ -1579,10 +1551,6 @@ pub struct SearchPoints {
     /// Max number of result
     #[prost(uint64, tag="4")]
     pub limit: u64,
-    /// Return point vector with the result.
-    #[deprecated]
-    #[prost(bool, optional, tag="5")]
-    pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag="6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
@@ -1623,10 +1591,6 @@ pub struct ScrollPoints {
     /// Max number of result
     #[prost(uint32, optional, tag="4")]
     pub limit: ::core::option::Option<u32>,
-    /// Return point vector with the result.
-    #[deprecated]
-    #[prost(bool, optional, tag="5")]
-    pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag="6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
@@ -1651,10 +1615,6 @@ pub struct RecommendPoints {
     /// Max number of result
     #[prost(uint64, tag="5")]
     pub limit: u64,
-    /// Return point vector with the result.
-    #[deprecated]
-    #[prost(bool, optional, tag="6")]
-    pub with_vector: ::core::option::Option<bool>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag="7")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
@@ -1726,10 +1686,6 @@ pub struct ScoredPoint {
     /// Similarity score
     #[prost(float, tag="3")]
     pub score: f32,
-    /// Vector
-    #[deprecated]
-    #[prost(float, repeated, packed="false", tag="4")]
-    pub vector: ::prost::alloc::vec::Vec<f32>,
     /// Last update operation applied to this point
     #[prost(uint64, tag="5")]
     pub version: u64,
@@ -1788,9 +1744,6 @@ pub struct RetrievedPoint {
     pub id: ::core::option::Option<PointId>,
     #[prost(map="string, message", tag="2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    #[deprecated]
-    #[prost(float, repeated, packed="false", tag="3")]
-    pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(message, optional, tag="4")]
     pub vectors: ::core::option::Option<Vectors>,
 }
@@ -1978,9 +1931,6 @@ pub struct PointsIdsList {
 pub struct PointStruct {
     #[prost(message, optional, tag="1")]
     pub id: ::core::option::Option<PointId>,
-    #[deprecated]
-    #[prost(float, repeated, packed="false", tag="2")]
-    pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(map="string, message", tag="3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     #[prost(message, optional, tag="4")]

@@ -345,7 +345,6 @@ pub async fn search(
         filter,
         limit,
         offset,
-        with_vector,
         with_payload,
         params,
         score_threshold,
@@ -366,7 +365,7 @@ pub async fn search(
         with_vector: Some(
             with_vectors
                 .map(|selector| selector.into())
-                .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
+                .unwrap_or_default(),
         ),
         score_threshold,
     };
@@ -432,7 +431,6 @@ pub async fn recommend(
         filter,
         limit,
         offset,
-        with_vector,
         with_payload,
         params,
         score_threshold,
@@ -457,7 +455,7 @@ pub async fn recommend(
         with_vector: Some(
             with_vectors
                 .map(|selector| selector.into())
-                .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
+                .unwrap_or_default(),
         ),
         score_threshold,
         using: using.map(|u| u.into()),
@@ -523,7 +521,6 @@ pub async fn scroll(
         filter,
         offset,
         limit,
-        with_vector,
         with_payload,
         with_vectors,
     } = scroll_points;
@@ -535,7 +532,7 @@ pub async fn scroll(
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: with_vectors
             .map(|selector| selector.into())
-            .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
+            .unwrap_or_default(),
     };
 
     let timing = Instant::now();
@@ -593,7 +590,6 @@ pub async fn get(
     let GetPoints {
         collection_name,
         ids,
-        with_vector,
         with_payload,
         with_vectors,
     } = get_points;
@@ -606,7 +602,7 @@ pub async fn get(
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: with_vectors
             .map(|selector| selector.into())
-            .unwrap_or_else(|| with_vector.unwrap_or(false).into()),
+            .unwrap_or_default(),
     };
 
     let timing = Instant::now();

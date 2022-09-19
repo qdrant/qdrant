@@ -52,7 +52,7 @@ impl ForwardProxyShard {
                     CollectionUpdateOperations::FieldIndexOperation(
                         FieldIndexOperations::CreateIndex(CreateIndex {
                             field_name: index_key,
-                            field_type: Some(index_type.try_into()?),
+                            field_schema: Some(index_type.try_into()?),
                         }),
                     ),
                     false,

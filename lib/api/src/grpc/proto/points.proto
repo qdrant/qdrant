@@ -39,7 +39,7 @@ message DeletePoints {
 message GetPoints {
   string collection_name = 1; // name of the collection
   repeated PointId ids = 2; // List of points to retrieve
-  optional bool with_vector = 3 [deprecated = true]; // Return point vector with the result.
+  reserved 3; // deprecated "with_vector" field
   WithPayloadSelector with_payload = 4; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 5; // Options for specifying which vectors to include into response
 }
@@ -139,7 +139,7 @@ message SearchPoints {
   repeated float vector = 2; // vector
   Filter filter = 3; // Filter conditions - return only those points that satisfy the specified conditions
   uint64 limit = 4; // Max number of result
-  optional bool with_vector = 5 [deprecated = true]; // Return point vector with the result.
+  reserved 5; // deprecated "with_vector" field
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
   SearchParams params = 7; // Search config
   optional float score_threshold = 8; // If provided - cut off results with worse scores
@@ -158,7 +158,7 @@ message ScrollPoints {
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
   optional PointId offset = 3; // Start with this ID
   optional uint32 limit = 4; // Max number of result
-  optional bool with_vector = 5 [deprecated = true]; // Return point vector with the result.
+  reserved 5; // deprecated "with_vector" field
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 7; // Options for specifying which vectors to include into response
 }
@@ -169,7 +169,7 @@ message RecommendPoints {
   repeated PointId negative = 3; // Try to avoid vectors like this
   Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
   uint64 limit = 5; // Max number of result
-  optional bool with_vector = 6 [deprecated = true]; // Return point vector with the result.
+  reserved 6; // deprecated "with_vector" field
   WithPayloadSelector with_payload = 7; // Options for specifying which payload to include or not
   SearchParams params = 8; // Search config
   optional float score_threshold = 9; // If provided - cut off results with worse scores
@@ -213,7 +213,7 @@ message ScoredPoint {
   PointId id = 1; // Point id
   map<string, Value> payload = 2; // Payload
   float score = 3; // Similarity score
-  repeated float vector = 4 [deprecated = true]; // Vector
+  reserved 4; // deprecated "vector" field
   uint64 version = 5; // Last update operation applied to this point
   optional Vectors vectors = 6; // Vectors to search
 }
@@ -250,7 +250,7 @@ message CountResult {
 message RetrievedPoint {
   PointId id = 1;
   map<string, Value> payload = 2;
-  repeated float vector = 3 [deprecated = true];
+  reserved 3; // deprecated "vector" field
   optional Vectors vectors = 4;
 }
 
@@ -360,7 +360,7 @@ message PointsIdsList {
 
 message PointStruct {
   PointId id = 1;
-  repeated float vector = 2 [deprecated = true];
+  reserved 2; // deprecated "vector" field
   map<string, Value> payload = 3;
   optional Vectors vectors = 4;
 }

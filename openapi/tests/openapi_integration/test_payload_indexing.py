@@ -42,7 +42,7 @@ def test_payload_indexing_operations():
         query_params={'wait': 'true'},
         body={
             "field_name": "test_payload",
-            "field_type": "keyword"
+            "field_schema": "keyword"
         }
     )
     assert response.ok

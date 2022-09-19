@@ -172,7 +172,7 @@ pub fn internal_create_index(
     wait: bool,
 ) -> CreateFieldIndexCollectionInternal {
     let (field_type, field_index_params) = create_index
-        .field_type
+        .field_schema
         .map(|field_schema| match field_schema {
             PayloadFieldSchema::FieldType(field_type) => (
                 match field_type {

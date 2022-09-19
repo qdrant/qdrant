@@ -109,7 +109,7 @@ pub async fn do_create_index(
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
             field_name: operation.field_name,
-            field_type: operation.field_schema,
+            field_schema: operation.field_schema,
         }),
     );
     toc.update(collection_name, collection_operation, shard_selection, wait)

@@ -382,19 +382,10 @@ impl From<segment::data_types::vectors::VectorStruct> for Vectors {
 
 impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
-        let deprecated_vector = match &point.vector {
-            None => vec![],
-            Some(vector_struct) => match vector_struct {
-                segment::data_types::vectors::VectorStruct::Single(vector) => vector.clone(),
-                segment::data_types::vectors::VectorStruct::Multi(_) => vec![],
-            },
-        };
-
         Self {
             id: Some(point.id.into()),
             payload: point.payload.map(payload_to_proto).unwrap_or_default(),
             score: point.score,
-            vector: deprecated_vector,
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
         }
@@ -433,16 +424,10 @@ impl TryFrom<ScoredPoint> for segment::types::ScoredPoint {
     type Error = Status;
 
     fn try_from(point: ScoredPoint) -> Result<Self, Self::Error> {
-        let vector = if !point.vector.is_empty() {
-            Some(segment::data_types::vectors::VectorStruct::Single(
-                point.vector,
-            ))
-        } else {
-            point
-                .vectors
-                .map(|vectors| vectors.try_into())
-                .transpose()?
-        };
+        let vector = point
+            .vectors
+            .map(|vectors| vectors.try_into())
+            .transpose()?;
 
         Ok(Self {
             id: match point.id {

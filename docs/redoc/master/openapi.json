@@ -2552,12 +2552,10 @@
         "type": "object",
         "required": [
           "config",
-          "disk_data_size",
           "indexed_vectors_count",
           "optimizer_status",
           "payload_schema",
           "points_count",
-          "ram_data_size",
           "segments_count",
           "status",
           "vectors_count"
@@ -2589,18 +2587,6 @@
           },
           "segments_count": {
             "description": "Number of segments in collection",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "disk_data_size": {
-            "description": "Disk space, used by collection",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "ram_data_size": {
-            "description": "RAM used by collection",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -2675,37 +2661,12 @@
       },
       "CollectionParams": {
         "type": "object",
+        "required": [
+          "vectors"
+        ],
         "properties": {
           "vectors": {
-            "description": "Configuration of the vector storage",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorsConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "vector_size": {
-            "description": "Size of a vectors used",
-            "deprecated": true,
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 1,
-            "nullable": true
-          },
-          "distance": {
-            "description": "Type of distance function used for measuring distance between vectors",
-            "deprecated": true,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Distance"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
             "description": "Number of shards the collection has",
@@ -3857,37 +3818,12 @@
       "CreateCollection": {
         "description": "Operation for creating new collection and (optionally) specify index params",
         "type": "object",
+        "required": [
+          "vectors"
+        ],
         "properties": {
           "vectors": {
-            "description": "Vector data config. It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorsConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "vector_size": {
-            "description": "Deprecated size setup for single-vector mode. It's required to set one vector_size or vectors field.",
-            "deprecated": true,
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "distance": {
-            "description": "Deprecated distance setup for single-vector mode. It's required to set one vector_size or vectors field.",
-            "deprecated": true,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Distance"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
             "description": "Number of shards in collection. Default is 1 for standalone, otherwise equal to the number of nodes Minimum is 1",

@@ -123,8 +123,20 @@ fn check_version_upgrade() {
         &"0.3.1".parse().unwrap(),
         &"0.4.0".parse().unwrap()
     ));
+    assert!(!Collection::can_upgrade_storage(
+        &"0.4.0".parse().unwrap(),
+        &"0.5.0".parse().unwrap()
+    ));
+    assert!(!Collection::can_upgrade_storage(
+        &"0.4.0".parse().unwrap(),
+        &"0.4.2".parse().unwrap()
+    ));
     assert!(Collection::can_upgrade_storage(
         &"0.4.0".parse().unwrap(),
         &"0.4.1".parse().unwrap()
+    ));
+    assert!(Collection::can_upgrade_storage(
+        &"0.4.1".parse().unwrap(),
+        &"0.4.2".parse().unwrap()
     ));
 }

@@ -187,7 +187,7 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
         query_params={'wait': 'true'},
         body={
             "field_name": "title",
-            "field_type": {
+            "field_schema": {
                 "type": "text",
                 "tokenizer": "prefix",
             }

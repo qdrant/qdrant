@@ -80,10 +80,6 @@ pub struct CollectionInfo {
     pub points_count: usize,
     /// Number of segments in collection
     pub segments_count: usize,
-    /// Disk space, used by collection
-    pub disk_data_size: usize,
-    /// RAM used by collection
-    pub ram_data_size: usize,
     /// Collection settings
     pub config: CollectionConfig,
     /// Types of stored payload

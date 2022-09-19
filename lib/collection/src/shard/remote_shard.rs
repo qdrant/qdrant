@@ -296,7 +296,6 @@ impl ShardOperation for RemoteShard {
             filter: filter.map(|f| f.clone().into()),
             offset: offset.map(|o| o.into()),
             limit: Some(limit as u32),
-            with_vector: None,
             with_payload: Some(with_payload_interface.clone().into()),
             with_vectors: Some(with_vector.clone().into()),
         };
@@ -415,7 +414,6 @@ impl ShardOperation for RemoteShard {
         let get_points = GetPoints {
             collection_name: self.collection_id.clone(),
             ids: request.ids.iter().copied().map(|v| v.into()).collect(),
-            with_vector: None,
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             with_vectors: Some(with_vector.clone().into()),
         };
