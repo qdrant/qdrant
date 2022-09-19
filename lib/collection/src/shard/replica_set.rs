@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ops::Deref;
 use std::path::Path;
@@ -33,6 +33,9 @@ const READ_FAN_OUT_RATION: f32 = 0.33;
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 /// Prefers local shard for read-only operations.
 /// Perform updates on all replicas and report error if there is at least one failure.
+///
+/// `ReplicaSet` should always have >= 2 replicas.
+///  If a user decreases replication factor to 1 - it should be converted to just `Local` or `Remote` shard.
 pub struct ReplicaSet {
     shard_id: ShardId,
     this_peer_id: PeerId,
@@ -50,7 +53,7 @@ impl ReplicaSet {
         collection_id: CollectionId,
         this_peer_id: PeerId,
         local: bool,
-        remotes: Vec<PeerId>,
+        remotes: HashSet<PeerId>,
         on_peer_failure: OnPeerFailure,
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::collection_state::ShardInfo;
 use crate::shard::{PeerId, ShardId};
@@ -7,7 +7,10 @@ use crate::shard::{PeerId, ShardId};
 pub enum ShardType {
     Local,
     Remote(PeerId),
-    ReplicaSet { local: bool, remote: Vec<PeerId> },
+    ReplicaSet {
+        local: bool,
+        remote: HashSet<PeerId>,
+    },
 }
 
 #[derive(Debug)]
