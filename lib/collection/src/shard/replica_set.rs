@@ -1,3 +1,4 @@
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ops::Deref;
@@ -27,7 +28,7 @@ pub type IsActive = bool;
 pub type OnPeerFailure =
     Arc<dyn Fn(PeerId, ShardId) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
 
-const READ_FAN_OUT_RATION: f32 = 0.33;
+const READ_REMOTE_REPLICAS: u32 = 2;
 
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
@@ -42,7 +43,9 @@ pub struct ReplicaSet {
     local: Option<LocalShard>,
     remotes: Vec<RemoteShard>,
     pub(crate) replica_state: HashMap<PeerId, IsActive>,
-    read_fan_out_ratio: f32,
+    /// Number of remote replicas to send read requests to.
+    /// If actual number of peers is less than this, then read request will be sent to all of them.
+    read_remote_replicas: u32,
     notify_peer_failure_cb: OnPeerFailure,
 }
 
@@ -83,7 +86,7 @@ impl ReplicaSet {
             remotes: Vec::new(),
             replica_state,
             // TODO: move to collection config
-            read_fan_out_ratio: READ_FAN_OUT_RATION,
+            read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
         })
     }
@@ -181,8 +184,10 @@ impl ReplicaSet {
             )));
         }
 
-        let fan_out_selection =
-            (self.read_fan_out_ratio * active_remote_shards.len() as f32).ceil() as usize;
+        let fan_out_selection = cmp::min(
+            active_remote_shards.len(),
+            self.read_remote_replicas as usize,
+        );
 
         let mut futures = FuturesUnordered::new();
         for remote in &active_remote_shards[0..fan_out_selection] {
