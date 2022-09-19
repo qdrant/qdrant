@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+use std::cmp;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ops::Deref;
+use std::path::Path;
 use std::sync::Arc;
 
 use futures::future::{try_join, try_join_all};
@@ -10,10 +12,12 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
+use tokio::sync::RwLock;
 
 use super::local_shard::{drop_and_delete_from_disk, LocalShard};
 use super::remote_shard::RemoteShard;
-use super::{PeerId, ShardId, ShardOperation};
+use super::{create_shard_dir, CollectionId, PeerId, ShardId, ShardOperation};
+use crate::config::CollectionConfig;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult,
@@ -22,41 +26,69 @@ use crate::operations::CollectionUpdateOperations;
 
 pub type IsActive = bool;
 pub type OnPeerFailure =
-    Box<dyn Fn(PeerId, ShardId) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
+    Arc<dyn Fn(PeerId, ShardId) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
+
+const READ_REMOTE_REPLICAS: u32 = 2;
 
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 /// Prefers local shard for read-only operations.
 /// Perform updates on all replicas and report error if there is at least one failure.
+///
+/// `ReplicaSet` should always have >= 2 replicas.
+///  If a user decreases replication factor to 1 - it should be converted to just `Local` or `Remote` shard.
 pub struct ReplicaSet {
     shard_id: ShardId,
     this_peer_id: PeerId,
     local: Option<LocalShard>,
     remotes: Vec<RemoteShard>,
     pub(crate) replica_state: HashMap<PeerId, IsActive>,
-    read_fan_out_ratio: f32,
+    /// Number of remote replicas to send read requests to.
+    /// If actual number of peers is less than this, then read request will be sent to all of them.
+    read_remote_replicas: u32,
     notify_peer_failure_cb: OnPeerFailure,
 }
 
 impl ReplicaSet {
-    pub fn new(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn build(
         shard_id: ShardId,
+        collection_id: CollectionId,
         this_peer_id: PeerId,
-        local: Option<LocalShard>,
-        remotes: Vec<RemoteShard>,
-        replica_state: HashMap<PeerId, IsActive>,
-        read_fan_out_ratio: f32,
+        local: bool,
+        remotes: HashSet<PeerId>,
         on_peer_failure: OnPeerFailure,
-    ) -> Self {
-        Self {
+        collection_path: &Path,
+        shared_config: Arc<RwLock<CollectionConfig>>,
+    ) -> CollectionResult<Self> {
+        let local = if local {
+            let shard_path = create_shard_dir(collection_path, shard_id).await?;
+            let shard =
+                LocalShard::build(shard_id, collection_id, &shard_path, shared_config.clone())
+                    .await?;
+            Some(shard)
+        } else {
+            None
+        };
+        let mut replica_state = HashMap::new();
+        if local.is_some() {
+            replica_state.insert(this_peer_id, true);
+        }
+        for peer in remotes {
+            replica_state.insert(peer, true);
+        }
+        Ok(Self {
             shard_id,
             this_peer_id,
             local,
-            remotes,
+            // TODO: Initialize remote shards
+            // This requires logic to store several peer ids in remote shard file
+            remotes: Vec::new(),
             replica_state,
-            read_fan_out_ratio,
+            // TODO: move to collection config
+            read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
-        }
+        })
     }
     pub async fn notify_peer_failure(&self, peer_id: PeerId) {
         Box::into_pin(self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)).await
@@ -152,8 +184,10 @@ impl ReplicaSet {
             )));
         }
 
-        let fan_out_selection =
-            (self.read_fan_out_ratio * active_remote_shards.len() as f32).ceil() as usize;
+        let fan_out_selection = cmp::min(
+            active_remote_shards.len(),
+            self.read_remote_replicas as usize,
+        );
 
         let mut futures = FuturesUnordered::new();
         for remote in &active_remote_shards[0..fan_out_selection] {

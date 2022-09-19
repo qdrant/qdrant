@@ -260,6 +260,7 @@ impl TableOfContent {
         };
         let collection = Collection::new(
             collection_name.to_string(),
+            self.this_peer_id,
             &collection_path,
             &snapshots_path,
             &collection_config,
@@ -279,7 +280,7 @@ impl TableOfContent {
 
     fn on_peer_failure_callback(&self, collection_name: String) -> replica_set::OnPeerFailure {
         let proposal_sender = self.consensus_proposal_sender.clone();
-        Box::new(move |peer_id, shard_id| {
+        Arc::new(move |peer_id, shard_id| {
             let proposal_sender = proposal_sender.clone();
             let collection_name = collection_name.clone();
             Box::new(async move {
@@ -392,14 +393,14 @@ impl TableOfContent {
         operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
         match operation {
-            CollectionMetaOperations::CreateCollectionDistributed(operation, distribution) => {
-                let local = distribution.local_shards_for(self.this_peer_id);
-                let remote = distribution.remote_shards_for(self.this_peer_id);
-                let collection_shard_distribution = CollectionShardDistribution::new(local, remote);
+            CollectionMetaOperations::CreateCollectionDistributed(
+                operation,
+                distribution_proposal,
+            ) => {
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
-                    collection_shard_distribution,
+                    distribution_proposal.into(self.this_peer_id),
                 )
                 .await
             }
@@ -835,21 +836,13 @@ impl TableOfContent {
                     None => {
                         let collection_path = self.create_collection_path(id).await?;
                         let snapshots_path = self.create_snapshots_path(id).await?;
-                        let shard_distribution = CollectionShardDistribution::from_shard_to_peer(
+                        let shard_distribution = CollectionShardDistribution::from_shards_info(
                             self.this_peer_id,
-                            &state
-                                .shards
-                                .iter()
-                                .map(|(id, info)| match info {
-                                    ShardInfo::ReplicaSet { replicas: _ } => {
-                                        todo!("Handle multiple replicas in shard distribution")
-                                    }
-                                    ShardInfo::Single(peer_id) => (*id, *peer_id),
-                                })
-                                .collect(),
+                            state.shards.clone(),
                         );
                         let collection = Collection::new(
                             id.to_string(),
+                            self.this_peer_id,
                             &collection_path,
                             &snapshots_path,
                             &state.config,
@@ -899,11 +892,12 @@ impl TableOfContent {
     pub async fn suggest_shard_distribution(
         &self,
         op: &CreateCollectionOperation,
-        suggested_shard_number: u32,
+        suggested_shard_number: NonZeroU32,
     ) -> ShardDistributionProposal {
         let shard_number = op
             .create_collection
             .shard_number
+            .and_then(NonZeroU32::new)
             .unwrap_or(suggested_shard_number);
         let mut known_peers_set: HashSet<_> = self
             .channel_service
@@ -914,8 +908,11 @@ impl TableOfContent {
             .collect();
         known_peers_set.insert(self.this_peer_id());
         let known_peers: Vec<_> = known_peers_set.into_iter().collect();
+        // TODO: Get from `op` after version 0.10
+        let replication_factor = NonZeroU32::new(1).unwrap();
 
-        let shard_distribution = ShardDistributionProposal::new(shard_number, &known_peers, vec![]);
+        let shard_distribution =
+            ShardDistributionProposal::new(shard_number, replication_factor, &known_peers);
 
         log::debug!(
             "Suggesting distribution for {} shards for collection '{}' among {} peers {:?}",
