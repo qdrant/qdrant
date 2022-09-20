@@ -23,12 +23,15 @@ use crate::operations::types::{
     Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
+use crate::save_on_disk::SaveOnDisk;
 
 pub type IsActive = bool;
 pub type OnPeerFailure =
     Arc<dyn Fn(PeerId, ShardId) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
 
 const READ_REMOTE_REPLICAS: u32 = 2;
+
+const REPLICA_STATE_FILE: &str = "replica_state";
 
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
@@ -42,7 +45,7 @@ pub struct ReplicaSet {
     this_peer_id: PeerId,
     local: Option<LocalShard>,
     remotes: Vec<RemoteShard>,
-    pub(crate) replica_state: HashMap<PeerId, IsActive>,
+    pub(crate) replica_state: SaveOnDisk<HashMap<PeerId, IsActive>>,
     /// Number of remote replicas to send read requests to.
     /// If actual number of peers is less than this, then read request will be sent to all of them.
     read_remote_replicas: u32,
@@ -61,8 +64,8 @@ impl ReplicaSet {
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
     ) -> CollectionResult<Self> {
+        let shard_path = create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
-            let shard_path = create_shard_dir(collection_path, shard_id).await?;
             let shard =
                 LocalShard::build(shard_id, collection_id, &shard_path, shared_config.clone())
                     .await?;
@@ -70,13 +73,16 @@ impl ReplicaSet {
         } else {
             None
         };
-        let mut replica_state = HashMap::new();
-        if local.is_some() {
-            replica_state.insert(this_peer_id, true);
-        }
-        for peer in remotes {
-            replica_state.insert(peer, true);
-        }
+        let mut replica_state: SaveOnDisk<HashMap<PeerId, IsActive>> =
+            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE))?;
+        replica_state.write(|rs| {
+            if local.is_some() {
+                rs.insert(this_peer_id, true);
+            }
+            for peer in remotes {
+                rs.insert(peer, true);
+            }
+        })?;
         Ok(Self {
             shard_id,
             this_peer_id,
@@ -99,12 +105,13 @@ impl ReplicaSet {
     }
 
     pub fn set_active(&mut self, peer_id: &PeerId, active: bool) -> CollectionResult<()> {
-        *self
-            .replica_state
-            .get_mut(peer_id)
-            .ok_or_else(|| CollectionError::NotFound {
-                what: format!("Shard {} replica on peer {peer_id}", self.shard_id),
-            })? = active;
+        self.replica_state.write_with_res(|rs| {
+            *rs.get_mut(peer_id)
+                .ok_or_else(|| CollectionError::NotFound {
+                    what: format!("Shard {} replica on peer {peer_id}", self.shard_id),
+                })? = active;
+            Ok::<(), CollectionError>(())
+        })?;
         Ok(())
     }
 
@@ -142,6 +149,7 @@ impl ReplicaSet {
                 todo!("Add remote replica")
             }
         }
+        self.replica_state.save()?;
         Ok(())
     }
 
