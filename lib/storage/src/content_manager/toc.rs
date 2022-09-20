@@ -7,8 +7,8 @@ use std::sync::Arc;
 use collection::collection::Collection;
 use collection::collection_state;
 use collection::collection_state::ShardInfo;
-use collection::config::{CollectionConfig, CollectionParams};
-use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
+use collection::config::{default_replication_factor, CollectionConfig, CollectionParams};
+use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
@@ -208,6 +208,7 @@ impl TableOfContent {
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
             optimizers_config: optimizers_config_diff,
+            replication_factor,
         } = operation;
 
         self.collections
@@ -226,6 +227,8 @@ impl TableOfContent {
                 "If shard number was supplied then this exact number should be used in a distribution"
             )
         }
+        let replication_factor =
+            replication_factor.unwrap_or_else(|| default_replication_factor().get());
 
         let collection_params = CollectionParams {
             vectors,
@@ -234,8 +237,11 @@ impl TableOfContent {
                     description: "`shard_number` cannot be 0".to_string(),
                 })?,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
-            // TODO: use `replication_factor` supplied in `CreateCollection`
-            replication_factor: collection::config::default_replication_factor(),
+            replication_factor: NonZeroU32::new(replication_factor).ok_or(
+                StorageError::BadInput {
+                    description: "`replication_factor` cannot be 0".to_string(),
+                },
+            )?,
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),
@@ -304,9 +310,10 @@ impl TableOfContent {
         collection_name: &str,
         operation: UpdateCollection,
     ) -> Result<bool, StorageError> {
-        let UpdateCollection { optimizers_config } = operation;
-        // TODO: get `params` from `UpdateCollection`
-        let params: Option<CollectionParamsDiff> = None;
+        let UpdateCollection {
+            optimizers_config,
+            params,
+        } = operation;
         let collection = self.get_collection(collection_name).await?;
         if let Some(diff) = optimizers_config {
             collection.update_optimizer_params_from_diff(diff).await?
@@ -908,8 +915,11 @@ impl TableOfContent {
             .collect();
         known_peers_set.insert(self.this_peer_id());
         let known_peers: Vec<_> = known_peers_set.into_iter().collect();
-        // TODO: Get from `op` after version 0.10
-        let replication_factor = NonZeroU32::new(1).unwrap();
+        let replication_factor = op
+            .create_collection
+            .replication_factor
+            .and_then(NonZeroU32::new)
+            .unwrap_or_else(default_replication_factor);
 
         let shard_distribution =
             ShardDistributionProposal::new(shard_number, replication_factor, &known_peers);

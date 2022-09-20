@@ -269,11 +269,6 @@ impl Consensus {
         // This needs to be propagated manually to other peers as it is not contained in any log entry.
         state_ref.set_first_voter(all_peers.first_peer_id);
         state_ref.set_conf_state(ConfState::from((vec![all_peers.first_peer_id], vec![])))?;
-        // TODO: Remove in the next version after 0.10 as it does nothing and is left for compatability
-        client
-            .add_peer_as_participant(tonic::Request::new(api::grpc::qdrant::PeerId { id }))
-            .await
-            .context("Failed to add peer as participant")?;
         Ok(())
     }
 
@@ -767,6 +762,7 @@ mod tests {
                             optimizers_config: None,
                             shard_number: Some(2),
                             on_disk_payload: None,
+                            replication_factor: None,
                         },
                     }),
                     None,
