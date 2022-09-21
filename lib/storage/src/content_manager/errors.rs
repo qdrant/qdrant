@@ -42,8 +42,19 @@ impl From<CollectionError> for StorageError {
             CollectionError::Cancelled { description } => StorageError::ServiceError {
                 description: format!("Operation cancelled: {description}"),
             },
-            err @ CollectionError::InconsistentFailure { .. } => StorageError::ServiceError {
-                description: format!("{err}"),
+            CollectionError::InconsistentFailure { status_code, .. } => match status_code {
+                400 => StorageError::BadRequest {
+                    description: format!("{err}"),
+                },
+                404 => StorageError::NotFound {
+                    description: format!("{err}"),
+                },
+                500 => StorageError::ServiceError {
+                    description: format!("{err}"),
+                },
+                _ => StorageError::ServiceError {
+                    description: format!("{err}"),
+                },
             },
             CollectionError::BadShardSelection { description } => {
                 StorageError::BadRequest { description }

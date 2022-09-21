@@ -342,6 +342,7 @@ pub enum CollectionError {
         shards_total: u32,
         shards_failed: u32,
         first_err: String,
+        status_code: usize,
     },
 }
 
