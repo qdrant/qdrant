@@ -16,7 +16,6 @@ use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::ShardType;
 use crate::shard::shard_versioning::latest_shard_paths;
-use crate::shard::Shard::Local;
 use crate::shard::{ChannelService, CollectionId, Shard, ShardId, ShardTransfer};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
@@ -124,7 +123,7 @@ impl ShardHolder {
         temporary_shard: LocalShard,
     ) -> Option<Shard> {
         self.temporary_shards
-            .insert(shard_id, Local(temporary_shard))
+            .insert(shard_id, Shard::Local(temporary_shard))
     }
 
     /// Remove temporary shard

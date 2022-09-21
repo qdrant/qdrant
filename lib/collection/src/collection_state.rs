@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::collection::Collection;
 use crate::config::CollectionConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shard::collection_shard_distribution::CollectionShardDistribution;
 use crate::shard::replica_set::IsActive;
 use crate::shard::{PeerId, Shard, ShardId, ShardTransfer};
 
@@ -76,7 +77,17 @@ impl State {
         let mut config = collection.config.write().await;
         let old_repl_factor = config.params.replication_factor;
         config.params.replication_factor = new_config.params.replication_factor;
-        collection.handle_repl_factor_change(old_repl_factor, config.params.replication_factor);
+        // TODO pass proper distribution
+        let collection_shard_distribution = CollectionShardDistribution {
+            shards: Default::default(),
+        };
+        collection
+            .handle_repl_factor_change(
+                old_repl_factor,
+                config.params.replication_factor,
+                collection_shard_distribution,
+            )
+            .await?;
         Ok(())
     }
 

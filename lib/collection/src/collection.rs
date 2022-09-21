@@ -36,7 +36,7 @@ use crate::operations::types::{
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
+use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution, ShardType};
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::replica_set::ReplicaSet;
@@ -1047,17 +1047,136 @@ impl Collection {
         let mut config = self.config.write().await;
         let old_repl_factor = config.params.replication_factor;
         config.params = params_diff.update(&config.params)?;
-        self.handle_repl_factor_change(old_repl_factor, config.params.replication_factor);
+        // TODO pass proper distribution
+        let collection_shard_distribution = CollectionShardDistribution {
+            shards: Default::default(),
+        };
+        self.handle_repl_factor_change(
+            old_repl_factor,
+            config.params.replication_factor,
+            collection_shard_distribution,
+        )
+        .await?;
         Ok(())
     }
 
-    pub fn handle_repl_factor_change(&self, old: NonZeroU32, new: NonZeroU32) {
+    pub async fn handle_repl_factor_change(
+        &self,
+        old: NonZeroU32,
+        new: NonZeroU32,
+        collection_shard_distribution: CollectionShardDistribution,
+    ) -> CollectionResult<()> {
         if old != new {
-            // TODO: remove or add replicas. In case of replica addition:
-            // 1. Create and mark them as inactive
-            // 2. Copy data
-            // 3. Mark them as active
+            // If replication factor is decreased to 1 - the replica set is converted to just `Local` or `Remote` shard.
+            if new.get() == 1 {
+                self.absorb_replica_sets(collection_shard_distribution)
+                    .await?;
+            } else {
+                let shard_holder = self.shards_holder.read().await;
+                for shard in shard_holder
+                    .all_shards()
+                    .chain(shard_holder.all_temporary_shards())
+                {
+                    match shard {
+                        Shard::Local(_) => {
+                            log::error!("A replicated collection should not contain local shard")
+                        }
+                        Shard::Proxy(_) => {
+                            log::error!("A replicated collection should not contain proxy shard")
+                        }
+                        Shard::ForwardProxy(_) => log::error!(
+                            "A replicated collection should not contain forward proxy shard"
+                        ),
+                        Shard::Remote(_) => {
+                            log::error!("A replicated collection should not contain remote shard")
+                        }
+                        Shard::ReplicaSet(replica_set) => {
+                            replica_set.scale_replicas(old, new).await?
+                        }
+                    }
+                }
+            }
+        } else {
+            log::debug!("no change in replication factor");
         }
+        Ok(())
+    }
+
+    /// If replication factor is decreased to 1 - the replica set is converted to just `Local` or `Remote` shard.
+    async fn absorb_replica_sets(
+        &self,
+        collection_shard_distribution: CollectionShardDistribution,
+    ) -> CollectionResult<()> {
+        let mut shard_holder = self.shards_holder.write().await;
+        // all existing replica sets on the collection
+        let mut replica_sets = Vec::new();
+        for shard in shard_holder
+            .all_shards()
+            .chain(shard_holder.all_temporary_shards())
+        {
+            match shard {
+                Shard::Local(_) => {
+                    log::error!("A replicated collection should not contain a local shard")
+                }
+                Shard::Proxy(_) => {
+                    log::error!("A replicated collection should not contain a proxy shard")
+                }
+                Shard::ForwardProxy(_) => {
+                    log::error!("A replicated collection should not contain a forward proxy shard")
+                }
+                Shard::Remote(_) => {
+                    log::error!("A replicated collection should not contain a remote shard")
+                }
+                Shard::ReplicaSet(replica_set) => replica_sets.push(replica_set.shard_id),
+            }
+        }
+        debug_assert!(
+            replica_sets.len() <= 1,
+            "at most one replica set definition per collection"
+        );
+        for replica_set_shard_id in replica_sets {
+            // remove replica set shard from shard_holder
+            let old_replica_set = shard_holder
+                .take_shard(replica_set_shard_id)
+                .expect("the shard must exist because we hold the write lock");
+            let proposal_for_shard = collection_shard_distribution
+                .shards
+                .get(&replica_set_shard_id);
+
+            if let Some(proposal_for_shard) = proposal_for_shard {
+                match (proposal_for_shard, old_replica_set) {
+                    (ShardType::Local, Shard::ReplicaSet(replica_set)) => {
+                        let local = replica_set
+                            .local
+                            .expect("the replica set should have a local shard to promote");
+                        // the inner local replica is promoted and all remotes replicas are dropped
+                        shard_holder.add_shard(replica_set_shard_id, Shard::Local(local));
+                    }
+                    (ShardType::Remote(new_remote_peer_id), Shard::ReplicaSet(replica_set)) => {
+                        // one of the remote replicas is promoted as a remote shard
+                        let remotes: Vec<_> =
+                            replica_set.remotes.write().await.drain(0..).collect();
+                        let remote = remotes
+                            .into_iter()
+                            .find(|r| &r.peer_id == new_remote_peer_id)
+                            .expect("the replica set should have a remote shard to promote");
+                        shard_holder.add_shard(replica_set_shard_id, Shard::Remote(remote))
+                    }
+                    (ShardType::ReplicaSet { .. }, Shard::ReplicaSet(replica_set)) => {
+                        log::error!("cannot shrink into a replicaset {}", replica_set_shard_id);
+                    }
+                    _ => {
+                        log::error!("current shard is not a replicaset {}", replica_set_shard_id);
+                    }
+                }
+            } else {
+                log::error!(
+                    "the proposal received is missing the existing shard {}",
+                    replica_set_shard_id
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Updates shard optimization params:

@@ -1,6 +1,7 @@
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 use super::local_shard::{drop_and_delete_from_disk, LocalShard};
 use super::remote_shard::RemoteShard;
@@ -41,10 +42,10 @@ const REPLICA_STATE_FILE: &str = "replica_state";
 /// `ReplicaSet` should always have >= 2 replicas.
 ///  If a user decreases replication factor to 1 - it should be converted to just `Local` or `Remote` shard.
 pub struct ReplicaSet {
-    shard_id: ShardId,
+    pub(crate) shard_id: ShardId,
     this_peer_id: PeerId,
-    local: Option<LocalShard>,
-    remotes: Vec<RemoteShard>,
+    pub(crate) local: Option<LocalShard>,
+    pub(crate) remotes: RwLock<Vec<RemoteShard>>, //TODO remove RwLock, get &mut frm shard_holder
     pub(crate) replica_state: SaveOnDisk<HashMap<PeerId, IsActive>>,
     /// Number of remote replicas to send read requests to.
     /// If actual number of peers is less than this, then read request will be sent to all of them.
@@ -89,7 +90,7 @@ impl ReplicaSet {
             local,
             // TODO: Initialize remote shards
             // This requires logic to store several peer ids in remote shard file
-            remotes: Vec::new(),
+            remotes: RwLock::default(),
             replica_state,
             // TODO: move to collection config
             read_remote_replicas: READ_REMOTE_REPLICAS,
@@ -125,6 +126,7 @@ impl ReplicaSet {
             .filter(|peer_id| !replicas.contains_key(peer_id))
             .copied()
             .collect::<Vec<_>>();
+        let remote_guard = self.remotes.read().await;
         for peer_id in removed_peers {
             if peer_id == self.this_peer_id {
                 if let Some(mut shard) = self.local.take() {
@@ -134,7 +136,7 @@ impl ReplicaSet {
                     debug_assert!(false, "inconsistent `replica_set` map with actual shards")
                 }
             } else if let Some(_remote_shard) =
-                &mut self.remotes.iter().find(|rs| rs.peer_id == peer_id)
+                &mut remote_guard.iter().find(|rs| rs.peer_id == peer_id)
             {
                 todo!("remote_shard.remove_peer(peer_id)")
             }
@@ -167,7 +169,7 @@ impl ReplicaSet {
     pub async fn execute_read_operation<'a, F, Fut, Res>(&'a self, read: F) -> CollectionResult<Res>
     where
         F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
-        Fut: Future<Output = CollectionResult<Res>>,
+        Fut: Future<Output = CollectionResult<Res>> + 'a,
     {
         // 1 - prefer the local shard if it is active
         if let Some(local) = &self.local {
@@ -179,8 +181,8 @@ impl ReplicaSet {
         }
 
         // 2 - try a subset of active remote shards in parallel for fast response
-        let active_remote_shards: Vec<_> = self
-            .remotes
+        let remote_guard: RwLockReadGuard<'a, Vec<_>> = self.remotes.read().await;
+        let active_remote_shards: Vec<&'a RemoteShard> = remote_guard
             .iter()
             .filter(|rs| self.peer_is_active(&rs.peer_id))
             .collect();
@@ -231,6 +233,46 @@ impl ReplicaSet {
         }
         captured_error.expect("at this point `captured_error` must be defined by construction")
     }
+
+    pub async fn scale_replicas(&self, old: NonZeroU32, new: NonZeroU32) -> CollectionResult<()> {
+        let difference = new.get() as i32 - old.get() as i32;
+        if difference < 0 {
+            // remove replicas
+            self.shrink_replica_set(difference.abs() as usize).await
+        } else {
+            // add replicas
+            self.expand_replica_set(difference as usize).await
+        }
+    }
+
+    // 1. Create replicas and mark them as inactive in replica_state
+    // 2. Copy data
+    // 3. Mark them as active
+    pub async fn expand_replica_set(&self, add_count: usize) -> CollectionResult<()> {
+        log::info!(
+            "Expanding replica set {} by {} replicas",
+            self.shard_id,
+            add_count
+        );
+        // TODO impl
+        Ok(())
+    }
+
+    pub async fn shrink_replica_set(&self, remove_count: usize) -> CollectionResult<()> {
+        log::info!(
+            "Shrinking replica set {} by {} replicas",
+            self.shard_id,
+            remove_count
+        );
+        let mut remote_guard = self.remotes.write().await;
+        if remote_guard.len() >= remove_count {
+            // enough remote peers to work with
+            let _drained = remote_guard.drain(0..remove_count);
+        } else {
+            // TODO impl
+        }
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -241,8 +283,8 @@ impl ShardOperation for ReplicaSet {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // target all remote peers that are active
-        let active_remote_shards: Vec<_> = self
-            .remotes
+        let remote_guard = self.remotes.read().await;
+        let active_remote_shards: Vec<_> = remote_guard
             .iter()
             .filter(|rs| self.peer_is_active(&rs.peer_id))
             .collect();
