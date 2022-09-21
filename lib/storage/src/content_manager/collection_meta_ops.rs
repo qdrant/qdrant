@@ -1,5 +1,7 @@
 use collection::config::VectorsConfig;
-use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
+use collection::operations::config_diff::{
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
+};
 use collection::shard::{CollectionId, PeerId, ShardId, ShardTransfer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -92,6 +94,11 @@ pub struct CreateCollection {
     /// Minimum is 1
     #[serde(default)]
     pub shard_number: Option<u32>,
+    /// Number of shards replicas.
+    /// Default is 1
+    /// Minimum is 1
+    #[serde(default)]
+    pub replication_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -122,6 +129,8 @@ pub struct UpdateCollection {
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
     /// This operation is blocking, it will only proceed ones all current optimizations are complete
     pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
+    /// Collection base params.  If none - values from service configuration file are used.
+    pub params: Option<CollectionParamsDiff>,
 }
 
 /// Operation for updating parameters of the existing collection

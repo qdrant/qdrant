@@ -175,6 +175,9 @@ pub struct CreateCollection {
     /// Configuration for vectors
     #[prost(message, optional, tag="10")]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
+    /// Number of replicas of each shard that network tries to maintain, default = 1
+    #[prost(uint32, optional, tag="11")]
+    pub replication_factor: ::core::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
@@ -187,6 +190,9 @@ pub struct UpdateCollection {
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag="3")]
     pub timeout: ::core::option::Option<u64>,
+    /// New configuration parameters for the collection}
+    #[prost(message, optional, tag="4")]
+    pub params: ::core::option::Option<CollectionParamsDiff>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteCollection {
@@ -217,6 +223,15 @@ pub struct CollectionParams {
     /// Configuration for vectors
     #[prost(message, optional, tag="5")]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
+    /// Number of replicas of each shard that network tries to maintain
+    #[prost(uint32, tag="6")]
+    pub replication_factor: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionParamsDiff {
+    /// Number of replicas of each shard that network tries to maintain
+    #[prost(uint32, optional, tag="1")]
+    pub replication_factor: ::core::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {

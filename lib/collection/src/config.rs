@@ -53,8 +53,6 @@ pub struct CollectionParams {
     #[serde(default = "default_shard_number")]
     pub shard_number: NonZeroU32,
     /// Number of replicas for each shard
-    // TODO: do not skip in v1.0 (when replication ships)
-    #[serde(skip)]
     #[serde(default = "default_replication_factor")]
     pub replication_factor: NonZeroU32,
     /// If true - point's payload will not be stored in memory.

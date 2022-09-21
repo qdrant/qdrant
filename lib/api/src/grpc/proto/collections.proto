@@ -157,12 +157,14 @@ message CreateCollection {
   optional bool on_disk_payload = 8; // If true - point's payload will not be stored in memory
   optional uint64 timeout = 9; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
   optional VectorsConfig vectors_config = 10; // Configuration for vectors
+  optional uint32 replication_factor = 11; // Number of replicas of each shard that network tries to maintain, default = 1
 }
 
 message UpdateCollection {
   string collection_name = 1; // Name of the collection
   optional OptimizersConfigDiff optimizers_config = 2; // New configuration parameters for the collection
   optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+  optional CollectionParamsDiff params = 4; // New configuration parameters for the collection
 }
 
 message DeleteCollection {
@@ -181,6 +183,11 @@ message CollectionParams {
   uint32 shard_number = 3; // Number of shards in collection
   bool on_disk_payload = 4; // If true - point's payload will not be stored in memory
   optional VectorsConfig vectors_config = 5; // Configuration for vectors
+  uint32 replication_factor = 6; // Number of replicas of each shard that network tries to maintain
+}
+
+message CollectionParamsDiff {
+  optional uint32 replication_factor = 1; // Number of replicas of each shard that network tries to maintain
 }
 
 message CollectionConfig {
