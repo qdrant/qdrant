@@ -574,20 +574,28 @@ impl Collection {
             .filter(|result| matches!(result, Err(_)))
             .count();
 
+        // one request per shard
+        let result_len = results.len();
+
         if with_error > 0 {
-            let err = results
+            let first_err = results
                 .into_iter()
                 .find(|result| matches!(result, Err(_)))
                 .unwrap();
-            let num_shards = self.shards_holder.read().await.len();
-            if with_error < num_shards {
-                err.map_err(|err| CollectionError::InconsistentFailure {
-                    shards_total: num_shards as u32,
-                    shards_failed: with_error as u32,
-                    first_err: format!("{err}"),
+            // inconsistent if only a subset of the requests fail - one request per shard.
+            if with_error < result_len {
+                first_err.map_err(|err| {
+                    // compute final status code based on the first error
+                    // e.g. a partially successful batch update failing because of bad input is a client error
+                    CollectionError::InconsistentShardFailure {
+                        shards_total: result_len as u32, // report only the number of shards that took part in the update
+                        shards_failed: with_error as u32,
+                        first_err: Box::new(err),
+                    }
                 })
             } else {
-                err
+                // all requests per shard failed - propagate first error (assume there are all the same)
+                first_err
             }
         } else {
             // At least one result is always present.
