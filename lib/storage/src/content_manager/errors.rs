@@ -23,6 +23,36 @@ impl StorageError {
             description: description.to_string(),
         }
     }
+
+    /// Used to override the `description` field of the resulting `StorageError`
+    pub fn from_inconsistent_shard_failure(err: CollectionError, overriding_description: String) -> StorageError {
+        match err {
+            CollectionError::BadInput { .. } => StorageError::BadInput {
+                description: overriding_description,
+            },
+            CollectionError::NotFound { .. } => StorageError::NotFound {
+                description: overriding_description,
+            },
+            CollectionError::PointNotFound { .. } => StorageError::NotFound {
+                description: overriding_description,
+            },
+            CollectionError::ServiceError { .. } => StorageError::ServiceError {
+                description: overriding_description,
+            },
+            CollectionError::BadRequest { .. } => StorageError::BadRequest {
+                description: overriding_description,
+            },
+            CollectionError::Cancelled { .. } => StorageError::ServiceError {
+                description: format!("Operation cancelled: {overriding_description}"),
+            },
+            CollectionError::InconsistentShardFailure { ref first_err, .. } => {
+                StorageError::from_inconsistent_shard_failure(*first_err.clone(), overriding_description)
+            }
+            CollectionError::BadShardSelection { .. } => StorageError::BadRequest {
+                description: overriding_description,
+            },
+        }
+    }
 }
 
 impl From<CollectionError> for StorageError {
@@ -44,48 +74,11 @@ impl From<CollectionError> for StorageError {
             },
             CollectionError::InconsistentShardFailure { ref first_err, .. } => {
                 let full_description = format!("{}", &err);
-                StorageError::from((*first_err.clone(), full_description))
+                StorageError::from_inconsistent_shard_failure(*first_err.clone(), full_description)
             }
             CollectionError::BadShardSelection { description } => {
                 StorageError::BadRequest { description }
             }
-        }
-    }
-}
-
-/// Used to override the `description` field of the resulting `StorageError`
-impl From<(CollectionError, String)> for StorageError {
-    fn from(value: (CollectionError, String)) -> Self {
-        let (err, overriding_description) = value;
-        match err {
-            CollectionError::BadInput { .. } => StorageError::BadInput {
-                description: overriding_description,
-            },
-            CollectionError::NotFound { .. } => StorageError::NotFound {
-                description: overriding_description,
-            },
-            CollectionError::PointNotFound { .. } => StorageError::NotFound {
-                description: overriding_description,
-            },
-            CollectionError::ServiceError { .. } => StorageError::ServiceError {
-                description: overriding_description,
-            },
-            CollectionError::BadRequest { .. } => StorageError::BadRequest {
-                description: overriding_description,
-            },
-            CollectionError::Cancelled { .. } => StorageError::ServiceError {
-                description: format!("Operation cancelled: {overriding_description}"),
-            },
-            CollectionError::InconsistentShardFailure { ref first_err, .. } => {
-                log::warn!(
-                    "No recursive InconsistentShardFailure failure expected {}",
-                    &err
-                );
-                StorageError::from((*first_err.clone(), overriding_description))
-            }
-            CollectionError::BadShardSelection { .. } => StorageError::BadRequest {
-                description: overriding_description,
-            },
         }
     }
 }
