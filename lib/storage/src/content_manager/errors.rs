@@ -25,7 +25,10 @@ impl StorageError {
     }
 
     /// Used to override the `description` field of the resulting `StorageError`
-    pub fn from_inconsistent_shard_failure(err: CollectionError, overriding_description: String) -> StorageError {
+    pub fn from_inconsistent_shard_failure(
+        err: CollectionError,
+        overriding_description: String,
+    ) -> StorageError {
         match err {
             CollectionError::BadInput { .. } => StorageError::BadInput {
                 description: overriding_description,
@@ -46,7 +49,10 @@ impl StorageError {
                 description: format!("Operation cancelled: {overriding_description}"),
             },
             CollectionError::InconsistentShardFailure { ref first_err, .. } => {
-                StorageError::from_inconsistent_shard_failure(*first_err.clone(), overriding_description)
+                StorageError::from_inconsistent_shard_failure(
+                    *first_err.clone(),
+                    overriding_description,
+                )
             }
             CollectionError::BadShardSelection { .. } => StorageError::BadRequest {
                 description: overriding_description,
