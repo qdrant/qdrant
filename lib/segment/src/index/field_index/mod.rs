@@ -14,7 +14,7 @@ mod stat_tools;
 
 pub use field_index_base::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum PrimaryCondition {
     Condition(FieldCondition),
