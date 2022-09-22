@@ -5,7 +5,11 @@ use std::sync::Arc;
 use collection::telemetry::CollectionTelemetry;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
-use segment::telemetry::{Anonymize, TelemetryOperationAggregator, TelemetryOperationStatistics};
+use segment::common::anonymize::Anonymize;
+use segment::common::operation_time_statistics::{
+    TelemetryOperationAggregator, TelemetryOperationStatistics,
+};
+use segment::telemetry::CardinalitySearchesTelemetry;
 use serde::{Deserialize, Serialize};
 use storage::dispatcher::Dispatcher;
 use storage::types::ClusterStatus;
@@ -53,13 +57,42 @@ impl TonicTelemetryCollector {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct TelemetryData {
     id: String,
-    app: AppBuildTelemetry,
-    system: RunningEnvironmentTelemetry,
-    configs: ConfigsTelemetry,
-    collections: Vec<CollectionTelemetry>,
-    web: WebApiTelemetry,
-    grpc_calls_statistics: TelemetryOperationStatistics,
-    cluster_status: ClusterStatus,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    app: Option<AppBuildTelemetry>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    system: Option<RunningEnvironmentTelemetry>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    configs: Option<ConfigsTelemetry>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    collections: Option<Vec<CollectionTelemetry>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    web: Option<WebApiTelemetry>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    grpc_calls_statistics: Option<TelemetryOperationStatistics>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    cluster_status: Option<ClusterStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    total_cardinality_searches: Option<CardinalitySearchesTelemetry>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    total_seraches: Option<TelemetryOperationStatistics>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -132,14 +165,12 @@ impl Anonymize for TelemetryData {
             app: self.app.anonymize(),
             system: self.system.anonymize(),
             configs: self.configs.anonymize(),
-            collections: self
-                .collections
-                .iter()
-                .map(|collection| collection.anonymize())
-                .collect(),
+            collections: self.collections.anonymize(),
             web: self.web.anonymize(),
             grpc_calls_statistics: self.grpc_calls_statistics.anonymize(),
             cluster_status: self.cluster_status.anonymize(),
+            total_cardinality_searches: self.total_cardinality_searches.anonymize(),
+            total_seraches: self.total_seraches.anonymize(),
         }
     }
 }
@@ -257,16 +288,20 @@ impl TelemetryCollector {
         let collections = self.dispatcher.get_telemetry_data().await;
         let cluster_status = self.dispatcher.cluster_status();
         let grpc_calls_statistics = self.grpc_calls_statistics();
-        TelemetryData {
+        let mut result = TelemetryData {
             id: self.process_id.to_string(),
-            app: self.get_app_data(),
-            system: self.get_system_data(),
-            configs: self.get_configs_data(),
-            collections,
-            web: self.get_web_data(),
-            grpc_calls_statistics,
-            cluster_status,
-        }
+            app: Some(self.get_app_data()),
+            system: Some(self.get_system_data()),
+            configs: Some(self.get_configs_data()),
+            collections: Some(collections),
+            web: Some(self.get_web_data()),
+            grpc_calls_statistics: Some(grpc_calls_statistics),
+            cluster_status: Some(cluster_status),
+            total_cardinality_searches: None,
+            total_seraches: None,
+        };
+        result.agregate();
+        result
     }
 
     fn get_app_data(&self) -> AppBuildTelemetry {
@@ -364,13 +399,52 @@ impl TelemetryCollector {
         let mut result = TelemetryOperationStatistics::default();
         for grps_calls in &tonic_telemetry_collector.grpc_calls_aggregators {
             let stats = grps_calls.lock().get_statistics();
-            result.ok_count += stats.ok_count;
-            result.fail_count += stats.fail_count;
-            result.ok_avg_time += stats.ok_avg_time;
-        }
-        if !tonic_telemetry_collector.grpc_calls_aggregators.is_empty() {
-            result.ok_avg_time /= tonic_telemetry_collector.grpc_calls_aggregators.len() as u32;
+            result = result + stats;
         }
         result
+    }
+}
+
+impl TelemetryData {
+    pub fn agregate(&mut self) {
+        let cardinality_searches = self
+            .collections
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|collection| collection.get_cardinality_searches())
+            .fold(CardinalitySearchesTelemetry::default(), |a, b| a + b);
+        self.total_seraches = Some(
+            cardinality_searches.small_cardinality_searches.clone()
+                + cardinality_searches.large_cardinality_searches.clone()
+                + cardinality_searches
+                    .positive_check_cardinality_searches
+                    .clone()
+                + cardinality_searches
+                    .negative_check_cardinality_searches
+                    .clone(),
+        );
+        self.total_cardinality_searches = Some(cardinality_searches);
+    }
+
+    pub fn cut_by_detail_level(&mut self, level: usize) {
+        if level > 0 {
+            self.collections
+                .as_mut()
+                .unwrap()
+                .iter_mut()
+                .for_each(|collection| {
+                    collection.remove_cardinality_searches();
+                });
+        }
+
+        if level > 1 {
+            self.collections = None;
+            self.web = None;
+            self.grpc_calls_statistics = None;
+            self.cluster_status = None;
+            self.total_cardinality_searches = None;
+            self.total_seraches = None;
+        }
     }
 }

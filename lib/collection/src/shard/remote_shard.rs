@@ -11,7 +11,9 @@ use api::grpc::qdrant::{
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
+use segment::common::operation_time_statistics::{
+    TelemetryOperationAggregator, TelemetryOperationTimer,
+};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };

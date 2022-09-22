@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::Mutex;
-use segment::telemetry::TelemetryOperationAggregator;
+use segment::common::operation_time_statistics::TelemetryOperationAggregator;
 use segment::types::{HnswConfig, SegmentType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{

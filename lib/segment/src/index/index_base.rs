@@ -8,7 +8,7 @@ use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
-use crate::telemetry::VectorIndexTelemetry;
+use crate::telemetry::CardinalitySearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
@@ -29,7 +29,7 @@ pub trait VectorIndex {
     /// Force internal index rebuild.
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
 
-    fn get_telemetry_data(&self) -> VectorIndexTelemetry;
+    fn get_telemetry_data(&self) -> CardinalitySearchesTelemetry;
 }
 
 pub trait PayloadIndex {

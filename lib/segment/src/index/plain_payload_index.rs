@@ -8,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
+use crate::common::operation_time_statistics::TelemetryOperationStatistics;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
@@ -17,7 +18,7 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
-use crate::telemetry::{TelemetryOperationStatistics, VectorIndexTelemetry};
+use crate::telemetry::CardinalitySearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
@@ -229,8 +230,8 @@ impl VectorIndex for PlainIndex {
         Ok(())
     }
 
-    fn get_telemetry_data(&self) -> VectorIndexTelemetry {
-        VectorIndexTelemetry {
+    fn get_telemetry_data(&self) -> CardinalitySearchesTelemetry {
+        CardinalitySearchesTelemetry {
             small_cardinality_searches: TelemetryOperationStatistics::default(),
             large_cardinality_searches: TelemetryOperationStatistics::default(),
             positive_check_cardinality_searches: TelemetryOperationStatistics::default(),

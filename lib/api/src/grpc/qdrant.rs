@@ -190,7 +190,7 @@ pub struct UpdateCollection {
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag="3")]
     pub timeout: ::core::option::Option<u64>,
-    /// New configuration parameters for the collection}
+    /// New configuration parameters for the collection
     #[prost(message, optional, tag="4")]
     pub params: ::core::option::Option<CollectionParamsDiff>,
 }

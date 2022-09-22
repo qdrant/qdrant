@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
-use segment::telemetry::{
-    telemetry_hash, Anonymize, SegmentTelemetry, TelemetryOperationStatistics,
-};
+use segment::common::anonymize::Anonymize;
+use segment::common::operation_time_statistics::TelemetryOperationStatistics;
+use segment::telemetry::{CardinalitySearchesTelemetry, SegmentTelemetry};
 use serde::{Deserialize, Serialize};
 
 use crate::config::CollectionConfig;
@@ -52,15 +52,37 @@ impl CollectionTelemetry {
             shards: Vec::new(),
         }
     }
+
+    pub fn get_cardinality_searches(&self) -> CardinalitySearchesTelemetry {
+        let mut result = CardinalitySearchesTelemetry::default();
+        for shard in &self.shards {
+            if let ShardTelemetry::Local { segments, .. } = shard {
+                for segment in segments {
+                    result = result + segment.cardinality_searches.clone().unwrap();
+                }
+            }
+        }
+        result
+    }
+
+    pub fn remove_cardinality_searches(&mut self) {
+        for shard in &mut self.shards {
+            if let ShardTelemetry::Local { segments, .. } = shard {
+                for segment in segments {
+                    segment.cardinality_searches = None;
+                }
+            }
+        }
+    }
 }
 
 impl Anonymize for CollectionTelemetry {
     fn anonymize(&self) -> Self {
         Self {
-            id: telemetry_hash(&self.id),
+            id: self.id.anonymize(),
             config: self.config.anonymize(),
             init_time: self.init_time,
-            shards: self.shards.iter().map(|shard| shard.anonymize()).collect(),
+            shards: self.shards.anonymize(),
         }
     }
 }
@@ -88,11 +110,8 @@ impl Anonymize for ShardTelemetry {
                 segments,
                 optimizers,
             } => ShardTelemetry::Local {
-                segments: segments.iter().map(|segment| segment.anonymize()).collect(),
-                optimizers: optimizers
-                    .iter()
-                    .map(|optimizer| optimizer.anonymize())
-                    .collect(),
+                segments: segments.anonymize(),
+                optimizers: optimizers.anonymize(),
             },
             ShardTelemetry::Remote {
                 searches,

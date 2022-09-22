@@ -2,7 +2,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
-use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
+use segment::common::operation_time_statistics::{
+    TelemetryOperationAggregator, TelemetryOperationTimer,
+};
 use tower::Service;
 use tower_layer::Layer;
 

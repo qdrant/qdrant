@@ -5,11 +5,13 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use segment::common::operation_time_statistics::{
+    TelemetryOperationAggregator, TelemetryOperationTimer,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use segment::types::{
     HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
     SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,

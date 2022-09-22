@@ -11,6 +11,9 @@ use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
+use crate::common::operation_time_statistics::{
+    TelemetryOperationAggregator, TelemetryOperationTimer,
+};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
@@ -22,9 +25,7 @@ use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::VisitedList;
 use crate::index::{PayloadIndex, VectorIndex};
-use crate::telemetry::{
-    TelemetryOperationAggregator, TelemetryOperationTimer, VectorIndexTelemetry,
-};
+use crate::telemetry::CardinalitySearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
@@ -386,8 +387,8 @@ impl VectorIndex for HNSWIndex {
         self.save()
     }
 
-    fn get_telemetry_data(&self) -> VectorIndexTelemetry {
-        VectorIndexTelemetry {
+    fn get_telemetry_data(&self) -> CardinalitySearchesTelemetry {
+        CardinalitySearchesTelemetry {
             small_cardinality_searches: self
                 .small_cardinality_search_telemetry
                 .lock()

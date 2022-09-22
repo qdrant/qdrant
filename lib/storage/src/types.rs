@@ -4,7 +4,7 @@ use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shard::PeerId;
 use schemars::JsonSchema;
-use segment::telemetry::{telemetry_hash, Anonymize};
+use segment::common::anonymize::Anonymize;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
@@ -124,7 +124,7 @@ pub enum ConsensusThreadStatus {
 impl Anonymize for PeerInfo {
     fn anonymize(&self) -> Self {
         PeerInfo {
-            uri: telemetry_hash(&self.uri),
+            uri: self.uri.anonymize(),
         }
     }
 }
