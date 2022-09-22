@@ -29,10 +29,10 @@ impl From<CollectionError> for StorageError {
     fn from(err: CollectionError) -> Self {
         match err {
             CollectionError::BadInput { description } => StorageError::BadInput { description },
-            err @ CollectionError::NotFound { .. } => StorageError::NotFound {
+            CollectionError::NotFound { .. } => StorageError::NotFound {
                 description: format!("{err}"),
             },
-            err @ CollectionError::PointNotFound { .. } => StorageError::NotFound {
+            CollectionError::PointNotFound { .. } => StorageError::NotFound {
                 description: format!("{err}"),
             },
             CollectionError::ServiceError { error } => {
@@ -42,23 +42,50 @@ impl From<CollectionError> for StorageError {
             CollectionError::Cancelled { description } => StorageError::ServiceError {
                 description: format!("Operation cancelled: {description}"),
             },
-            CollectionError::InconsistentFailure { status_code, .. } => match status_code {
-                400 => StorageError::BadRequest {
-                    description: format!("{err}"),
-                },
-                404 => StorageError::NotFound {
-                    description: format!("{err}"),
-                },
-                500 => StorageError::ServiceError {
-                    description: format!("{err}"),
-                },
-                _ => StorageError::ServiceError {
-                    description: format!("{err}"),
-                },
-            },
+            CollectionError::InconsistentShardFailure { ref first_err, .. } => {
+                let full_description = format!("{}", &err);
+                StorageError::from((*first_err.clone(), full_description))
+            }
             CollectionError::BadShardSelection { description } => {
                 StorageError::BadRequest { description }
             }
+        }
+    }
+}
+
+/// Used to override the `description` field of the resulting `StorageError`
+impl From<(CollectionError, String)> for StorageError {
+    fn from(value: (CollectionError, String)) -> Self {
+        let (err, overriding_description) = value;
+        match err {
+            CollectionError::BadInput { .. } => StorageError::BadInput {
+                description: overriding_description,
+            },
+            CollectionError::NotFound { .. } => StorageError::NotFound {
+                description: overriding_description,
+            },
+            CollectionError::PointNotFound { .. } => StorageError::NotFound {
+                description: overriding_description,
+            },
+            CollectionError::ServiceError { .. } => StorageError::ServiceError {
+                description: overriding_description,
+            },
+            CollectionError::BadRequest { .. } => StorageError::BadRequest {
+                description: overriding_description,
+            },
+            CollectionError::Cancelled { .. } => StorageError::ServiceError {
+                description: format!("Operation cancelled: {overriding_description}"),
+            },
+            CollectionError::InconsistentShardFailure { ref first_err, .. } => {
+                log::warn!(
+                    "No recursive InconsistentShardFailure failure expected {}",
+                    &err
+                );
+                StorageError::from((*first_err.clone(), overriding_description))
+            }
+            CollectionError::BadShardSelection { .. } => StorageError::BadRequest {
+                description: overriding_description,
+            },
         }
     }
 }

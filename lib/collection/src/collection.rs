@@ -587,22 +587,10 @@ impl Collection {
                 first_err.map_err(|err| {
                     // compute final status code based on the first error
                     // e.g. a partially successful batch update failing because of bad input is a client error
-                    let status_code = match err {
-                        CollectionError::BadInput { .. } => 400,
-                        CollectionError::BadRequest { .. } => 400,
-                        CollectionError::BadShardSelection { .. } => 500,
-                        CollectionError::NotFound { .. } => 404,
-                        CollectionError::PointNotFound { .. } => 404,
-                        CollectionError::ServiceError { .. } => 500,
-                        CollectionError::Cancelled { .. } => 500,
-                        CollectionError::InconsistentFailure { .. } => 500,
-                    };
-
-                    CollectionError::InconsistentFailure {
+                    CollectionError::InconsistentShardFailure {
                         shards_total: result_len as u32, // report only the number of shards that took part in the update
                         shards_failed: with_error as u32,
-                        first_err: format!("{err}"),
-                        status_code,
+                        first_err: Box::new(err),
                     }
                 })
             } else {
