@@ -114,7 +114,7 @@ pub struct CreateCollection {
 }
 
 /// Operation for creating new collection and (optionally) specify index params
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollectionOperation {
     pub collection_name: String,
@@ -134,7 +134,7 @@ pub struct UpdateCollection {
 }
 
 /// Operation for updating parameters of the existing collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollectionOperation {
     pub collection_name: String,
@@ -152,11 +152,11 @@ pub struct ChangeAliasesOperation {
 }
 
 /// Operation for deleting collection with given name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct DeleteCollectionOperation(pub String);
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum ShardTransferOperations {
     Start(ShardTransfer),
     Finish(ShardTransfer),
@@ -167,7 +167,7 @@ pub enum ShardTransferOperations {
 }
 
 /// Sets the state of shard replica
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub struct SetShardReplicaState {
     pub collection_name: String,
     pub shard_id: ShardId,
@@ -177,7 +177,7 @@ pub struct SetShardReplicaState {
 }
 
 /// Enumeration of all possible collection update operations
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionMetaOperations {
     CreateCollection(CreateCollectionOperation),
