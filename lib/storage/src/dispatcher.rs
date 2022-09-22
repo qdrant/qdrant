@@ -46,7 +46,11 @@ impl Dispatcher {
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
             let op = match operation {
-                CollectionMetaOperations::CreateCollection(op) => {
+                CollectionMetaOperations::CreateCollection(mut op) => {
+                    debug_assert!(
+                        op.take_distribution().is_none(),
+                        "Distribution should be only set in this method."
+                    );
                     let number_of_peers = state.0.peer_count();
                     let shard_distribution = self
                         .toc
@@ -56,8 +60,10 @@ impl Dispatcher {
                                 .expect("Peer count should be always >= 1"),
                         )
                         .await;
-                    CollectionMetaOperations::CreateCollectionDistributed(op, shard_distribution)
+                    op.set_distribution(shard_distribution);
+                    CollectionMetaOperations::CreateCollection(op)
                 }
+                // TODO: match UpdateCollection and also add shard distribution proposal if repl factor is changed
                 op => op,
             };
             state

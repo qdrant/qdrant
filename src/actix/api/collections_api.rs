@@ -51,10 +51,10 @@ async fn create_collection(
     let name = path.into_inner();
     let response = dispatcher
         .submit_collection_meta_op(
-            CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
-                collection_name: name,
-                create_collection: operation.0,
-            }),
+            CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
+                name,
+                operation.into_inner(),
+            )),
             query.timeout(),
         )
         .await;
@@ -72,10 +72,10 @@ async fn update_collection(
     let name = path.into_inner();
     let response = dispatcher
         .submit_collection_meta_op(
-            CollectionMetaOperations::UpdateCollection(UpdateCollectionOperation {
-                collection_name: name,
-                update_collection: operation.0,
-            }),
+            CollectionMetaOperations::UpdateCollection(UpdateCollectionOperation::new(
+                name,
+                operation.into_inner(),
+            )),
             query.timeout(),
         )
         .await;

@@ -400,21 +400,13 @@ impl TableOfContent {
         operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
         match operation {
-            CollectionMetaOperations::CreateCollectionDistributed(
-                operation,
-                distribution_proposal,
-            ) => {
-                self.create_collection(
-                    &operation.collection_name,
-                    operation.create_collection,
-                    distribution_proposal.into(self.this_peer_id),
-                )
-                .await
-            }
-            CollectionMetaOperations::CreateCollection(operation) => {
-                let distribution = CollectionShardDistribution::all_local(
-                    operation.create_collection.shard_number,
-                );
+            CollectionMetaOperations::CreateCollection(mut operation) => {
+                let distribution = match operation.take_distribution() {
+                    None => CollectionShardDistribution::all_local(
+                        operation.create_collection.shard_number,
+                    ),
+                    Some(distribution) => distribution.into(self.this_peer_id),
+                };
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,

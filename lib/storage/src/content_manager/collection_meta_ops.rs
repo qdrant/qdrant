@@ -118,8 +118,26 @@ pub struct CreateCollection {
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollectionOperation {
     pub collection_name: String,
-    #[serde(flatten)]
     pub create_collection: CreateCollection,
+    distribution: Option<ShardDistributionProposal>,
+}
+
+impl CreateCollectionOperation {
+    pub fn new(collection_name: String, create_collection: CreateCollection) -> Self {
+        Self {
+            collection_name,
+            create_collection,
+            distribution: None,
+        }
+    }
+
+    pub fn take_distribution(&mut self) -> Option<ShardDistributionProposal> {
+        self.distribution.take()
+    }
+
+    pub fn set_distribution(&mut self, distribution: ShardDistributionProposal) {
+        self.distribution = Some(distribution);
+    }
 }
 
 /// Operation for updating parameters of the existing collection
@@ -138,8 +156,26 @@ pub struct UpdateCollection {
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollectionOperation {
     pub collection_name: String,
-    #[serde(flatten)]
     pub update_collection: UpdateCollection,
+    distribution: Option<ShardDistributionProposal>,
+}
+
+impl UpdateCollectionOperation {
+    pub fn new(collection_name: String, update_collection: UpdateCollection) -> Self {
+        Self {
+            collection_name,
+            update_collection,
+            distribution: None,
+        }
+    }
+
+    pub fn take_distribution(&mut self) -> Option<ShardDistributionProposal> {
+        self.distribution.take()
+    }
+
+    pub fn set_distribution(&mut self, distribution: ShardDistributionProposal) {
+        self.distribution = Some(distribution);
+    }
 }
 
 /// Operation for performing changes of collection aliases.
@@ -181,7 +217,6 @@ pub struct SetShardReplicaState {
 #[serde(rename_all = "snake_case")]
 pub enum CollectionMetaOperations {
     CreateCollection(CreateCollectionOperation),
-    CreateCollectionDistributed(CreateCollectionOperation, ShardDistributionProposal),
     UpdateCollection(UpdateCollectionOperation),
     DeleteCollection(DeleteCollectionOperation),
     ChangeAliases(ChangeAliasesOperation),
