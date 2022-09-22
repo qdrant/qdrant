@@ -749,9 +749,9 @@ mod tests {
             .unwrap()
             .block_on(
                 dispatcher.submit_collection_meta_op(
-                    CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
-                        collection_name: "test".to_string(),
-                        create_collection: CreateCollection {
+                    CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
+                        "test".to_string(),
+                        CreateCollection {
                             vectors: VectorParams {
                                 size: NonZeroU64::new(10).unwrap(),
                                 distance: Distance::Cosine,
@@ -764,7 +764,7 @@ mod tests {
                             on_disk_payload: None,
                             replication_factor: None,
                         },
-                    }),
+                    )),
                     None,
                 ),
             )
