@@ -97,7 +97,7 @@ fn batch_search_bench(c: &mut Criterion) {
 
     let rnd_batch = create_rnd_batch();
 
-    handle.block_on((&shard).update(rnd_batch, true)).unwrap();
+    handle.block_on(shard.update(rnd_batch, true)).unwrap();
 
     let mut group = c.benchmark_group("batch-search-bench");
 
@@ -138,7 +138,7 @@ fn batch_search_bench(c: &mut Criterion) {
                             with_vector: None,
                             score_threshold: None,
                         };
-                        let result = (&shard)
+                        let result = shard
                             .search(
                                 Arc::new(SearchRequestBatch {
                                     searches: vec![search_query],
@@ -174,7 +174,7 @@ fn batch_search_bench(c: &mut Criterion) {
                     }
 
                     let search_query = SearchRequestBatch { searches };
-                    let result = (&shard)
+                    let result = shard
                         .search(Arc::new(search_query), search_runtime_handle)
                         .await
                         .unwrap();

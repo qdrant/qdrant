@@ -441,10 +441,7 @@ impl SegmentEntry for ProxySegment {
         let deleted_points = self.deleted_points.read();
         let mut read_points = self.wrapped_segment.get().read().read_range(from, to);
         if !deleted_points.is_empty() {
-            read_points = read_points
-                .into_iter()
-                .filter(|idx| !deleted_points.contains(idx))
-                .collect();
+            read_points.retain(|idx| !deleted_points.contains(idx))
         }
         let mut write_segment_points = self.write_segment.get().read().read_range(from, to);
         read_points.append(&mut write_segment_points);
