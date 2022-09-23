@@ -1,4 +1,3 @@
-use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,11 +49,7 @@ impl Dispatcher {
                     let number_of_peers = state.0.peer_count();
                     let shard_distribution = self
                         .toc
-                        .suggest_shard_distribution(
-                            &op,
-                            NonZeroU32::new(number_of_peers as u32)
-                                .expect("Peer count should be always >= 1"),
-                        )
+                        .suggest_shard_distribution(&op, number_of_peers as u32)
                         .await;
                     CollectionMetaOperations::CreateCollectionDistributed(op, shard_distribution)
                 }
