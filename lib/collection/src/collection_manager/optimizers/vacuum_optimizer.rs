@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
-use segment::common::operation_time_statistics::TelemetryOperationAggregator;
+use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::types::{HnswConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -26,7 +26,7 @@ pub struct VacuumOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
-    optimizations_telemetry_counter: Arc<Mutex<TelemetryOperationAggregator>>,
+    telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl VacuumOptimizer {
@@ -48,7 +48,7 @@ impl VacuumOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
-            optimizations_telemetry_counter: TelemetryOperationAggregator::new(),
+            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
 
@@ -124,8 +124,8 @@ impl SegmentOptimizer for VacuumOptimizer {
         }
     }
 
-    fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>> {
-        self.optimizations_telemetry_counter.clone()
+    fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>> {
+        self.telemetry_durations_aggregator.clone()
     }
 }
 

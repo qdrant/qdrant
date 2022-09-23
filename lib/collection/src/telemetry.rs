@@ -1,6 +1,6 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::common::operation_time_statistics::TelemetryOperationStatistics;
+use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::telemetry::{CardinalitySearchesTelemetry, SegmentTelemetry};
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +11,8 @@ use crate::shard::ShardId;
 pub enum ShardTelemetry {
     Remote {
         shard_id: ShardId,
-        searches: TelemetryOperationStatistics,
-        updates: TelemetryOperationStatistics,
+        searches: OperationDurationStatistics,
+        updates: OperationDurationStatistics,
     },
     Local {
         segments: Vec<SegmentTelemetry>,
@@ -33,13 +33,13 @@ pub struct CollectionTelemetry {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub enum OptimizerTelemetry {
     Indexing {
-        optimizations: TelemetryOperationStatistics,
+        optimizations: OperationDurationStatistics,
     },
     Merge {
-        optimizations: TelemetryOperationStatistics,
+        optimizations: OperationDurationStatistics,
     },
     Vacuum {
-        optimizations: TelemetryOperationStatistics,
+        optimizations: OperationDurationStatistics,
     },
 }
 

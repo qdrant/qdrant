@@ -6,7 +6,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_time_statistics::{
-    TelemetryOperationAggregator, TelemetryOperationTimer,
+    OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
@@ -67,7 +67,7 @@ pub trait SegmentOptimizer {
 
     fn get_telemetry_data(&self) -> OptimizerTelemetry;
 
-    fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>>;
+    fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>>;
 
     /// Build temp segment
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
@@ -322,7 +322,7 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
-        let mut timer = TelemetryOperationTimer::new(&self.get_telemetry_counter());
+        let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());
         timer.set_success(false);
 
         // On the one hand - we want to check consistently if all provided segments are

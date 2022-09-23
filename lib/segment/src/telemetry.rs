@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::common::anonymize::Anonymize;
-use crate::common::operation_time_statistics::TelemetryOperationStatistics;
+use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::types::{SegmentConfig, SegmentInfo, VectorDataConfig};
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -37,10 +37,10 @@ pub struct PayloadIndexTelemetry {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
 pub struct CardinalitySearchesTelemetry {
-    pub small_cardinality_searches: TelemetryOperationStatistics,
-    pub large_cardinality_searches: TelemetryOperationStatistics,
-    pub positive_check_cardinality_searches: TelemetryOperationStatistics,
-    pub negative_check_cardinality_searches: TelemetryOperationStatistics,
+    pub small_cardinality_searches: OperationDurationStatistics,
+    pub large_cardinality_searches: OperationDurationStatistics,
+    pub positive_check_cardinality_searches: OperationDurationStatistics,
+    pub negative_check_cardinality_searches: OperationDurationStatistics,
 }
 
 impl std::ops::Add for CardinalitySearchesTelemetry {

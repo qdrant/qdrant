@@ -8,7 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
-use crate::common::operation_time_statistics::TelemetryOperationStatistics;
+use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
@@ -232,10 +232,10 @@ impl VectorIndex for PlainIndex {
 
     fn get_telemetry_data(&self) -> CardinalitySearchesTelemetry {
         CardinalitySearchesTelemetry {
-            small_cardinality_searches: TelemetryOperationStatistics::default(),
-            large_cardinality_searches: TelemetryOperationStatistics::default(),
-            positive_check_cardinality_searches: TelemetryOperationStatistics::default(),
-            negative_check_cardinality_searches: TelemetryOperationStatistics::default(),
+            small_cardinality_searches: OperationDurationStatistics::default(),
+            large_cardinality_searches: OperationDurationStatistics::default(),
+            positive_check_cardinality_searches: OperationDurationStatistics::default(),
+            negative_check_cardinality_searches: OperationDurationStatistics::default(),
         }
     }
 }

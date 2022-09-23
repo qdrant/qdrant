@@ -3,7 +3,7 @@ use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
 use segment::common::operation_time_statistics::{
-    TelemetryOperationAggregator, TelemetryOperationTimer,
+    OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use tower::Service;
 use tower_layer::Layer;
@@ -13,7 +13,7 @@ use crate::common::telemetry::TonicTelemetryCollector;
 #[derive(Clone)]
 pub struct TonicTelemetryService<T> {
     service: T,
-    calls_aggregator: Arc<parking_lot::Mutex<TelemetryOperationAggregator>>,
+    calls_aggregator: Arc<parking_lot::Mutex<OperationDurationsAggregator>>,
 }
 
 #[derive(Clone)]
@@ -38,7 +38,7 @@ where
         let future = self.service.call(request);
         let calls_aggregator = self.calls_aggregator.clone();
         Box::pin(async move {
-            let _timer = TelemetryOperationTimer::new(&calls_aggregator);
+            let _timer = ScopeDurationMeasurer::new(&calls_aggregator);
             let response = future.await?;
             Ok(response)
         })

@@ -11,7 +11,7 @@ const AVG_DATASET_LEN: usize = 128;
 const SLIDING_WINDOW_LEN: usize = 8;
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
-pub struct TelemetryOperationStatistics {
+pub struct OperationDurationStatistics {
     pub count: usize,
 
     #[serde(skip_serializing_if = "num_traits::identities::Zero::is_zero")]
@@ -20,10 +20,10 @@ pub struct TelemetryOperationStatistics {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub avg_time: Option<Duration>,
+    pub avg_duration_micros: Option<f32>,
 }
 
-pub struct TelemetryOperationAggregator {
+pub struct OperationDurationsAggregator {
     ok_count: usize,
     fail_count: usize,
     timings: [f32; AVG_DATASET_LEN],
@@ -31,47 +31,47 @@ pub struct TelemetryOperationAggregator {
     timing_loops: usize,
 }
 
-pub struct TelemetryOperationTimer {
-    aggregator: Arc<Mutex<TelemetryOperationAggregator>>,
+pub struct ScopeDurationMeasurer {
+    aggregator: Arc<Mutex<OperationDurationsAggregator>>,
     instant: Instant,
     success: bool,
 }
 
-impl Anonymize for TelemetryOperationStatistics {
+impl Anonymize for OperationDurationStatistics {
     fn anonymize(&self) -> Self {
         Self {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
-            avg_time: self.avg_time,
+            avg_duration_micros: self.avg_duration_micros,
         }
     }
 }
 
-impl std::ops::Add for TelemetryOperationStatistics {
+impl std::ops::Add for OperationDurationStatistics {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
         Self {
             count: self.count + other.count,
             fail_count: self.fail_count + other.fail_count,
-            avg_time: if let Some(self_avg_time) = self.avg_time {
-                if let Some(other_avg_time) = other.avg_time {
+            avg_duration_micros: if let Some(self_avg_time) = self.avg_duration_micros {
+                if let Some(other_avg_time) = other.avg_duration_micros {
                     Some(
-                        (self_avg_time * self.count as u32 + other_avg_time * other.count as u32)
-                            / (self.count + other.count) as u32,
+                        (self_avg_time * self.count as f32 + other_avg_time * other.count as f32)
+                            / (self.count + other.count) as f32,
                     )
                 } else {
                     Some(self_avg_time)
                 }
             } else {
-                other.avg_time
+                other.avg_duration_micros
             },
         }
     }
 }
 
-impl TelemetryOperationTimer {
-    pub fn new(aggregator: &Arc<Mutex<TelemetryOperationAggregator>>) -> Self {
+impl ScopeDurationMeasurer {
+    pub fn new(aggregator: &Arc<Mutex<OperationDurationsAggregator>>) -> Self {
         Self {
             aggregator: aggregator.clone(),
             instant: Instant::now(),
@@ -84,7 +84,7 @@ impl TelemetryOperationTimer {
     }
 }
 
-impl Drop for TelemetryOperationTimer {
+impl Drop for ScopeDurationMeasurer {
     fn drop(&mut self) {
         self.aggregator
             .lock()
@@ -92,7 +92,7 @@ impl Drop for TelemetryOperationTimer {
     }
 }
 
-impl TelemetryOperationAggregator {
+impl OperationDurationsAggregator {
     pub fn new() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             ok_count: 0,
@@ -117,11 +117,11 @@ impl TelemetryOperationAggregator {
         }
     }
 
-    pub fn get_statistics(&self) -> TelemetryOperationStatistics {
-        TelemetryOperationStatistics {
+    pub fn get_statistics(&self) -> OperationDurationStatistics {
+        OperationDurationStatistics {
             count: self.ok_count,
             fail_count: self.fail_count,
-            avg_time: if self.ok_count > 0 {
+            avg_duration_micros: if self.ok_count > 0 {
                 Some(self.calculate_avg())
             } else {
                 None
@@ -129,7 +129,7 @@ impl TelemetryOperationAggregator {
         }
     }
 
-    fn calculate_avg(&self) -> Duration {
+    fn calculate_avg(&self) -> f32 {
         let data: Vec<f32> = if self.timing_loops > 0 {
             let mut result = Vec::new();
             result.extend_from_slice(&self.timings[self.timing_index..]);
@@ -149,8 +149,7 @@ impl TelemetryOperationAggregator {
             sliding_window_avg[i] = Self::simple_moving_average(&data[from..i + 1]);
         }
 
-        let avg = Self::simple_moving_average(&sliding_window_avg);
-        Duration::from_micros(avg as u64)
+        Self::simple_moving_average(&sliding_window_avg)
     }
 
     fn simple_moving_average(data: &[f32]) -> f32 {

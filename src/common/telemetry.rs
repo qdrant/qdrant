@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::{
-    TelemetryOperationAggregator, TelemetryOperationStatistics,
+    OperationDurationsAggregator, OperationDurationStatistics,
 };
 use segment::telemetry::CardinalitySearchesTelemetry;
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub struct ActixTelemetryCollector {
 }
 
 pub struct TonicTelemetryCollector {
-    grpc_calls_aggregators: Vec<Arc<Mutex<TelemetryOperationAggregator>>>,
+    grpc_calls_aggregator: Vec<Arc<Mutex<OperationDurationsAggregator>>>,
 }
 
 impl ActixTelemetryCollector {
@@ -45,9 +45,9 @@ impl ActixTelemetryCollector {
 }
 
 impl TonicTelemetryCollector {
-    pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<TelemetryOperationAggregator>> {
-        let grpc_calls_aggregator = TelemetryOperationAggregator::new();
-        self.grpc_calls_aggregators
+    pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<OperationDurationsAggregator>> {
+        let grpc_calls_aggregator = OperationDurationsAggregator::new();
+        self.grpc_calls_aggregator
             .push(grpc_calls_aggregator.clone());
         grpc_calls_aggregator
     }
@@ -80,7 +80,7 @@ pub struct TelemetryData {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    grpc_calls_statistics: Option<TelemetryOperationStatistics>,
+    grpc_calls_statistics: Option<OperationDurationStatistics>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -92,7 +92,7 @@ pub struct TelemetryData {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    total_seraches: Option<TelemetryOperationStatistics>,
+    total_seraches: Option<OperationDurationStatistics>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -279,7 +279,7 @@ impl TelemetryCollector {
                 web_workers_telemetry: Vec::new(),
             })),
             tonic_telemetry_collector: Arc::new(Mutex::new(TonicTelemetryCollector {
-                grpc_calls_aggregators: Vec::new(),
+                grpc_calls_aggregator: Vec::new(),
             })),
         }
     }
@@ -394,10 +394,10 @@ impl TelemetryCollector {
         result
     }
 
-    fn grpc_calls_statistics(&self) -> TelemetryOperationStatistics {
+    fn grpc_calls_statistics(&self) -> OperationDurationStatistics {
         let tonic_telemetry_collector = self.tonic_telemetry_collector.lock();
-        let mut result = TelemetryOperationStatistics::default();
-        for grps_calls in &tonic_telemetry_collector.grpc_calls_aggregators {
+        let mut result = OperationDurationStatistics::default();
+        for grps_calls in &tonic_telemetry_collector.grpc_calls_aggregator {
             let stats = grps_calls.lock().get_statistics();
             result = result + stats;
         }
