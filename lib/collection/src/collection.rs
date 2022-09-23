@@ -2,7 +2,6 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::num::NonZeroU32;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -1243,7 +1242,7 @@ impl Collection {
                 .map(|(shard_id, shard)| {
                     let shard_info = match shard {
                         Shard::ReplicaSet(replicas) => ShardInfo::ReplicaSet {
-                            replicas: replicas.replica_state.deref().clone(),
+                            replicas: replicas.replica_state.clone(),
                         },
                         shard => ShardInfo::Single(
                             *shard
