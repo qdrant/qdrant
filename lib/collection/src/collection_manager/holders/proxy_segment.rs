@@ -467,7 +467,7 @@ impl SegmentEntry for ProxySegment {
     fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
         let deleted_points_count = self.deleted_points.read().len();
 
-        let (wrapped_segment_count, total_wrapped_size) = {
+        let (wrapped_segment_est, total_wrapped_size) = {
             let wrapped_segment = self.wrapped_segment.get();
             let wrapped_segment_guard = wrapped_segment.read();
             (
@@ -476,28 +476,33 @@ impl SegmentEntry for ProxySegment {
             )
         };
 
-        let write_segment_count = self
+        let write_segment_est = self
             .write_segment
             .get()
             .read()
             .estimate_points_count(filter);
 
         let expected_deleted_count = if total_wrapped_size > 0 {
-            (wrapped_segment_count.exp as f64
+            (wrapped_segment_est.exp as f64
                 * (deleted_points_count as f64 / total_wrapped_size as f64)) as usize
         } else {
             0
         };
 
+        let primary_clauses =
+            if wrapped_segment_est.primary_clauses == write_segment_est.primary_clauses {
+                wrapped_segment_est.primary_clauses
+            } else {
+                vec![]
+            };
+
         CardinalityEstimation {
-            primary_clauses: vec![],
-            min: wrapped_segment_count
-                .min
-                .saturating_sub(deleted_points_count)
-                + write_segment_count.min,
-            exp: (wrapped_segment_count.exp + write_segment_count.exp)
+            primary_clauses,
+            min: wrapped_segment_est.min.saturating_sub(deleted_points_count)
+                + write_segment_est.min,
+            exp: (wrapped_segment_est.exp + write_segment_est.exp)
                 .saturating_sub(expected_deleted_count),
-            max: wrapped_segment_count.max + write_segment_count.max,
+            max: wrapped_segment_est.max + write_segment_est.max,
         }
     }
 
