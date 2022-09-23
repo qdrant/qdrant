@@ -413,7 +413,7 @@ pub trait SegmentOptimizer {
             // This block locks all operations with collection. It should be fast
             let mut write_segments_guard = segments.write();
             let deleted_points = proxy_deleted_points.read();
-            let points_diff = already_remove_points.difference(&deleted_points);
+            let points_diff = deleted_points.difference(&already_remove_points);
             for &point_id in points_diff {
                 optimized_segment
                     .delete_point(optimized_segment.version(), point_id)
