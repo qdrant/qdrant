@@ -282,6 +282,8 @@ impl UpdateHandler {
                     if signal != OptimizerSignal::Nop
                         && optimization_handles.lock().await.len() >= max_handles
                     {
+                        let mut handles = optimization_handles.lock().await;
+                        handles.retain(|h| !h.is_finished());
                         continue;
                     }
                     // We skip the check for number of optimization handles here
