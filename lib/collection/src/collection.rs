@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -35,11 +35,11 @@ use crate::operations::types::{
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shard::collection_shard_distribution::CollectionShardDistribution;
+use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::replica_set::ReplicaSet;
-use crate::shard::shard_config::{ShardConfig, ShardType};
+use crate::shard::shard_config::{self, ShardConfig};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::shard_versioning::versioned_shard_path;
 use crate::shard::transfer::shard_transfer::{
@@ -80,8 +80,10 @@ impl Collection {
         self.id.clone()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         id: CollectionId,
+        this_peer_id: PeerId,
         path: &Path,
         snapshots_path: &Path,
         config: &CollectionConfig,
@@ -97,38 +99,53 @@ impl Collection {
         let mut shard_holder = ShardHolder::new(path, HashRing::fair(HASH_RING_SHARD_SCALE))?;
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
-        for shard_id in shard_distribution.local {
-            let shard_path = create_shard_dir(path, shard_id).await;
-            let shard = match shard_path {
-                Ok(shard_path) => {
-                    LocalShard::build(shard_id, id.clone(), &shard_path, shared_config.clone())
+        for (shard_id, shard_type) in shard_distribution.shards {
+            let shard = match shard_type {
+                collection_shard_distribution::ShardType::Local => {
+                    let shard_path = create_shard_dir(path, shard_id).await;
+                    let shard = match shard_path {
+                        Ok(shard_path) => {
+                            LocalShard::build(
+                                shard_id,
+                                id.clone(),
+                                &shard_path,
+                                shared_config.clone(),
+                            )
+                            .await
+                        }
+                        Err(e) => Err(e),
+                    };
+                    shard.map(Shard::Local)
+                }
+                collection_shard_distribution::ShardType::Remote(peer_id) => {
+                    create_shard_dir(path, shard_id)
                         .await
+                        .and_then(|shard_path| {
+                            RemoteShard::init(
+                                shard_id,
+                                id.clone(),
+                                peer_id,
+                                shard_path,
+                                channel_service.clone(),
+                            )
+                        })
+                        .map(Shard::Remote)
                 }
-                Err(e) => Err(e),
-            };
-
-            let shard = match shard {
-                Ok(shard) => shard,
-                Err(err) => {
-                    shard_holder.before_drop().await;
-                    return Err(err);
-                }
-            };
-            shard_holder.add_shard(shard_id, Shard::Local(shard));
-        }
-
-        for (shard_id, peer_id) in shard_distribution.remote {
-            let shard = create_shard_dir(path, shard_id)
-                .await
-                .and_then(|shard_path| {
-                    RemoteShard::init(
+                collection_shard_distribution::ShardType::ReplicaSet { local, remote } => {
+                    ReplicaSet::build(
                         shard_id,
                         id.clone(),
-                        peer_id,
-                        shard_path,
-                        channel_service.clone(),
+                        this_peer_id,
+                        local,
+                        remote,
+                        on_replica_failure.clone(),
+                        path,
+                        shared_config.clone(),
                     )
-                });
+                    .await
+                    .map(Shard::ReplicaSet)
+                }
+            };
             let shard = match shard {
                 Ok(shard) => shard,
                 Err(err) => {
@@ -136,22 +153,7 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shard_holder.add_shard(shard_id, Shard::Remote(shard));
-        }
-        // This is a stub to check that types and hidden lifetimes fit
-        // It might be worth leaving it here for now until we have an actual impl
-        // TODO: Create ReplicaSet shards
-        if false {
-            let shard = ReplicaSet::new(
-                1,
-                1,
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                0.0,
-                on_replica_failure,
-            );
-            shard_holder.add_shard(0, Shard::ReplicaSet(shard))
+            shard_holder.add_shard(shard_id, shard);
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
@@ -1037,24 +1039,22 @@ impl Collection {
         Ok(points)
     }
 
+    #[allow(unreachable_code, clippy::diverging_sub_expression)]
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
     ) -> CollectionResult<()> {
         let mut config = self.config.write().await;
-        let old_repl_factor = config.params.replication_factor;
         config.params = params_diff.update(&config.params)?;
-        self.handle_repl_factor_change(old_repl_factor, config.params.replication_factor);
+        self.handle_replica_changes(todo!("supply replica changes"));
         Ok(())
     }
 
-    pub fn handle_repl_factor_change(&self, old: NonZeroU32, new: NonZeroU32) {
-        if old != new {
-            // TODO: remove or add replicas. In case of replica addition:
-            // 1. Create and mark them as inactive
-            // 2. Copy data
-            // 3. Mark them as active
-        }
+    pub fn handle_replica_changes(&self, _replica_changes: HashSet<replica_set::Change>) {
+        // TODO: remove or add replicas. In case of replica addition:
+        // 1. Create and mark them as inactive
+        // 2. Copy data
+        // 3. Mark them as active
     }
 
     /// Updates shard optimization params:
@@ -1240,7 +1240,7 @@ impl Collection {
                 .map(|(shard_id, shard)| {
                     let shard_info = match shard {
                         Shard::ReplicaSet(replicas) => ShardInfo::ReplicaSet {
-                            replicas: replicas.replica_state.clone(),
+                            replicas: replicas.replica_state.deref().clone(),
                         },
                         shard => ShardInfo::Single(
                             *shard
@@ -1370,9 +1370,11 @@ impl Collection {
             let shard_config_opt = ShardConfig::load(&shard_path)?;
             if let Some(shard_config) = shard_config_opt {
                 match shard_config.r#type {
-                    ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
-                    ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
-                    ShardType::Temporary => {}
+                    shard_config::ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
+                    shard_config::ShardType::Remote { .. } => {
+                        RemoteShard::restore_snapshot(&shard_path)
+                    }
+                    shard_config::ShardType::Temporary => {}
                 }
             } else {
                 return Err(CollectionError::service_error(format!(

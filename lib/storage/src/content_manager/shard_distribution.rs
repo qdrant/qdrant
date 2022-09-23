@@ -1,6 +1,8 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::num::NonZeroU32;
 
+use collection::shard::collection_shard_distribution::{CollectionShardDistribution, ShardType};
 use collection::shard::{PeerId, ShardId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,9 +14,9 @@ struct PeerShardCount {
 }
 
 impl PeerShardCount {
-    fn new(shard_count: usize, peer_id: PeerId) -> Self {
+    fn new(peer_id: PeerId) -> Self {
         Self {
-            shard_count,
+            shard_count: 0,
             peer_id,
         }
     }
@@ -26,39 +28,36 @@ impl PeerShardCount {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 pub struct ShardDistributionProposal {
-    pub distribution: Vec<(ShardId, PeerId)>,
+    /// A shard can be located on several peers if it has replicas
+    pub distribution: Vec<(ShardId, Vec<PeerId>)>,
 }
 
 impl ShardDistributionProposal {
     /// Builds a proposal for the distribution of shards.
-    /// It will propose to allocate shards so that all peers have the same number of shards at the end.
+    /// It will propose to allocate shards so that all peers have the same number of shards of this collection  at the end.
     pub fn new(
-        config_shard_number: u32,
+        shard_number: NonZeroU32,
+        replication_factor: NonZeroU32,
         known_peers: &[PeerId],
-        known_shards: Vec<(ShardId, PeerId)>,
     ) -> Self {
         // min number of shard_count on top to make this a min-heap
         let mut min_heap: BinaryHeap<Reverse<PeerShardCount>> =
             BinaryHeap::with_capacity(known_peers.len());
-
-        // count number of existing shards per peers
-        for &peer in known_peers {
-            let shard_count_on_peer = known_shards
-                .iter()
-                .filter(|(_shard_id, peer_id)| *peer_id == peer)
-                .count();
-            min_heap.push(Reverse(PeerShardCount::new(shard_count_on_peer, peer)))
+        for peer in known_peers {
+            min_heap.push(Reverse(PeerShardCount::new(*peer)));
         }
 
-        let mut distribution: Vec<(ShardId, PeerId)> =
-            Vec::with_capacity(config_shard_number as usize);
+        let mut distribution = Vec::with_capacity(shard_number.get() as usize);
 
-        // propose the peer with the least amount of existing shards to host the next shard
-        for shard_id in 0..config_shard_number {
-            let mut least_loaded_peer = min_heap.peek_mut().unwrap();
-            let selected_peer = least_loaded_peer.0.peer_id;
-            least_loaded_peer.0.inc_shard_count();
-            distribution.push((shard_id, selected_peer));
+        for shard_id in 0..shard_number.get() {
+            let mut replicas = Vec::new();
+            for _replica in 0..replication_factor.get() {
+                let mut least_loaded_peer = min_heap.peek_mut().unwrap();
+                let selected_peer = least_loaded_peer.0.peer_id;
+                least_loaded_peer.0.inc_shard_count();
+                replicas.push(selected_peer);
+            }
+            distribution.push((shard_id, replicas))
         }
 
         Self { distribution }
@@ -67,24 +66,47 @@ impl ShardDistributionProposal {
     pub fn local_shards_for(&self, peer_id: PeerId) -> Vec<ShardId> {
         self.distribution
             .iter()
-            .filter_map(
-                |(shard, peer)| {
-                    if peer == &peer_id {
-                        Some(*shard)
-                    } else {
-                        None
-                    }
-                },
-            )
+            .filter_map(|(shard, peers)| {
+                if peers.contains(&peer_id) {
+                    Some(shard)
+                } else {
+                    None
+                }
+            })
+            .copied()
             .collect()
     }
 
-    pub fn remote_shards_for(&self, peer_id: PeerId) -> Vec<(ShardId, PeerId)> {
+    pub fn remote_shards_for(&self, peer_id: PeerId) -> Vec<(ShardId, Vec<PeerId>)> {
         self.distribution
             .iter()
-            .filter(|(_shard, peer)| peer != &peer_id)
-            .copied()
+            .filter(|(_shard, peers)| !peers.contains(&peer_id))
+            .cloned()
             .collect()
+    }
+
+    pub fn into(self, this_peer_id: PeerId) -> CollectionShardDistribution {
+        CollectionShardDistribution {
+            shards: self
+                .distribution
+                .into_iter()
+                .map(|(shard_id, peers)| match &peers[..] {
+                    [peer] if *peer == this_peer_id => (shard_id, ShardType::Local),
+                    [peer] => (shard_id, ShardType::Remote(*peer)),
+                    peers => (
+                        shard_id,
+                        ShardType::ReplicaSet {
+                            local: peers.contains(&this_peer_id),
+                            remote: peers
+                                .iter()
+                                .copied()
+                                .filter(|peer| peer != &this_peer_id)
+                                .collect(),
+                        },
+                    ),
+                })
+                .collect(),
+        }
     }
 }
 
@@ -95,18 +117,24 @@ mod tests {
     #[test]
     fn test_distribution() {
         let known_peers = vec![1, 2, 3, 4];
-        let distribution = ShardDistributionProposal::new(6, &known_peers, vec![]);
+        let distribution = ShardDistributionProposal::new(
+            NonZeroU32::new(6).unwrap(),
+            NonZeroU32::new(1).unwrap(),
+            &known_peers,
+        );
 
         // Check it distribution is as even as possible
         let mut shard_counts: Vec<usize> = vec![0; known_peers.len()];
-        for (_shard_id, peer_id) in &distribution.distribution {
-            let peer_offset = known_peers
-                .iter()
-                .enumerate()
-                .find(|(_, x)| *x == peer_id)
-                .unwrap()
-                .0;
-            shard_counts[peer_offset] += 1;
+        for (_shard_id, peers) in &distribution.distribution {
+            for peer_id in peers {
+                let peer_offset = known_peers
+                    .iter()
+                    .enumerate()
+                    .find(|(_, x)| *x == peer_id)
+                    .unwrap()
+                    .0;
+                shard_counts[peer_offset] += 1;
+            }
         }
 
         assert_eq!(shard_counts.iter().sum::<usize>(), 6);

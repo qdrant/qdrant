@@ -80,6 +80,7 @@ mod tests {
                             optimizers_config: None,
                             shard_number: Some(1),
                             on_disk_payload: None,
+                            replication_factor: None,
                         },
                     }),
                     None,
