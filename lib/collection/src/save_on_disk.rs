@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::BufWriter;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::path::PathBuf;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
@@ -56,7 +56,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de>> SaveOnDisk<T> {
         Ok(output)
     }
 
-    pub fn save(&self) -> Result<(), Error> {
+    fn save(&self) -> Result<(), Error> {
         AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
             let writer = BufWriter::new(file);
             serde_json::to_writer(writer, &self.data)
@@ -70,12 +70,6 @@ impl<T> Deref for SaveOnDisk<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.data
-    }
-}
-
-impl<T> DerefMut for SaveOnDisk<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
     }
 }
 

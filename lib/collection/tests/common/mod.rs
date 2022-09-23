@@ -2,7 +2,6 @@
 
 use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
-use std::sync::Arc;
 
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
@@ -69,7 +68,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
 }
 
 pub fn dummy_on_replica_failure() -> OnPeerFailure {
-    Arc::new(move |_peer_id, _shard_id| Box::new(async {}))
+    Box::new(move |_peer_id, _shard_id| Box::new(async {}))
 }
 
 /// Default to a collection with all the shards local
@@ -81,7 +80,6 @@ pub async fn new_local_collection(
 ) -> Result<Collection, CollectionError> {
     Collection::new(
         id,
-        0,
         path,
         snapshots_path,
         config,
