@@ -1,17 +1,20 @@
 version: 2
 updates:
   - package-ecosystem: cargo
+    target-branch: "dev"
     directory: /
     schedule:
       interval: daily
     open-pull-requests-limit: 10
     labels: [dependencies]
   - package-ecosystem: "github-actions"
+    target-branch: "dev"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
   - package-ecosystem: docker
+    target-branch: "dev"
     directory: "/"
     schedule:
       interval: "weekly"
