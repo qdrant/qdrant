@@ -7,8 +7,8 @@ use std::sync::Arc;
 use collection::collection::Collection;
 use collection::collection_state;
 use collection::collection_state::ShardInfo;
-use collection::config::{CollectionConfig, CollectionParams};
-use collection::operations::config_diff::{CollectionParamsDiff, DiffConfig};
+use collection::config::{default_replication_factor, CollectionConfig, CollectionParams};
+use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
@@ -208,6 +208,7 @@ impl TableOfContent {
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
             optimizers_config: optimizers_config_diff,
+            replication_factor,
         } = operation;
 
         self.collections
@@ -226,6 +227,8 @@ impl TableOfContent {
                 "If shard number was supplied then this exact number should be used in a distribution"
             )
         }
+        let replication_factor =
+            replication_factor.unwrap_or_else(|| default_replication_factor().get());
 
         let collection_params = CollectionParams {
             vectors,
@@ -234,8 +237,11 @@ impl TableOfContent {
                     description: "`shard_number` cannot be 0".to_string(),
                 })?,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
-            // TODO: use `replication_factor` supplied in `CreateCollection`
-            replication_factor: collection::config::default_replication_factor(),
+            replication_factor: NonZeroU32::new(replication_factor).ok_or(
+                StorageError::BadInput {
+                    description: "`replication_factor` cannot be 0".to_string(),
+                },
+            )?,
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),
@@ -260,6 +266,7 @@ impl TableOfContent {
         };
         let collection = Collection::new(
             collection_name.to_string(),
+            self.this_peer_id,
             &collection_path,
             &snapshots_path,
             &collection_config,
@@ -279,7 +286,7 @@ impl TableOfContent {
 
     fn on_peer_failure_callback(&self, collection_name: String) -> replica_set::OnPeerFailure {
         let proposal_sender = self.consensus_proposal_sender.clone();
-        Box::new(move |peer_id, shard_id| {
+        Arc::new(move |peer_id, shard_id| {
             let proposal_sender = proposal_sender.clone();
             let collection_name = collection_name.clone();
             Box::new(async move {
@@ -303,9 +310,10 @@ impl TableOfContent {
         collection_name: &str,
         operation: UpdateCollection,
     ) -> Result<bool, StorageError> {
-        let UpdateCollection { optimizers_config } = operation;
-        // TODO: get `params` from `UpdateCollection`
-        let params: Option<CollectionParamsDiff> = None;
+        let UpdateCollection {
+            optimizers_config,
+            params,
+        } = operation;
         let collection = self.get_collection(collection_name).await?;
         if let Some(diff) = optimizers_config {
             collection.update_optimizer_params_from_diff(diff).await?
@@ -392,14 +400,14 @@ impl TableOfContent {
         operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
         match operation {
-            CollectionMetaOperations::CreateCollectionDistributed(operation, distribution) => {
-                let local = distribution.local_shards_for(self.this_peer_id);
-                let remote = distribution.remote_shards_for(self.this_peer_id);
-                let collection_shard_distribution = CollectionShardDistribution::new(local, remote);
+            CollectionMetaOperations::CreateCollectionDistributed(
+                operation,
+                distribution_proposal,
+            ) => {
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
-                    collection_shard_distribution,
+                    distribution_proposal.into(self.this_peer_id),
                 )
                 .await
             }
@@ -835,21 +843,13 @@ impl TableOfContent {
                     None => {
                         let collection_path = self.create_collection_path(id).await?;
                         let snapshots_path = self.create_snapshots_path(id).await?;
-                        let shard_distribution = CollectionShardDistribution::from_shard_to_peer(
+                        let shard_distribution = CollectionShardDistribution::from_shards_info(
                             self.this_peer_id,
-                            &state
-                                .shards
-                                .iter()
-                                .map(|(id, info)| match info {
-                                    ShardInfo::ReplicaSet { replicas: _ } => {
-                                        todo!("Handle multiple replicas in shard distribution")
-                                    }
-                                    ShardInfo::Single(peer_id) => (*id, *peer_id),
-                                })
-                                .collect(),
+                            state.shards.clone(),
                         );
                         let collection = Collection::new(
                             id.to_string(),
+                            self.this_peer_id,
                             &collection_path,
                             &snapshots_path,
                             &state.config,
@@ -899,11 +899,12 @@ impl TableOfContent {
     pub async fn suggest_shard_distribution(
         &self,
         op: &CreateCollectionOperation,
-        suggested_shard_number: u32,
+        suggested_shard_number: NonZeroU32,
     ) -> ShardDistributionProposal {
         let shard_number = op
             .create_collection
             .shard_number
+            .and_then(NonZeroU32::new)
             .unwrap_or(suggested_shard_number);
         let mut known_peers_set: HashSet<_> = self
             .channel_service
@@ -914,8 +915,14 @@ impl TableOfContent {
             .collect();
         known_peers_set.insert(self.this_peer_id());
         let known_peers: Vec<_> = known_peers_set.into_iter().collect();
+        let replication_factor = op
+            .create_collection
+            .replication_factor
+            .and_then(NonZeroU32::new)
+            .unwrap_or_else(default_replication_factor);
 
-        let shard_distribution = ShardDistributionProposal::new(shard_number, &known_peers, vec![]);
+        let shard_distribution =
+            ShardDistributionProposal::new(shard_number, replication_factor, &known_peers);
 
         log::debug!(
             "Suggesting distribution for {} shards for collection '{}' among {} peers {:?}",

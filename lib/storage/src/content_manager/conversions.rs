@@ -53,6 +53,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
                 shard_number: value.shard_number,
                 on_disk_payload: value.on_disk_payload,
+                replication_factor: value.replication_factor,
             },
         }))
     }
@@ -65,7 +66,8 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
         Ok(Self::UpdateCollection(UpdateCollectionOperation {
             collection_name: value.collection_name,
             update_collection: UpdateCollection {
-                optimizers_config: value.optimizers_config.map(|v| v.into()),
+                optimizers_config: value.optimizers_config.map(Into::into),
+                params: value.params.map(TryInto::try_into).transpose()?,
             },
         }))
     }

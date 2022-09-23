@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::num::{NonZeroU32, NonZeroU64};
+use std::sync::Arc;
 
 use segment::types::Distance;
 use tempfile::Builder;
@@ -6,7 +8,7 @@ use tempfile::Builder;
 use crate::collection::Collection;
 use crate::config::{CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shard::collection_shard_distribution::CollectionShardDistribution;
+use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
 use crate::shard::replica_set::OnPeerFailure;
 use crate::shard::{ChannelService, Shard};
 
@@ -22,7 +24,7 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 };
 
 pub fn dummy_on_replica_failure() -> OnPeerFailure {
-    Box::new(move |_peer_id, _shard_id| Box::new(async {}))
+    Arc::new(move |_peer_id, _shard_id| Box::new(async {}))
 }
 
 #[tokio::test]
@@ -57,13 +59,18 @@ async fn test_snapshot_collection() {
         .unwrap();
     let collection_name = "test".to_string();
     let collection_name_rec = "test_rec".to_string();
+    let mut shards = HashMap::new();
+    shards.insert(0, collection_shard_distribution::ShardType::Local);
+    shards.insert(1, collection_shard_distribution::ShardType::Local);
+    shards.insert(2, collection_shard_distribution::ShardType::Remote(10_000));
 
     let mut collection = Collection::new(
         collection_name,
+        1,
         collection_dir.path(),
         snapshots_path.path(),
         &config,
-        CollectionShardDistribution::new(vec![0, 1], vec![(2, 10000)]),
+        CollectionShardDistribution { shards },
         ChannelService::default(),
         dummy_on_replica_failure(),
     )
