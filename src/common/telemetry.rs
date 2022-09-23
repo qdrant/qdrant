@@ -414,16 +414,7 @@ impl TelemetryData {
             .iter()
             .map(|collection| collection.get_cardinality_searches())
             .fold(CardinalitySearchesTelemetry::default(), |a, b| a + b);
-        self.total_seraches = Some(
-            cardinality_searches.small_cardinality_searches.clone()
-                + cardinality_searches.large_cardinality_searches.clone()
-                + cardinality_searches
-                    .positive_check_cardinality_searches
-                    .clone()
-                + cardinality_searches
-                    .negative_check_cardinality_searches
-                    .clone(),
-        );
+        self.total_seraches = Some(cardinality_searches.get_total_searches());
         self.total_cardinality_searches = Some(cardinality_searches);
     }
 

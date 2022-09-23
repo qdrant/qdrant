@@ -60,6 +60,15 @@ impl std::ops::Add for CardinalitySearchesTelemetry {
     }
 }
 
+impl CardinalitySearchesTelemetry {
+    pub fn get_total_searches(&self) -> OperationDurationStatistics {
+        self.small_cardinality_searches.clone()
+            + self.large_cardinality_searches.clone()
+            + self.positive_check_cardinality_searches.clone()
+            + self.negative_check_cardinality_searches.clone()
+    }
+}
+
 impl Anonymize for SegmentTelemetry {
     fn anonymize(&self) -> Self {
         Self {
