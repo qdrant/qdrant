@@ -33,6 +33,12 @@ const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state";
 
+/// Represents a change in replica set, due to scaling of `replication_factor`
+pub enum Change {
+    Add(ShardId, PeerId),
+    Remove(ShardId, PeerId),
+}
+
 /// A set of shard replicas.
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 /// Prefers local shard for read-only operations.

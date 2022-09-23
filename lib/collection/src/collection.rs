@@ -1,7 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1040,24 +1039,22 @@ impl Collection {
         Ok(points)
     }
 
+    #[allow(unreachable_code, clippy::diverging_sub_expression)]
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
     ) -> CollectionResult<()> {
         let mut config = self.config.write().await;
-        let old_repl_factor = config.params.replication_factor;
         config.params = params_diff.update(&config.params)?;
-        self.handle_repl_factor_change(old_repl_factor, config.params.replication_factor);
+        self.handle_replica_changes(todo!("supply replica changes"));
         Ok(())
     }
 
-    pub fn handle_repl_factor_change(&self, old: NonZeroU32, new: NonZeroU32) {
-        if old != new {
-            // TODO: remove or add replicas. In case of replica addition:
-            // 1. Create and mark them as inactive
-            // 2. Copy data
-            // 3. Mark them as active
-        }
+    pub fn handle_replica_changes(&self, _replica_changes: HashSet<replica_set::Change>) {
+        // TODO: remove or add replicas. In case of replica addition:
+        // 1. Create and mark them as inactive
+        // 2. Copy data
+        // 3. Mark them as active
     }
 
     /// Updates shard optimization params:
