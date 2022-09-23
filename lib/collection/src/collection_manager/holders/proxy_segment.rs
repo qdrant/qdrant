@@ -2,7 +2,6 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
@@ -37,8 +36,6 @@ pub struct ProxySegment {
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
     deleted_points: LockedRmSet,
-    /// Number of points removed from this segment
-    deleted_points_count: AtomicUsize,
     deleted_indexes: LockedFieldsSet,
     created_indexes: LockedFieldsMap,
     last_flushed_version: Arc<RwLock<Option<SeqNumberType>>>,
@@ -59,7 +56,6 @@ impl ProxySegment {
             created_indexes,
             deleted_indexes,
             last_flushed_version: Arc::new(RwLock::new(None)),
-            deleted_points_count: Default::default(),
         }
     }
 
@@ -88,10 +84,6 @@ impl ProxySegment {
         {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
             deleted_points_write.insert(point_id);
-            self.deleted_points_count.fetch_add(1, Ordering::Relaxed);
-            debug_assert!(
-                self.deleted_points_count.load(Ordering::Relaxed) <= deleted_points_write.len()
-            );
         }
 
         let segment_arc = self.write_segment.get();
@@ -460,7 +452,7 @@ impl SegmentEntry for ProxySegment {
 
     fn points_count(&self) -> usize {
         let mut count = 0;
-        let deleted_points_count = self.deleted_points_count.load(Ordering::Relaxed);
+        let deleted_points_count = self.deleted_points.read().len();
         let wrapped_segment_count = self.wrapped_segment.get().read().points_count();
         let write_segment_count = self.write_segment.get().read().points_count();
         count += wrapped_segment_count;
@@ -470,23 +462,44 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
-        let deleted_points_count = self.deleted_points_count.load(Ordering::Relaxed);
-        let wrapped_segment_count = self
-            .wrapped_segment
+        let deleted_points_count = self.deleted_points.read().len();
+
+        let (wrapped_segment_est, total_wrapped_size) = {
+            let wrapped_segment = self.wrapped_segment.get();
+            let wrapped_segment_guard = wrapped_segment.read();
+            (
+                wrapped_segment_guard.estimate_points_count(filter),
+                wrapped_segment_guard.points_count(),
+            )
+        };
+
+        let write_segment_est = self
+            .write_segment
             .get()
             .read()
             .estimate_points_count(filter);
+
+        let expected_deleted_count = if total_wrapped_size > 0 {
+            (wrapped_segment_est.exp as f64
+                * (deleted_points_count as f64 / total_wrapped_size as f64)) as usize
+        } else {
+            0
+        };
+
+        let primary_clauses =
+            if wrapped_segment_est.primary_clauses == write_segment_est.primary_clauses {
+                wrapped_segment_est.primary_clauses
+            } else {
+                vec![]
+            };
+
         CardinalityEstimation {
-            primary_clauses: vec![],
-            min: wrapped_segment_count
-                .min
-                .saturating_sub(deleted_points_count),
-            exp: wrapped_segment_count
-                .exp
-                .saturating_sub(deleted_points_count),
-            max: wrapped_segment_count
-                .max
-                .saturating_sub(deleted_points_count),
+            primary_clauses,
+            min: wrapped_segment_est.min.saturating_sub(deleted_points_count)
+                + write_segment_est.min,
+            exp: (wrapped_segment_est.exp + write_segment_est.exp)
+                .saturating_sub(expected_deleted_count),
+            max: wrapped_segment_est.max + write_segment_est.max,
         }
     }
 
@@ -622,10 +635,26 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         filter: &'a Filter,
     ) -> OperationResult<usize> {
-        self.write_segment
+        let mut deleted_points = 0;
+
+        let points_to_delete =
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_filtered(None, None, Some(filter));
+        if !points_to_delete.is_empty() {
+            deleted_points += points_to_delete.len();
+            let mut deleted_points_guard = self.deleted_points.write();
+            deleted_points_guard.extend(points_to_delete);
+        }
+
+        deleted_points += self
+            .write_segment
             .get()
             .write()
-            .delete_filtered(op_num, filter)
+            .delete_filtered(op_num, filter)?;
+
+        Ok(deleted_points)
     }
 
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
