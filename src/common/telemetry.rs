@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::{
-    OperationDurationsAggregator, OperationDurationStatistics,
+    OperationDurationStatistics, OperationDurationsAggregator,
 };
 use segment::telemetry::CardinalitySearchesTelemetry;
 use serde::{Deserialize, Serialize};
