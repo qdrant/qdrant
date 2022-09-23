@@ -154,6 +154,12 @@ impl CollectionConfig {
         file.read_to_string(&mut contents)?;
         Ok(serde_json::from_str(&contents)?)
     }
+
+    /// Check if collection config exists
+    pub fn check(path: &Path) -> bool {
+        let config_path = path.join(COLLECTION_CONFIG_FILE);
+        config_path.exists()
+    }
 }
 
 impl CollectionParams {

@@ -80,6 +80,15 @@ impl TableOfContent {
             let collection_path = entry
                 .expect("Can't access of one of the collection files")
                 .path();
+
+            if !CollectionConfig::check(&collection_path) {
+                log::warn!(
+                    "Collection config is not found in the collection directory: {:?}, skipping",
+                    collection_path
+                );
+                continue;
+            }
+
             let collection_name = collection_path
                 .file_name()
                 .expect("Can't resolve a filename of one of the collection files")
