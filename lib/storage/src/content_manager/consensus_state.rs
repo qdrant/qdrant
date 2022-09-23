@@ -214,10 +214,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                         }
                     } else if entry.get_context().is_empty() {
                         // Allow empty context for compatibility
-                        log::warn!(
-                            "Outdated peer addition entry found with index: {}",
-                            entry.get_index()
-                        )
+                        // TODO: remove in the next version after 0.10
                     } else {
                         // Should not be reachable as it is checked in API
                         return Err(StorageError::ServiceError {
