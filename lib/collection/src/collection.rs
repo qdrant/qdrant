@@ -91,9 +91,6 @@ impl Collection {
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
-        CollectionVersion::save(path)?;
-        config.save(path)?;
-
         let mut shard_holder = ShardHolder::new(path, HashRing::fair(HASH_RING_SHARD_SCALE))?;
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
@@ -155,6 +152,10 @@ impl Collection {
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
+
+        // Once the config is persisted - the collection is considered to be successfully created.
+        CollectionVersion::save(path)?;
+        config.save(path)?;
 
         Ok(Self {
             id: id.clone(),
