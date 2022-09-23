@@ -64,7 +64,6 @@ impl State {
         Ok(())
     }
 
-    #[allow(unreachable_code, clippy::diverging_sub_expression)]
     async fn apply_config(
         new_config: CollectionConfig,
         collection: &Collection,
@@ -75,8 +74,9 @@ impl State {
             .await?;
         // updating replication factor
         let mut config = collection.config.write().await;
+        let old_repl_factor = config.params.replication_factor;
         config.params.replication_factor = new_config.params.replication_factor;
-        collection.handle_replica_changes(todo!("Calculate and add changes"));
+        collection.handle_repl_factor_change(old_repl_factor, config.params.replication_factor);
         Ok(())
     }
 
