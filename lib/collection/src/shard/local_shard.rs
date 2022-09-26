@@ -9,7 +9,7 @@ use std::thread;
 use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex as ParkingMutex};
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
@@ -39,7 +39,7 @@ use crate::wal::SerdeWal;
 pub struct LocalShard {
     pub(super) segments: Arc<RwLock<SegmentHolder>>,
     pub(super) config: Arc<TokioRwLock<CollectionConfig>>,
-    pub(super) wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+    pub(super) wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) runtime_handle: Option<Runtime>,
     pub(super) update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
@@ -81,7 +81,7 @@ impl LocalShard {
 
         let optimize_runtime = optimize_runtime_builder.build().unwrap();
 
-        let locked_wal = Arc::new(Mutex::new(wal));
+        let locked_wal = Arc::new(ParkingMutex::new(wal));
 
         let mut update_handler = UpdateHandler::new(
             optimizers.clone(),
@@ -101,7 +101,7 @@ impl LocalShard {
             segments: segment_holder,
             config: shared_config,
             wal: locked_wal,
-            update_handler: Arc::new(tokio::sync::Mutex::new(update_handler)),
+            update_handler: Arc::new(Mutex::new(update_handler)),
             runtime_handle: Some(optimize_runtime),
             update_sender: ArcSwap::from_pointee(update_sender),
             path: collection_path.to_owned(),
@@ -350,7 +350,7 @@ impl LocalShard {
 
     /// Loads latest collection operations from WAL
     pub async fn load_from_wal(&self, collection_id: CollectionId) {
-        let wal = self.wal.lock().await;
+        let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());
 
         let progress_style = ProgressStyle::default_bar()
@@ -477,7 +477,7 @@ impl LocalShard {
     /// copies all WAL files into `snapshot_shard_path/wal`
     pub async fn snapshot_wal(&self, snapshot_shard_path: &Path) -> CollectionResult<()> {
         // lock wal during snapshot
-        let _wal_guard = self.wal.lock().await;
+        let _wal_guard = self.wal.lock();
         let source_wal_path = self.path.join("wal");
         let options = fs_extra::dir::CopyOptions::new();
         fs_extra::dir::copy(&source_wal_path, snapshot_shard_path, &options).map_err(|err| {

@@ -8,7 +8,8 @@ use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::sync::{oneshot, Mutex};
+use parking_lot::Mutex as ParkingMutex;
+use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
 
@@ -74,8 +75,8 @@ pub struct UpdateHandler {
     flush_stop: Option<oneshot::Sender<()>>,
     runtime_handle: Handle,
     /// WAL, required for operations
-    wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+    wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+    optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
 }
 
@@ -84,7 +85,7 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_interval_sec: u64,
         max_optimization_threads: usize,
     ) -> UpdateHandler {
@@ -98,7 +99,7 @@ impl UpdateHandler {
             runtime_handle,
             wal,
             flush_interval_sec,
-            optimization_handles: Arc::new(Mutex::new(vec![])),
+            optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
         }
     }
@@ -168,14 +169,14 @@ impl UpdateHandler {
     /// If so - attempts to re-apply all failed operations.
     async fn try_recover(
         segments: LockedSegmentHolder,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
     ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
         match first_failed_operation_option {
             None => {}
             Some(first_failed_op) => {
-                let wal_lock = wal.lock().await;
+                let wal_lock = wal.lock();
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
                     CollectionUpdater::update(&segments, op_num, operation)?;
                 }
@@ -249,7 +250,7 @@ impl UpdateHandler {
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
-        optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         sender: UnboundedSender<OptimizerSignal>,
     ) {
         let mut new_handles = Self::launch_optimization(
@@ -272,8 +273,8 @@ impl UpdateHandler {
         sender: UnboundedSender<OptimizerSignal>,
         mut receiver: UnboundedReceiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-        optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         max_handles: usize,
     ) {
         while let Some(signal) = receiver.recv().await {
@@ -364,7 +365,7 @@ impl UpdateHandler {
 
     async fn flush_worker(
         segments: LockedSegmentHolder,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
     ) {
@@ -389,7 +390,7 @@ impl UpdateHandler {
                     continue;
                 }
             };
-            if let Err(err) = wal.lock().await.ack(confirmed_version) {
+            if let Err(err) = wal.lock().ack(confirmed_version) {
                 segments.write().report_optimizer_error(err);
             }
         }

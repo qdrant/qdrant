@@ -46,7 +46,7 @@ impl ShardOperation for LocalShard {
         let operation_id = {
             let operation_id = {
                 let instant = std::time::Instant::now();
-                let mut wal_lock = self.wal.lock().await;
+                let mut wal_lock = self.wal.lock();
                 segment::WAL_LOCK.update(instant.elapsed());
 
                 let instant = std::time::Instant::now();
