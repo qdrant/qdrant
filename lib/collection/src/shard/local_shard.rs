@@ -9,7 +9,7 @@ use std::thread;
 use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
-use parking_lot::{RwLock, Mutex as ParkingMutex};
+use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};

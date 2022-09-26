@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
+use parking_lot::Mutex as ParkingMutex;
 use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use parking_lot::Mutex as ParkingMutex;
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
