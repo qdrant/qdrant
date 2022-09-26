@@ -36,8 +36,10 @@ where
         let future = self.service.call(request);
         let calls_aggregator = self.calls_aggregator.clone();
         Box::pin(async move {
+            let instant = std::time::Instant::now();
             let _timer = TelemetryOperationTimer::new(&calls_aggregator);
             let response = future.await?;
+            segment::GRPC_WRITE.update(instant.elapsed());
             Ok(response)
         })
     }

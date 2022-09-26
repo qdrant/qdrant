@@ -556,6 +556,7 @@ impl Collection {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        let instant = std::time::Instant::now();
         operation.validate()?;
 
         let mut results = {
@@ -576,6 +577,7 @@ impl Collection {
         // one request per shard
         let result_len = results.len();
 
+        segment::COLLECTION_OPERATION.update(instant.elapsed());
         if with_error > 0 {
             let first_err = results
                 .into_iter()

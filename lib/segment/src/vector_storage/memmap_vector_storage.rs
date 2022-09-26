@@ -166,6 +166,8 @@ where
     }
 
     fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>> {
+        //let instant = std::time::Instant::now();
+
         let dim = self.vector_dim();
 
         let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
@@ -209,6 +211,8 @@ where
             &self.deleted_path,
             dim,
         )?);
+
+        //crate::MMAP_MERGE.update(instant.elapsed());
 
         Ok(start_index..end_index)
     }

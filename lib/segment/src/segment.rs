@@ -511,6 +511,8 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         check_vectors_set(vectors, &self.segment_config)?;
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
+            //let instant = std::time::Instant::now();
+
             let mut processed_vectors = NamedVectors::default();
             for (vector_name, vector) in vectors.iter() {
                 let vector_name: &str = vector_name;
@@ -562,6 +564,7 @@ impl SegmentEntry for Segment {
                 false
             };
 
+            //SEGMENT_UPSERT.update(instant.elapsed());
             Ok(was_replaced)
         })
     }

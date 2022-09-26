@@ -45,7 +45,8 @@ tar = "0.4.38"
 fs_extra = "1.2.0"
 semver = "1.0.14"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
-
+lazy_static = "1.4.0"
+chrono = "0.4.22"
 
 [[bench]]
 name = "vector_search"

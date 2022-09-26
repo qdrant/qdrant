@@ -39,9 +39,24 @@ impl ShardOperation for LocalShard {
             (None, None)
         };
 
+
+        if wait {
+            panic!("I guess we don't need this anymore");
+        }
+
         let operation_id = {
-            let mut wal_lock = self.wal.lock().await;
-            let operation_id = wal_lock.write(&operation)?;
+            let operation_id = {
+                let instant = std::time::Instant::now();
+                let mut wal_lock = self.wal.lock().await;
+                segment::WAL_LOCK.update(instant.elapsed());
+
+                let instant = std::time::Instant::now();
+                let operation_id = wal_lock.write(&operation)?;
+                segment::WAL_WRITE.update(instant.elapsed());
+
+                operation_id
+            };
+
             self.update_sender
                 .load()
                 .send(UpdateSignal::Operation(OperationData {
