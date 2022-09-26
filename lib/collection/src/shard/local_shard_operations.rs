@@ -115,7 +115,13 @@ impl ShardOperation for LocalShard {
     /// Collect overview information about the shard
     async fn info(&self) -> CollectionResult<CollectionInfo> {
         let collection_config = self.config.read().await.clone();
+        let segments_lock_time = tokio::time::Instant::now();
         let segments = self.segments().read();
+        let elapsed_secs = segments_lock_time.elapsed().as_secs_f64();
+        if elapsed_secs > 0.5 {
+            log::warn!("Segments lock time is too long: {} seconds", elapsed_secs);
+        }
+
         let mut vectors_count = 0;
         let mut indexed_vectors_count = 0;
         let mut points_count = 0;
@@ -127,21 +133,50 @@ impl ShardOperation for LocalShard {
 
             let segment_info = match segment {
                 LockedSegment::Original(original_segment) => {
-                    let info = original_segment.read().info();
+                    let info = {
+                        let segment_lock_time = tokio::time::Instant::now();
+                        let original_segment_lock = original_segment.read();
+                        let elapsed_secs = segment_lock_time.elapsed().as_secs_f64();
+                        if elapsed_secs > 0.5 {
+                            log::warn!("Segment lock time is too long: {} seconds", elapsed_secs);
+                        }
+                        original_segment_lock.info()
+                    };
                     if info.segment_type == SegmentType::Indexed {
                         indexed_vectors_count += info.num_vectors;
                     }
                     info
                 }
                 LockedSegment::Proxy(proxy_segment) => {
-                    let proxy_segment_lock = proxy_segment.read();
-                    let proxy_segment_info = proxy_segment_lock.info();
-
-                    let wrapped_info = proxy_segment_lock.wrapped_segment.get().read().info();
-                    if wrapped_info.segment_type == SegmentType::Indexed {
-                        indexed_vectors_count += wrapped_info.num_vectors;
+                    let proxy_segment_lock_time = tokio::time::Instant::now();
+                    {
+                        let proxy_segment_lock = proxy_segment.read();
+                        let elapsed_secs = proxy_segment_lock_time.elapsed().as_secs_f64();
+                        if elapsed_secs > 0.5 {
+                            log::warn!(
+                                "Proxy segment lock time is too long: {} seconds",
+                                elapsed_secs
+                            );
+                        }
+                        let proxy_segment_info = proxy_segment_lock.info();
+                        let wrapped_info = {
+                            let segment_lock_time = tokio::time::Instant::now();
+                            let wrapped_segment = proxy_segment_lock.wrapped_segment.get();
+                            let wrapped_segment_lock = wrapped_segment.read();
+                            let elapsed_secs = segment_lock_time.elapsed().as_secs_f64();
+                            if elapsed_secs > 0.5 {
+                                log::warn!(
+                                    "Wrapped segment lock time is too long: {} seconds",
+                                    elapsed_secs
+                                );
+                            }
+                            wrapped_segment_lock.info()
+                        };
+                        if wrapped_info.segment_type == SegmentType::Indexed {
+                            indexed_vectors_count += wrapped_info.num_vectors;
+                        }
+                        proxy_segment_info
                     }
-                    proxy_segment_info
                 }
             };
 
