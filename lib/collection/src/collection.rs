@@ -38,7 +38,7 @@ use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
-use crate::shard::replica_set::ReplicaSet;
+use crate::shard::replica_set::{Change, ReplicaSet};
 use crate::shard::shard_config::{self, ShardConfig};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::shard_versioning::versioned_shard_path;
@@ -1047,15 +1047,108 @@ impl Collection {
     ) -> CollectionResult<()> {
         let mut config = self.config.write().await;
         config.params = params_diff.update(&config.params)?;
-        self.handle_replica_changes(todo!("supply replica changes"));
+        todo!("supply replica changes");
+        let changes = HashSet::new();
+        self.handle_replica_changes(changes).await?;
         Ok(())
     }
 
-    pub fn handle_replica_changes(&self, _replica_changes: HashSet<replica_set::Change>) {
-        // TODO: remove or add replicas. In case of replica addition:
-        // 1. Create and mark them as inactive
-        // 2. Copy data
-        // 3. Mark them as active
+    /// Handle replica changes
+    ///
+    /// add and remove replicas from replica set
+    pub async fn handle_replica_changes(
+        &self,
+        replica_changes: HashSet<Change>,
+    ) -> CollectionResult<()> {
+        if replica_changes.is_empty() {
+            return Ok(());
+        }
+
+        let mut shard_holder = self.shards_holder.write().await;
+
+        // all existing replica sets in the collection
+        let mut replica_sets = Vec::new();
+        for shard in shard_holder.all_shards() {
+            match shard {
+                Shard::Local(_) | Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::Remote(_) => {
+                    log::error!(
+                        "A replicated collection should not contain a {}",
+                        shard.variant_name()
+                    )
+                }
+                Shard::ReplicaSet(replica_set) => replica_sets.push(replica_set.shard_id),
+            }
+        }
+        debug_assert!(
+            !replica_sets.is_empty(),
+            "at least one replica set definition per collection"
+        );
+
+        // perform first the addition of replicas
+        for change in &replica_changes {
+            match change {
+                Change::Add(shard_id, peer_id) => {
+                    if let Some(Shard::ReplicaSet(replica_set)) =
+                        shard_holder.get_mut_shard(shard_id)
+                    {
+                        replica_set.add_replica(peer_id)?;
+                    } else {
+                        log::error!(
+                            "Cannot add replica on non existent replica set {}:{}",
+                            self.id,
+                            shard_id
+                        );
+                    }
+                }
+                Change::Remove(_, _) => {}
+            }
+        }
+
+        // then the removal of replicas
+        for change in &replica_changes {
+            match change {
+                Change::Remove(shard_id, peer_id) => {
+                    // capture `shard to promote` to avoid second mutable borrow on `shard_holder`
+                    let mut shard_to_promote: Option<Shard> = None;
+
+                    if let Some(Shard::ReplicaSet(replica_set)) =
+                        shard_holder.get_mut_shard(shard_id)
+                    {
+                        // remove replica
+                        replica_set.remove_replica(peer_id).await?;
+
+                        // the replica set must be dissolved if it contains a single shard
+                        let remaining_replicas_after_removal = replica_set.peer_ids().len();
+                        if remaining_replicas_after_removal == 1 {
+                            if let Some(local_shard) = replica_set.local.take() {
+                                // the inner local replica is promoted
+                                shard_to_promote = Some(Shard::Local(local_shard));
+                            } else {
+                                debug_assert!(replica_set.remotes.len() == 1);
+                                for remote in replica_set.remotes.drain(0..1) {
+                                    // the last remaining remote replica is promoted
+                                    shard_to_promote = Some(Shard::Remote(remote))
+                                }
+                            }
+                        }
+                    } else {
+                        log::error!(
+                            "Cannot remove replica {} on non existent replica set {}:{}",
+                            peer_id,
+                            self.id,
+                            shard_id
+                        );
+                    }
+
+                    // promoting shard by replacing existing replica set
+                    if let Some(shard_to_promote) = shard_to_promote {
+                        shard_holder.replace_shard(*shard_id, shard_to_promote);
+                    }
+                }
+                Change::Add(_, _) => {}
+            }
+        }
+        Ok(())
     }
 
     /// Updates shard optimization params:

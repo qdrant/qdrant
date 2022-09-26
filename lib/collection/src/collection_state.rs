@@ -76,7 +76,9 @@ impl State {
         // updating replication factor
         let mut config = collection.config.write().await;
         config.params.replication_factor = new_config.params.replication_factor;
-        collection.handle_replica_changes(todo!("Calculate and add changes"));
+        todo!("supply replica changes");
+        let changes = HashSet::new();
+        collection.handle_replica_changes(changes).await?;
         Ok(())
     }
 
