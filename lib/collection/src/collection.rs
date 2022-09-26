@@ -1039,13 +1039,14 @@ impl Collection {
         Ok(points)
     }
 
+    #[allow(unreachable_code, clippy::diverging_sub_expression)]
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
     ) -> CollectionResult<()> {
         let mut config = self.config.write().await;
         config.params = params_diff.update(&config.params)?;
-        // TODO supply replica changes
+        todo!("supply replica changes");
         let changes = HashSet::new();
         self.handle_replica_changes(changes).await?;
         Ok(())
