@@ -1069,17 +1069,11 @@ impl Collection {
         let mut replica_sets = Vec::new();
         for shard in shard_holder.all_shards() {
             match shard {
-                Shard::Local(_) => {
-                    log::error!("A replicated collection should not contain a local shard")
-                }
-                Shard::Proxy(_) => {
-                    log::error!("A replicated collection should not contain a proxy shard")
-                }
-                Shard::ForwardProxy(_) => {
-                    log::error!("A replicated collection should not contain a forward proxy shard")
-                }
-                Shard::Remote(_) => {
-                    log::error!("A replicated collection should not contain a remote shard")
+                Shard::Local(_) | Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::Remote(_) => {
+                    log::error!(
+                        "A replicated collection should not contain a {}",
+                        shard.variant_name()
+                    )
                 }
                 Shard::ReplicaSet(replica_set) => replica_sets.push(replica_set.shard_id),
             }
