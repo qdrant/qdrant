@@ -8,7 +8,7 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
@@ -20,6 +20,9 @@ use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
+
+/// Ensures back pressure on the update channel.
+pub const UPDATE_QUEUE_SIZE: usize = 100;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -104,8 +107,8 @@ impl UpdateHandler {
         }
     }
 
-    pub fn run_workers(&mut self, update_receiver: UnboundedReceiver<UpdateSignal>) {
-        let (tx, rx) = mpsc::unbounded_channel();
+    pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
+        let (tx, rx) = mpsc::channel(UPDATE_QUEUE_SIZE);
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
             tx.clone(),
@@ -251,7 +254,7 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
-        sender: UnboundedSender<OptimizerSignal>,
+        sender: Sender<OptimizerSignal>,
     ) {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
@@ -270,8 +273,8 @@ impl UpdateHandler {
 
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
-        sender: UnboundedSender<OptimizerSignal>,
-        mut receiver: UnboundedReceiver<OptimizerSignal>,
+        sender: Sender<OptimizerSignal>,
+        mut receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
         wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
@@ -307,8 +310,8 @@ impl UpdateHandler {
     }
 
     async fn update_worker_fn(
-        mut receiver: UnboundedReceiver<UpdateSignal>,
-        optimize_sender: UnboundedSender<OptimizerSignal>,
+        mut receiver: Receiver<UpdateSignal>,
+        optimize_sender: Sender<OptimizerSignal>,
         segments: LockedSegmentHolder,
     ) {
         while let Some(signal) = receiver.recv().await {
@@ -321,6 +324,7 @@ impl UpdateHandler {
                     let res = match CollectionUpdater::update(&segments, op_num, operation) {
                         Ok(update_res) => optimize_sender
                             .send(OptimizerSignal::Operation(op_num))
+                            .await
                             .and(Ok(update_res))
                             .map_err(|send_err| send_err.into()),
                         Err(err) => Err(err),
@@ -338,18 +342,18 @@ impl UpdateHandler {
                 UpdateSignal::Stop => {
                     optimize_sender
                         .send(OptimizerSignal::Stop)
+                        .await
                         .unwrap_or_else(|_| debug!("Optimizer already stopped"));
                     break;
                 }
-                UpdateSignal::Nop => {
-                    optimize_sender
-                        .send(OptimizerSignal::Nop)
-                        .unwrap_or_else(|_| {
-                            info!(
+                UpdateSignal::Nop => optimize_sender
+                    .send(OptimizerSignal::Nop)
+                    .await
+                    .unwrap_or_else(|_| {
+                        info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
                         );
-                        })
-                }
+                    }),
                 UpdateSignal::Plunger(callback_sender) => {
                     callback_sender.send(()).unwrap_or_else(|_| {
                         debug!("Can't notify sender, assume nobody is waiting anymore");
@@ -360,6 +364,7 @@ impl UpdateHandler {
         // Transmitter was destroyed
         optimize_sender
             .send(OptimizerSignal::Stop)
+            .await
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 
