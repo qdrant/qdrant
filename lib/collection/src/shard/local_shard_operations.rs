@@ -39,7 +39,6 @@ impl ShardOperation for LocalShard {
             (None, None)
         };
 
-
         if wait {
             panic!("I guess we don't need this anymore");
         }

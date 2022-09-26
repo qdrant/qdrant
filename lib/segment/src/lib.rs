@@ -47,7 +47,8 @@ impl MaxDuration {
         let mut locked = self.max.lock();
         if duration > *locked {
             *locked = duration;
-            log::error!("TOP DURATION {}: {:?}s, {:02}:{:02}:{:02}",
+            log::error!(
+                "TOP DURATION {}: {:?}s, {:02}:{:02}:{:02}",
                 &self.name,
                 duration.as_micros() as f64 / 1_000_000.0,
                 now.hour(),
