@@ -1500,6 +1500,7 @@ impl Collection {
         &self,
         new_repl_factor: NonZeroU32,
         all_peers: HashSet<PeerId>,
+        this_peer_id: PeerId,
     ) -> CollectionResult<Option<HashSet<replica_set::Change>>> {
         let repl_factor = self.config.read().await.params.replication_factor;
         match new_repl_factor.cmp(&repl_factor) {
@@ -1534,22 +1535,19 @@ impl Collection {
                 let shard_holder = self.shards_holder.read().await;
                 let changes: HashSet<_> = shard_holder
                     .get_shards()
-                    .map(|(shard_id, shard)| match shard {
-                        Shard::ReplicaSet(shard) => Ok((shard_id, shard)),
-                        _ => Err(CollectionError::service_error(
-                            "Shards should all be `ReplicaSet` in this collection".to_string(),
-                        )),
-                    })
-                    .map_ok(|(shard_id, shard)| {
-                        let shard_peers: HashSet<_> = shard.peer_ids().into_iter().collect();
+                    .flat_map(|(shard_id, shard)| {
+                        // In case of increasing replication factor there could be shards which are not replica_set yet
+                        // - when replication factor is 1.
+                        // That is why a more concrete variant (ReplicaSet) is not used here, instead general shard enum is used
+                        let shard_peers: HashSet<_> =
+                            shard.peer_ids(this_peer_id).into_iter().collect();
                         all_peers
                             .difference(&shard_peers)
                             .take(add_n as usize)
                             .map(|peer_id| replica_set::Change::Remove(*shard_id, *peer_id))
                             .collect_vec()
                     })
-                    .flatten_ok()
-                    .try_collect()?;
+                    .collect();
                 Ok(Some(changes))
             }
         }

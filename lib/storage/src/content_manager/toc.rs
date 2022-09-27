@@ -954,6 +954,7 @@ impl TableOfContent {
             .suggest_shard_replica_changes(
                 new_repl_factor,
                 self.peer_address_by_id().into_keys().collect(),
+                self.this_peer_id(),
             )
             .await?;
         Ok(changes)
