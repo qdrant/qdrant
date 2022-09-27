@@ -297,6 +297,7 @@ where
                 point.payload.as_ref(),
             )? as usize;
         }
+        RwLockWriteGuard::unlock_fair(write_segment);
     };
 
     Ok(res)
