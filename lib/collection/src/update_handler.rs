@@ -4,11 +4,12 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
+use parking_lot::Mutex as ParkingMutex;
 use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
 
@@ -19,6 +20,8 @@ use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
+
+pub const UPDATE_QUEUE_SIZE: usize = 100;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -74,8 +77,8 @@ pub struct UpdateHandler {
     flush_stop: Option<oneshot::Sender<()>>,
     runtime_handle: Handle,
     /// WAL, required for operations
-    wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+    wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+    optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
 }
 
@@ -84,7 +87,7 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_interval_sec: u64,
         max_optimization_threads: usize,
     ) -> UpdateHandler {
@@ -98,13 +101,13 @@ impl UpdateHandler {
             runtime_handle,
             wal,
             flush_interval_sec,
-            optimization_handles: Arc::new(Mutex::new(vec![])),
+            optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
         }
     }
 
-    pub fn run_workers(&mut self, update_receiver: UnboundedReceiver<UpdateSignal>) {
-        let (tx, rx) = mpsc::unbounded_channel();
+    pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
+        let (tx, rx) = mpsc::channel(UPDATE_QUEUE_SIZE);
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
             tx.clone(),
@@ -168,14 +171,14 @@ impl UpdateHandler {
     /// If so - attempts to re-apply all failed operations.
     async fn try_recover(
         segments: LockedSegmentHolder,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
     ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
         match first_failed_operation_option {
             None => {}
             Some(first_failed_op) => {
-                let wal_lock = wal.lock().await;
+                let wal_lock = wal.lock();
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
                     CollectionUpdater::update(&segments, op_num, operation)?;
                 }
@@ -249,8 +252,8 @@ impl UpdateHandler {
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
-        optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
-        sender: UnboundedSender<OptimizerSignal>,
+        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+        sender: Sender<OptimizerSignal>,
     ) {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
@@ -269,11 +272,11 @@ impl UpdateHandler {
 
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
-        sender: UnboundedSender<OptimizerSignal>,
-        mut receiver: UnboundedReceiver<OptimizerSignal>,
+        sender: Sender<OptimizerSignal>,
+        mut receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-        optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         max_handles: usize,
     ) {
         while let Some(signal) = receiver.recv().await {
@@ -308,8 +311,8 @@ impl UpdateHandler {
     }
 
     async fn update_worker_fn(
-        mut receiver: UnboundedReceiver<UpdateSignal>,
-        optimize_sender: UnboundedSender<OptimizerSignal>,
+        mut receiver: Receiver<UpdateSignal>,
+        optimize_sender: Sender<OptimizerSignal>,
         segments: LockedSegmentHolder,
     ) {
         while let Some(signal) = receiver.recv().await {
@@ -322,6 +325,7 @@ impl UpdateHandler {
                     let res = match CollectionUpdater::update(&segments, op_num, operation) {
                         Ok(update_res) => optimize_sender
                             .send(OptimizerSignal::Operation(op_num))
+                            .await
                             .and(Ok(update_res))
                             .map_err(|send_err| send_err.into()),
                         Err(err) => Err(err),
@@ -339,18 +343,18 @@ impl UpdateHandler {
                 UpdateSignal::Stop => {
                     optimize_sender
                         .send(OptimizerSignal::Stop)
+                        .await
                         .unwrap_or_else(|_| debug!("Optimizer already stopped"));
                     break;
                 }
-                UpdateSignal::Nop => {
-                    optimize_sender
-                        .send(OptimizerSignal::Nop)
-                        .unwrap_or_else(|_| {
-                            info!(
+                UpdateSignal::Nop => optimize_sender
+                    .send(OptimizerSignal::Nop)
+                    .await
+                    .unwrap_or_else(|_| {
+                        info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
                         );
-                        })
-                }
+                    }),
                 UpdateSignal::Plunger(callback_sender) => {
                     callback_sender.send(()).unwrap_or_else(|_| {
                         debug!("Can't notify sender, assume nobody is waiting anymore");
@@ -361,12 +365,13 @@ impl UpdateHandler {
         // Transmitter was destroyed
         optimize_sender
             .send(OptimizerSignal::Stop)
+            .await
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 
     async fn flush_worker(
         segments: LockedSegmentHolder,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
     ) {
@@ -391,7 +396,7 @@ impl UpdateHandler {
                     continue;
                 }
             };
-            if let Err(err) = wal.lock().await.ack(confirmed_version) {
+            if let Err(err) = wal.lock().ack(confirmed_version) {
                 segments.write().report_optimizer_error(err);
             }
         }
