@@ -347,16 +347,14 @@ impl UpdateHandler {
                         .unwrap_or_else(|_| debug!("Optimizer already stopped"));
                     break;
                 }
-                UpdateSignal::Nop => {
-                    optimize_sender
-                        .send(OptimizerSignal::Nop)
-                        .await
-                        .unwrap_or_else(|_| {
-                            info!(
+                UpdateSignal::Nop => optimize_sender
+                    .send(OptimizerSignal::Nop)
+                    .await
+                    .unwrap_or_else(|_| {
+                        info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
                         );
-                        })
-                }
+                    }),
                 UpdateSignal::Plunger(callback_sender) => {
                     callback_sender.send(()).unwrap_or_else(|_| {
                         debug!("Can't notify sender, assume nobody is waiting anymore");

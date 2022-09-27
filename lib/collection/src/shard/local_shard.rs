@@ -28,7 +28,7 @@ use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shard::{CollectionId, ShardId};
 use crate::telemetry::ShardTelemetry;
-use crate::update_handler::{Optimizer, UPDATE_QUEUE_SIZE, UpdateHandler, UpdateSignal};
+use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
 
 /// LocalShard
@@ -402,7 +402,11 @@ impl LocalShard {
 
     pub async fn before_drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
-        self.update_sender.load().send(UpdateSignal::Stop).await.unwrap();
+        self.update_sender
+            .load()
+            .send(UpdateSignal::Stop)
+            .await
+            .unwrap();
 
         self.stop_flush_worker().await;
 
