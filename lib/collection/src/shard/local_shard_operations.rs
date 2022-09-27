@@ -40,7 +40,7 @@ impl ShardOperation for LocalShard {
         };
 
         let operation_id = {
-            let mut wal_lock = self.wal.lock().await;
+            let mut wal_lock = self.wal.lock();
             let operation_id = wal_lock.write(&operation)?;
             self.update_sender
                 .load()
