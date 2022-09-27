@@ -78,11 +78,7 @@ impl ProxyShard {
         loop {
             let (tx, rx) = oneshot::channel();
             let plunger = UpdateSignal::Plunger(tx);
-            self.wrapped_shard
-                .update_sender
-                .load()
-                .send(plunger)
-                .await?;
+            self.wrapped_shard.update_sender.load().send(plunger)?;
             let attempt_timeout = UPDATE_QUEUE_CLEAR_TIMEOUT * (2_u32).pow(attempt);
             // It is possible, that the queue is recreated while we are waiting for plunger.
             // So we will timeout and try again
