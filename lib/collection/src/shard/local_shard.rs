@@ -16,7 +16,7 @@ use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
 use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::{self, Runtime};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
@@ -28,7 +28,7 @@ use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shard::{CollectionId, ShardId};
 use crate::telemetry::ShardTelemetry;
-use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
+use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
 
 /// LocalShard
@@ -42,7 +42,7 @@ pub struct LocalShard {
     pub(super) wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) runtime_handle: Option<Runtime>,
-    pub(super) update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
+    pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) path: PathBuf,
     before_drop_called: bool,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
@@ -92,7 +92,7 @@ impl LocalShard {
             config.optimizer_config.max_optimization_threads,
         );
 
-        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        let (update_sender, update_receiver) = mpsc::channel(UPDATE_QUEUE_SIZE);
         update_handler.run_workers(update_receiver);
 
         drop(config); // release `shared_config` from borrow checker
@@ -379,10 +379,10 @@ impl LocalShard {
         let config = self.config.read().await;
         let mut update_handler = self.update_handler.lock().await;
 
-        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        let (update_sender, update_receiver) = mpsc::channel(UPDATE_QUEUE_SIZE);
         // makes sure that the Stop signal is the last one in this channel
         let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop)?;
+        old_sender.send(UpdateSignal::Stop).await?;
         update_handler.stop_flush_worker();
 
         update_handler.wait_workers_stops().await?;
@@ -395,14 +395,18 @@ impl LocalShard {
         update_handler.optimizers = new_optimizers;
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.run_workers(update_receiver);
-        self.update_sender.load().send(UpdateSignal::Nop)?;
+        self.update_sender.load().send(UpdateSignal::Nop).await?;
 
         Ok(())
     }
 
     pub async fn before_drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
-        self.update_sender.load().send(UpdateSignal::Stop).unwrap();
+        self.update_sender
+            .load()
+            .send(UpdateSignal::Stop)
+            .await
+            .unwrap();
 
         self.stop_flush_worker().await;
 
