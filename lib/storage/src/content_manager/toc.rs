@@ -944,7 +944,7 @@ impl TableOfContent {
         if new_repl_factor.get() as usize > n_peers {
             return Err(StorageError::BadInput {
                 description: format!(
-                    "repltication factor cannot be higher than the number of peers: {n_peers}",
+                    "replication factor cannot be higher than the number of peers: {n_peers}",
                 ),
             });
         }
