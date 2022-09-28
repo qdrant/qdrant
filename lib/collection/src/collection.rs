@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1493,6 +1494,63 @@ impl Collection {
                 Shard::ReplicaSet(_) => todo!(),
             })
             .collect()
+    }
+
+    pub async fn suggest_shard_replica_changes(
+        &self,
+        new_repl_factor: NonZeroU32,
+        all_peers: HashSet<PeerId>,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<Option<HashSet<replica_set::Change>>> {
+        let repl_factor = self.config.read().await.params.replication_factor;
+        match new_repl_factor.cmp(&repl_factor) {
+            std::cmp::Ordering::Less => {
+                // Remove replicas
+                let remove_n = repl_factor.get() - new_repl_factor.get();
+                let shard_holder = self.shards_holder.read().await;
+                let changes: HashSet<_> = shard_holder
+                    .get_shards()
+                    .map(|(shard_id, shard)| match shard {
+                        Shard::ReplicaSet(shard) => Ok((shard_id, shard)),
+                        _ => Err(CollectionError::service_error(
+                            "Shards should all be `ReplicaSet` in this collection".to_string(),
+                        )),
+                    })
+                    .map_ok(|(shard_id, shard)| {
+                        shard
+                            .peer_ids()
+                            .into_iter()
+                            .take(remove_n as usize)
+                            .map(|peer_id| replica_set::Change::Remove(*shard_id, peer_id))
+                            .collect_vec()
+                    })
+                    .flatten_ok()
+                    .try_collect()?;
+                Ok(Some(changes))
+            }
+            std::cmp::Ordering::Equal => Ok(None),
+            std::cmp::Ordering::Greater => {
+                // Add replicas
+                let add_n = new_repl_factor.get() - repl_factor.get();
+                let shard_holder = self.shards_holder.read().await;
+                let changes: HashSet<_> = shard_holder
+                    .get_shards()
+                    .flat_map(|(shard_id, shard)| {
+                        // In case of increasing replication factor there could be shards which are not replica_set yet
+                        // - when replication factor is 1.
+                        // That is why a more concrete variant (ReplicaSet) is not used here, instead general shard enum is used
+                        let shard_peers: HashSet<_> =
+                            shard.peer_ids(this_peer_id).into_iter().collect();
+                        all_peers
+                            .difference(&shard_peers)
+                            .take(add_n as usize)
+                            .map(|peer_id| replica_set::Change::Add(*shard_id, *peer_id))
+                            .collect_vec()
+                    })
+                    .collect();
+                Ok(Some(changes))
+            }
+        }
     }
 }
 

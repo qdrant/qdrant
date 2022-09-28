@@ -409,21 +409,13 @@ impl TableOfContent {
         operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
         match operation {
-            CollectionMetaOperations::CreateCollectionDistributed(
-                operation,
-                distribution_proposal,
-            ) => {
-                self.create_collection(
-                    &operation.collection_name,
-                    operation.create_collection,
-                    distribution_proposal.into(self.this_peer_id),
-                )
-                .await
-            }
-            CollectionMetaOperations::CreateCollection(operation) => {
-                let distribution = CollectionShardDistribution::all_local(
-                    operation.create_collection.shard_number,
-                );
+            CollectionMetaOperations::CreateCollection(mut operation) => {
+                let distribution = match operation.take_distribution() {
+                    None => CollectionShardDistribution::all_local(
+                        operation.create_collection.shard_number,
+                    ),
+                    Some(distribution) => distribution.into(self.this_peer_id),
+                };
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
@@ -941,6 +933,27 @@ impl TableOfContent {
             shard_distribution.distribution
         );
         shard_distribution
+    }
+
+    pub async fn suggest_shard_replica_changes(
+        &self,
+        collection: &CollectionId,
+        new_repl_factor: NonZeroU32,
+    ) -> Result<Option<HashSet<replica_set::Change>>, StorageError> {
+        let n_peers = self.peer_address_by_id().len();
+        if new_repl_factor.get() as usize > n_peers {
+            log::warn!("Replication factor ({new_repl_factor}) is set higher than the number of peers ({n_peers}). Until more peers are added the collection will be underreplicated.")
+        }
+        let changes = self
+            .get_collection(collection)
+            .await?
+            .suggest_shard_replica_changes(
+                new_repl_factor,
+                self.peer_address_by_id().into_keys().collect(),
+                self.this_peer_id(),
+            )
+            .await?;
+        Ok(changes)
     }
 
     pub async fn get_telemetry_data(&self) -> Vec<CollectionTelemetry> {

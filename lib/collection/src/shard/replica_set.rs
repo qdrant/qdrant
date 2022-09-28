@@ -11,6 +11,7 @@ use futures::StreamExt;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
+use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
@@ -34,6 +35,7 @@ const READ_REMOTE_REPLICAS: u32 = 2;
 const REPLICA_STATE_FILE: &str = "replica_state";
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {
     Add(ShardId, PeerId),
     Remove(ShardId, PeerId),
