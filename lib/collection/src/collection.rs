@@ -1544,7 +1544,7 @@ impl Collection {
                         all_peers
                             .difference(&shard_peers)
                             .take(add_n as usize)
-                            .map(|peer_id| replica_set::Change::Remove(*shard_id, *peer_id))
+                            .map(|peer_id| replica_set::Change::Add(*shard_id, *peer_id))
                             .collect_vec()
                     })
                     .collect();
