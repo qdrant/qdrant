@@ -366,7 +366,7 @@ impl Collection {
                         debug_assert!(!was_not_transferred);
                         false // Shard if already in transferring state
                     }
-                    Shard::ReplicaSet(_) => todo!(),
+                    Shard::ReplicaSet(_) => false, // Replica set can not be transfered
                 },
             }
         };
@@ -505,7 +505,9 @@ impl Collection {
                 Shard::ForwardProxy(_) => {
                     debug_assert!(false, "Proxy shard should not be temporary");
                 }
-                Shard::ReplicaSet(_) => todo!(),
+                Shard::ReplicaSet(_) => {
+                    debug_assert!(false, "Replica set shard should not be temporary");
+                }
             }
         }
 
@@ -1041,16 +1043,17 @@ impl Collection {
         Ok(points)
     }
 
-    #[allow(unreachable_code, clippy::diverging_sub_expression)]
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
+        replica_changes: Option<Vec<Change>>,
     ) -> CollectionResult<()> {
         let mut config = self.config.write().await;
         config.params = params_diff.update(&config.params)?;
-        todo!("supply replica changes");
-        let changes = HashSet::new();
-        self.handle_replica_changes(changes).await?;
+        if let Some(changes) = replica_changes {
+            self.handle_replica_changes(changes.into_iter().collect())
+                .await?;
+        }
         Ok(())
     }
 
@@ -1180,7 +1183,7 @@ impl Collection {
                     Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
                     Shard::ForwardProxy(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Remote(_) => {} // Do nothing for remote shards
-                    Shard::ReplicaSet(_) => todo!(),
+                    Shard::ReplicaSet(shard) => shard.on_optimizer_config_update().await?,
                 }
             }
         }
@@ -1211,7 +1214,7 @@ impl Collection {
                     Shard::Remote(_) => {} // Do nothing for remote shards
                     Shard::Proxy(proxy) => proxy.on_optimizer_config_update().await?,
                     Shard::ForwardProxy(proxy) => proxy.on_optimizer_config_update().await?,
-                    Shard::ReplicaSet(_) => todo!(),
+                    Shard::ReplicaSet(shard) => shard.on_optimizer_config_update().await?,
                 }
             }
         }
@@ -1299,7 +1302,22 @@ impl Collection {
                         points_count,
                     })
                 }
-                Shard::ReplicaSet(_) => todo!(),
+                Shard::ReplicaSet(shard) => {
+                    if let Some(ls) = &shard.local {
+                        let count_result = ls.count(count_request.clone()).await?;
+                        let points_count = count_result.count;
+                        local_shards.push(LocalShardInfo {
+                            shard_id,
+                            points_count,
+                        })
+                    }
+                    for rs in &shard.remotes {
+                        remote_shards.push(RemoteShardInfo {
+                            shard_id,
+                            peer_id: rs.peer_id,
+                        });
+                    }
+                }
             }
         }
         // extract shard transfers info
@@ -1490,12 +1508,12 @@ impl Collection {
         let shard_holder = self.shards_holder.read().await;
         shard_holder
             .get_shards()
-            .map(|(shard_id, shard)| match shard {
-                Shard::Local(_local_shard) => (*shard_id, local_peer_id),
-                Shard::Proxy(_proxy_shard) => (*shard_id, local_peer_id),
-                Shard::ForwardProxy(_proxy_shard) => (*shard_id, local_peer_id),
-                Shard::Remote(remote_shard) => (*shard_id, remote_shard.peer_id),
-                Shard::ReplicaSet(_) => todo!(),
+            .flat_map(|(shard_id, shard)| match shard {
+                Shard::Local(_local_shard) => vec![(*shard_id, local_peer_id)],
+                Shard::Proxy(_proxy_shard) => vec![(*shard_id, local_peer_id)],
+                Shard::ForwardProxy(_proxy_shard) => vec![(*shard_id, local_peer_id)],
+                Shard::Remote(remote_shard) => vec![(*shard_id, remote_shard.peer_id)],
+                Shard::ReplicaSet(replica_set) => replica_set.shard_distribution(),
             })
             .collect()
     }
