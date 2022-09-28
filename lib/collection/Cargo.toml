@@ -33,7 +33,7 @@ env_logger = "0.9.1"
 merge = "0.1.0"
 async-trait = "0.1.57"
 arc-swap = "1.5.1"
-tonic = "0.7.2"
+tonic = "0.8.2"
 tower = "0.4.13"
 uuid = { version = "1.1", features = ["v4", "serde"] }
 
