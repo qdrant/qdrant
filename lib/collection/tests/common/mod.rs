@@ -4,7 +4,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
 use std::sync::Arc;
 
-use collection::collection::Collection;
+use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
@@ -72,6 +72,10 @@ pub fn dummy_on_replica_failure() -> OnPeerFailure {
     Arc::new(move |_peer_id, _shard_id| {})
 }
 
+pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
+    Arc::new(move |_transfer| Box::new(async {}))
+}
+
 /// Default to a collection with all the shards local
 pub async fn new_local_collection(
     id: CollectionId,
@@ -88,6 +92,7 @@ pub async fn new_local_collection(
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into())),
         ChannelService::default(),
         dummy_on_replica_failure(),
+        dummy_request_shard_transfer(),
     )
     .await
 }
@@ -105,6 +110,7 @@ pub async fn load_local_collection(
         snapshots_path,
         ChannelService::default(),
         dummy_on_replica_failure(),
+        dummy_request_shard_transfer(),
     )
     .await
 }

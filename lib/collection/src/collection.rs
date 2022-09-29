@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -43,15 +44,20 @@ use crate::shard::shard_config::{self, ShardConfig};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::shard_versioning::versioned_shard_path;
 use crate::shard::transfer::shard_transfer::{
-    change_remote_shard_route, drop_temporary_shard, promote_proxy_to_remote_shard,
-    promote_temporary_shard_to_local, revert_proxy_shard_to_local, spawn_transfer_task,
+    activate_peer_for_replica, change_remote_shard_route, drop_temporary_shard,
+    promote_proxy_to_remote_shard, promote_temporary_shard_to_local, revert_proxy_shard_to_local,
+    spawn_transfer_task,
 };
 use crate::shard::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
+use crate::shard::Shard::Local;
 use crate::shard::{
     create_shard_dir, replica_set, ChannelService, CollectionId, PeerId, Shard, ShardId,
     ShardOperation, ShardTransfer, HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
+
+pub type RequestShardTransfer =
+    Arc<dyn Fn(ShardTransfer) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
 
 struct CollectionVersion;
 
@@ -73,6 +79,7 @@ pub struct Collection {
     telemetry: CollectionTelemetry,
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
+    request_shard_transfer_cb: RequestShardTransfer,
 }
 
 impl Collection {
@@ -90,6 +97,7 @@ impl Collection {
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
         on_replica_failure: replica_set::OnPeerFailure,
+        request_shard_transfer: RequestShardTransfer,
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
@@ -170,6 +178,7 @@ impl Collection {
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
             channel_service,
             transfer_tasks: Default::default(),
+            request_shard_transfer_cb: request_shard_transfer.clone(),
         })
     }
 
@@ -202,6 +211,7 @@ impl Collection {
         snapshots_path: &Path,
         channel_service: ChannelService,
         on_replica_failure: replica_set::OnPeerFailure,
+        request_shard_transfer: RequestShardTransfer,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -263,6 +273,7 @@ impl Collection {
             telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::default()),
+            request_shard_transfer_cb: request_shard_transfer.clone(),
         }
     }
 
@@ -304,8 +315,13 @@ impl Collection {
             .collect()
     }
 
-    async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
-    where
+    async fn send_shard<OF, OE>(
+        &self,
+        transfer: ShardTransfer,
+        on_finish: OF,
+        on_error: OE,
+        sync: bool,
+    ) where
         OF: Future<Output = ()> + Send + 'static,
         OE: Future<Output = ()> + Send + 'static,
     {
@@ -323,6 +339,7 @@ impl Collection {
             transfer.clone(),
             collection_id,
             channel_service,
+            sync,
             on_finish,
             on_error,
         );
@@ -335,6 +352,7 @@ impl Collection {
         shard_transfer: ShardTransfer,
         on_finish: T,
         on_error: F,
+        sync: bool,
     ) -> CollectionResult<bool>
     where
         T: Future<Output = ()> + Send + 'static,
@@ -368,12 +386,13 @@ impl Collection {
                         debug_assert!(!was_not_transferred);
                         false // Shard if already in transferring state
                     }
-                    Shard::ReplicaSet(_) => false, // Replica set can not be transfered
+                    Shard::ReplicaSet(replica_set) => sync && replica_set.local.is_some(),
                 },
             }
         };
         if do_transfer {
-            self.send_shard(shard_transfer, on_finish, on_error).await;
+            self.send_shard(shard_transfer, on_finish, on_error, sync)
+                .await;
         }
         Ok(do_transfer)
     }
@@ -401,43 +420,54 @@ impl Collection {
             .await
             .is_finished();
 
-        // Should happen on transfer side
-        let proxy_promoted = promote_proxy_to_remote_shard(
-            &self.path,
-            self.shards_holder.clone(),
-            transfer.shard_id,
-            transfer.to,
-        )
-        .await?;
-        // Should happen on receiving side
-        let shard_promoted = promote_temporary_shard_to_local(
-            self.id.clone(),
-            &self.path,
-            self.shards_holder.clone(),
-            transfer.shard_id,
-        )
-        .await?;
-        // Should happen on a third-party side
-        let remote_shard_rerouted = change_remote_shard_route(
-            &self.path,
-            self.shards_holder.clone(),
-            transfer.shard_id,
-            transfer.to,
-        )
-        .await?;
+        if transfer.sync {
+            // Should happen on receiving side
+            let replica_activated = activate_peer_for_replica(
+                self.shards_holder.clone(),
+                transfer.shard_id,
+                transfer.to,
+            )
+            .await?;
+            Ok(replica_activated)
+        } else {
+            // Should happen on transfer side
+            let proxy_promoted = promote_proxy_to_remote_shard(
+                &self.path,
+                self.shards_holder.clone(),
+                transfer.shard_id,
+                transfer.to,
+            )
+            .await?;
+            // Should happen on receiving side
+            let shard_promoted = promote_temporary_shard_to_local(
+                self.id.clone(),
+                &self.path,
+                self.shards_holder.clone(),
+                transfer.shard_id,
+            )
+            .await?;
+            // Should happen on a third-party side
+            let remote_shard_rerouted = change_remote_shard_route(
+                &self.path,
+                self.shards_holder.clone(),
+                transfer.shard_id,
+                transfer.to,
+            )
+            .await?;
 
-        // Transfer task and proxy should exist on the same node
-        debug_assert_eq!(transfer_finished, proxy_promoted);
-        log::debug!("finish_was_registered: {}", finish_was_registered);
-        log::debug!("transfer_finished: {}", transfer_finished);
-        log::debug!("proxy_promoted: {}", proxy_promoted);
-        log::debug!("shard_promoted: {}", shard_promoted);
-        log::debug!("remote_shard_rerouted: {}", remote_shard_rerouted);
+            // Transfer task and proxy should exist on the same node
+            debug_assert_eq!(transfer_finished, proxy_promoted);
+            log::debug!("finish_was_registered: {}", finish_was_registered);
+            log::debug!("transfer_finished: {}", transfer_finished);
+            log::debug!("proxy_promoted: {}", proxy_promoted);
+            log::debug!("shard_promoted: {}", shard_promoted);
+            log::debug!("remote_shard_rerouted: {}", remote_shard_rerouted);
 
-        let something_changed =
-            finish_was_registered && (proxy_promoted || shard_promoted || remote_shard_rerouted);
+            let something_changed = finish_was_registered
+                && (proxy_promoted || shard_promoted || remote_shard_rerouted);
 
-        Ok(something_changed)
+            Ok(something_changed)
+        }
     }
 
     /// Handles abort of the transfer
@@ -1059,6 +1089,10 @@ impl Collection {
         Ok(())
     }
 
+    pub async fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
+        Box::into_pin(self.request_shard_transfer_cb.deref()(shard_transfer)).await
+    }
+
     /// Handle replica changes
     ///
     /// add and remove replicas from replica set
@@ -1096,12 +1130,61 @@ impl Collection {
                 Change::Add {
                     shard: shard_id,
                     to: peer_id,
-                    ..
+                    from: from_peer_id,
                 } => {
                     if let Some(Shard::ReplicaSet(replica_set)) =
                         shard_holder.get_mut_shard(shard_id)
                     {
-                        replica_set.add_replica(peer_id)?;
+                        // Create replica and mark them as inactive
+                        replica_set.add_inactive_replica_state(peer_id)?;
+                        if *peer_id == replica_set.this_peer_id {
+                            // need to setup local replica
+                            match replica_set.local {
+                                Some(_) => {
+                                    // TODO should be deleted or fail?
+                                    log::info!(
+                                        "A local shard is already present for replica set {}:{}",
+                                        self.id,
+                                        shard_id
+                                    );
+                                }
+                                None => {
+                                    let shard_path =
+                                        create_shard_dir(&self.path, *shard_id).await?;
+
+                                    // create directory to hold the data for shard with `shard_id`
+                                    tokio::fs::create_dir_all(&shard_path).await?;
+
+                                    let new_local_inactive = LocalShard::build(
+                                        *shard_id,
+                                        self.id.clone(),
+                                        &shard_path,
+                                        self.config.clone(),
+                                    )
+                                    .await?;
+                                    let _ = replica_set
+                                        .local
+                                        .insert(Box::new(Local(new_local_inactive)));
+                                }
+                            }
+                            // submit start sync transfer command to consensus
+                            let transfer = ShardTransfer {
+                                shard_id: *shard_id,
+                                from: *from_peer_id,
+                                to: replica_set.this_peer_id,
+                                sync: true,
+                            };
+                            self.request_shard_transfer(transfer).await;
+                        } else {
+                            let new_remote_inactive = RemoteShard::new(
+                                *shard_id,
+                                self.id.clone(),
+                                *peer_id,
+                                self.channel_service.clone(),
+                            );
+                            // won't be used until it is toggled active
+                            replica_set.remotes.push(new_remote_inactive);
+                        }
                     } else {
                         log::error!(
                             "Cannot add replica on non existent replica set {}:{}",
@@ -1132,7 +1215,7 @@ impl Collection {
                         if remaining_replicas_after_removal == 1 {
                             if let Some(local_shard) = replica_set.local.take() {
                                 // the inner local replica is promoted
-                                shard_to_promote = Some(Shard::Local(local_shard));
+                                shard_to_promote = Some(*local_shard);
                             } else {
                                 debug_assert!(replica_set.remotes.len() == 1);
                                 for remote in replica_set.remotes.drain(0..1) {
@@ -1306,7 +1389,7 @@ impl Collection {
                 }
                 Shard::ReplicaSet(shard) => {
                     if let Some(ls) = &shard.local {
-                        let count_result = ls.count(count_request.clone()).await?;
+                        let count_result = ls.get().count(count_request.clone()).await?;
                         let points_count = count_result.count;
                         local_shards.push(LocalShardInfo {
                             shard_id,

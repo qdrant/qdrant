@@ -5,7 +5,7 @@ use std::sync::Arc;
 use segment::types::Distance;
 use tempfile::Builder;
 
-use crate::collection::Collection;
+use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
@@ -25,6 +25,10 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 
 pub fn dummy_on_replica_failure() -> OnPeerFailure {
     Arc::new(move |_peer_id, _shard_id| {})
+}
+
+pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
+    Arc::new(move |_transfer| Box::new(async {}))
 }
 
 #[tokio::test]
@@ -80,6 +84,7 @@ async fn test_snapshot_collection() {
         CollectionShardDistribution { shards },
         ChannelService::default(),
         dummy_on_replica_failure(),
+        dummy_request_shard_transfer(),
     )
     .await
     .unwrap();
@@ -103,6 +108,7 @@ async fn test_snapshot_collection() {
         snapshots_path.path(),
         ChannelService::default(),
         dummy_on_replica_failure(),
+        dummy_request_shard_transfer(),
     )
     .await;
 
