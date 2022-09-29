@@ -25,9 +25,9 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::CreateCollection) -> Result<Self, Self::Error> {
-        Ok(Self::CreateCollection(CreateCollectionOperation {
-            collection_name: value.collection_name,
-            create_collection: CreateCollection {
+        Ok(Self::CreateCollection(CreateCollectionOperation::new(
+            value.collection_name,
+            CreateCollection {
                 vectors: match value.vectors_config {
                     Some(vectors) => match vectors.config {
                         None => return Err(Status::invalid_argument("vectors config is required")),
@@ -55,7 +55,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 on_disk_payload: value.on_disk_payload,
                 replication_factor: value.replication_factor,
             },
-        }))
+        )))
     }
 }
 
@@ -63,13 +63,13 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::UpdateCollection) -> Result<Self, Self::Error> {
-        Ok(Self::UpdateCollection(UpdateCollectionOperation {
-            collection_name: value.collection_name,
-            update_collection: UpdateCollection {
+        Ok(Self::UpdateCollection(UpdateCollectionOperation::new(
+            value.collection_name,
+            UpdateCollection {
                 optimizers_config: value.optimizers_config.map(Into::into),
                 params: value.params.map(TryInto::try_into).transpose()?,
             },
-        }))
+        )))
     }
 }
 

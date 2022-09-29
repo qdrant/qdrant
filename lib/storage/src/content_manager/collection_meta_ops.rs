@@ -2,7 +2,7 @@ use collection::config::VectorsConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
 };
-use collection::shard::{CollectionId, PeerId, ShardId, ShardTransfer};
+use collection::shard::{replica_set, CollectionId, PeerId, ShardId, ShardTransfer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -114,12 +114,30 @@ pub struct CreateCollection {
 }
 
 /// Operation for creating new collection and (optionally) specify index params
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollectionOperation {
     pub collection_name: String,
-    #[serde(flatten)]
     pub create_collection: CreateCollection,
+    distribution: Option<ShardDistributionProposal>,
+}
+
+impl CreateCollectionOperation {
+    pub fn new(collection_name: String, create_collection: CreateCollection) -> Self {
+        Self {
+            collection_name,
+            create_collection,
+            distribution: None,
+        }
+    }
+
+    pub fn take_distribution(&mut self) -> Option<ShardDistributionProposal> {
+        self.distribution.take()
+    }
+
+    pub fn set_distribution(&mut self, distribution: ShardDistributionProposal) {
+        self.distribution = Some(distribution);
+    }
 }
 
 /// Operation for updating parameters of the existing collection
@@ -134,12 +152,30 @@ pub struct UpdateCollection {
 }
 
 /// Operation for updating parameters of the existing collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollectionOperation {
     pub collection_name: String,
-    #[serde(flatten)]
     pub update_collection: UpdateCollection,
+    shard_replica_changes: Option<Vec<replica_set::Change>>,
+}
+
+impl UpdateCollectionOperation {
+    pub fn new(collection_name: String, update_collection: UpdateCollection) -> Self {
+        Self {
+            collection_name,
+            update_collection,
+            shard_replica_changes: None,
+        }
+    }
+
+    pub fn take_shard_replica_changes(&mut self) -> Option<Vec<replica_set::Change>> {
+        self.shard_replica_changes.take()
+    }
+
+    pub fn set_shard_replica_changes(&mut self, changes: Vec<replica_set::Change>) {
+        self.shard_replica_changes = Some(changes);
+    }
 }
 
 /// Operation for performing changes of collection aliases.
@@ -152,11 +188,11 @@ pub struct ChangeAliasesOperation {
 }
 
 /// Operation for deleting collection with given name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct DeleteCollectionOperation(pub String);
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum ShardTransferOperations {
     Start(ShardTransfer),
     Finish(ShardTransfer),
@@ -167,7 +203,7 @@ pub enum ShardTransferOperations {
 }
 
 /// Sets the state of shard replica
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub struct SetShardReplicaState {
     pub collection_name: String,
     pub shard_id: ShardId,
@@ -177,11 +213,10 @@ pub struct SetShardReplicaState {
 }
 
 /// Enumeration of all possible collection update operations
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionMetaOperations {
     CreateCollection(CreateCollectionOperation),
-    CreateCollectionDistributed(CreateCollectionOperation, ShardDistributionProposal),
     UpdateCollection(UpdateCollectionOperation),
     DeleteCollection(DeleteCollectionOperation),
     ChangeAliases(ChangeAliasesOperation),

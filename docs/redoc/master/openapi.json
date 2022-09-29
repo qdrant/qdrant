@@ -2675,6 +2675,13 @@
             "format": "uint32",
             "minimum": 1
           },
+          "replication_factor": {
+            "description": "Number of replicas for each shard",
+            "default": 1,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1
+          },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": false,
@@ -3833,6 +3840,14 @@
             "minimum": 0,
             "nullable": true
           },
+          "replication_factor": {
+            "description": "Number of shards replicas. Default is 1 Minimum is 1",
+            "default": null,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": null,
@@ -3993,6 +4008,29 @@
                 "nullable": true
               }
             ]
+          },
+          "params": {
+            "description": "Collection base params.  If none - values from service configuration file are used.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionParamsDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "CollectionParamsDiff": {
+        "type": "object",
+        "properties": {
+          "replication_factor": {
+            "description": "Number of replicas for each shard",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1,
+            "nullable": true
           }
         }
       },

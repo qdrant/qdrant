@@ -39,7 +39,7 @@ use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
-use crate::shard::replica_set::ReplicaSet;
+use crate::shard::replica_set::{Change, ReplicaSet};
 use crate::shard::shard_config::{self, ShardConfig};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::shard_versioning::versioned_shard_path;
@@ -93,9 +93,6 @@ impl Collection {
         on_replica_failure: replica_set::OnPeerFailure,
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
-
-        CollectionVersion::save(path)?;
-        config.save(path)?;
 
         let mut shard_holder = ShardHolder::new(path, HashRing::fair(HASH_RING_SHARD_SCALE))?;
 
@@ -158,6 +155,10 @@ impl Collection {
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
+
+        // Once the config is persisted - the collection is considered to be successfully created.
+        CollectionVersion::save(path)?;
+        config.save(path)?;
 
         Ok(Self {
             id: id.clone(),
@@ -574,20 +575,28 @@ impl Collection {
             .filter(|result| matches!(result, Err(_)))
             .count();
 
+        // one request per shard
+        let result_len = results.len();
+
         if with_error > 0 {
-            let err = results
+            let first_err = results
                 .into_iter()
                 .find(|result| matches!(result, Err(_)))
                 .unwrap();
-            let num_shards = self.shards_holder.read().await.len();
-            if with_error < num_shards {
-                err.map_err(|err| CollectionError::InconsistentFailure {
-                    shards_total: num_shards as u32,
-                    shards_failed: with_error as u32,
-                    first_err: format!("{err}"),
+            // inconsistent if only a subset of the requests fail - one request per shard.
+            if with_error < result_len {
+                first_err.map_err(|err| {
+                    // compute final status code based on the first error
+                    // e.g. a partially successful batch update failing because of bad input is a client error
+                    CollectionError::InconsistentShardFailure {
+                        shards_total: result_len as u32, // report only the number of shards that took part in the update
+                        shards_failed: with_error as u32,
+                        first_err: Box::new(err),
+                    }
                 })
             } else {
-                err
+                // all requests per shard failed - propagate first error (assume there are all the same)
+                first_err
             }
         } else {
             // At least one result is always present.
@@ -1032,24 +1041,115 @@ impl Collection {
         Ok(points)
     }
 
+    #[allow(unreachable_code, clippy::diverging_sub_expression)]
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
     ) -> CollectionResult<()> {
         let mut config = self.config.write().await;
-        let old_repl_factor = config.params.replication_factor;
         config.params = params_diff.update(&config.params)?;
-        self.handle_repl_factor_change(old_repl_factor, config.params.replication_factor);
+        todo!("supply replica changes");
+        let changes = HashSet::new();
+        self.handle_replica_changes(changes).await?;
         Ok(())
     }
 
-    pub fn handle_repl_factor_change(&self, old: NonZeroU32, new: NonZeroU32) {
-        if old != new {
-            // TODO: remove or add replicas. In case of replica addition:
-            // 1. Create and mark them as inactive
-            // 2. Copy data
-            // 3. Mark them as active
+    /// Handle replica changes
+    ///
+    /// add and remove replicas from replica set
+    pub async fn handle_replica_changes(
+        &self,
+        replica_changes: HashSet<Change>,
+    ) -> CollectionResult<()> {
+        if replica_changes.is_empty() {
+            return Ok(());
         }
+
+        let mut shard_holder = self.shards_holder.write().await;
+
+        // all existing replica sets in the collection
+        let mut replica_sets = Vec::new();
+        for shard in shard_holder.all_shards() {
+            match shard {
+                Shard::Local(_) | Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::Remote(_) => {
+                    log::error!(
+                        "A replicated collection should not contain a {}",
+                        shard.variant_name()
+                    )
+                }
+                Shard::ReplicaSet(replica_set) => replica_sets.push(replica_set.shard_id),
+            }
+        }
+        debug_assert!(
+            !replica_sets.is_empty(),
+            "at least one replica set definition per collection"
+        );
+
+        // perform first the addition of replicas
+        for change in &replica_changes {
+            match change {
+                Change::Add(shard_id, peer_id) => {
+                    if let Some(Shard::ReplicaSet(replica_set)) =
+                        shard_holder.get_mut_shard(shard_id)
+                    {
+                        replica_set.add_replica(peer_id)?;
+                    } else {
+                        log::error!(
+                            "Cannot add replica on non existent replica set {}:{}",
+                            self.id,
+                            shard_id
+                        );
+                    }
+                }
+                Change::Remove(_, _) => {}
+            }
+        }
+
+        // then the removal of replicas
+        for change in &replica_changes {
+            match change {
+                Change::Remove(shard_id, peer_id) => {
+                    // capture `shard to promote` to avoid second mutable borrow on `shard_holder`
+                    let mut shard_to_promote: Option<Shard> = None;
+
+                    if let Some(Shard::ReplicaSet(replica_set)) =
+                        shard_holder.get_mut_shard(shard_id)
+                    {
+                        // remove replica
+                        replica_set.remove_replica(peer_id).await?;
+
+                        // the replica set must be dissolved if it contains a single shard
+                        let remaining_replicas_after_removal = replica_set.peer_ids().len();
+                        if remaining_replicas_after_removal == 1 {
+                            if let Some(local_shard) = replica_set.local.take() {
+                                // the inner local replica is promoted
+                                shard_to_promote = Some(Shard::Local(local_shard));
+                            } else {
+                                debug_assert!(replica_set.remotes.len() == 1);
+                                for remote in replica_set.remotes.drain(0..1) {
+                                    // the last remaining remote replica is promoted
+                                    shard_to_promote = Some(Shard::Remote(remote))
+                                }
+                            }
+                        }
+                    } else {
+                        log::error!(
+                            "Cannot remove replica {} on non existent replica set {}:{}",
+                            peer_id,
+                            self.id,
+                            shard_id
+                        );
+                    }
+
+                    // promoting shard by replacing existing replica set
+                    if let Some(shard_to_promote) = shard_to_promote {
+                        shard_holder.replace_shard(*shard_id, shard_to_promote);
+                    }
+                }
+                Change::Add(_, _) => {}
+            }
+        }
+        Ok(())
     }
 
     /// Updates shard optimization params:
@@ -1394,6 +1494,63 @@ impl Collection {
                 Shard::ReplicaSet(_) => todo!(),
             })
             .collect()
+    }
+
+    pub async fn suggest_shard_replica_changes(
+        &self,
+        new_repl_factor: NonZeroU32,
+        all_peers: HashSet<PeerId>,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<Option<HashSet<replica_set::Change>>> {
+        let repl_factor = self.config.read().await.params.replication_factor;
+        match new_repl_factor.cmp(&repl_factor) {
+            std::cmp::Ordering::Less => {
+                // Remove replicas
+                let remove_n = repl_factor.get() - new_repl_factor.get();
+                let shard_holder = self.shards_holder.read().await;
+                let changes: HashSet<_> = shard_holder
+                    .get_shards()
+                    .map(|(shard_id, shard)| match shard {
+                        Shard::ReplicaSet(shard) => Ok((shard_id, shard)),
+                        _ => Err(CollectionError::service_error(
+                            "Shards should all be `ReplicaSet` in this collection".to_string(),
+                        )),
+                    })
+                    .map_ok(|(shard_id, shard)| {
+                        shard
+                            .peer_ids()
+                            .into_iter()
+                            .take(remove_n as usize)
+                            .map(|peer_id| replica_set::Change::Remove(*shard_id, peer_id))
+                            .collect_vec()
+                    })
+                    .flatten_ok()
+                    .try_collect()?;
+                Ok(Some(changes))
+            }
+            std::cmp::Ordering::Equal => Ok(None),
+            std::cmp::Ordering::Greater => {
+                // Add replicas
+                let add_n = new_repl_factor.get() - repl_factor.get();
+                let shard_holder = self.shards_holder.read().await;
+                let changes: HashSet<_> = shard_holder
+                    .get_shards()
+                    .flat_map(|(shard_id, shard)| {
+                        // In case of increasing replication factor there could be shards which are not replica_set yet
+                        // - when replication factor is 1.
+                        // That is why a more concrete variant (ReplicaSet) is not used here, instead general shard enum is used
+                        let shard_peers: HashSet<_> =
+                            shard.peer_ids(this_peer_id).into_iter().collect();
+                        all_peers
+                            .difference(&shard_peers)
+                            .take(add_n as usize)
+                            .map(|peer_id| replica_set::Change::Add(*shard_id, *peer_id))
+                            .collect_vec()
+                    })
+                    .collect();
+                Ok(Some(changes))
+            }
+        }
     }
 }
 

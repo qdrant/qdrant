@@ -338,10 +338,10 @@ pub enum CollectionError {
     #[error(
     "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
     )]
-    InconsistentFailure {
+    InconsistentShardFailure {
         shards_total: u32,
         shards_failed: u32,
-        first_err: String,
+        first_err: Box<CollectionError>,
     },
 }
 

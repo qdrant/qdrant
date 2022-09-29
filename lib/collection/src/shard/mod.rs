@@ -55,6 +55,16 @@ pub enum Shard {
 }
 
 impl Shard {
+    pub fn variant_name(&self) -> &str {
+        match self {
+            Shard::Local(_) => "local shard",
+            Shard::Remote(_) => "remote shard",
+            Shard::Proxy(_) => "proxy shard",
+            Shard::ForwardProxy(_) => "forward proxy shard",
+            Shard::ReplicaSet(_) => "replica set",
+        }
+    }
+
     pub fn get(&self) -> &(dyn ShardOperation + Sync + Send + '_) {
         match self {
             Shard::Local(local_shard) => local_shard,
