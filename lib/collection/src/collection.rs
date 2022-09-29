@@ -1088,7 +1088,11 @@ impl Collection {
         // perform first the addition of replicas
         for change in &replica_changes {
             match change {
-                Change::Add(shard_id, peer_id) => {
+                Change::Add {
+                    shard: shard_id,
+                    to: peer_id,
+                    ..
+                } => {
                     if let Some(Shard::ReplicaSet(replica_set)) =
                         shard_holder.get_mut_shard(shard_id)
                     {
@@ -1146,7 +1150,7 @@ impl Collection {
                         shard_holder.replace_shard(*shard_id, shard_to_promote);
                     }
                 }
-                Change::Add(_, _) => {}
+                Change::Add { .. } => {}
             }
         }
         Ok(())
@@ -1496,6 +1500,7 @@ impl Collection {
             .collect()
     }
 
+    #[allow(unreachable_code)]
     pub async fn suggest_shard_replica_changes(
         &self,
         new_repl_factor: NonZeroU32,
@@ -1544,7 +1549,11 @@ impl Collection {
                         all_peers
                             .difference(&shard_peers)
                             .take(add_n as usize)
-                            .map(|peer_id| replica_set::Change::Add(*shard_id, *peer_id))
+                            .map(|peer_id| replica_set::Change::Add {
+                                shard: *shard_id,
+                                to: *peer_id,
+                                from: todo!("add peer from which to sync"),
+                            })
                             .collect_vec()
                     })
                     .collect();

@@ -123,6 +123,7 @@ pub async fn do_update_collection_cluster(
                             shard_id: move_shard.shard_id,
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
+                            sync: false,
                         }),
                     ),
                     wait_timeout,
@@ -134,6 +135,7 @@ pub async fn do_update_collection_cluster(
                 shard_id: abort_transfer.shard_id,
                 to: abort_transfer.to_peer_id,
                 from: abort_transfer.from_peer_id,
+                sync: false,
             };
 
             if !collection.check_transfer_exists(&transfer).await {

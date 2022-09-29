@@ -189,6 +189,9 @@ pub struct ShardTransfer {
     pub shard_id: ShardId,
     pub from: PeerId,
     pub to: PeerId,
+    /// If this flag is true, the is a replication related transfer of shard from 1 peer to another
+    /// Shard on original peer will not be deleted in this case
+    pub sync: bool,
 }
 
 pub async fn create_shard_dir(
