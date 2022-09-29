@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use collection::collection::Collection;
+use collection::collection::{Collection, RequestShardTransfer};
 use collection::collection_state;
 use collection::collection_state::ShardInfo;
 use collection::config::{default_replication_factor, CollectionConfig, CollectionParams};
@@ -28,6 +28,7 @@ use super::collection_meta_ops::{
 };
 use super::{consensus_state, CollectionContainer};
 use crate::content_manager::alias_mapping::AliasPersistence;
+use crate::content_manager::collection_meta_ops::ShardTransferOperations::Start;
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
     CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
@@ -111,6 +112,10 @@ impl TableOfContent {
                 &collection_snapshots_path,
                 channel_service.clone(),
                 Self::on_peer_failure_callback(
+                    consensus_proposal_sender.clone(),
+                    collection_name.clone(),
+                ),
+                Self::request_shard_transfer_callback(
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
                 ),
@@ -290,6 +295,10 @@ impl TableOfContent {
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
             ),
+            Self::request_shard_transfer_callback(
+                self.consensus_proposal_sender.clone(),
+                collection_name.to_string(),
+            ),
         )
         .await?;
 
@@ -317,6 +326,27 @@ impl TableOfContent {
                         send_error
                     );
             }
+        })
+    }
+
+    fn request_shard_transfer_callback(
+        consensus_proposal_sender: OperationSender,
+        collection_name: String,
+    ) -> RequestShardTransfer {
+        Arc::new(move |shard_transfer| {
+            let proposal_sender = consensus_proposal_sender.clone();
+            let collection_name = collection_name.clone();
+            Box::new(async move {
+                proposal_sender
+                    .send(ConsensusOperations::CollectionMeta(
+                        CollectionMetaOperations::TransferShard(
+                            collection_name,
+                            Start(shard_transfer),
+                        )
+                        .into(),
+                    ))
+                    .unwrap();
+            })
         })
     }
 
@@ -483,6 +513,7 @@ impl TableOfContent {
         let collection = self.get_collection(&collection_id).await?;
         match transfer_operation {
             ShardTransferOperations::Start(transfer) => {
+                let is_sync = transfer.sync;
                 // check that transfer can be performed
                 if self.this_peer_id == transfer.from
                     && !collection
@@ -533,7 +564,7 @@ impl TableOfContent {
                 };
 
                 collection
-                    .start_shard_transfer(transfer, on_finish, on_failure)
+                    .start_shard_transfer(transfer, on_finish, on_failure, is_sync)
                     .await
             }
             ShardTransferOperations::Finish(transfer) => {
@@ -864,6 +895,10 @@ impl TableOfContent {
                             shard_distribution,
                             self.channel_service.clone(),
                             Self::on_peer_failure_callback(
+                                self.consensus_proposal_sender.clone(),
+                                id.to_string(),
+                            ),
+                            Self::request_shard_transfer_callback(
                                 self.consensus_proposal_sender.clone(),
                                 id.to_string(),
                             ),

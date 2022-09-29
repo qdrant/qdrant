@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
+use async_recursion::async_recursion;
 use futures::future::{try_join, try_join_all};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -25,8 +26,10 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
+use crate::shard::forward_proxy_shard::ForwardProxyShard;
 use crate::shard::shard_config::ShardConfig;
-use crate::shard::ChannelService;
+use crate::shard::Shard::{ForwardProxy, Local, Remote};
+use crate::shard::{ChannelService, Shard};
 use crate::telemetry::ShardTelemetry;
 
 pub type IsActive = bool;
@@ -65,14 +68,15 @@ pub struct ReplicaState {
 ///  If a user decreases replication factor to 1 - it should be converted to just `Local` or `Remote` shard.
 pub struct ReplicaSet {
     pub(crate) shard_id: ShardId,
-    this_peer_id: PeerId,
-    pub(crate) local: Option<LocalShard>,
+    pub(crate) this_peer_id: PeerId,
+    pub(crate) local: Option<Box<Shard>>, // Abstract Shard to be able to use a Proxy during replication
     pub(crate) remotes: Vec<RemoteShard>,
     pub(crate) replica_state: SaveOnDisk<ReplicaState>,
     /// Number of remote replicas to send read requests to.
     /// If actual number of peers is less than this, then read request will be sent to all of them.
     read_remote_replicas: u32,
     notify_peer_failure_cb: OnPeerFailure,
+    outgoing_sync_count: u32,
 }
 
 impl ReplicaSet {
@@ -118,7 +122,7 @@ impl ReplicaSet {
                 shared_config.clone(),
             )
             .await?;
-            Some(shard)
+            Some(Box::new(Local(shard)))
         } else {
             None
         };
@@ -156,6 +160,7 @@ impl ReplicaSet {
             // TODO: move to collection config
             read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
+            outgoing_sync_count: 0,
         })
     }
 
@@ -189,7 +194,7 @@ impl ReplicaSet {
                 shared_config.clone(),
             )
             .await;
-            Some(shard)
+            Some(Box::new(Local(shard)))
         } else {
             None
         };
@@ -203,6 +208,7 @@ impl ReplicaSet {
             // TODO: move to collection config
             read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
+            outgoing_sync_count: 0,
         }
     }
 
@@ -230,6 +236,18 @@ impl ReplicaSet {
         Ok(())
     }
 
+    pub fn add_inactive_replica_state(&mut self, peer_id: &PeerId) -> CollectionResult<()> {
+        self.replica_state
+            .write_with_res(|rs| match rs.peers.insert(*peer_id, false) {
+                Some(_) => Err(CollectionError::service_error(format!(
+                    "replica for peer {} is already registered",
+                    peer_id
+                ))),
+                None => Ok(()),
+            })?;
+        Ok(())
+    }
+
     pub async fn apply_state(
         &mut self,
         replicas: HashMap<PeerId, IsActive>,
@@ -245,7 +263,17 @@ impl ReplicaSet {
             if peer_id == self.this_peer_id {
                 if let Some(mut shard) = self.local.take() {
                     shard.before_drop().await;
-                    drop_and_delete_from_disk(shard).await?;
+                    match *shard {
+                        Local(local) => drop_and_delete_from_disk(local).await?,
+                        ForwardProxy(forward) => {
+                            drop_and_delete_from_disk(forward.wrapped_shard).await?
+                        }
+                        Remote(_) | Shard::Proxy(_) | Shard::ReplicaSet(_) => {
+                            return Err(CollectionError::service_error(
+                                "Unexpected shard in replica set".to_string(),
+                            ))
+                        }
+                    }
                 } else {
                     debug_assert!(false, "inconsistent `replica_set` map with actual shards")
                 }
@@ -288,7 +316,7 @@ impl ReplicaSet {
         // 1 - prefer the local shard if it is active
         if let Some(local) = &self.local {
             if self.peer_is_active(&self.this_peer_id) {
-                if let ok @ Ok(_) = read(local).await {
+                if let ok @ Ok(_) = read(local.get()).await {
                     return ok;
                 }
             }
@@ -348,20 +376,23 @@ impl ReplicaSet {
         captured_error.expect("at this point `captured_error` must be defined by construction")
     }
 
-    // 1. Create replica and mark them as inactive
-    // 2. Copy data
-    // 3. Mark them as active
-    pub fn add_replica(&mut self, _peer_id: &PeerId) -> CollectionResult<()> {
-        // TODO
-        Ok(())
-    }
-
     pub async fn remove_replica(&mut self, peer_id: &PeerId) -> CollectionResult<()> {
         if peer_id == &self.this_peer_id {
             // remove local shard
             if let Some(mut local) = self.local.take() {
                 local.before_drop().await;
-                drop_and_delete_from_disk(local).await
+                match *local {
+                    Local(local) => drop_and_delete_from_disk(local).await?,
+                    ForwardProxy(forward) => {
+                        drop_and_delete_from_disk(forward.wrapped_shard).await?
+                    }
+                    Remote(_) | Shard::Proxy(_) | Shard::ReplicaSet(_) => {
+                        return Err(CollectionError::service_error(
+                            "Unexpected shard in replica set".to_string(),
+                        ))
+                    }
+                }
+                Ok(())
             } else {
                 Err(CollectionError::service_error(format!(
                     "replica set {} should contain a local shard",
@@ -383,13 +414,15 @@ impl ReplicaSet {
     }
 
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        if let Some(shard) = &self.local {
-            shard.on_optimizer_config_update().await
+        if let Some(_shard) = &self.local {
+            // shard.on_optimizer_config_update().await
+            todo!("optimize config update on local")
         } else {
             Ok(())
         }
     }
 
+    #[async_recursion]
     pub(crate) async fn before_drop(&mut self) {
         if let Some(shard) = &mut self.local {
             shard.before_drop().await
@@ -431,6 +464,7 @@ impl ReplicaSet {
         Ok(())
     }
 
+    #[async_recursion]
     pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
         if let Some(local) = &self.local {
             local.create_snapshot(target_path).await?
@@ -442,6 +476,23 @@ impl ReplicaSet {
         let shard_config = ShardConfig::new_replica_set();
         shard_config.save(target_path)?;
         Ok(())
+    }
+
+    pub fn proxify_local(&mut self, remote_shard: RemoteShard) -> CollectionResult<()> {
+        match self.local.take().map(|b| *b) {
+            Some(Local(local)) => {
+                let proxy_shard = ForwardProxyShard::new(local, remote_shard);
+                let _ = self.local.insert(Box::new(ForwardProxy(proxy_shard)));
+                Ok(())
+            }
+            Some(shard) => Err(CollectionError::service_error(format!(
+                "cannot proxy {} shard",
+                shard.variant_name()
+            ))),
+            None => Err(CollectionError::service_error(
+                "cannot proxy absent local shard".to_string(),
+            )),
+        }
     }
 }
 
@@ -484,6 +535,7 @@ impl ShardOperation for ReplicaSet {
             Some(local) if self.peer_is_active(&self.this_peer_id) => {
                 let local_update = async move {
                     local
+                        .get()
                         .update(operation.clone(), wait)
                         .await
                         .map_err(|err| (self.this_peer_id, err))

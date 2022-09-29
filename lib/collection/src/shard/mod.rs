@@ -104,6 +104,16 @@ impl Shard {
             Shard::ReplicaSet(replica_set) => replica_set.get_telemetry_data(),
         }
     }
+
+    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+        match self {
+            Shard::Local(local_shard) => local_shard.create_snapshot(target_path).await,
+            Shard::Remote(remote_shard) => remote_shard.create_snapshot(target_path).await,
+            Shard::Proxy(proxy_shard) => proxy_shard.create_snapshot(target_path).await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.create_snapshot(target_path).await,
+            Shard::ReplicaSet(replica_set) => replica_set.create_snapshot(target_path).await,
+        }
+    }
 }
 
 #[async_trait]

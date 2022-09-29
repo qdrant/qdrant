@@ -31,6 +31,7 @@ async fn transfer_batches(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
     stopped: Arc<AtomicBool>,
+    sync: bool,
 ) -> CollectionResult<()> {
     // Create payload indexes on the remote shard.
     {
@@ -61,7 +62,7 @@ async fn transfer_batches(
         let transferring_shard_opt = shard_holder_guard.get_shard(&shard_id);
         if let Some(Shard::ForwardProxy(transferring_shard)) = transferring_shard_opt {
             offset = transferring_shard
-                .transfer_batch(offset, TRANSFER_BATCH_SIZE)
+                .transfer_batch(offset, TRANSFER_BATCH_SIZE, sync)
                 .await?;
             if offset.is_none() {
                 // That was the last batch, all look good
@@ -263,6 +264,30 @@ pub async fn promote_proxy_to_remote_shard(
     }
 }
 
+/// Activate peer for replica.
+///
+/// Returns true if the replica was enabled, false if it was already handled
+pub async fn activate_peer_for_replica(
+    shard_holder: Arc<LockedShardHolder>,
+    shard_id: ShardId,
+    replica_peer: PeerId,
+) -> CollectionResult<bool> {
+    let mut shard_holder_guard = shard_holder.write().await;
+    let shard = shard_holder_guard.get_mut_shard(&shard_id);
+    match shard {
+        Some(Shard::ReplicaSet(replica_set)) => {
+            // already activated
+            if replica_set.replica_state.peers.get(&replica_peer) == Some(&true) {
+                Ok(false)
+            } else {
+                replica_set.set_active(&replica_peer, true)?;
+                Ok(true)
+            }
+        }
+        _ => Ok(false),
+    }
+}
+
 pub async fn transfer_shard(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
@@ -270,6 +295,7 @@ pub async fn transfer_shard(
     peer_id: PeerId,
     channel_service: ChannelService,
     stopped: Arc<AtomicBool>,
+    sync: bool,
 ) -> CollectionResult<()> {
     // Initiate shard on a remote peer
     let remote_shard = RemoteShard::new(shard_id, collection_id.clone(), peer_id, channel_service);
@@ -288,24 +314,29 @@ pub async fn transfer_shard(
                 let proxy_shard = ForwardProxyShard::new(local_shard, remote_shard);
                 shard_holder_guard.add_shard(shard_id, Shard::ForwardProxy(proxy_shard));
             }
+            Some(Shard::ReplicaSet(mut replica_set)) if sync && replica_set.local.is_some() => {
+                replica_set.proxify_local(remote_shard)?;
+                let new_replica_set = Shard::ReplicaSet(replica_set);
+                shard_holder_guard.add_shard(shard_id, new_replica_set);
+            }
             Some(shard) => {
                 // return shard back
                 shard_holder_guard.add_shard(shard_id, shard);
                 return Err(CollectionError::service_error(format!(
-                    "Shard {} does is not local",
+                    "Shard {} cannot be proxied because it is not local",
                     shard_id
                 )));
             }
             None => {
                 return Err(CollectionError::service_error(format!(
-                    "Local Shard {} does not exist",
+                    "Shard {} cannot be proxied because it does not exist",
                     shard_id
                 )));
             }
         }
     };
     // Transfer contents batch by batch
-    transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await?;
+    transfer_batches(shard_holder.clone(), shard_id, stopped.clone(), sync).await?;
 
     // Validate that the new shard reached a certain level of indexing before promoting it to not slowdown the search requests
     validate_indexing_progress(shard_holder, shard_id, collection_id, peer_id, stopped).await
@@ -399,6 +430,7 @@ pub fn spawn_transfer_task<T, F>(
     transfer: ShardTransfer,
     collection_id: CollectionId,
     channel_service: ChannelService,
+    sync: bool,
     on_finish: T,
     on_error: F,
 ) -> StoppableAsyncTaskHandle<bool>
@@ -417,6 +449,7 @@ where
                 transfer.to,
                 channel_service.clone(),
                 stopped.clone(),
+                sync,
             )
             .await;
             finished = match transfer_result {
