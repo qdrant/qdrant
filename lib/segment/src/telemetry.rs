@@ -17,11 +17,11 @@ pub struct SegmentTelemetry {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub cardinality_searches: Option<CardinalitySearchesTelemetry>,
+    pub vector_index_searches: Option<VectorIndexSearchesTelemetry>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub cardinality_searches_by_vectors: Option<HashMap<String, CardinalitySearchesTelemetry>>,
+    pub vector_index_searches_with_names: Option<HashMap<String, VectorIndexSearchesTelemetry>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -39,36 +39,57 @@ pub struct PayloadIndexTelemetry {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
-pub struct CardinalitySearchesTelemetry {
-    pub small_cardinality_searches: OperationDurationStatistics,
-    pub large_cardinality_searches: OperationDurationStatistics,
-    pub positive_check_cardinality_searches: OperationDurationStatistics,
-    pub negative_check_cardinality_searches: OperationDurationStatistics,
+pub struct VectorIndexSearchesTelemetry {
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub unfiltered_plain_searches: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub unfiltered_hnsw_searches: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub filtered_plain_searches: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub filtered_small_cardinality_searches: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub filtered_large_cardinality_searches: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub filtered_positive_check_cardinality_searches: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub filtered_negative_check_cardinality_searches: OperationDurationStatistics,
 }
 
-impl std::ops::Add for CardinalitySearchesTelemetry {
+impl std::ops::Add for VectorIndexSearchesTelemetry {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
         Self {
-            small_cardinality_searches: self.small_cardinality_searches
-                + other.small_cardinality_searches,
-            large_cardinality_searches: self.large_cardinality_searches
-                + other.large_cardinality_searches,
-            positive_check_cardinality_searches: self.positive_check_cardinality_searches
-                + other.positive_check_cardinality_searches,
-            negative_check_cardinality_searches: self.negative_check_cardinality_searches
-                + other.negative_check_cardinality_searches,
+            unfiltered_plain_searches: self.unfiltered_plain_searches
+                + other.unfiltered_plain_searches,
+            unfiltered_hnsw_searches: self.unfiltered_hnsw_searches
+                + other.unfiltered_hnsw_searches,
+            filtered_plain_searches: self.filtered_plain_searches + other.filtered_plain_searches,
+            filtered_small_cardinality_searches: self.filtered_small_cardinality_searches
+                + other.filtered_small_cardinality_searches,
+            filtered_large_cardinality_searches: self.filtered_large_cardinality_searches
+                + other.filtered_large_cardinality_searches,
+            filtered_positive_check_cardinality_searches: self
+                .filtered_positive_check_cardinality_searches
+                + other.filtered_positive_check_cardinality_searches,
+            filtered_negative_check_cardinality_searches: self
+                .filtered_negative_check_cardinality_searches
+                + other.filtered_negative_check_cardinality_searches,
         }
-    }
-}
-
-impl CardinalitySearchesTelemetry {
-    pub fn get_total_searches(&self) -> OperationDurationStatistics {
-        self.small_cardinality_searches.clone()
-            + self.large_cardinality_searches.clone()
-            + self.positive_check_cardinality_searches.clone()
-            + self.negative_check_cardinality_searches.clone()
     }
 }
 
@@ -77,8 +98,8 @@ impl Anonymize for SegmentTelemetry {
         Self {
             info: self.info.anonymize(),
             config: self.config.anonymize(),
-            cardinality_searches: self.cardinality_searches.anonymize(),
-            cardinality_searches_by_vectors: self.cardinality_searches_by_vectors.anonymize(),
+            vector_index_searches: self.vector_index_searches.anonymize(),
+            vector_index_searches_with_names: self.vector_index_searches_with_names.anonymize(),
             payload_field_indices: self.payload_field_indices.anonymize(),
         }
     }
@@ -119,16 +140,23 @@ impl Anonymize for VectorDataConfig {
     }
 }
 
-impl Anonymize for CardinalitySearchesTelemetry {
+impl Anonymize for VectorIndexSearchesTelemetry {
     fn anonymize(&self) -> Self {
-        CardinalitySearchesTelemetry {
-            small_cardinality_searches: self.small_cardinality_searches.anonymize(),
-            large_cardinality_searches: self.large_cardinality_searches.anonymize(),
-            positive_check_cardinality_searches: self
-                .positive_check_cardinality_searches
+        VectorIndexSearchesTelemetry {
+            unfiltered_plain_searches: self.unfiltered_plain_searches.anonymize(),
+            unfiltered_hnsw_searches: self.unfiltered_hnsw_searches.anonymize(),
+            filtered_plain_searches: self.filtered_plain_searches.anonymize(),
+            filtered_small_cardinality_searches: self
+                .filtered_small_cardinality_searches
                 .anonymize(),
-            negative_check_cardinality_searches: self
-                .negative_check_cardinality_searches
+            filtered_large_cardinality_searches: self
+                .filtered_large_cardinality_searches
+                .anonymize(),
+            filtered_positive_check_cardinality_searches: self
+                .filtered_positive_check_cardinality_searches
+                .anonymize(),
+            filtered_negative_check_cardinality_searches: self
+                .filtered_negative_check_cardinality_searches
                 .anonymize(),
         }
     }

@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::OperationDurationStatistics;
-use segment::telemetry::{CardinalitySearchesTelemetry, SegmentTelemetry};
+use segment::telemetry::{SegmentTelemetry, VectorIndexSearchesTelemetry};
 use serde::{Deserialize, Serialize};
 
 use crate::config::CollectionConfig;
@@ -31,6 +31,10 @@ pub struct CollectionTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub shards: Option<Vec<ShardTelemetry>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub vector_index_searches: Option<VectorIndexSearchesTelemetry>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -53,16 +57,17 @@ impl CollectionTelemetry {
             config,
             init_time_micros: init_time.as_micros() as u32,
             shards: Some(Vec::new()),
+            vector_index_searches: None,
         }
     }
 
-    pub fn get_cardinality_searches(&self) -> CardinalitySearchesTelemetry {
-        let mut result = CardinalitySearchesTelemetry::default();
+    pub fn calculate_vector_index_searches_from_shards(&self) -> VectorIndexSearchesTelemetry {
+        let mut result = VectorIndexSearchesTelemetry::default();
         if let Some(shards) = &self.shards {
             for shard in shards {
                 if let ShardTelemetry::Local { segments, .. } = shard {
                     for segment in segments {
-                        result = result + segment.cardinality_searches.clone().unwrap();
+                        result = result + segment.vector_index_searches.clone().unwrap();
                     }
                 }
             }
@@ -70,12 +75,16 @@ impl CollectionTelemetry {
         result
     }
 
-    pub fn remove_cardinality_searches(&mut self) {
+    pub fn set_vector_index_searches(&mut self, telemetry: VectorIndexSearchesTelemetry) {
+        self.vector_index_searches = Some(telemetry);
+    }
+
+    pub fn remove_vector_index_searches(&mut self) {
         if let Some(shards) = &mut self.shards {
             for shard in shards {
                 if let ShardTelemetry::Local { segments, .. } = shard {
                     for segment in segments {
-                        segment.cardinality_searches = None;
+                        segment.vector_index_searches = None;
                     }
                 }
             }
@@ -90,6 +99,7 @@ impl Anonymize for CollectionTelemetry {
             config: self.config.anonymize(),
             init_time_micros: self.init_time_micros,
             shards: self.shards.anonymize(),
+            vector_index_searches: self.vector_index_searches.anonymize(),
         }
     }
 }

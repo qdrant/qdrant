@@ -9,7 +9,7 @@ use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
-use segment::telemetry::CardinalitySearchesTelemetry;
+use segment::telemetry::VectorIndexSearchesTelemetry;
 use serde::{Deserialize, Serialize};
 use storage::dispatcher::Dispatcher;
 use storage::types::ClusterStatus;
@@ -88,11 +88,7 @@ pub struct TelemetryData {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    total_cardinality_searches: Option<CardinalitySearchesTelemetry>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    total_seraches: Option<OperationDurationStatistics>,
+    vector_index_searches: Option<VectorIndexSearchesTelemetry>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -169,8 +165,7 @@ impl Anonymize for TelemetryData {
             web: self.web.anonymize(),
             grpc_calls_statistics: self.grpc_calls_statistics.anonymize(),
             cluster_status: self.cluster_status.anonymize(),
-            total_cardinality_searches: self.total_cardinality_searches.anonymize(),
-            total_seraches: self.total_seraches.anonymize(),
+            vector_index_searches: self.vector_index_searches.anonymize(),
         }
     }
 }
@@ -297,8 +292,7 @@ impl TelemetryCollector {
             web: Some(self.get_web_data()),
             grpc_calls_statistics: Some(grpc_calls_statistics),
             cluster_status: Some(cluster_status),
-            total_cardinality_searches: None,
-            total_seraches: None,
+            vector_index_searches: None,
         };
         result.agregate();
         result
@@ -407,15 +401,19 @@ impl TelemetryCollector {
 
 impl TelemetryData {
     pub fn agregate(&mut self) {
-        let cardinality_searches = self
+        let vector_index_searches = self
             .collections
-            .as_ref()
+            .as_mut()
             .unwrap()
-            .iter()
-            .map(|collection| collection.get_cardinality_searches())
-            .fold(CardinalitySearchesTelemetry::default(), |a, b| a + b);
-        self.total_seraches = Some(cardinality_searches.get_total_searches());
-        self.total_cardinality_searches = Some(cardinality_searches);
+            .iter_mut()
+            .map(|collection| {
+                let vector_index_searches =
+                    collection.calculate_vector_index_searches_from_shards();
+                collection.set_vector_index_searches(vector_index_searches.clone());
+                vector_index_searches
+            })
+            .fold(VectorIndexSearchesTelemetry::default(), |a, b| a + b);
+        self.vector_index_searches = Some(vector_index_searches);
     }
 
     pub fn cut_by_detail_level(&mut self, level: usize) {
@@ -434,15 +432,13 @@ impl TelemetryData {
         }
 
         if level < 2 {
-            self.collections = None;
             self.cluster_status = None;
-            self.total_cardinality_searches = None;
+            self.vector_index_searches = None;
         }
 
         if level < 1 {
             self.web = None;
             self.grpc_calls_statistics = None;
-            self.total_seraches = None;
         }
     }
 }

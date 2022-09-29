@@ -5,10 +5,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
-use crate::common::operation_time_statistics::OperationDurationStatistics;
+use crate::common::operation_time_statistics::{
+    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
+};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
@@ -18,7 +21,7 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
-use crate::telemetry::CardinalitySearchesTelemetry;
+use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
@@ -181,6 +184,8 @@ impl PayloadIndex for PlainPayloadIndex {
 pub struct PlainIndex {
     vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
+    unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl PlainIndex {
@@ -191,6 +196,8 @@ impl PlainIndex {
         PlainIndex {
             vector_storage,
             payload_index,
+            filtered_searches_telemetry: OperationDurationsAggregator::new(),
+            unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
         }
     }
 }
@@ -205,6 +212,7 @@ impl VectorIndex for PlainIndex {
     ) -> Vec<Vec<ScoredPointOffset>> {
         match filter {
             Some(filter) => {
+                let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
                 let borrowed_payload_index = self.payload_index.borrow();
                 let filtered_ids_vec: Vec<_> =
                     borrowed_payload_index.query_points(filter).collect();
@@ -219,10 +227,13 @@ impl VectorIndex for PlainIndex {
                     })
                     .collect()
             }
-            None => vectors
-                .iter()
-                .map(|vector| self.vector_storage.borrow().score_all(vector, top))
-                .collect(),
+            None => {
+                let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
+                vectors
+                    .iter()
+                    .map(|vector| self.vector_storage.borrow().score_all(vector, top))
+                    .collect()
+            }
         }
     }
 
@@ -230,12 +241,15 @@ impl VectorIndex for PlainIndex {
         Ok(())
     }
 
-    fn get_telemetry_data(&self) -> CardinalitySearchesTelemetry {
-        CardinalitySearchesTelemetry {
-            small_cardinality_searches: OperationDurationStatistics::default(),
-            large_cardinality_searches: OperationDurationStatistics::default(),
-            positive_check_cardinality_searches: OperationDurationStatistics::default(),
-            negative_check_cardinality_searches: OperationDurationStatistics::default(),
+    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
+        VectorIndexSearchesTelemetry {
+            unfiltered_plain_searches: self.unfiltered_searches_telemetry.lock().get_statistics(),
+            filtered_plain_searches: self.filtered_searches_telemetry.lock().get_statistics(),
+            unfiltered_hnsw_searches: OperationDurationStatistics::default(),
+            filtered_small_cardinality_searches: OperationDurationStatistics::default(),
+            filtered_large_cardinality_searches: OperationDurationStatistics::default(),
+            filtered_positive_check_cardinality_searches: OperationDurationStatistics::default(),
+            filtered_negative_check_cardinality_searches: OperationDurationStatistics::default(),
         }
     }
 }

@@ -21,6 +21,14 @@ pub struct OperationDurationStatistics {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub avg_duration_micros: Option<f32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub min_duration_micros: Option<f32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub max_duration_micros: Option<f32>,
 }
 
 pub struct OperationDurationsAggregator {
@@ -29,6 +37,8 @@ pub struct OperationDurationsAggregator {
     timings: [f32; AVG_DATASET_LEN],
     timing_index: usize,
     timing_loops: usize,
+    min_value: Option<f32>,
+    max_value: Option<f32>,
 }
 
 pub struct ScopeDurationMeasurer {
@@ -43,6 +53,8 @@ impl Anonymize for OperationDurationStatistics {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
             avg_duration_micros: self.avg_duration_micros,
+            min_duration_micros: self.min_duration_micros,
+            max_duration_micros: self.max_duration_micros,
         }
     }
 }
@@ -54,18 +66,67 @@ impl std::ops::Add for OperationDurationStatistics {
         Self {
             count: self.count + other.count,
             fail_count: self.fail_count + other.fail_count,
-            avg_duration_micros: if let Some(self_avg_time) = self.avg_duration_micros {
-                if let Some(other_avg_time) = other.avg_duration_micros {
-                    Some(
-                        (self_avg_time * self.count as f32 + other_avg_time * other.count as f32)
-                            / (self.count + other.count) as f32,
-                    )
+            avg_duration_micros: Self::weighted_mean_duration(
+                self.avg_duration_micros,
+                self.count,
+                other.avg_duration_micros,
+                other.count,
+            ),
+            min_duration_micros: Self::compared_duration(
+                self.min_duration_micros,
+                other.min_duration_micros,
+                |a, b| a < b,
+            ),
+            max_duration_micros: Self::compared_duration(
+                self.max_duration_micros,
+                other.max_duration_micros,
+                |a, b| a > b,
+            ),
+        }
+    }
+}
+
+impl OperationDurationStatistics {
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    fn weighted_mean_duration(
+        duration1: Option<f32>,
+        count1: usize,
+        duration2: Option<f32>,
+        count2: usize,
+    ) -> Option<f32> {
+        if let Some(duration1) = duration1 {
+            if let Some(duration2) = duration2 {
+                let count1 = count1 as f32;
+                let count2 = count2 as f32;
+                Some((duration1 * count1 + duration2 * count2) / (count1 + count2))
+            } else {
+                Some(duration1)
+            }
+        } else {
+            duration2
+        }
+    }
+
+    fn compared_duration(
+        duration1: Option<f32>,
+        duration2: Option<f32>,
+        compare: impl Fn(f32, f32) -> bool,
+    ) -> Option<f32> {
+        if let Some(duration1) = duration1 {
+            if let Some(duration2) = duration2 {
+                if compare(duration1, duration2) {
+                    Some(duration1)
                 } else {
-                    Some(self_avg_time)
+                    Some(duration2)
                 }
             } else {
-                other.avg_duration_micros
-            },
+                Some(duration1)
+            }
+        } else {
+            duration2
         }
     }
 }
@@ -100,13 +161,25 @@ impl OperationDurationsAggregator {
             timings: [0.; AVG_DATASET_LEN],
             timing_index: 0,
             timing_loops: 0,
+            min_value: None,
+            max_value: None,
         }))
     }
 
     pub fn add_operation_result(&mut self, success: bool, duration: Duration) {
         if success {
+            let duration = duration.as_micros() as f32;
+            self.min_value = Some(match self.min_value {
+                Some(min_value) => min_value.min(duration),
+                None => duration,
+            });
+            self.max_value = Some(match self.max_value {
+                Some(max_value) => max_value.max(duration),
+                None => duration,
+            });
+
             self.ok_count += 1;
-            self.timings[self.timing_index] = duration.as_micros() as f32;
+            self.timings[self.timing_index] = duration;
             self.timing_index += 1;
             if self.timing_index >= AVG_DATASET_LEN {
                 self.timing_index = 0;
@@ -126,6 +199,8 @@ impl OperationDurationsAggregator {
             } else {
                 None
             },
+            min_duration_micros: self.min_value,
+            max_duration_micros: self.max_value,
         }
     }
 
