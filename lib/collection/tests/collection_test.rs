@@ -552,6 +552,7 @@ async fn test_promote_temporary_shards() {
             shard_id: 0,
             from: 0,
             to: 100,
+            sync: false,
         })
         .await
         .unwrap();

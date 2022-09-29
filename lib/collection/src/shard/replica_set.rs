@@ -37,7 +37,11 @@ const REPLICA_STATE_FILE: &str = "replica_state";
 /// Represents a change in replica set, due to scaling of `replication_factor`
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {
-    Add(ShardId, PeerId),
+    Add {
+        shard: ShardId,
+        to: PeerId,
+        sync_source: PeerId,
+    },
     Remove(ShardId, PeerId),
 }
 
