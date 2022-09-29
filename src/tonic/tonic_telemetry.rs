@@ -2,18 +2,15 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
-use segment::common::operation_time_statistics::{
-    OperationDurationsAggregator, ScopeDurationMeasurer,
-};
 use tower::Service;
 use tower_layer::Layer;
 
-use crate::common::telemetry::TonicTelemetryCollector;
+use crate::common::telemetry::{TonicTelemetryCollector, TonicWorkerTelemetryCollector};
 
 #[derive(Clone)]
 pub struct TonicTelemetryService<T> {
     service: T,
-    calls_aggregator: Arc<parking_lot::Mutex<OperationDurationsAggregator>>,
+    telemetry_data: Arc<parking_lot::Mutex<TonicWorkerTelemetryCollector>>,
 }
 
 #[derive(Clone)]
@@ -21,9 +18,9 @@ pub struct TonicTelemetryLayer {
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
 }
 
-impl<S, Request> Service<Request> for TonicTelemetryService<S>
+impl<S> Service<tonic::codegen::http::Request<tonic::transport::Body>> for TonicTelemetryService<S>
 where
-    S: Service<Request>,
+    S: Service<tonic::codegen::http::Request<tonic::transport::Body>>,
     S::Future: Send + 'static,
 {
     type Response = S::Response;
@@ -34,12 +31,17 @@ where
         self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, request: Request) -> Self::Future {
+    fn call(
+        &mut self,
+        request: tonic::codegen::http::Request<tonic::transport::Body>,
+    ) -> Self::Future {
+        let method_name = request.uri().path().to_string();
         let future = self.service.call(request);
-        let calls_aggregator = self.calls_aggregator.clone();
+        let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
-            let _timer = ScopeDurationMeasurer::new(&calls_aggregator);
+            let instant = std::time::Instant::now();
             let response = future.await?;
+            telemetry_data.lock().add_response(method_name, instant);
             Ok(response)
         })
     }
@@ -61,7 +63,7 @@ impl<S> Layer<S> for TonicTelemetryLayer {
     fn layer(&self, service: S) -> Self::Service {
         TonicTelemetryService {
             service,
-            calls_aggregator: self
+            telemetry_data: self
                 .telemetry_collector
                 .lock()
                 .create_grpc_telemetry_collector(),

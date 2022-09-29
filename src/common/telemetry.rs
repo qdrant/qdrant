@@ -28,7 +28,7 @@ pub struct TelemetryCollector {
 }
 
 pub struct ActixTelemetryCollector {
-    web_workers_telemetry: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
+    workers: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
 }
 
 #[derive(Default)]
@@ -37,24 +37,27 @@ pub struct ActixWorkerTelemetryCollector {
 }
 
 pub struct TonicTelemetryCollector {
-    grpc_calls_aggregator: Vec<Arc<Mutex<OperationDurationsAggregator>>>,
+    workers: Vec<Arc<Mutex<TonicWorkerTelemetryCollector>>>,
+}
+
+#[derive(Default)]
+pub struct TonicWorkerTelemetryCollector {
+    methods: HashMap<String, Arc<Mutex<OperationDurationsAggregator>>>,
 }
 
 impl ActixTelemetryCollector {
     pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<ActixWorkerTelemetryCollector>> {
-        let web_worker_telemetry_collector: Arc<Mutex<_>> = Default::default();
-        self.web_workers_telemetry
-            .push(web_worker_telemetry_collector.clone());
-        web_worker_telemetry_collector
+        let worker: Arc<Mutex<_>> = Default::default();
+        self.workers.push(worker.clone());
+        worker
     }
 }
 
 impl TonicTelemetryCollector {
-    pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<OperationDurationsAggregator>> {
-        let grpc_calls_aggregator = OperationDurationsAggregator::new();
-        self.grpc_calls_aggregator
-            .push(grpc_calls_aggregator.clone());
-        grpc_calls_aggregator
+    pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<TonicWorkerTelemetryCollector>> {
+        let worker: Arc<Mutex<_>> = Default::default();
+        self.workers.push(worker.clone());
+        worker
     }
 }
 
@@ -85,7 +88,7 @@ pub struct TelemetryData {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    grpc_calls_statistics: Option<OperationDurationStatistics>,
+    grpc_calls_statistics: Option<GrpcTelemetry>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -157,6 +160,11 @@ pub struct ConfigsTelemetry {
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
+pub struct GrpcTelemetry {
+    responses: HashMap<String, OperationDurationStatistics>,
 }
 
 impl Anonymize for TelemetryData {
@@ -257,6 +265,32 @@ impl Anonymize for WebApiTelemetry {
     }
 }
 
+impl Anonymize for GrpcTelemetry {
+    fn anonymize(&self) -> Self {
+        GrpcTelemetry {
+            responses: self.responses.clone(),
+        }
+    }
+}
+
+impl TonicWorkerTelemetryCollector {
+    pub fn add_response(&mut self, method: String, instant: std::time::Instant) {
+        let aggregator = self
+            .methods
+            .entry(method)
+            .or_insert_with(OperationDurationsAggregator::new);
+        ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+    }
+
+    pub fn get_telemetry_data(&self) -> GrpcTelemetry {
+        let mut responses = HashMap::new();
+        for (method, aggregator) in self.methods.iter() {
+            responses.insert(method.clone(), aggregator.lock().get_statistics());
+        }
+        GrpcTelemetry { responses }
+    }
+}
+
 impl ActixWorkerTelemetryCollector {
     pub fn add_response(
         &mut self,
@@ -286,6 +320,15 @@ impl ActixWorkerTelemetryCollector {
     }
 }
 
+impl GrpcTelemetry {
+    pub fn merge(&mut self, other: &GrpcTelemetry) {
+        for (method, other_statistics) in &other.responses {
+            let entry = self.responses.entry(method.clone()).or_default();
+            *entry = entry.clone() + other_statistics.clone();
+        }
+    }
+}
+
 impl WebApiTelemetry {
     pub fn merge(&mut self, other: &WebApiTelemetry) {
         for (method, status_codes) in &other.responses {
@@ -307,10 +350,10 @@ impl TelemetryCollector {
             settings,
             dispatcher,
             actix_telemetry_collector: Arc::new(Mutex::new(ActixTelemetryCollector {
-                web_workers_telemetry: Vec::new(),
+                workers: Vec::new(),
             })),
             tonic_telemetry_collector: Arc::new(Mutex::new(TonicTelemetryCollector {
-                grpc_calls_aggregator: Vec::new(),
+                workers: Vec::new(),
             })),
         }
     }
@@ -417,19 +460,19 @@ impl TelemetryCollector {
     fn get_web_data(&self) -> WebApiTelemetry {
         let actix_telemetry_collector = self.actix_telemetry_collector.lock();
         let mut result = WebApiTelemetry::default();
-        for web_data in &actix_telemetry_collector.web_workers_telemetry {
+        for web_data in &actix_telemetry_collector.workers {
             let lock = web_data.lock().get_telemetry_data();
             result.merge(&lock);
         }
         result
     }
 
-    fn grpc_calls_statistics(&self) -> OperationDurationStatistics {
+    fn grpc_calls_statistics(&self) -> GrpcTelemetry {
         let tonic_telemetry_collector = self.tonic_telemetry_collector.lock();
-        let mut result = OperationDurationStatistics::default();
-        for grps_calls in &tonic_telemetry_collector.grpc_calls_aggregator {
-            let stats = grps_calls.lock().get_statistics();
-            result = result + stats;
+        let mut result = GrpcTelemetry::default();
+        for grpc_data in &tonic_telemetry_collector.workers {
+            let lock = grpc_data.lock().get_telemetry_data();
+            result.merge(&lock);
         }
         result
     }
