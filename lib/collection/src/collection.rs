@@ -1552,7 +1552,7 @@ impl Collection {
                             .map(|peer_id| replica_set::Change::Add {
                                 shard: *shard_id,
                                 to: *peer_id,
-                                sync_source: todo!("add peer from which to sync"),
+                                from: todo!("add peer from which to sync"),
                             })
                             .collect_vec()
                     })

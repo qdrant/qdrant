@@ -40,7 +40,8 @@ pub enum Change {
     Add {
         shard: ShardId,
         to: PeerId,
-        sync_source: PeerId,
+        /// A peer which sends the shard data to the newly added peer
+        from: PeerId,
     },
     Remove(ShardId, PeerId),
 }
