@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::{
-    OperationDurationStatistics, OperationDurationsAggregator,
+    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::telemetry::VectorIndexSearchesTelemetry;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,12 @@ pub struct TelemetryCollector {
 }
 
 pub struct ActixTelemetryCollector {
-    web_workers_telemetry: Vec<Arc<Mutex<WebApiTelemetry>>>,
+    web_workers_telemetry: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
+}
+
+#[derive(Default)]
+pub struct ActixWorkerTelemetryCollector {
+    methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
 }
 
 pub struct TonicTelemetryCollector {
@@ -36,11 +41,11 @@ pub struct TonicTelemetryCollector {
 }
 
 impl ActixTelemetryCollector {
-    pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<WebApiTelemetry>> {
-        let web_worker_telemetry = Arc::new(Mutex::new(WebApiTelemetry::default()));
+    pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<ActixWorkerTelemetryCollector>> {
+        let web_worker_telemetry_collector: Arc<Mutex<_>> = Default::default();
         self.web_workers_telemetry
-            .push(web_worker_telemetry.clone());
-        web_worker_telemetry
+            .push(web_worker_telemetry_collector.clone());
+        web_worker_telemetry_collector
     }
 }
 
@@ -151,7 +156,7 @@ pub struct ConfigsTelemetry {
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
-    responses: HashMap<HttpStatusCode, usize>,
+    responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 impl Anonymize for TelemetryData {
@@ -252,14 +257,45 @@ impl Anonymize for WebApiTelemetry {
     }
 }
 
-impl WebApiTelemetry {
-    pub fn add_response(&mut self, status_code: HttpStatusCode) {
-        *self.responses.entry(status_code).or_insert(0) += 1;
+impl ActixWorkerTelemetryCollector {
+    pub fn add_response(
+        &mut self,
+        method: String,
+        status_code: HttpStatusCode,
+        instant: std::time::Instant,
+    ) {
+        let aggregator = self
+            .methods
+            .entry(method)
+            .or_default()
+            .entry(status_code)
+            .or_insert_with(OperationDurationsAggregator::new);
+        ScopeDurationMeasurer::new_with_instant(aggregator, instant);
     }
 
+    pub fn get_telemetry_data(&self) -> WebApiTelemetry {
+        let mut responses = HashMap::new();
+        for (method, status_codes) in &self.methods {
+            let mut status_codes_map = HashMap::new();
+            for (status_code, aggregator) in status_codes {
+                status_codes_map.insert(*status_code, aggregator.lock().get_statistics());
+            }
+            responses.insert(method.clone(), status_codes_map);
+        }
+        WebApiTelemetry { responses }
+    }
+}
+
+impl WebApiTelemetry {
     pub fn merge(&mut self, other: &WebApiTelemetry) {
-        for (status_code, count) in &other.responses {
-            *self.responses.entry(*status_code).or_insert(0) += *count;
+        for (method, status_codes) in &other.responses {
+            let status_codes_map = self.responses.entry(method.clone()).or_default();
+            for (status_code, statistics) in status_codes {
+                let entry = status_codes_map
+                    .entry(*status_code)
+                    .or_insert_with(OperationDurationStatistics::default);
+                *entry = entry.clone() + statistics.clone();
+            }
         }
     }
 }
@@ -382,7 +418,7 @@ impl TelemetryCollector {
         let actix_telemetry_collector = self.actix_telemetry_collector.lock();
         let mut result = WebApiTelemetry::default();
         for web_data in &actix_telemetry_collector.web_workers_telemetry {
-            let lock = web_data.lock();
+            let lock = web_data.lock().get_telemetry_data();
             result.merge(&lock);
         }
         result

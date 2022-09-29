@@ -6,11 +6,11 @@ use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
 use parking_lot::Mutex;
 
-use crate::common::telemetry::{ActixTelemetryCollector, WebApiTelemetry};
+use crate::common::telemetry::{ActixTelemetryCollector, ActixWorkerTelemetryCollector};
 
 pub struct ActixTelemetryService<S> {
     service: S,
-    telemetry_data: Arc<Mutex<WebApiTelemetry>>,
+    telemetry_data: Arc<Mutex<ActixWorkerTelemetryCollector>>,
 }
 
 pub struct ActixTelemetryTransform {
@@ -34,12 +34,16 @@ where
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
+        let method_name = request.match_name().unwrap_or("unknown_method").to_string();
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
+            let instant = std::time::Instant::now();
             let response = future.await?;
             let status = response.response().status().as_u16();
-            telemetry_data.lock().add_response(status);
+            telemetry_data
+                .lock()
+                .add_response(method_name, status, instant);
             Ok(response)
         })
     }

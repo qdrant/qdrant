@@ -140,6 +140,17 @@ impl ScopeDurationMeasurer {
         }
     }
 
+    pub fn new_with_instant(
+        aggregator: &Arc<Mutex<OperationDurationsAggregator>>,
+        instant: Instant,
+    ) -> Self {
+        Self {
+            aggregator: aggregator.clone(),
+            instant,
+            success: true,
+        }
+    }
+
     pub fn set_success(&mut self, success: bool) {
         self.success = success
     }
