@@ -32,6 +32,9 @@ pub struct SegmentTelemetry {
 pub struct PayloadIndexTelemetry {
     pub points_values_count: usize,
     pub points_count: usize,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub histogram_bucket_size: Option<usize>,
 }
 
