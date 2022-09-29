@@ -26,8 +26,11 @@ pub enum ShardTelemetry {
 pub struct CollectionTelemetry {
     pub id: String,
     pub config: CollectionConfig,
-    pub init_time: std::time::Duration,
-    pub shards: Vec<ShardTelemetry>,
+    pub init_time_micros: u32,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub shards: Option<Vec<ShardTelemetry>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -48,17 +51,19 @@ impl CollectionTelemetry {
         Self {
             id,
             config,
-            init_time,
-            shards: Vec::new(),
+            init_time_micros: init_time.as_micros() as u32,
+            shards: Some(Vec::new()),
         }
     }
 
     pub fn get_cardinality_searches(&self) -> CardinalitySearchesTelemetry {
         let mut result = CardinalitySearchesTelemetry::default();
-        for shard in &self.shards {
-            if let ShardTelemetry::Local { segments, .. } = shard {
-                for segment in segments {
-                    result = result + segment.cardinality_searches.clone().unwrap();
+        if let Some(shards) = &self.shards {
+            for shard in shards {
+                if let ShardTelemetry::Local { segments, .. } = shard {
+                    for segment in segments {
+                        result = result + segment.cardinality_searches.clone().unwrap();
+                    }
                 }
             }
         }
@@ -66,10 +71,12 @@ impl CollectionTelemetry {
     }
 
     pub fn remove_cardinality_searches(&mut self) {
-        for shard in &mut self.shards {
-            if let ShardTelemetry::Local { segments, .. } = shard {
-                for segment in segments {
-                    segment.cardinality_searches = None;
+        if let Some(shards) = &mut self.shards {
+            for shard in shards {
+                if let ShardTelemetry::Local { segments, .. } = shard {
+                    for segment in segments {
+                        segment.cardinality_searches = None;
+                    }
                 }
             }
         }
@@ -81,7 +88,7 @@ impl Anonymize for CollectionTelemetry {
         Self {
             id: self.id.anonymize(),
             config: self.config.anonymize(),
-            init_time: self.init_time,
+            init_time_micros: self.init_time_micros,
             shards: self.shards.anonymize(),
         }
     }

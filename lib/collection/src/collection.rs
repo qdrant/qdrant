@@ -1362,10 +1362,14 @@ impl Collection {
 
     pub async fn get_telemetry_data(&self) -> Option<CollectionTelemetry> {
         let mut telemetry = self.telemetry.clone();
-        telemetry.shards.clear();
+        telemetry.shards = Some(Vec::new());
         let shard_holder = self.shards_holder.read().await;
         for shard in shard_holder.all_shards() {
-            telemetry.shards.push(shard.get_telemetry_data());
+            telemetry
+                .shards
+                .as_mut()
+                .unwrap()
+                .push(shard.get_telemetry_data());
         }
         Some(telemetry)
     }

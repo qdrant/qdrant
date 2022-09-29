@@ -419,22 +419,29 @@ impl TelemetryData {
     }
 
     pub fn cut_by_detail_level(&mut self, level: usize) {
-        if level > 0 {
+        if level < 4 {
             self.collections
                 .as_mut()
                 .unwrap()
                 .iter_mut()
                 .for_each(|collection| {
-                    collection.remove_cardinality_searches();
+                    collection.shards = None;
                 });
         }
 
-        if level > 1 {
+        if level < 3 {
             self.collections = None;
-            self.web = None;
-            self.grpc_calls_statistics = None;
+        }
+
+        if level < 2 {
+            self.collections = None;
             self.cluster_status = None;
             self.total_cardinality_searches = None;
+        }
+
+        if level < 1 {
+            self.web = None;
+            self.grpc_calls_statistics = None;
             self.total_seraches = None;
         }
     }
