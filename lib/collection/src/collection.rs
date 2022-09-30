@@ -607,6 +607,9 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
+        if request.limit == 0 {
+            return Ok(vec![]);
+        }
         // `recommend_by` is a special case of recommend_by_batch with a single batch
         let request_batch = RecommendRequestBatch {
             searches: vec![request],
@@ -623,6 +626,10 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // shortcuts batch if all requests with limit=0
+        if request_batch.searches.iter().all(|s| s.limit == 0) {
+            return Ok(vec![]);
+        }
         // pack all reference vector ids
         let mut all_reference_vectors_ids = HashSet::new();
         for request in &request_batch.searches {
@@ -752,6 +759,10 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // shortcuts batch if all requests with limit=0
+        if request.searches.iter().all(|s| s.limit == 0) {
+            return Ok(vec![]);
+        }
         // A factor which determines if we need to use the 2-step search or not
         // Should be adjusted based on usage statistics.
         const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
@@ -922,6 +933,9 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
+        if request.limit == 0 {
+            return Ok(vec![]);
+        }
         // search is a special case of search_batch with a single batch
         let request_batch = SearchRequestBatch {
             searches: vec![request],

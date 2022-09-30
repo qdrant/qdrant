@@ -116,7 +116,7 @@ where
     I: IntoIterator<Item = E>,
 {
     if top == 0 {
-        return elements.into_iter().collect();
+        return vec![];
     }
 
     // If small values is better - PQ should pop-out big values first.
@@ -133,7 +133,7 @@ where
     I: IntoIterator<Item = E>,
 {
     if top == 0 {
-        return elements.into_iter().collect();
+        return vec![];
     }
 
     // If big values is better - PQ should pop-out small values first.
