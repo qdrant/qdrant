@@ -1,6 +1,7 @@
 #@ load("openapi.lib.yml", "response", "reference", "type", "array")
 
 openapi: 3.0.1
+security: []
 info:
   title: Qdrant API
   description: >
