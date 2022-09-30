@@ -262,7 +262,8 @@ impl UpdateHandler {
                 // After optimization is finished, we still need to check if there are
                 // some further optimizations possible.
                 // If receiver is already dead - we do not care.
-                let _ = sender.send(OptimizerSignal::Nop);
+                // If channel is full - optimization will be triggered by some other signal
+                let _ = sender.try_send(OptimizerSignal::Nop);
             },
         );
         let mut handles = optimization_handles.lock().await;
