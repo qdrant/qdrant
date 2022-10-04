@@ -520,6 +520,7 @@ impl TelemetryData {
         }
 
         if level < 1 {
+            self.configs = None;
             self.web = None;
             self.grpc_calls_statistics = None;
         }
