@@ -4,7 +4,7 @@ use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::telemetry::{SegmentTelemetry, VectorIndexSearchesTelemetry};
 use serde::{Deserialize, Serialize};
 
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, CollectionParams};
 use crate::shard::ShardId;
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -25,8 +25,15 @@ pub enum ShardTelemetry {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct CollectionTelemetry {
     pub id: String,
-    pub config: CollectionConfig,
     pub init_time_micros: u32,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub params: Option<CollectionParams>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub config: Option<CollectionConfig>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -52,7 +59,8 @@ impl CollectionTelemetry {
     pub fn new(id: String, config: CollectionConfig, init_time: std::time::Duration) -> Self {
         Self {
             id,
-            config,
+            params: Some(config.params.clone()),
+            config: Some(config),
             init_time_micros: init_time.as_micros() as u32,
             shards: Some(Vec::new()),
             vector_index_searches: None,
@@ -103,6 +111,7 @@ impl Anonymize for CollectionTelemetry {
     fn anonymize(&self) -> Self {
         Self {
             id: self.id.anonymize(),
+            params: self.params.clone(),
             config: self.config.anonymize(),
             init_time_micros: self.init_time_micros,
             shards: self.shards.anonymize(),

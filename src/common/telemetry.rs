@@ -508,6 +508,13 @@ impl TelemetryData {
                 .for_each(|collection| {
                     collection.shards = None;
                 });
+            self.collections
+                .as_mut()
+                .unwrap()
+                .iter_mut()
+                .for_each(|collection| {
+                    collection.config = None;
+                });
         }
 
         if level < 3 {
