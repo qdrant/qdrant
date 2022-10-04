@@ -97,6 +97,10 @@ pub struct TelemetryData {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     vector_index_searches: Option<VectorIndexSearchesTelemetry>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    peers_count: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -179,6 +183,7 @@ impl Anonymize for TelemetryData {
             grpc_calls_statistics: self.grpc_calls_statistics.anonymize(),
             cluster_status: self.cluster_status.anonymize(),
             vector_index_searches: self.vector_index_searches.anonymize(),
+            peers_count: self.peers_count,
         }
     }
 }
@@ -372,6 +377,7 @@ impl TelemetryCollector {
             grpc_calls_statistics: Some(grpc_calls_statistics),
             cluster_status: Some(cluster_status),
             vector_index_searches: None,
+            peers_count: None,
         };
         result.agregate();
         result
@@ -497,6 +503,9 @@ impl TelemetryData {
             })
             .fold(VectorIndexSearchesTelemetry::default(), |a, b| a + b);
         self.vector_index_searches = Some(vector_index_searches);
+        if let Some(ClusterStatus::Enabled(status)) = &self.cluster_status {
+            self.peers_count = Some(status.peers.len());
+        }
     }
 
     pub fn cut_by_detail_level(&mut self, level: usize) {
@@ -530,6 +539,7 @@ impl TelemetryData {
             self.configs = None;
             self.web = None;
             self.grpc_calls_statistics = None;
+            self.peers_count = None;
         }
     }
 }
