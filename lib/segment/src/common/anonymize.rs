@@ -36,12 +36,13 @@ impl Anonymize for String {
 
 impl Anonymize for usize {
     fn anonymize(&self) -> Self {
-        let leading_zeros = self.leading_zeros();
-        let skip_bytes_count = if leading_zeros > 4 {
-            leading_zeros - 4
+        let log10 = (*self as f32).log10().round() as u32;
+        if log10 > 4 {
+            let skip_digits = log10 - 4;
+            let coeff = 10usize.pow(skip_digits);
+            (*self / coeff) * coeff
         } else {
-            0
-        };
-        (self >> skip_bytes_count) << skip_bytes_count
+            *self
+        }
     }
 }

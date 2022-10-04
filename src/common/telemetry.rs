@@ -201,8 +201,8 @@ impl Anonymize for RunningEnvironmentTelemetry {
             distribution_version: self.distribution_version.clone(),
             is_docker: self.is_docker,
             cores: self.cores,
-            ram_size: self.ram_size,
-            disk_size: self.disk_size,
+            ram_size: self.ram_size.anonymize(),
+            disk_size: self.disk_size.anonymize(),
             cpu_flags: self.cpu_flags.clone(),
         }
     }
