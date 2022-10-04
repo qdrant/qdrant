@@ -46,11 +46,11 @@ static GLOBAL: Jemalloc = Jemalloc;
 ///
 /// This CLI starts a Qdrant peer/server.
 #[derive(Parser, Debug)]
-#[clap(version, about)]
+#[command(version, about)]
 struct Args {
     /// Uri of the peer to bootstrap from in case of multi-peer deployment.
     /// If not specified - this peer will be considered as a first in a new deployment.
-    #[clap(long, value_parser, value_name = "URI")]
+    #[arg(long, value_parser, value_name = "URI")]
     bootstrap: Option<Uri>,
     /// Uri of this peer.
     /// Other peers should be able to reach it by this uri.
@@ -59,23 +59,23 @@ struct Args {
     ///
     /// In case this is not the first peer and it bootstraps the value is optional.
     /// If not supplied then qdrant will take internal grpc port from config and derive the IP address of this peer on bootstrap peer (receiving side)
-    #[clap(long, value_parser, value_name = "URI")]
+    #[arg(long, value_parser, value_name = "URI")]
     uri: Option<Uri>,
 
     /// Force snapshot re-creation
     /// If provided - existing collections will be replaced with snapshots.
     /// Default is to not recreate from snapshots.
-    #[clap(short, long, action, default_value_t = false)]
+    #[arg(short, long, action, default_value_t = false)]
     force_snapshot: bool,
 
     /// List of paths to snapshot files.
     /// Format: <snapshot_file_path>:<target_collection_name>
-    #[clap(long, value_name = "PATH:NAME", alias = "collection-snapshot")]
+    #[arg(long, value_name = "PATH:NAME", alias = "collection-snapshot")]
     snapshot: Option<Vec<String>>,
 
     /// Path to snapshot of multiple collections.
     /// Format: <snapshot_file_path>
-    #[clap(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH")]
     storage_snapshot: Option<String>,
 }
 

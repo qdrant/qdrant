@@ -102,6 +102,7 @@ impl State {
                                 shard_id,
                                 from: old_peer_id,
                                 to: peer_id,
+                                sync: false,
                             })
                             .await?;
                     }
