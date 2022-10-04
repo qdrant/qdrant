@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use collection::telemetry::CollectionTelemetry;
+use collection::telemetry::{CollectionShortInfoTelemetry, CollectionTelemetry};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -77,6 +77,10 @@ pub struct TelemetryData {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     configs: Option<ConfigsTelemetry>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    collections_short_info: Option<CollectionShortInfoTelemetry>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -178,6 +182,7 @@ impl Anonymize for TelemetryData {
             app: self.app.anonymize(),
             system: self.system.anonymize(),
             configs: self.configs.anonymize(),
+            collections_short_info: self.collections_short_info.anonymize(),
             collections: self.collections.anonymize(),
             web: self.web.anonymize(),
             grpc_calls_statistics: self.grpc_calls_statistics.anonymize(),
@@ -372,6 +377,7 @@ impl TelemetryCollector {
             app: Some(self.get_app_data()),
             system: Some(self.get_system_data()),
             configs: Some(self.get_configs_data()),
+            collections_short_info: None,
             collections: Some(collections),
             web: Some(self.get_web_data()),
             grpc_calls_statistics: Some(grpc_calls_statistics),
@@ -486,10 +492,13 @@ impl TelemetryCollector {
 
 impl TelemetryData {
     pub fn agregate(&mut self) {
+        let mut collections_short_info = CollectionShortInfoTelemetry::default();
         for collection in self.collections.as_mut().unwrap().iter_mut() {
             let optimizations = collection.calculate_optimizations_from_shards();
             collection.optimizations = Some(optimizations.clone());
+            collections_short_info = collections_short_info + collection.short_info.clone();
         }
+        self.collections_short_info = Some(collections_short_info);
         let vector_index_searches = self
             .collections
             .as_mut()
@@ -540,6 +549,7 @@ impl TelemetryData {
             self.web = None;
             self.grpc_calls_statistics = None;
             self.peers_count = None;
+            self.collections_short_info = None;
         }
     }
 }

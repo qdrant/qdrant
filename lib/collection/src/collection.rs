@@ -1374,6 +1374,16 @@ impl Collection {
                 .as_mut()
                 .unwrap()
                 .push(shard.get_telemetry_data());
+            if let Shard::Local(shard) = shard {
+                let info = shard.info().await.ok()?;
+                let short_info = crate::telemetry::CollectionShortInfoTelemetry {
+                    status: info.status,
+                    optimizer_status: info.optimizer_status,
+                    vectors_count: info.vectors_count,
+                    indexed_vectors_count: info.indexed_vectors_count,
+                };
+                telemetry.short_info = telemetry.short_info + short_info;
+            }
         }
         Some(telemetry)
     }

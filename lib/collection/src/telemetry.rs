@@ -5,6 +5,7 @@ use segment::telemetry::{SegmentTelemetry, VectorIndexSearchesTelemetry};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{CollectionConfig, CollectionParams};
+use crate::operations::types::{CollectionStatus, OptimizersStatus};
 use crate::shard::ShardId;
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -26,6 +27,7 @@ pub enum ShardTelemetry {
 pub struct CollectionTelemetry {
     pub id: String,
     pub init_time_micros: u32,
+    pub short_info: CollectionShortInfoTelemetry,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -55,10 +57,30 @@ pub struct OptimizerTelemetry {
     pub vacuum: OperationDurationStatistics,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct CollectionShortInfoTelemetry {
+    pub status: CollectionStatus,
+    pub optimizer_status: OptimizersStatus,
+    pub vectors_count: usize,
+    pub indexed_vectors_count: usize,
+}
+
+impl Default for CollectionShortInfoTelemetry {
+    fn default() -> Self {
+        Self {
+            status: CollectionStatus::Green,
+            optimizer_status: OptimizersStatus::Ok,
+            vectors_count: 0,
+            indexed_vectors_count: 0,
+        }
+    }
+}
+
 impl CollectionTelemetry {
     pub fn new(id: String, config: CollectionConfig, init_time: std::time::Duration) -> Self {
         Self {
             id,
+            short_info: CollectionShortInfoTelemetry::default(),
             params: Some(config.params.clone()),
             config: Some(config),
             init_time_micros: init_time.as_micros() as u32,
@@ -107,16 +129,41 @@ impl std::ops::Add for OptimizerTelemetry {
     }
 }
 
+impl std::ops::Add for CollectionShortInfoTelemetry {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            status: std::cmp::max(self.status, other.status),
+            optimizer_status: std::cmp::max(self.optimizer_status, other.optimizer_status),
+            vectors_count: self.vectors_count + other.vectors_count,
+            indexed_vectors_count: self.indexed_vectors_count + other.indexed_vectors_count,
+        }
+    }
+}
+
 impl Anonymize for CollectionTelemetry {
     fn anonymize(&self) -> Self {
         Self {
             id: self.id.anonymize(),
+            short_info: self.short_info.anonymize(),
             params: self.params.clone(),
             config: self.config.anonymize(),
             init_time_micros: self.init_time_micros,
             shards: self.shards.anonymize(),
             vector_index_searches: self.vector_index_searches.anonymize(),
             optimizations: self.optimizations.anonymize(),
+        }
+    }
+}
+
+impl Anonymize for CollectionShortInfoTelemetry {
+    fn anonymize(&self) -> Self {
+        Self {
+            status: self.status,
+            optimizer_status: self.optimizer_status.clone(),
+            vectors_count: self.vectors_count.anonymize(),
+            indexed_vectors_count: self.indexed_vectors_count.anonymize(),
         }
     }
 }
