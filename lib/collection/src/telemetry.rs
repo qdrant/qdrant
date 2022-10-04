@@ -69,7 +69,7 @@ impl CollectionTelemetry {
                 }
             }
         }
-        result        
+        result
     }
 
     pub fn calculate_vector_index_searches_from_shards(&self) -> VectorIndexSearchesTelemetry {
