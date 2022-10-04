@@ -142,8 +142,10 @@ impl SegmentOptimizer for MergeOptimizer {
     }
 
     fn get_telemetry_data(&self) -> OptimizerTelemetry {
-        OptimizerTelemetry::Merge {
-            optimizations: self.get_telemetry_counter().lock().get_statistics(),
+        OptimizerTelemetry {
+            merge: self.get_telemetry_counter().lock().get_statistics(),
+            indexing: Default::default(),
+            vacuum: Default::default(),
         }
     }
 

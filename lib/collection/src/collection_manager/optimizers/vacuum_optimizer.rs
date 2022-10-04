@@ -119,8 +119,10 @@ impl SegmentOptimizer for VacuumOptimizer {
     }
 
     fn get_telemetry_data(&self) -> OptimizerTelemetry {
-        OptimizerTelemetry::Vacuum {
-            optimizations: self.get_telemetry_counter().lock().get_statistics(),
+        OptimizerTelemetry {
+            vacuum: self.get_telemetry_counter().lock().get_statistics(),
+            merge: Default::default(),
+            indexing: Default::default(),
         }
     }
 

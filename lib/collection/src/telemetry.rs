@@ -16,7 +16,7 @@ pub enum ShardTelemetry {
     },
     Local {
         segments: Vec<SegmentTelemetry>,
-        optimizers: Vec<OptimizerTelemetry>,
+        optimizations: OptimizerTelemetry,
     },
     Proxy {},
     ForwardProxy {},
@@ -35,19 +35,17 @@ pub struct CollectionTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub vector_index_searches: Option<VectorIndexSearchesTelemetry>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub optimizations: Option<OptimizerTelemetry>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
-pub enum OptimizerTelemetry {
-    Indexing {
-        optimizations: OperationDurationStatistics,
-    },
-    Merge {
-        optimizations: OperationDurationStatistics,
-    },
-    Vacuum {
-        optimizations: OperationDurationStatistics,
-    },
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
+pub struct OptimizerTelemetry {
+    pub indexing: OperationDurationStatistics,
+    pub merge: OperationDurationStatistics,
+    pub vacuum: OperationDurationStatistics,
 }
 
 impl CollectionTelemetry {
@@ -58,7 +56,20 @@ impl CollectionTelemetry {
             init_time_micros: init_time.as_micros() as u32,
             shards: Some(Vec::new()),
             vector_index_searches: None,
+            optimizations: None,
         }
+    }
+
+    pub fn calculate_optimizations_from_shards(&self) -> OptimizerTelemetry {
+        let mut result = OptimizerTelemetry::default();
+        if let Some(shards) = &self.shards {
+            for shard in shards {
+                if let ShardTelemetry::Local { optimizations, .. } = shard {
+                    result = result + optimizations.clone();
+                }
+            }
+        }
+        result        
     }
 
     pub fn calculate_vector_index_searches_from_shards(&self) -> VectorIndexSearchesTelemetry {
@@ -74,20 +85,16 @@ impl CollectionTelemetry {
         }
         result
     }
+}
 
-    pub fn set_vector_index_searches(&mut self, telemetry: VectorIndexSearchesTelemetry) {
-        self.vector_index_searches = Some(telemetry);
-    }
+impl std::ops::Add for OptimizerTelemetry {
+    type Output = Self;
 
-    pub fn remove_vector_index_searches(&mut self) {
-        if let Some(shards) = &mut self.shards {
-            for shard in shards {
-                if let ShardTelemetry::Local { segments, .. } = shard {
-                    for segment in segments {
-                        segment.vector_index_searches = None;
-                    }
-                }
-            }
+    fn add(self, other: Self) -> Self {
+        Self {
+            indexing: self.indexing + other.indexing,
+            merge: self.merge + other.merge,
+            vacuum: self.vacuum + other.vacuum,
         }
     }
 }
@@ -100,22 +107,17 @@ impl Anonymize for CollectionTelemetry {
             init_time_micros: self.init_time_micros,
             shards: self.shards.anonymize(),
             vector_index_searches: self.vector_index_searches.anonymize(),
+            optimizations: self.optimizations.anonymize(),
         }
     }
 }
 
 impl Anonymize for OptimizerTelemetry {
     fn anonymize(&self) -> Self {
-        match self {
-            OptimizerTelemetry::Indexing { optimizations } => OptimizerTelemetry::Indexing {
-                optimizations: optimizations.anonymize(),
-            },
-            OptimizerTelemetry::Merge { optimizations } => OptimizerTelemetry::Merge {
-                optimizations: optimizations.anonymize(),
-            },
-            OptimizerTelemetry::Vacuum { optimizations } => OptimizerTelemetry::Vacuum {
-                optimizations: optimizations.anonymize(),
-            },
+        Self {
+            indexing: self.indexing.anonymize(),
+            merge: self.merge.anonymize(),
+            vacuum: self.vacuum.anonymize(),
         }
     }
 }
@@ -125,10 +127,10 @@ impl Anonymize for ShardTelemetry {
         match self {
             ShardTelemetry::Local {
                 segments,
-                optimizers,
+                optimizations,
             } => ShardTelemetry::Local {
                 segments: segments.anonymize(),
-                optimizers: optimizers.anonymize(),
+                optimizations: optimizations.anonymize(),
             },
             ShardTelemetry::Remote {
                 searches,

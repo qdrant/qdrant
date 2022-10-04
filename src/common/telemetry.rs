@@ -480,6 +480,10 @@ impl TelemetryCollector {
 
 impl TelemetryData {
     pub fn agregate(&mut self) {
+        for collection in self.collections.as_mut().unwrap().iter_mut() {
+            let optimizations = collection.calculate_optimizations_from_shards();
+            collection.optimizations = Some(optimizations.clone());
+        }
         let vector_index_searches = self
             .collections
             .as_mut()
@@ -488,7 +492,7 @@ impl TelemetryData {
             .map(|collection| {
                 let vector_index_searches =
                     collection.calculate_vector_index_searches_from_shards();
-                collection.set_vector_index_searches(vector_index_searches.clone());
+                collection.vector_index_searches = Some(vector_index_searches.clone());
                 vector_index_searches
             })
             .fold(VectorIndexSearchesTelemetry::default(), |a, b| a + b);

@@ -541,14 +541,14 @@ impl LocalShard {
             .iter()
             .map(|(_id, segment)| segment.get().read().get_telemetry_data())
             .collect();
-        let optimizers = self
+        let optimizations = self
             .optimizers
             .iter()
             .map(|optimizer| optimizer.get_telemetry_data())
-            .collect();
+            .fold(Default::default(), |acc, x| acc + x);
         ShardTelemetry::Local {
             segments,
-            optimizers,
+            optimizations,
         }
     }
 
