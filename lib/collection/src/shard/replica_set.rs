@@ -282,6 +282,32 @@ impl ReplicaSet {
             }
         }
     }
+
+    pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+        if let Some(shard) = &self.local {
+            shard.on_optimizer_config_update().await
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) async fn before_drop(&mut self) {
+        if let Some(shard) = &mut self.local {
+            shard.before_drop().await
+        }
+    }
+
+    pub(crate) fn shard_distribution(&self) -> Vec<(ShardId, PeerId)> {
+        self.local
+            .iter()
+            .map(|_shard| (self.shard_id, self.this_peer_id))
+            .chain(
+                self.remotes
+                    .iter()
+                    .map(|shard| (self.shard_id, shard.peer_id)),
+            )
+            .collect()
+    }
 }
 
 #[async_trait::async_trait]

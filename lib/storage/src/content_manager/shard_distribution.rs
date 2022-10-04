@@ -1,4 +1,4 @@
-use std::cmp::Reverse;
+use std::cmp::{self, Reverse};
 use std::collections::BinaryHeap;
 use std::num::NonZeroU32;
 
@@ -48,10 +48,12 @@ impl ShardDistributionProposal {
         }
 
         let mut distribution = Vec::with_capacity(shard_number.get() as usize);
+        // There should not be more than 1 replica per peer
+        let n_replicas = cmp::min(replication_factor.get() as usize, known_peers.len());
 
         for shard_id in 0..shard_number.get() {
             let mut replicas = Vec::new();
-            for _replica in 0..replication_factor.get() {
+            for _replica in 0..n_replicas {
                 let mut least_loaded_peer = min_heap.peek_mut().unwrap();
                 let selected_peer = least_loaded_peer.0.peer_id;
                 least_loaded_peer.0.inc_shard_count();
