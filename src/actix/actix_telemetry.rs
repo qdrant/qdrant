@@ -34,7 +34,9 @@ where
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
-        let match_pattern = request.match_pattern().unwrap_or_else(|| "unknown".to_owned());
+        let match_pattern = request
+            .match_pattern()
+            .unwrap_or_else(|| "unknown".to_owned());
         let request_key = format!("{} {}", request.method(), match_pattern);
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
