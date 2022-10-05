@@ -2606,17 +2606,35 @@
       },
       "CollectionStatus": {
         "description": "Current state of the collection",
-        "type": "string",
-        "enum": [
-          "green",
-          "yellow",
-          "red"
+        "oneOf": [
+          {
+            "description": "Collection if completely ready for requests",
+            "type": "string",
+            "enum": [
+              "green"
+            ]
+          },
+          {
+            "description": "Collection is available, but some segments might be under optimization",
+            "type": "string",
+            "enum": [
+              "yellow"
+            ]
+          },
+          {
+            "description": "Something is not OK: - some operations failed and was not recovered",
+            "type": "string",
+            "enum": [
+              "red"
+            ]
+          }
         ]
       },
       "OptimizersStatus": {
         "description": "Current state of the collection",
         "oneOf": [
           {
+            "description": "Optimizers are reporting as expected",
             "type": "string",
             "enum": [
               "ok"
@@ -2725,11 +2743,28 @@
       },
       "Distance": {
         "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
-        "type": "string",
-        "enum": [
-          "Cosine",
-          "Euclid",
-          "Dot"
+        "oneOf": [
+          {
+            "description": "<https://en.wikipedia.org/wiki/Cosine_similarity>",
+            "type": "string",
+            "enum": [
+              "Cosine"
+            ]
+          },
+          {
+            "description": "<https://en.wikipedia.org/wiki/Euclidean_distance>",
+            "type": "string",
+            "enum": [
+              "Euclid"
+            ]
+          },
+          {
+            "description": "<https://en.wikipedia.org/wiki/Dot_product>",
+            "type": "string",
+            "enum": [
+              "Dot"
+            ]
+          }
         ]
       },
       "HnswConfig": {
@@ -3633,10 +3668,21 @@
         }
       },
       "UpdateStatus": {
-        "type": "string",
-        "enum": [
-          "acknowledged",
-          "completed"
+        "oneOf": [
+          {
+            "description": "Request is saved to WAL and will be process in a queue",
+            "type": "string",
+            "enum": [
+              "acknowledged"
+            ]
+          },
+          {
+            "description": "Request is completed, changes are actual",
+            "type": "string",
+            "enum": [
+              "completed"
+            ]
+          }
         ]
       },
       "RecommendRequest": {
@@ -4491,12 +4537,35 @@
         }
       },
       "StateRole": {
-        "type": "string",
-        "enum": [
-          "Follower",
-          "Candidate",
-          "Leader",
-          "PreCandidate"
+        "oneOf": [
+          {
+            "description": "The node is a follower of the leader.",
+            "type": "string",
+            "enum": [
+              "Follower"
+            ]
+          },
+          {
+            "description": "The node could become a leader.",
+            "type": "string",
+            "enum": [
+              "Candidate"
+            ]
+          },
+          {
+            "description": "The node is a leader.",
+            "type": "string",
+            "enum": [
+              "Leader"
+            ]
+          },
+          {
+            "description": "The node could become a candidate, if `prevote` is enabled.",
+            "type": "string",
+            "enum": [
+              "PreCandidate"
+            ]
+          }
         ]
       },
       "ConsensusThreadStatus": {
@@ -4505,7 +4574,8 @@
           {
             "type": "object",
             "required": [
-              "consensus_thread_status"
+              "consensus_thread_status",
+              "last_update"
             ],
             "properties": {
               "consensus_thread_status": {
@@ -4513,6 +4583,10 @@
                 "enum": [
                   "working"
                 ]
+              },
+              "last_update": {
+                "type": "string",
+                "format": "date-time"
               }
             }
           },
@@ -5172,11 +5246,28 @@
       },
       "SegmentType": {
         "description": "Type of segment",
-        "type": "string",
-        "enum": [
-          "plain",
-          "indexed",
-          "special"
+        "oneOf": [
+          {
+            "description": "There are no index built for the segment, all operations are available",
+            "type": "string",
+            "enum": [
+              "plain"
+            ]
+          },
+          {
+            "description": "Segment with some sort of index built. Optimized for search, appending new points will require reindexing",
+            "type": "string",
+            "enum": [
+              "indexed"
+            ]
+          },
+          {
+            "description": "Some index which you better don't touch",
+            "type": "string",
+            "enum": [
+              "special"
+            ]
+          }
         ]
       },
       "SegmentConfig": {
