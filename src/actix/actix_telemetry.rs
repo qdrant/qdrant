@@ -34,7 +34,8 @@ where
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
-        let method_name = request.match_name().unwrap_or("unknown_method").to_string();
+        let match_pattern = request.match_pattern().unwrap_or_else(|| "unknown".to_owned());
+        let request_key = format!("{} {}", request.method(), match_pattern);
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
@@ -43,7 +44,7 @@ where
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
-                .add_response(method_name, status, instant);
+                .add_response(request_key, status, instant);
             Ok(response)
         })
     }
