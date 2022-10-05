@@ -100,8 +100,12 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
     pub fn set_raft_soft_state(&self, state: &SoftState) {
         *self.soft_state.write() = Some(SoftState { ..*state });
-        if state.raft_state == StateRole::Candidate || state.raft_state == StateRole::PreCandidate {
-            self.is_leader_established.make_not_ready()
+        // Explicit match here for better readability
+        match state.raft_state {
+            StateRole::Candidate | StateRole::PreCandidate => {
+                self.is_leader_established.make_not_ready()
+            }
+            StateRole::Leader | StateRole::Follower => self.is_leader_established.make_ready(),
         }
     }
 
@@ -263,7 +267,6 @@ impl<C: CollectionContainer> ConsensusState<C> {
             };
             let do_increase_applied_index: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
-                self.is_leader_established.make_ready();
                 true
             } else {
                 match entry.get_entry_type() {

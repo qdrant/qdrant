@@ -742,6 +742,8 @@ mod tests {
         });
         // Wait for Raft to establish the leader
         is_leader_established.await_ready();
+        // Peer needs some time to commit empty entry
+        thread::sleep_ms(2000);
         // Leader election produces a raft log entry
         assert_eq!(consensus_state.hard_state().commit, 1);
         // Initially there are 0 collections
