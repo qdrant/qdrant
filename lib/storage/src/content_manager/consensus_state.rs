@@ -4,11 +4,12 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
 use collection::collection_state;
 use collection::shard::{CollectionId, PeerId};
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
-use raft::{GetEntriesContext, RaftState, RawNode, SoftState, StateRole, Storage};
+use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tonic::transport::Uri;
@@ -84,7 +85,15 @@ impl<C: CollectionContainer> ConsensusState<C> {
             on_consensus_op_apply: Default::default(),
             propose_sender,
             first_voter: Default::default(),
-            consensus_thread_status: RwLock::new(ConsensusThreadStatus::Working),
+            consensus_thread_status: RwLock::new(ConsensusThreadStatus::Working {
+                last_update: Utc::now(),
+            }),
+        }
+    }
+
+    pub fn record_consensus_working(&self) {
+        *self.consensus_thread_status.write() = ConsensusThreadStatus::Working {
+            last_update: Utc::now(),
         }
     }
 
@@ -100,9 +109,6 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
     pub fn set_raft_soft_state(&self, state: &SoftState) {
         *self.soft_state.write() = Some(SoftState { ..*state });
-        if state.raft_state == StateRole::Candidate || state.raft_state == StateRole::PreCandidate {
-            self.is_leader_established.make_not_ready()
-        }
     }
 
     pub fn this_peer_id(&self) -> PeerId {
@@ -263,7 +269,6 @@ impl<C: CollectionContainer> ConsensusState<C> {
             };
             let do_increase_applied_index: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
-                self.is_leader_established.make_ready();
                 true
             } else {
                 match entry.get_entry_type() {
