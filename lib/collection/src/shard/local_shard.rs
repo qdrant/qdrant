@@ -153,7 +153,12 @@ impl LocalShard {
                 });
                 continue;
             }
-            load_handlers.push(thread::spawn(move || load_segment(&segments_path)));
+            load_handlers.push(
+                thread::Builder::new()
+                    .name("shard-load".to_string())
+                    .spawn(move || load_segment(&segments_path))
+                    .unwrap(),
+            );
         }
 
         for handler in load_handlers {
@@ -289,7 +294,10 @@ impl LocalShard {
                     false => PayloadStorageType::InMemory,
                 },
             };
-            let segment = thread::spawn(move || build_segment(&path_clone, &segment_config));
+            let segment = thread::Builder::new()
+                .name("shard-build".to_string())
+                .spawn(move || build_segment(&path_clone, &segment_config))
+                .unwrap();
             build_handlers.push(segment);
         }
 
