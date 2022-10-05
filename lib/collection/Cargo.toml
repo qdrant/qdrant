@@ -22,7 +22,7 @@ serde_json = { version = "~1.0", features = ["std"] }
 serde_cbor = "0.11.2"
 rmp-serde = "~1.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "0dd3943113ff7ec2fbc5428bb77ba206c8492fa9" }
-ordered-float = "3.1"
+ordered-float = "3.2"
 hashring = "0.3.0"
 
 tokio = {version = "~1.21", features = ["full"]}
@@ -43,7 +43,7 @@ api = {path = "../api"}
 itertools = "0.10"
 indicatif = "0.17.1"
 chrono = { version = "~0.4", features = ["serde"] }
-schemars = { version = "0.8.10", features = ["uuid1", "preserve_order", "chrono"] }
+schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono"] }
 num_cpus = "1.13.1"
 tar = "0.4.38"
 fs_extra = "1.2.0"

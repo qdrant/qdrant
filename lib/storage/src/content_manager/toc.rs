@@ -24,6 +24,7 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 
 use super::collection_meta_ops::{
     CreateCollectionOperation, SetShardReplicaState, ShardTransferOperations,
+    UpdateCollectionOperation,
 };
 use super::{consensus_state, CollectionContainer};
 use crate::content_manager::alias_mapping::AliasPersistence;
@@ -316,19 +317,21 @@ impl TableOfContent {
 
     async fn update_collection(
         &self,
-        collection_name: &str,
-        operation: UpdateCollection,
+        mut operation: UpdateCollectionOperation,
     ) -> Result<bool, StorageError> {
+        let replica_changes = operation.take_shard_replica_changes();
         let UpdateCollection {
             optimizers_config,
             params,
-        } = operation;
-        let collection = self.get_collection(collection_name).await?;
+        } = operation.update_collection;
+        let collection = self.get_collection(&operation.collection_name).await?;
         if let Some(diff) = optimizers_config {
             collection.update_optimizer_params_from_diff(diff).await?
         }
         if let Some(diff) = params {
-            collection.update_params_from_diff(diff).await?;
+            collection
+                .update_params_from_diff(diff, replica_changes)
+                .await?;
         }
         Ok(true)
     }
@@ -424,8 +427,7 @@ impl TableOfContent {
                 .await
             }
             CollectionMetaOperations::UpdateCollection(operation) => {
-                self.update_collection(&operation.collection_name, operation.update_collection)
-                    .await
+                self.update_collection(operation).await
             }
             CollectionMetaOperations::DeleteCollection(operation) => {
                 self.delete_collection(&operation.0).await
