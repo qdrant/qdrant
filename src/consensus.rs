@@ -430,6 +430,7 @@ impl Consensus {
         if !self.node.has_ready() {
             return Ok(false);
         }
+        self.store().record_consensus_working();
         // Get the `Ready` with `RawNode::ready` interface.
         let ready = self.node.ready();
         let (light_rd, role_change) = self.process_ready(ready)?;

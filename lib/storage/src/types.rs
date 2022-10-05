@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shard::PeerId;
@@ -116,7 +117,7 @@ pub enum ClusterStatus {
 #[serde(tag = "consensus_thread_status")]
 #[serde(rename_all = "snake_case")]
 pub enum ConsensusThreadStatus {
-    Working,
+    Working { last_update: DateTime<Utc> },
     Stopped,
     StoppedWithErr { err: String },
 }

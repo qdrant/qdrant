@@ -4,11 +4,12 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
 use collection::collection_state;
 use collection::shard::{CollectionId, PeerId};
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
-use raft::{GetEntriesContext, RaftState, RawNode, SoftState, StateRole, Storage};
+use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tonic::transport::Uri;
@@ -84,7 +85,15 @@ impl<C: CollectionContainer> ConsensusState<C> {
             on_consensus_op_apply: Default::default(),
             propose_sender,
             first_voter: Default::default(),
-            consensus_thread_status: RwLock::new(ConsensusThreadStatus::Working),
+            consensus_thread_status: RwLock::new(ConsensusThreadStatus::Working {
+                last_update: Utc::now(),
+            }),
+        }
+    }
+
+    pub fn record_consensus_working(&self) {
+        *self.consensus_thread_status.write() = ConsensusThreadStatus::Working {
+            last_update: Utc::now(),
         }
     }
 
