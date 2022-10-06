@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, read_dir, remove_dir_all};
+use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -341,7 +341,7 @@ impl TableOfContent {
             removed.before_drop().await;
             let path = self.get_collection_path(collection_name);
             drop(removed);
-            remove_dir_all(path).map_err(|err| StorageError::ServiceError {
+            remove_dir_all::remove_dir_all(path).map_err(|err| StorageError::ServiceError {
                 description: format!(
                     "Can't delete collection {}, error: {}",
                     collection_name, err

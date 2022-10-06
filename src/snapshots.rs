@@ -1,4 +1,4 @@
-use std::fs::{remove_dir_all, rename};
+use std::fs::rename;
 use std::path::Path;
 
 use collection::collection::Collection;
@@ -52,7 +52,7 @@ pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) {
         }
         // Remove collection_path directory if exists
         if collection_path.exists() {
-            if let Err(err) = remove_dir_all(&collection_path) {
+            if let Err(err) = remove_dir_all::remove_dir_all(&collection_path) {
                 panic!("Failed to remove collection {}: {}", collection_name, err);
             }
         }
@@ -104,5 +104,5 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
     }
 
     // Remove temporary directory
-    remove_dir_all(&temporary_dir).unwrap();
+    remove_dir_all::remove_dir_all(&temporary_dir).unwrap();
 }

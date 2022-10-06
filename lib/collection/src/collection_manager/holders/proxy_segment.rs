@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, remove_dir_all};
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -713,7 +713,7 @@ impl SegmentEntry for ProxySegment {
         // release segment resources
         drop(in_memory_wrapped_segment);
         // delete temporary copy
-        remove_dir_all(copy_target_dir)?;
+        remove_dir_all::remove_dir_all(copy_target_dir)?;
         Ok(())
     }
 

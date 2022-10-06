@@ -26,6 +26,7 @@ http = "0.2"
 parking_lot = { version = "0.12.1", features=["deadlock_detection", "serde"]}
 tar = "0.4.38"
 chrono = { version = "~0.4", features = ["serde"] }
+remove_dir_all = "0.7.0"
 
 # Consensus related
 atomicwrites = { version = "0.3.1" }

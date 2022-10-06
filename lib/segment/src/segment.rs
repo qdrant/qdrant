@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::{remove_dir_all, rename, File};
+use std::fs::{rename, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -896,7 +896,7 @@ impl SegmentEntry for Segment {
         let mut deleted_path = current_path.clone();
         deleted_path.set_extension("deleted");
         rename(&current_path, &deleted_path)?;
-        remove_dir_all(&deleted_path).map_err(|err| {
+        remove_dir_all::remove_dir_all(&deleted_path).map_err(|err| {
             OperationError::service_error(&format!(
                 "Can't remove segment data at {}, error: {}",
                 deleted_path.to_str().unwrap_or_default(),

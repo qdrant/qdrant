@@ -52,6 +52,7 @@ tower = "0.4.13"
 tower-layer = "0.3.1"
 num-traits = "0.2.15"
 tar = "0.4.38"
+remove_dir_all = "0.7.0"
 
 # Consensus related crates
 raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false }

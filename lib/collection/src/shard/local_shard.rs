@@ -145,7 +145,7 @@ impl LocalShard {
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
             if segments_path.ends_with("deleted") {
-                std::fs::remove_dir_all(&segments_path).unwrap_or_else(|_| {
+                remove_dir_all::remove_dir_all(&segments_path).unwrap_or_else(|_| {
                     panic!(
                         "Can't remove marked-for-remove segment {}",
                         segments_path.to_str().unwrap()
