@@ -22,6 +22,7 @@ use clap::Parser;
 use collection::shard::ChannelService;
 use consensus::Consensus;
 use slog::Drain;
+use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
@@ -83,6 +84,7 @@ fn main() -> anyhow::Result<()> {
     let settings = Settings::new().expect("Can't read config.");
 
     setup_logger(&settings.log_level);
+    setup_panic_hook();
     let args = Args::parse();
 
     if let Some(full_snapshot) = args.storage_snapshot {
