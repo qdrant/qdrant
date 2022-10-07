@@ -11,10 +11,7 @@ services:
       - "6333:6333"
       - "6334:6334"
     command: ./qdrant --uri 'http://qdrant_node_1:6335'
-    deploy:
-      resources:
-        limits:
-          cpus: '0.05'
+
 
   qdrant_node_follower:
     image: qdrant_consensus:latest
