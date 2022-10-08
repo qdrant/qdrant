@@ -95,49 +95,46 @@ impl ConsensusOpWal {
             let current_index = self.0.last_index();
             let index_offset = self.index_offset()?;
 
-            match index_offset {
-                Some(offset) => {
-                    // Assume we can't skip index numbers in WAL except for snapshot
-                    // Example: 2 <= 0 + 1 + 1
-                    debug_assert!(
-                        index <= current_index + offset + 1,
-                        "Expected no index skip: {} <= {} + {}",
-                        index,
-                        current_index,
-                        offset
-                    );
+            if let Some(offset) = index_offset {
+                // Assume we can't skip index numbers in WAL except for snapshot
+                // Example: 2 <= 0 + 1 + 1
+                debug_assert!(
+                    index <= current_index + offset + 1,
+                    "Expected no index skip: {} <= {} + {}",
+                    index,
+                    current_index,
+                    offset
+                );
 
-                    if index < current_index + offset {
-                        // If there is a conflict, example:
-                        // Offset = 1
-                        // raft index = 10
-                        // wal index = 11
-                        // expected_wal_index = 10 - 1 = 9
-                        // 10 < 11 + 1
-                        if index < offset {
-                            return Err(StorageError::service_error(&format!(
-                                "Wal index conflict, raft index: {}, wal index: {}, offset: {}",
-                                index, current_index, offset
-                            )));
-                        }
-                        log::debug!(
-                            "Truncate conflicting WAL entries from index {}, raft: {}",
-                            index - offset,
-                            index
-                        );
-                        self.0.truncate(index - offset)?;
-                    } // else:
-                      // Offset = 1
-                      // raft index = 11
-                      // wal index = 10
-                      // expected_wal_index = 11 - 1 = 10
-                      // 11 < 10 + 1
-                }
-                None => {
-                    // There is no offset => there are no records in WAL
-                    // If there are no records, conflict is impossible
-                    // So we do nothing
-                }
+                if index < current_index + offset {
+                    // If there is a conflict, example:
+                    // Offset = 1
+                    // raft index = 10
+                    // wal index = 11
+                    // expected_wal_index = 10 - 1 = 9
+                    // 10 < 11 + 1
+                    if index < offset {
+                        return Err(StorageError::service_error(&format!(
+                            "Wal index conflict, raft index: {}, wal index: {}, offset: {}",
+                            index, current_index, offset
+                        )));
+                    }
+                    log::debug!(
+                        "Truncate conflicting WAL entries from index {}, raft: {}",
+                        index - offset,
+                        index
+                    );
+                    self.0.truncate(index - offset)?;
+                } // else:
+                  // Offset = 1
+                  // raft index = 11
+                  // wal index = 10
+                  // expected_wal_index = 11 - 1 = 10
+                  // 11 < 10 + 1
+            } else {
+                // There is no offset => there are no records in WAL
+                // If there are no records, conflict is impossible
+                // So we do nothing
             }
 
             if let Some(operation) = operation_opt {
