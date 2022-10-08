@@ -368,7 +368,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
         }
         let data: SnapshotData = snapshot.get_data().try_into()?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
-        self.wal.lock().0.clear()?;
+        self.wal.lock().clear()?;
         self.persistent
             .write()
             .update_from_snapshot(meta, data.address_by_id)?;
