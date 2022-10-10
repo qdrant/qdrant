@@ -113,7 +113,19 @@ impl SegmentBuilder {
                             description: "Cancelled by external thread".to_string(),
                         });
                     }
-                    let external_id = other_id_tracker.external_id(old_internal_id).unwrap();
+                    let external_id =
+                        if let Some(external_id) = other_id_tracker.external_id(old_internal_id) {
+                            external_id
+                        } else {
+                            log::warn!(
+                                "Cannot find external id for internal id {}, skipping",
+                                old_internal_id
+                            );
+                            for vector_storage in vector_storages.values_mut() {
+                                vector_storage.delete(new_internal_id)?;
+                            }
+                            continue;
+                        };
                     let other_version = other_id_tracker.version(external_id).unwrap();
 
                     match id_tracker.version(external_id) {

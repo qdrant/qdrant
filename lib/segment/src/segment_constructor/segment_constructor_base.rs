@@ -171,11 +171,15 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
 
     let segment_state = Segment::load_state(path)?;
 
-    Ok(Some(create_segment(
-        segment_state.version,
-        path,
-        &segment_state.config,
-    )?))
+    let segment = create_segment(segment_state.version, path, &segment_state.config)?;
+
+    #[cfg(debug_assertions)]
+    {
+        log::debug!("Checking segment consistency: {}", path.display());
+        segment.check_consistency()?;
+    }
+
+    Ok(Some(segment))
 }
 
 /// Build segment instance using given configuration.
