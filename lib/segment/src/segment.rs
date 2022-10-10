@@ -83,15 +83,22 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         check_vectors_set(&vectors, &self.segment_config)?;
-        let mut new_internal_index = 0;
+        let mut new_internal_index = None;
         for (vector_name, vector) in vectors {
             let vector_name: &str = &vector_name;
             let vector = vector.into_owned();
             let vector_data = &self.vector_data[vector_name];
-            new_internal_index = {
+            let internal_id = {
                 let mut vector_storage = vector_data.vector_storage.borrow_mut();
                 vector_storage.update_vector(old_internal_id, vector)
             }?;
+            if new_internal_index.is_none() {
+                new_internal_index = Some(internal_id);
+            } else {
+                debug_assert_eq!(new_internal_index, Some(internal_id));
+            }
+        }
+        if let Some(new_internal_index) = new_internal_index {
             if new_internal_index != old_internal_id {
                 // If vector was moved to a new internal id, move payload to this internal id as well
                 let mut payload_index = self.payload_index.borrow_mut();
@@ -100,8 +107,10 @@ impl Segment {
                     payload_index.assign(new_internal_index, &payload)?;
                 }
             }
+            Ok(new_internal_index)
+        } else {
+            Ok(old_internal_id)
         }
-        Ok(new_internal_index)
     }
 
     fn handle_version_and_failure<F>(
@@ -139,6 +148,7 @@ impl Segment {
                     Some(error) => {
                         if error.point_id == op_point_id {
                             // Fixed
+                            log::info!("Recovered from error: {}", error.error);
                             self.error_status = None;
                         }
                     }
@@ -146,6 +156,11 @@ impl Segment {
             }
             Some(error) => {
                 // ToDo: Recover previous segment state
+                log::error!(
+                    "Segment {:?} operation error: {}",
+                    self.current_path.as_path(),
+                    error
+                );
                 self.error_status = Some(SegmentFailedState {
                     version: op_num,
                     point_id: op_point_id,
@@ -325,14 +340,22 @@ impl Segment {
         let id_tracker = self.id_tracker.borrow();
         internal_result
             .iter()
-            .map(|&scored_point_offset| {
+            .filter_map(|&scored_point_offset| {
                 let point_offset = scored_point_offset.idx;
-                let point_id = id_tracker.external_id(point_offset).ok_or_else(|| {
-                    OperationError::service_error(&format!(
-                        "Corrupter id_tracker, no external value for {}",
-                        scored_point_offset.idx
-                    ))
-                })?;
+                let external_id = id_tracker.external_id(point_offset);
+                match external_id {
+                    Some(point_id) => Some((point_id, scored_point_offset)),
+                    None => {
+                        log::warn!(
+                            "Point with internal ID {} not found in id tracker, skipping",
+                            point_offset
+                        );
+                        None
+                    }
+                }
+            })
+            .map(|(point_id, scored_point_offset)| {
+                let point_offset = scored_point_offset.idx;
                 let point_version = id_tracker.version(point_id).ok_or_else(|| {
                     OperationError::service_error(&format!(
                         "Corrupter id_tracker, no version for point {}",
@@ -423,6 +446,23 @@ impl Segment {
             .map(|(external_id, _)| external_id)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
+    }
+
+    pub fn check_consistency(&self) -> OperationResult<()> {
+        let id_tracker = self.id_tracker.borrow();
+        for (_vector_name, vector_storage) in self.vector_data.iter() {
+            let vector_storage = vector_storage.vector_storage.borrow();
+            for internal_id in vector_storage.iter_ids() {
+                id_tracker.external_id(internal_id).ok_or_else(|| {
+                    let payload = self.payload_by_offset(internal_id).unwrap();
+                    OperationError::service_error(&format!(
+                        "Corrupter id_tracker, no external value for {}, payload: {:?}",
+                        internal_id, payload
+                    ))
+                })?;
+            }
+        }
+        Ok(())
     }
 }
 
