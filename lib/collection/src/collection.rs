@@ -1107,11 +1107,11 @@ impl Collection {
             return Ok(());
         }
 
-        let mut shard_holder = self.shards_holder.write().await;
-
+        // validate replica set existence
+        let read_shard_holder = self.shards_holder.read().await;
         // all existing replica sets in the collection
         let mut replica_sets = Vec::new();
-        for shard in shard_holder.all_shards() {
+        for shard in read_shard_holder.all_shards() {
             match shard {
                 Shard::Local(_) | Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::Remote(_) => {
                     log::error!(
@@ -1126,6 +1126,8 @@ impl Collection {
             !replica_sets.is_empty(),
             "at least one replica set definition per collection"
         );
+        // drop read lock
+        drop(read_shard_holder);
 
         // perform first the addition of replicas
         for change in &replica_changes {
@@ -1135,70 +1137,135 @@ impl Collection {
                     to: peer_id,
                     from: from_peer_id,
                 } => {
+                    // 1 - check if the replica set exists
+                    let read_shard_holder = self.shards_holder.read().await;
+                    match read_shard_holder.get_shard(shard_id) {
+                        Some(Shard::Local(_local)) => {
+                            // TODO https://github.com/qdrant/qdrant/issues/1069
+                            // the replica set needs to be created by promoting the existing local shard
+                            // there should be no file system operation involving moving the local shard folder
+                            return Err(CollectionError::service_error(format!(
+                                "Not implemented: adding a replica to a local shard {}",
+                                shard_id
+                            )));
+                        }
+                        Some(Shard::Remote(_remote)) => {
+                            // TODO https://github.com/qdrant/qdrant/issues/1069
+                            // the replica set needs to be created by promoting the existing remote shard
+                            // there should be no file system operation involving moving the local shard folder
+                            return Err(CollectionError::service_error(format!(
+                                "Not implemented: adding a replica to a remote shard {}",
+                                shard_id
+                            )));
+                        }
+                        Some(Shard::ReplicaSet(_replica)) => {} // continue
+                        Some(shard) => {
+                            return Err(CollectionError::service_error(format!(
+                                "Cannot add replica on shard {}",
+                                shard.variant_name()
+                            )))
+                        }
+                        None => {
+                            return Err(CollectionError::service_error(format!(
+                                "Shard {} does not exist",
+                                shard_id
+                            )))
+                        }
+                    }
+                    drop(read_shard_holder);
+
+                    // 2 - mark peer as inactive
+                    let mut write_shard_holder = self.shards_holder.write().await;
                     if let Some(Shard::ReplicaSet(replica_set)) =
-                        shard_holder.get_mut_shard(shard_id)
+                        write_shard_holder.get_mut_shard(shard_id)
                     {
-                        // Create replica and mark them as inactive
                         replica_set.add_inactive_replica_state(peer_id)?;
-                        if *peer_id == replica_set.this_peer_id {
-                            // need to setup local replica
-                            match replica_set.local {
-                                Some(_) => {
-                                    log::info!(
+                    }
+                    drop(write_shard_holder);
+
+                    // 3 - create new replica resources on read lock
+                    let read_shard_holder = self.shards_holder.read().await;
+                    let new_inactive_replica: Option<Shard> =
+                        if let Some(Shard::ReplicaSet(replica_set)) =
+                            read_shard_holder.get_shard(shard_id)
+                        {
+                            if *peer_id == replica_set.this_peer_id {
+                                // need to setup local replica
+                                match replica_set.local {
+                                    Some(_) => {
+                                        log::info!(
                                         "A local shard is already present for replica set {}:{}",
                                         self.id,
                                         shard_id
                                     );
-                                }
-                                None => {
-                                    // TODO check fs layout for replicaset
-                                    let shard_path =
-                                        create_shard_dir(&self.path, *shard_id).await?;
+                                        None
+                                    }
+                                    None => {
+                                        // the local shard is created within the replica set folder
+                                        let shard_path = &replica_set.shard_path;
 
-                                    // create directory to hold the data for shard with `shard_id`
-                                    tokio::fs::create_dir_all(&shard_path).await?;
-
-                                    let new_local_inactive = LocalShard::build(
-                                        *shard_id,
-                                        self.id.clone(),
-                                        &shard_path,
-                                        self.config.clone(),
-                                    )
-                                    .await?;
-                                    // TODO do not hold write lock on shard_holder while building empty local shard
-                                    let _ = replica_set
-                                        .local
-                                        .insert(Box::new(Shard::Local(new_local_inactive)));
+                                        let new_local_inactive = LocalShard::build(
+                                            *shard_id,
+                                            self.id.clone(),
+                                            shard_path,
+                                            self.config.clone(),
+                                        )
+                                        .await?;
+                                        Some(Shard::Local(new_local_inactive))
+                                    }
                                 }
+                            } else {
+                                // need to setup remote replica
+                                let new_remote_inactive = RemoteShard::new(
+                                    *shard_id,
+                                    self.id.clone(),
+                                    *peer_id,
+                                    self.channel_service.clone(),
+                                );
+                                Some(Shard::Remote(new_remote_inactive))
                             }
-                            // submit start sync transfer command to consensus
-                            let transfer = ShardTransfer {
-                                shard_id: *shard_id,
-                                from: *from_peer_id,
-                                to: replica_set.this_peer_id,
-                                sync: true,
-                            };
-                            self.request_shard_transfer(transfer).await;
                         } else {
-                            // TODO do not hold write lock on shard_holder while building remote shard
-                            let new_remote_inactive = RemoteShard::new(
-                                *shard_id,
-                                self.id.clone(),
-                                *peer_id,
-                                self.channel_service.clone(),
-                            );
-                            // won't be used until it is toggled active
-                            replica_set.remotes.push(new_remote_inactive);
+                            None
+                        };
+                    drop(read_shard_holder);
+
+                    // 4 - add new replica to the replica set
+                    let mut write_shard_holder = self.shards_holder.write().await;
+                    if let Some(Shard::ReplicaSet(replica_set)) =
+                        write_shard_holder.get_mut_shard(shard_id)
+                    {
+                        match new_inactive_replica {
+                            Some(new_local_inactive @ Shard::Local(_)) => {
+                                let _ = replica_set.local.insert(Box::new(new_local_inactive));
+                            }
+                            Some(Shard::Remote(new_inactive_remote_shard)) => {
+                                // won't be used until it is toggled active
+                                replica_set.remotes.push(new_inactive_remote_shard);
+                            }
+                            _ => {}
                         }
-                    } else {
-                        // TODO https://github.com/qdrant/qdrant/issues/1069
-                        // there should be no file system operation involving moving the local shard folder
-                        log::error!(
-                            "Cannot add replica on non existent replica set {}:{}",
-                            self.id,
-                            shard_id
-                        );
                     }
+                    drop(write_shard_holder);
+
+                    // 5 - ask for transfer if necessary
+                    let read_shard_holder = self.shards_holder.read().await;
+                    if let Some(Shard::ReplicaSet(replica_set)) =
+                        read_shard_holder.get_shard(shard_id)
+                    {
+                        if let Some(_local) = &replica_set.local {
+                            if *peer_id == replica_set.this_peer_id {
+                                // submit start sync transfer command to consensus
+                                let transfer = ShardTransfer {
+                                    shard_id: *shard_id,
+                                    from: *from_peer_id,
+                                    to: replica_set.this_peer_id,
+                                    sync: true,
+                                };
+                                self.request_shard_transfer(transfer).await;
+                            }
+                        }
+                    }
+                    drop(read_shard_holder);
                 }
                 Change::Remove(_, _) => {}
             }
@@ -1208,11 +1275,13 @@ impl Collection {
         for change in &replica_changes {
             match change {
                 Change::Remove(shard_id, peer_id) => {
+                    // TODO reduce scope of exclusive write lock
+                    let mut write_shard_holder = self.shards_holder.write().await;
                     // capture `shard to promote` to avoid second mutable borrow on `shard_holder`
                     let mut shard_to_promote: Option<Shard> = None;
 
                     if let Some(Shard::ReplicaSet(replica_set)) =
-                        shard_holder.get_mut_shard(shard_id)
+                        write_shard_holder.get_mut_shard(shard_id)
                     {
                         // remove replica
                         replica_set.remove_replica(peer_id).await?;
@@ -1242,7 +1311,7 @@ impl Collection {
 
                     // promoting shard by replacing existing replica set
                     if let Some(shard_to_promote) = shard_to_promote {
-                        shard_holder.replace_shard(*shard_id, shard_to_promote);
+                        write_shard_holder.replace_shard(*shard_id, shard_to_promote);
                     }
                 }
                 Change::Add { .. } => {}

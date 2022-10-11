@@ -2,7 +2,7 @@ use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ops::Deref;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_recursion::async_recursion;
@@ -72,6 +72,7 @@ pub struct ReplicaSet {
     pub(crate) local: Option<Box<Shard>>, // Abstract Shard to be able to use a Proxy during replication
     pub(crate) remotes: Vec<RemoteShard>,
     pub(crate) replica_state: SaveOnDisk<ReplicaState>,
+    pub(crate) shard_path: PathBuf,
     /// Number of remote replicas to send read requests to.
     /// If actual number of peers is less than this, then read request will be sent to all of them.
     read_remote_replicas: u32,
@@ -157,6 +158,7 @@ impl ReplicaSet {
             local,
             remotes: remote_shards,
             replica_state,
+            shard_path,
             // TODO: move to collection config
             read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
@@ -206,6 +208,7 @@ impl ReplicaSet {
             remotes: remote_shards,
             replica_state,
             // TODO: move to collection config
+            shard_path: shard_path.to_path_buf(),
             read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
             outgoing_sync_count: 0,
