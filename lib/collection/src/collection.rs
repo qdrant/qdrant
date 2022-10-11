@@ -46,10 +46,9 @@ use crate::shard::shard_versioning::versioned_shard_path;
 use crate::shard::transfer::shard_transfer::{
     activate_peer_for_replica, change_remote_shard_route, drop_temporary_shard,
     promote_proxy_to_remote_shard, promote_temporary_shard_to_local, revert_proxy_shard_to_local,
-    spawn_transfer_task,
+    spawn_transfer_task, un_proxify_replica_set,
 };
 use crate::shard::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shard::Shard::Local;
 use crate::shard::{
     create_shard_dir, replica_set, ChannelService, CollectionId, PeerId, Shard, ShardId,
     ShardOperation, ShardTransfer, HASH_RING_SHARD_SCALE,
@@ -428,7 +427,11 @@ impl Collection {
                 transfer.to,
             )
             .await?;
-            Ok(replica_activated)
+
+            // Should happen on the transfer side
+            let replica_un_proxified =
+                un_proxify_replica_set(self.shards_holder.clone(), transfer.shard_id).await?;
+            Ok(replica_activated || replica_un_proxified)
         } else {
             // Should happen on transfer side
             let proxy_promoted = promote_proxy_to_remote_shard(
@@ -1141,7 +1144,6 @@ impl Collection {
                             // need to setup local replica
                             match replica_set.local {
                                 Some(_) => {
-                                    // TODO should be deleted or fail?
                                     log::info!(
                                         "A local shard is already present for replica set {}:{}",
                                         self.id,
@@ -1149,6 +1151,7 @@ impl Collection {
                                     );
                                 }
                                 None => {
+                                    // TODO check fs layout for replicaset
                                     let shard_path =
                                         create_shard_dir(&self.path, *shard_id).await?;
 
@@ -1162,9 +1165,10 @@ impl Collection {
                                         self.config.clone(),
                                     )
                                     .await?;
+                                    // TODO do not hold write lock on shard_holder while building empty local shard
                                     let _ = replica_set
                                         .local
-                                        .insert(Box::new(Local(new_local_inactive)));
+                                        .insert(Box::new(Shard::Local(new_local_inactive)));
                                 }
                             }
                             // submit start sync transfer command to consensus
@@ -1176,6 +1180,7 @@ impl Collection {
                             };
                             self.request_shard_transfer(transfer).await;
                         } else {
+                            // TODO do not hold write lock on shard_holder while building remote shard
                             let new_remote_inactive = RemoteShard::new(
                                 *shard_id,
                                 self.id.clone(),
@@ -1186,6 +1191,8 @@ impl Collection {
                             replica_set.remotes.push(new_remote_inactive);
                         }
                     } else {
+                        // TODO https://github.com/qdrant/qdrant/issues/1069
+                        // there should be no file system operation involving moving the local shard folder
                         log::error!(
                             "Cannot add replica on non existent replica set {}:{}",
                             self.id,

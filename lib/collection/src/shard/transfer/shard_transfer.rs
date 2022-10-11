@@ -288,6 +288,27 @@ pub async fn activate_peer_for_replica(
     }
 }
 
+/// Un-proxify local shard shord for replicaset.
+///
+/// Returns true if the local replica was un-proxified, false if it was already handled
+pub async fn un_proxify_replica_set(
+    shard_holder: Arc<LockedShardHolder>,
+    shard_id: ShardId,
+) -> CollectionResult<bool> {
+    let mut shard_holder_guard = shard_holder.write().await;
+    let shard = shard_holder_guard.get_mut_shard(&shard_id);
+    match shard {
+        Some(Shard::ReplicaSet(replica_set)) => replica_set.un_proxify_local(),
+        Some(shard) => Err(CollectionError::service_error(format!(
+            "cannot un-proxy {} shard",
+            shard.variant_name()
+        ))),
+        None => Err(CollectionError::service_error(
+            "cannot un-proxify absent replica shard".to_string(),
+        )),
+    }
+}
+
 pub async fn transfer_shard(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
