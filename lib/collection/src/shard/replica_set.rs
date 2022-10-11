@@ -25,9 +25,9 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
-use crate::telemetry::ShardTelemetry;
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::ChannelService;
+use crate::telemetry::ShardTelemetry;
 
 pub type IsActive = bool;
 pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
