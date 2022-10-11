@@ -25,6 +25,7 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
+use crate::telemetry::ShardTelemetry;
 
 pub type IsActive = bool;
 pub type OnPeerFailure =
@@ -307,6 +308,20 @@ impl ReplicaSet {
                     .map(|shard| (self.shard_id, shard.peer_id)),
             )
             .collect()
+    }
+
+    pub(crate) fn get_telemetry_data(&self) -> ShardTelemetry {
+        ShardTelemetry::ReplicaSet {
+            local: self
+                .local
+                .as_ref()
+                .map(|local| Box::new(local.get_telemetry_data())),
+            remote: self
+                .remotes
+                .iter()
+                .map(|remote| remote.get_telemetry_data())
+                .collect(),
+        }
     }
 }
 

@@ -27,7 +27,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shard::{CollectionId, ShardId};
-use crate::telemetry::ShardTelemetry;
+use crate::telemetry::{LocalShardTelemetry, ShardTelemetry};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
 
@@ -554,10 +554,10 @@ impl LocalShard {
             .iter()
             .map(|optimizer| optimizer.get_telemetry_data())
             .collect();
-        ShardTelemetry::Local {
+        ShardTelemetry::Local(LocalShardTelemetry {
             segments,
             optimizers,
-        }
+        })
     }
 
     fn assert_before_drop_called(&self) {

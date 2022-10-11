@@ -9,17 +9,27 @@ use crate::shard::ShardId;
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub enum ShardTelemetry {
-    Remote {
-        shard_id: ShardId,
-        searches: TelemetryOperationStatistics,
-        updates: TelemetryOperationStatistics,
+    Remote(RemoteShardTelemetry),
+    Local(LocalShardTelemetry),
+    Proxy,
+    ForwardProxy,
+    ReplicaSet {
+        local: Option<Box<ShardTelemetry>>,
+        remote: Vec<ShardTelemetry>,
     },
-    Local {
-        segments: Vec<SegmentTelemetry>,
-        optimizers: Vec<OptimizerTelemetry>,
-    },
-    Proxy {},
-    ForwardProxy {},
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct RemoteShardTelemetry {
+    pub shard_id: ShardId,
+    pub searches: TelemetryOperationStatistics,
+    pub updates: TelemetryOperationStatistics,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct LocalShardTelemetry {
+    pub segments: Vec<SegmentTelemetry>,
+    pub optimizers: Vec<OptimizerTelemetry>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -84,27 +94,41 @@ impl Anonymize for OptimizerTelemetry {
 impl Anonymize for ShardTelemetry {
     fn anonymize(&self) -> Self {
         match self {
-            ShardTelemetry::Local {
-                segments,
-                optimizers,
-            } => ShardTelemetry::Local {
-                segments: segments.iter().map(|segment| segment.anonymize()).collect(),
-                optimizers: optimizers
-                    .iter()
-                    .map(|optimizer| optimizer.anonymize())
-                    .collect(),
+            ShardTelemetry::Local(local) => ShardTelemetry::Local(local.anonymize()),
+            ShardTelemetry::Remote(remote) => ShardTelemetry::Remote(remote.anonymize()),
+            ShardTelemetry::Proxy => ShardTelemetry::Proxy,
+            ShardTelemetry::ForwardProxy => ShardTelemetry::ForwardProxy,
+            ShardTelemetry::ReplicaSet { local, remote } => ShardTelemetry::ReplicaSet {
+                local: local.as_ref().map(|local| Box::new(local.anonymize())),
+                remote: remote.iter().map(|remote| remote.anonymize()).collect(),
             },
-            ShardTelemetry::Remote {
-                searches,
-                updates,
-                shard_id,
-            } => ShardTelemetry::Remote {
-                shard_id: *shard_id,
-                searches: searches.anonymize(),
-                updates: updates.anonymize(),
-            },
-            ShardTelemetry::Proxy {} => ShardTelemetry::Proxy {},
-            ShardTelemetry::ForwardProxy {} => ShardTelemetry::ForwardProxy {},
+        }
+    }
+}
+
+impl Anonymize for LocalShardTelemetry {
+    fn anonymize(&self) -> Self {
+        LocalShardTelemetry {
+            segments: self
+                .segments
+                .iter()
+                .map(|segment| segment.anonymize())
+                .collect(),
+            optimizers: self
+                .optimizers
+                .iter()
+                .map(|optimizer| optimizer.anonymize())
+                .collect(),
+        }
+    }
+}
+
+impl Anonymize for RemoteShardTelemetry {
+    fn anonymize(&self) -> Self {
+        RemoteShardTelemetry {
+            shard_id: self.shard_id,
+            searches: self.searches.anonymize(),
+            updates: self.updates.anonymize(),
         }
     }
 }
