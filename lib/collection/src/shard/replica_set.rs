@@ -251,6 +251,18 @@ impl ReplicaSet {
         Ok(())
     }
 
+    pub fn remove_replica_state(&mut self, peer_id: &PeerId) -> CollectionResult<()> {
+        self.replica_state
+            .write_with_res(|rs| match rs.remove(peer_id) {
+                None => Err(CollectionError::service_error(format!(
+                    "replica for peer {} is not registered",
+                    peer_id
+                ))),
+                Some(_) => Ok(()),
+            })?;
+        Ok(())
+    }
+
     pub async fn apply_state(
         &mut self,
         replicas: HashMap<PeerId, IsActive>,
@@ -379,34 +391,20 @@ impl ReplicaSet {
         captured_error.expect("at this point `captured_error` must be defined by construction")
     }
 
-    pub async fn remove_replica(&mut self, peer_id: &PeerId) -> CollectionResult<()> {
+    pub async fn take_replica(&mut self, peer_id: &PeerId) -> CollectionResult<Option<Shard>> {
         if peer_id == &self.this_peer_id {
-            // remove local shard
-            if let Some(mut local) = self.local.take() {
-                local.before_drop().await;
-                match *local {
-                    Local(local) => drop_and_delete_from_disk(local).await?,
-                    ForwardProxy(forward) => {
-                        drop_and_delete_from_disk(forward.wrapped_shard).await?
-                    }
-                    Remote(_) | Shard::Proxy(_) | Shard::ReplicaSet(_) => {
-                        return Err(CollectionError::service_error(
-                            "Unexpected shard in replica set".to_string(),
-                        ))
-                    }
-                }
-                Ok(())
+            // take local shard
+            if let Some(local) = self.local.take() {
+                Ok(Some(*local))
             } else {
-                Err(CollectionError::service_error(format!(
-                    "replica set {} should contain a local shard",
-                    self.shard_id
-                )))
+                Ok(None)
             }
         } else {
+            // take remote shard
             let remote_index = self.remotes.iter().position(|r| &r.peer_id == peer_id);
             if let Some(remote_index) = remote_index {
-                self.remotes.remove(remote_index);
-                Ok(())
+                let removed_remote_shard = self.remotes.remove(remote_index);
+                Ok(Some(Remote(removed_remote_shard)))
             } else {
                 Err(CollectionError::service_error(format!(
                     "replica set {} should contain a remote shard for peer {}",
