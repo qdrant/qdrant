@@ -21,7 +21,7 @@ pub mod consensus_ops {
     use serde::{Deserialize, Serialize};
 
     use crate::content_manager::collection_meta_ops::{
-        CollectionMetaOperations, ShardTransferOperations,
+        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations,
     };
 
     /// Operation that should pass consensus
@@ -60,6 +60,22 @@ pub mod consensus_ops {
                 collection_id,
                 ShardTransferOperations::Finish(transfer),
             )))
+        }
+
+        pub fn deactivate_replica(
+            collection_name: CollectionId,
+            shard_id: u32,
+            peer_id: PeerId,
+        ) -> Self {
+            ConsensusOperations::CollectionMeta(
+                CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
+                    collection_name,
+                    shard_id,
+                    peer_id,
+                    active: false,
+                })
+                .into(),
+            )
         }
     }
 }

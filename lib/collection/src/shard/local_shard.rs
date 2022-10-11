@@ -114,6 +114,10 @@ impl LocalShard {
         self.segments.deref()
     }
 
+    /// Recovers shard from disk.
+    ///
+    /// WARN: This method intended to be used only on the initial start of the node.
+    /// It does not implement any logic to recover from a failure. Will panic if there is a failure.
     pub async fn load(
         id: ShardId,
         collection_id: CollectionId,

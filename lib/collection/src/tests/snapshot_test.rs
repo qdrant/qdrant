@@ -24,7 +24,7 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 };
 
 pub fn dummy_on_replica_failure() -> OnPeerFailure {
-    Arc::new(move |_peer_id, _shard_id| Box::new(async {}))
+    Arc::new(move |_peer_id, _shard_id| {})
 }
 
 #[tokio::test]
@@ -95,6 +95,7 @@ async fn test_snapshot_collection() {
         recover_dir.path(),
         snapshots_path.path(),
         ChannelService::default(),
+        dummy_on_replica_failure(),
     )
     .await;
 

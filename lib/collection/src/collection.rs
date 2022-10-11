@@ -2,7 +2,6 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::num::NonZeroU32;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -139,6 +138,7 @@ impl Collection {
                         on_replica_failure.clone(),
                         path,
                         shared_config.clone(),
+                        channel_service.clone(),
                     )
                     .await
                     .map(Shard::ReplicaSet)
@@ -201,6 +201,7 @@ impl Collection {
         path: &Path,
         snapshots_path: &Path,
         channel_service: ChannelService,
+        on_replica_failure: replica_set::OnPeerFailure,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -246,6 +247,7 @@ impl Collection {
                 &collection_id,
                 shared_config.clone(),
                 channel_service.clone(),
+                on_replica_failure,
             )
             .await;
 
@@ -1357,7 +1359,7 @@ impl Collection {
                 .map(|(shard_id, shard)| {
                     let shard_info = match shard {
                         Shard::ReplicaSet(replicas) => ShardInfo::ReplicaSet {
-                            replicas: replicas.replica_state.deref().clone(),
+                            replicas: replicas.replica_state.peers.clone(),
                         },
                         shard => ShardInfo::Single(
                             *shard
@@ -1492,6 +1494,9 @@ impl Collection {
                         RemoteShard::restore_snapshot(&shard_path)
                     }
                     shard_config::ShardType::Temporary => {}
+                    shard_config::ShardType::ReplicaSet { .. } => {
+                        ReplicaSet::restore_snapshot(&shard_path)?
+                    }
                 }
             } else {
                 return Err(CollectionError::service_error(format!(
