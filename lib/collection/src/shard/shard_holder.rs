@@ -172,12 +172,12 @@ impl ShardHolder {
             None => Ok(self.all_shards().collect()),
             Some(shard_selection) => {
                 let shard_opt = self.get_shard(&shard_selection);
-                let target_shard = match shard_opt {
+                let target_shards = match shard_opt {
                     None => {
                         // check if a temporary shard exist for the shard_selection
                         let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
                         match temporary_shard_opt {
-                            Some(temp) => temp,
+                            Some(temp) => vec![temp],
                             None => {
                                 return Err(CollectionError::bad_shard_selection(format!(
                                     "Shard {} does not exist",
@@ -186,20 +186,26 @@ impl ShardHolder {
                             }
                         }
                     }
-                    Some(shard) => match *shard {
-                        Shard::Local(_) | Shard::Proxy(_) | Shard::ForwardProxy(_) => shard,
-                        Shard::ReplicaSet(_) => shard, // TODO https://github.com/qdrant/qdrant/issues/1101
+                    Some(shard) => match shard {
+                        Shard::Local(_) | Shard::Proxy(_) | Shard::ForwardProxy(_) => vec![shard],
+                        Shard::ReplicaSet(replica_set) => {
+                            // target only the local replica if defined to not introduce loops between replica sets
+                            match &replica_set.local {
+                                Some(local) => vec![local.as_ref()],
+                                None => vec![],
+                            }
+                        }
                         Shard::Remote(_) => {
                             // check temporary shards if the target is a remote shard
                             let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
                             match temporary_shard_opt {
-                                None => shard, // forward to the remote shard
-                                Some(temp) => temp,
+                                None => vec![shard], // forward to the remote shard
+                                Some(temp) => vec![temp],
                             }
                         }
                     },
                 };
-                Ok(vec![target_shard])
+                Ok(target_shards)
             }
         }
     }
