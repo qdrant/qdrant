@@ -225,17 +225,12 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize temporary shard config file
         let temp_shard_config = ShardConfig::new_temp();
-        Self::_build(
-            id,
-            collection_id,
-            shard_path,
-            shared_config,
-            temp_shard_config,
-        )
-        .await
+        let shard = Self::build(id, collection_id, shard_path, shared_config).await?;
+        temp_shard_config.save(shard_path)?;
+        Ok(shard)
     }
 
-    pub async fn build(
+    pub async fn build_local(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
@@ -243,26 +238,18 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_local();
-        Self::_build(
-            id,
-            collection_id,
-            shard_path,
-            shared_config,
-            local_shard_config,
-        )
-        .await
+        let shard = Self::build(id, collection_id, shard_path, shared_config).await?;
+        local_shard_config.save(shard_path)?;
+        Ok(shard)
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
-    async fn _build(
+    pub async fn build(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        config: ShardConfig,
     ) -> CollectionResult<LocalShard> {
-        config.save(shard_path)?;
-
         let config = shared_config.read().await;
 
         let wal_path = shard_path.join("wal");

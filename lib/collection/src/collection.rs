@@ -102,7 +102,7 @@ impl Collection {
                     let shard_path = create_shard_dir(path, shard_id).await;
                     let shard = match shard_path {
                         Ok(shard_path) => {
-                            LocalShard::build(
+                            LocalShard::build_local(
                                 shard_id,
                                 id.clone(),
                                 &shard_path,
@@ -1444,7 +1444,9 @@ impl Collection {
                         // copy shard directory to snapshot directory
                         remote_shard.create_snapshot(&shard_snapshot_path).await?;
                     }
-                    Shard::ReplicaSet(_) => todo!(),
+                    Shard::ReplicaSet(replica_set) => {
+                        replica_set.create_snapshot(&shard_snapshot_path).await?;
+                    }
                 }
             }
         }

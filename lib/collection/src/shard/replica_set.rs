@@ -142,6 +142,11 @@ impl ReplicaSet {
             &channel_service,
         );
 
+        // Save shard config as the last step, to ensure that the file state is consistent
+        // Presence of shard config indicates that the shard is ready to be used
+        let local_shard_config = ShardConfig::new_replica_set();
+        local_shard_config.save(&shard_path)?;
+
         Ok(Self {
             shard_id,
             this_peer_id,
