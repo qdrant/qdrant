@@ -57,11 +57,13 @@ pub trait VectorStorage {
     /// Number of all stored vectors including deleted
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
     fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
-    fn update_vector(
+    fn insert_vector(
         &mut self,
         key: PointOffsetType,
         vector: Vec<VectorElementType>,
-    ) -> OperationResult<PointOffsetType>;
+    ) -> OperationResult<()>;
+    /// Returns next available id
+    fn next_id(&self) -> PointOffsetType;
     fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>>;
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn is_deleted(&self, key: PointOffsetType) -> bool;

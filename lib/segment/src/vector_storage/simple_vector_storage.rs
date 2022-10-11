@@ -209,18 +209,22 @@ where
         Ok(new_id)
     }
 
-    fn update_vector(
+    fn insert_vector(
         &mut self,
         key: PointOffsetType,
         vector: Vec<VectorElementType>,
-    ) -> OperationResult<PointOffsetType> {
+    ) -> OperationResult<()> {
         self.vectors.insert(key, &vector);
         if self.deleted.len() <= (key as usize) {
-            self.deleted.resize(key as usize + 1, false);
+            self.deleted.resize(key as usize + 1, true);
         }
         self.deleted.set(key as usize, false);
         self.update_stored(key)?;
-        Ok(key)
+        Ok(())
+    }
+
+    fn next_id(&self) -> PointOffsetType {
+        self.vectors.len() as PointOffsetType
     }
 
     fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>> {

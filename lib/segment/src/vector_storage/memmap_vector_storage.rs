@@ -157,12 +157,16 @@ where
         panic!("Can't put vector in mmap storage")
     }
 
-    fn update_vector(
+    fn insert_vector(
         &mut self,
         _key: PointOffsetType,
         _vector: Vec<VectorElementType>,
-    ) -> OperationResult<PointOffsetType> {
+    ) -> OperationResult<()> {
         panic!("Can't directly update vector in mmap storage")
+    }
+
+    fn next_id(&self) -> PointOffsetType {
+        panic!("There are no available for insertion ids in mmap storage")
     }
 
     fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>> {

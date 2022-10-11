@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename, File};
 use std::path::{Path, PathBuf};
@@ -77,40 +78,23 @@ pub struct VectorData {
 }
 
 impl Segment {
+    /// Change vector in-place.
+    /// WARN: Available for appendable segments only
     fn update_vector(
         &mut self,
-        old_internal_id: PointOffsetType,
+        internal_id: PointOffsetType,
         vectors: NamedVectors,
-    ) -> OperationResult<PointOffsetType> {
+    ) -> OperationResult<()> {
+        debug_assert!(self.is_appendable());
         check_vectors_set(&vectors, &self.segment_config)?;
-        let mut new_internal_index = None;
         for (vector_name, vector) in vectors {
             let vector_name: &str = &vector_name;
             let vector = vector.into_owned();
             let vector_data = &self.vector_data[vector_name];
-            let internal_id = {
-                let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                vector_storage.update_vector(old_internal_id, vector)
-            }?;
-            if new_internal_index.is_none() {
-                new_internal_index = Some(internal_id);
-            } else {
-                debug_assert_eq!(new_internal_index, Some(internal_id));
-            }
+            let mut vector_storage = vector_data.vector_storage.borrow_mut();
+            vector_storage.insert_vector(internal_id, vector)?;
         }
-        if let Some(new_internal_index) = new_internal_index {
-            if new_internal_index != old_internal_id {
-                // If vector was moved to a new internal id, move payload to this internal id as well
-                let mut payload_index = self.payload_index.borrow_mut();
-                let payload = payload_index.drop(old_internal_id)?;
-                if let Some(payload) = payload {
-                    payload_index.assign(new_internal_index, &payload)?;
-                }
-            }
-            Ok(new_internal_index)
-        } else {
-            Ok(old_internal_id)
-        }
+        Ok(())
     }
 
     fn handle_version_and_failure<F>(
@@ -549,6 +533,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vectors: &NamedVectors,
     ) -> OperationResult<bool> {
+        debug_assert!(self.is_appendable());
         check_vectors_set(vectors, &self.segment_config)?;
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let mut processed_vectors = NamedVectors::default();
@@ -578,22 +563,22 @@ impl SegmentEntry for Segment {
             let stored_internal_point = segment.id_tracker.borrow().internal_id(point_id);
 
             let was_replaced = if let Some(existing_internal_id) = stored_internal_point {
-                let new_index = segment.update_vector(existing_internal_id, processed_vectors)?;
-                if new_index != existing_internal_id {
-                    let mut id_tracker = segment.id_tracker.borrow_mut();
-                    id_tracker.drop(point_id)?;
-                    id_tracker.set_link(point_id, new_index)?;
-                }
+                segment.update_vector(existing_internal_id, processed_vectors)?;
                 true
             } else {
                 let mut new_index = 0;
+                for vector_data in segment.vector_data.values() {
+                    let vector_storage = vector_data.vector_storage.borrow();
+                    new_index = max(new_index, vector_storage.next_id());
+                }
+
                 for (vector_name, processed_vector) in processed_vectors {
                     let vector_name: &str = &vector_name;
                     let processed_vector = processed_vector.into_owned();
-                    new_index = segment.vector_data[vector_name]
+                    segment.vector_data[vector_name]
                         .vector_storage
                         .borrow_mut()
-                        .put_vector(processed_vector)?;
+                        .insert_vector(new_index, processed_vector)?;
                 }
                 segment
                     .id_tracker
