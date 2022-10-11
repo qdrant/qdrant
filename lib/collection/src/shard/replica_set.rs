@@ -416,11 +416,10 @@ impl ReplicaSet {
         }
     }
 
+    #[async_recursion]
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        if let Some(_shard) = &self.local {
-            // TODO try defining it on the Shard itself
-            //*shard.on_optimizer_config_update().await;
-            todo!("optimize config update on local")
+        if let Some(shard) = &self.local {
+            shard.on_optimizer_config_update().await
         } else {
             Ok(())
         }
