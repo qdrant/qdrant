@@ -37,7 +37,7 @@ use crate::operations::types::{
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
-use crate::shard::local_shard::LocalShard;
+use crate::shard::local_shard::{drop_and_delete_from_disk, LocalShard};
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::replica_set::{Change, ReplicaSet};
 use crate::shard::shard_config::{self, ShardConfig};
@@ -1275,17 +1275,71 @@ impl Collection {
         for change in &replica_changes {
             match change {
                 Change::Remove(shard_id, peer_id) => {
-                    // TODO reduce scope of exclusive write lock
+                    // 1 - check if the replica set exists
+                    let read_shard_holder = self.shards_holder.read().await;
+                    match read_shard_holder.get_shard(shard_id) {
+                        Some(Shard::ReplicaSet(_replica)) => {} // continue
+                        Some(shard) => {
+                            return Err(CollectionError::service_error(format!(
+                                "Cannot remove replica on shard {}",
+                                shard.variant_name()
+                            )))
+                        }
+                        None => {
+                            return Err(CollectionError::service_error(format!(
+                                "Shard {} does not exist",
+                                shard_id
+                            )))
+                        }
+                    }
+                    drop(read_shard_holder);
+
+                    // 2 - mark peer as inactive
                     let mut write_shard_holder = self.shards_holder.write().await;
+                    if let Some(Shard::ReplicaSet(replica_set)) =
+                        write_shard_holder.get_mut_shard(shard_id)
+                    {
+                        replica_set.remove_replica_state(peer_id)?;
+                    };
+
+                    // 3 - remove replica without shutting it down as it is expensive
+                    let shard_to_shutdown: Option<Shard> =
+                        if let Some(Shard::ReplicaSet(replica_set)) =
+                            write_shard_holder.get_mut_shard(shard_id)
+                        {
+                            replica_set.take_replica(peer_id).await?
+                        } else {
+                            None
+                        };
+                    drop(write_shard_holder);
+
+                    // 4 - shutdown replica if necessary (without locking the shard holder)
+                    match shard_to_shutdown {
+                        Some(Shard::Local(mut local)) => {
+                            local.before_drop().await;
+                            drop_and_delete_from_disk(local).await?
+                        }
+                        Some(Shard::ForwardProxy(forward)) => {
+                            drop_and_delete_from_disk(forward.wrapped_shard).await?
+                        }
+                        Some(shard) => {
+                            return Err(CollectionError::service_error(format!(
+                                "Unexpected shard {} in replica set",
+                                shard.variant_name()
+                            )))
+                        }
+                        _ => {}
+                    }
+
+                    // 5 - dissolve replica if it contains only one replica
+                    let mut write_shard_holder = self.shards_holder.write().await;
+
                     // capture `shard to promote` to avoid second mutable borrow on `shard_holder`
                     let mut shard_to_promote: Option<Shard> = None;
 
                     if let Some(Shard::ReplicaSet(replica_set)) =
                         write_shard_holder.get_mut_shard(shard_id)
                     {
-                        // remove replica
-                        replica_set.remove_replica(peer_id).await?;
-
                         // the replica set must be dissolved if it contains a single shard
                         let remaining_replicas_after_removal = replica_set.peer_ids().len();
                         if remaining_replicas_after_removal == 1 {
@@ -1300,13 +1354,6 @@ impl Collection {
                                 }
                             }
                         }
-                    } else {
-                        log::error!(
-                            "Cannot remove replica {} on non existent replica set {}:{}",
-                            peer_id,
-                            self.id,
-                            shard_id
-                        );
                     }
 
                     // promoting shard by replacing existing replica set
