@@ -32,7 +32,7 @@ use crate::shard::ChannelService;
 pub type IsActive = bool;
 pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
-const READ_REMOTE_REPLICAS: u32 = 2;0
+const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
