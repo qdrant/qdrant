@@ -415,7 +415,8 @@ impl ReplicaSet {
 
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         if let Some(_shard) = &self.local {
-            // shard.on_optimizer_config_update().await
+            // TODO try defining it on the Shard itself
+            //*shard.on_optimizer_config_update().await;
             todo!("optimize config update on local")
         } else {
             Ok(())
@@ -491,6 +492,26 @@ impl ReplicaSet {
             ))),
             None => Err(CollectionError::service_error(
                 "cannot proxy absent local shard".to_string(),
+            )),
+        }
+    }
+
+    /// Un-proxify local shard.
+    ///
+    /// Returns true if the replica was un-proxified, false if it was already handled
+    pub fn un_proxify_local(&mut self) -> CollectionResult<bool> {
+        match self.local.take().map(|b| *b) {
+            Some(ForwardProxy(forward)) => {
+                let _ = self.local.insert(Box::new(Local(forward.wrapped_shard)));
+                Ok(true)
+            }
+            Some(Local(_)) => Ok(false),
+            Some(shard) => Err(CollectionError::service_error(format!(
+                "cannot un-proxy {} shard",
+                shard.variant_name()
+            ))),
+            None => Err(CollectionError::service_error(
+                "cannot un-proxify absent local shard".to_string(),
             )),
         }
     }
