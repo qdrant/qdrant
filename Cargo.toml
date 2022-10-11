@@ -49,7 +49,7 @@ actix-cors = "0.6.3"
 actix-files = "0.6.2"
 tonic = "0.7.2"
 tower = "0.4.13"
-tower-layer = "0.3.1"
+tower-layer = "0.3.2"
 num-traits = "0.2.15"
 tar = "0.4.38"
 
