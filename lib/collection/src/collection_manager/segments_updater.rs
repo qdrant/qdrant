@@ -163,7 +163,7 @@ fn upsert_with_payload(
     Ok(res)
 }
 
-/// Sync points within a given range
+/// Sync points within a given [from_id; to_id) range
 ///
 /// 1. Retrieve existing points for a range
 /// 2. Remove points, which are not present in the sync operation

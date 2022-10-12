@@ -93,10 +93,6 @@ impl ForwardProxyShard {
             Some(batch.pop().unwrap().id)
         };
 
-        if batch.is_empty() {
-            return Ok(next_page_offset);
-        }
-
         let points: Result<Vec<PointStruct>, String> =
             batch.into_iter().map(|point| point.try_into()).collect();
 
@@ -105,8 +101,8 @@ impl ForwardProxyShard {
         let insert_points_operation = if sync {
             CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(
                 PointSyncOperation {
-                    from_id: points.first().map(|p| p.id),
-                    to_id: points.last().map(|p| p.id),
+                    from_id: offset,
+                    to_id: next_page_offset,
                     points,
                 },
             ))
