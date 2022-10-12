@@ -1177,11 +1177,10 @@ impl Collection {
                                 Shard::ReplicaSet(new_replica)
                             }
                             Some(Shard::Remote(remote_shard)) => {
-                                // TODO is that the best way to retrieve the current path?
                                 let shard_path = latest_shard_paths(&self.path, *shard_id)
                                     .await?
                                     .first()
-                                    .unwrap() // TODO unwrap
+                                    .expect("`latest_shard_paths` guarantees either error or non-empty result")
                                     .0
                                     .clone();
                                 let new_replica = ReplicaSetShard::build_from_remote(

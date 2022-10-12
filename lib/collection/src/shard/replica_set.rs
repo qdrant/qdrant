@@ -200,7 +200,7 @@ impl ReplicaSet {
         })
     }
 
-    /// Build replica set from existing local shard
+    /// Build replica set from existing remote shard
     pub async fn build_from_remote(
         shard_id: ShardId,
         shard_path: &Path,

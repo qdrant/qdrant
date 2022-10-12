@@ -114,6 +114,7 @@ impl Shard {
             Shard::ReplicaSet(replica_set) => replica_set.create_snapshot(target_path).await,
         }
     }
+
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         match self {
             Shard::Local(local_shard) => local_shard.on_optimizer_config_update().await,
