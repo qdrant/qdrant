@@ -77,6 +77,13 @@ pub mod consensus_ops {
                 .into(),
             )
         }
+
+        pub fn start_transfer(collection_id: CollectionId, transfer: ShardTransfer) -> Self {
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection_id,
+                ShardTransferOperations::Start(transfer),
+            )))
+        }
     }
 }
 
