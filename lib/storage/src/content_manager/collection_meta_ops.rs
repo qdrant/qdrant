@@ -161,6 +161,17 @@ pub struct UpdateCollectionOperation {
 }
 
 impl UpdateCollectionOperation {
+    pub fn new_empty(collection_name: String) -> Self {
+        Self {
+            collection_name,
+            update_collection: UpdateCollection {
+                optimizers_config: None,
+                params: None,
+            },
+            shard_replica_changes: None,
+        }
+    }
+
     pub fn new(collection_name: String, update_collection: UpdateCollection) -> Self {
         Self {
             collection_name,
