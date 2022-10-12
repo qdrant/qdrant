@@ -104,6 +104,7 @@ async fn test_snapshot_collection() {
 
     let mut recovered_collection = Collection::load(
         collection_name_rec,
+        1,
         recover_dir.path(),
         snapshots_path.path(),
         ChannelService::default(),

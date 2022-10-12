@@ -107,6 +107,7 @@ impl TableOfContent {
             log::info!("Loading collection: {}", collection_name);
             let collection = collection_management_runtime.block_on(Collection::load(
                 collection_name.clone(),
+                this_peer_id,
                 &collection_path,
                 &collection_snapshots_path,
                 channel_service.clone(),

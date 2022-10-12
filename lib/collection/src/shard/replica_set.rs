@@ -148,8 +148,8 @@ impl ReplicaSet {
 
         // Save shard config as the last step, to ensure that the file state is consistent
         // Presence of shard config indicates that the shard is ready to be used
-        let local_shard_config = ShardConfig::new_replica_set();
-        local_shard_config.save(&shard_path)?;
+        let replica_set_shard_config = ShardConfig::new_replica_set();
+        replica_set_shard_config.save(&shard_path)?;
 
         Ok(Self {
             shard_id,
@@ -158,6 +158,79 @@ impl ReplicaSet {
             remotes: remote_shards,
             replica_state,
             shard_path,
+            // TODO: move to collection config
+            read_remote_replicas: READ_REMOTE_REPLICAS,
+            notify_peer_failure_cb: on_peer_failure,
+        })
+    }
+
+    /// Build replica set from existing local shard
+    pub async fn build_from_local(
+        shard_id: ShardId,
+        this_peer_id: PeerId,
+        local_shard: LocalShard,
+        on_peer_failure: OnPeerFailure,
+    ) -> CollectionResult<Self> {
+        let shard_path = local_shard.path.clone();
+        let mut replica_state: SaveOnDisk<ReplicaState> =
+            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE))?;
+        replica_state.write(|rs| {
+            rs.this_peer_id = this_peer_id;
+            rs.is_local = true;
+            rs.peers.insert(this_peer_id, true);
+        })?;
+
+        // Save shard config as the last step, to ensure that the file state is consistent
+        // Presence of shard config indicates that the shard is ready to be used
+        let replica_set_shard_config = ShardConfig::new_replica_set();
+        // Overwrite local shard config
+        replica_set_shard_config.save(&shard_path)?;
+
+        let local = Some(Box::new(Local(local_shard)));
+        Ok(Self {
+            shard_id,
+            this_peer_id,
+            local,
+            remotes: vec![],
+            replica_state,
+            shard_path,
+            // TODO: move to collection config
+            read_remote_replicas: READ_REMOTE_REPLICAS,
+            notify_peer_failure_cb: on_peer_failure,
+        })
+    }
+
+    /// Build replica set from existing local shard
+    pub async fn build_from_remote(
+        shard_id: ShardId,
+        shard_path: &Path,
+        this_peer_id: PeerId,
+        remote_shard: RemoteShard,
+        on_peer_failure: OnPeerFailure,
+    ) -> CollectionResult<Self> {
+        let mut replica_state: SaveOnDisk<ReplicaState> =
+            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE))?;
+        replica_state.write(|rs| {
+            rs.this_peer_id = this_peer_id;
+            rs.is_local = false;
+            rs.peers.insert(remote_shard.peer_id, true);
+        })?;
+
+        let remotes = vec![remote_shard];
+
+        // Save shard config as the last step, to ensure that the file state is consistent
+        // Presence of shard config indicates that the shard is ready to be used
+        let replica_set_shard_config = ShardConfig::new_replica_set();
+        // Overwrite local shard config
+        replica_set_shard_config.save(shard_path)?;
+
+        Ok(Self {
+            shard_id,
+            this_peer_id,
+            local: None,
+            remotes,
+            replica_state,
+            shard_path: shard_path.to_path_buf(),
             // TODO: move to collection config
             read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,

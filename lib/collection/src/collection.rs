@@ -39,10 +39,10 @@ use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
 use crate::shard::local_shard::{drop_and_delete_from_disk, LocalShard};
 use crate::shard::remote_shard::RemoteShard;
-use crate::shard::replica_set::{Change, ReplicaSet};
+use crate::shard::replica_set::{Change, OnPeerFailure, ReplicaSet as ReplicaSetShard}; // TODO rename ReplicaShard to ReplicaSetShard
 use crate::shard::shard_config::{self, ShardConfig};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
-use crate::shard::shard_versioning::versioned_shard_path;
+use crate::shard::shard_versioning::{latest_shard_paths, versioned_shard_path};
 use crate::shard::transfer::shard_transfer::{
     activate_peer_for_replica, change_remote_shard_route, drop_temporary_shard,
     promote_proxy_to_remote_shard, promote_temporary_shard_to_local, revert_proxy_shard_to_local,
@@ -72,12 +72,14 @@ pub struct Collection {
     pub(crate) config: Arc<RwLock<CollectionConfig>>,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
+    this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
     telemetry: CollectionTelemetry,
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
+    notify_peer_failure_cb: OnPeerFailure,
 }
 
 impl Collection {
@@ -135,7 +137,7 @@ impl Collection {
                         .map(Shard::Remote)
                 }
                 collection_shard_distribution::ShardType::ReplicaSet { local, remote } => {
-                    ReplicaSet::build(
+                    ReplicaSetShard::build(
                         shard_id,
                         id.clone(),
                         this_peer_id,
@@ -171,12 +173,14 @@ impl Collection {
             shards_holder: locked_shard_holder,
             config: shared_config,
             before_drop_called: false,
+            this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
             channel_service,
             transfer_tasks: Default::default(),
             request_shard_transfer_cb: request_shard_transfer.clone(),
+            notify_peer_failure_cb: on_replica_failure.clone(),
         })
     }
 
@@ -205,6 +209,7 @@ impl Collection {
 
     pub async fn load(
         collection_id: CollectionId,
+        this_peer_id: PeerId,
         path: &Path,
         snapshots_path: &Path,
         channel_service: ChannelService,
@@ -255,7 +260,7 @@ impl Collection {
                 &collection_id,
                 shared_config.clone(),
                 channel_service.clone(),
-                on_replica_failure,
+                on_replica_failure.clone(),
             )
             .await;
 
@@ -266,12 +271,14 @@ impl Collection {
             shards_holder: locked_shard_holder,
             config: shared_config,
             before_drop_called: false,
+            this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::default()),
             request_shard_transfer_cb: request_shard_transfer.clone(),
+            notify_peer_failure_cb: on_replica_failure,
         }
     }
 
@@ -1139,25 +1146,7 @@ impl Collection {
                     // 1 - check if the replica set exists
                     let read_shard_holder = self.shards_holder.read().await;
                     match read_shard_holder.get_shard(shard_id) {
-                        Some(Shard::Local(_local)) => {
-                            // TODO https://github.com/qdrant/qdrant/issues/1069
-                            // the replica set needs to be created by promoting the existing local shard
-                            // there should be no file system operation involving moving the local shard folder
-                            return Err(CollectionError::service_error(format!(
-                                "Not implemented: adding a replica to a local shard {}",
-                                shard_id
-                            )));
-                        }
-                        Some(Shard::Remote(_remote)) => {
-                            // TODO https://github.com/qdrant/qdrant/issues/1069
-                            // the replica set needs to be created by promoting the existing remote shard
-                            // there should be no file system operation involving moving the local shard folder
-                            return Err(CollectionError::service_error(format!(
-                                "Not implemented: adding a replica to a remote shard {}",
-                                shard_id
-                            )));
-                        }
-                        Some(Shard::ReplicaSet(_replica)) => {} // continue
+                        Some(Shard::ReplicaSet(_) | Shard::Local(_) | Shard::Remote(_)) => {} // continue
                         Some(shard) => {
                             return Err(CollectionError::service_error(format!(
                                 "Cannot add replica on shard {}",
@@ -1173,7 +1162,52 @@ impl Collection {
                     }
                     drop(read_shard_holder);
 
-                    // 2 - mark peer as inactive
+                    // 2 - promote local or remote to replica set if needed
+                    if *peer_id == self.this_peer_id {
+                        let mut write_shard_holder = self.shards_holder.write().await;
+                        let shard_to_insert = match write_shard_holder.take_shard(*shard_id) {
+                            Some(Shard::Local(local_shard)) => {
+                                let new_replica = ReplicaSetShard::build_from_local(
+                                    *shard_id,
+                                    self.this_peer_id,
+                                    local_shard,
+                                    self.notify_peer_failure_cb.clone(),
+                                )
+                                .await?;
+                                Shard::ReplicaSet(new_replica)
+                            }
+                            Some(Shard::Remote(remote_shard)) => {
+                                // TODO is that the best way to retrieve the current path?
+                                let shard_path = latest_shard_paths(&self.path, *shard_id)
+                                    .await?
+                                    .first()
+                                    .unwrap() // TODO unwrap
+                                    .0
+                                    .clone();
+                                let new_replica = ReplicaSetShard::build_from_remote(
+                                    *shard_id,
+                                    &shard_path,
+                                    self.this_peer_id,
+                                    remote_shard,
+                                    self.notify_peer_failure_cb.clone(),
+                                )
+                                .await?;
+                                Shard::ReplicaSet(new_replica)
+                            }
+                            Some(other_shard) => other_shard, // shard needs to be reinserted again
+                            None => {
+                                return Err(CollectionError::service_error(format!(
+                                    "Shard {} does not exist",
+                                    shard_id
+                                )))
+                            }
+                        };
+
+                        // promoting replicaset by replacing existing shard
+                        write_shard_holder.replace_shard(*shard_id, shard_to_insert);
+                    }
+
+                    // 3 - mark peer as inactive
                     let mut write_shard_holder = self.shards_holder.write().await;
                     if let Some(Shard::ReplicaSet(replica_set)) =
                         write_shard_holder.get_mut_shard(shard_id)
@@ -1182,7 +1216,7 @@ impl Collection {
                     }
                     drop(write_shard_holder);
 
-                    // 3 - create new replica resources on read lock
+                    // 4 - create new replica resources on read lock
                     let read_shard_holder = self.shards_holder.read().await;
                     let new_inactive_replica: Option<Shard> =
                         if let Some(Shard::ReplicaSet(replica_set)) =
@@ -1228,7 +1262,7 @@ impl Collection {
                         };
                     drop(read_shard_holder);
 
-                    // 4 - add new replica to the replica set
+                    // 5 - add new replica to the replica set
                     let mut write_shard_holder = self.shards_holder.write().await;
                     if let Some(Shard::ReplicaSet(replica_set)) =
                         write_shard_holder.get_mut_shard(shard_id)
@@ -1246,7 +1280,7 @@ impl Collection {
                     }
                     drop(write_shard_holder);
 
-                    // 5 - ask for transfer if necessary
+                    // 6 - ask for transfer if necessary
                     let read_shard_holder = self.shards_holder.read().await;
                     if let Some(Shard::ReplicaSet(replica_set)) =
                         read_shard_holder.get_shard(shard_id)
@@ -1702,7 +1736,7 @@ impl Collection {
                     }
                     shard_config::ShardType::Temporary => {}
                     shard_config::ShardType::ReplicaSet { .. } => {
-                        ReplicaSet::restore_snapshot(&shard_path)?
+                        ReplicaSetShard::restore_snapshot(&shard_path)?
                     }
                 }
             } else {

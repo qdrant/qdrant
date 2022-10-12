@@ -106,6 +106,7 @@ pub async fn load_local_collection(
 ) -> Collection {
     Collection::load(
         id,
+        0,
         path,
         snapshots_path,
         ChannelService::default(),

@@ -288,7 +288,7 @@ pub async fn activate_peer_for_replica(
     }
 }
 
-/// Un-proxify local shard shord for replicaset.
+/// Un-proxify local shard for replicaset.
 ///
 /// Returns true if the local replica was un-proxified, false if it was already handled
 pub async fn un_proxify_replica_set(
