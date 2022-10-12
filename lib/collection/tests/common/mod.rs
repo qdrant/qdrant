@@ -73,7 +73,7 @@ pub fn dummy_on_replica_failure() -> OnPeerFailure {
 }
 
 pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
-    Arc::new(move |_transfer| Box::new(async {}))
+    Arc::new(move |_transfer| {})
 }
 
 /// Default to a collection with all the shards local

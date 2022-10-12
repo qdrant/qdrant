@@ -28,7 +28,6 @@ use super::collection_meta_ops::{
 };
 use super::{consensus_state, CollectionContainer};
 use crate::content_manager::alias_mapping::AliasPersistence;
-use crate::content_manager::collection_meta_ops::ShardTransferOperations::Start;
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
     CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
@@ -336,17 +335,17 @@ impl TableOfContent {
         Arc::new(move |shard_transfer| {
             let proposal_sender = consensus_proposal_sender.clone();
             let collection_name = collection_name.clone();
-            Box::new(async move {
-                proposal_sender
-                    .send(ConsensusOperations::CollectionMeta(
-                        CollectionMetaOperations::TransferShard(
-                            collection_name,
-                            Start(shard_transfer),
-                        )
-                        .into(),
-                    ))
-                    .unwrap();
-            })
+            let to_peer = shard_transfer.to;
+            let operation =
+                ConsensusOperations::start_transfer(collection_name.clone(), shard_transfer);
+            if let Err(send_error) = proposal_sender.send(operation) {
+                log::error!(
+                        "Can't send proposal to request shard transfer to peer {} of collection {}. Error: {}",
+                        to_peer,
+                        collection_name,
+                        send_error
+                    );
+            }
         })
     }
 

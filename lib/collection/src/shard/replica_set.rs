@@ -209,7 +209,6 @@ impl ReplicaSet {
             shard_path: shard_path.to_path_buf(),
             read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
-            outgoing_sync_count: 0,
         }
     }
 
@@ -251,7 +250,7 @@ impl ReplicaSet {
 
     pub fn remove_replica_state(&mut self, peer_id: &PeerId) -> CollectionResult<()> {
         self.replica_state
-            .write_with_res(|rs| match rs.remove(peer_id) {
+            .write_with_res(|rs| match rs.peers.remove(peer_id) {
                 None => Err(CollectionError::service_error(format!(
                     "replica for peer {} is not registered",
                     peer_id

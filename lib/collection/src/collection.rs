@@ -55,8 +55,7 @@ use crate::shard::{
 };
 use crate::telemetry::CollectionTelemetry;
 
-pub type RequestShardTransfer =
-    Arc<dyn Fn(ShardTransfer) -> Box<dyn Future<Output = ()> + Send> + Send + Sync>;
+pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
 struct CollectionVersion;
 
@@ -1092,8 +1091,8 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
-        Box::into_pin(self.request_shard_transfer_cb.deref()(shard_transfer)).await
+    pub fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
+        self.request_shard_transfer_cb.deref()(shard_transfer)
     }
 
     /// Handle replica changes
@@ -1261,7 +1260,7 @@ impl Collection {
                                     to: replica_set.this_peer_id,
                                     sync: true,
                                 };
-                                self.request_shard_transfer(transfer).await;
+                                self.request_shard_transfer(transfer);
                             }
                         }
                     }
