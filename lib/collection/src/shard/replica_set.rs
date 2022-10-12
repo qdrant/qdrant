@@ -77,7 +77,6 @@ pub struct ReplicaSet {
     /// If actual number of peers is less than this, then read request will be sent to all of them.
     read_remote_replicas: u32,
     notify_peer_failure_cb: OnPeerFailure,
-    outgoing_sync_count: u32,
 }
 
 impl ReplicaSet {
@@ -162,7 +161,6 @@ impl ReplicaSet {
             // TODO: move to collection config
             read_remote_replicas: READ_REMOTE_REPLICAS,
             notify_peer_failure_cb: on_peer_failure,
-            outgoing_sync_count: 0,
         })
     }
 
