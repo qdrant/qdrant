@@ -276,9 +276,9 @@ impl Collection {
         shard_holder.set_shard_replica_state(shard_id, peer_id, active)
     }
 
-    pub async fn contains_shard(&self, shard_id: &ShardId) -> bool {
+    pub async fn contains_shard(&self, shard_id: ShardId) -> bool {
         let shard_holder_read = self.shards_holder.read().await;
-        shard_holder_read.contains_shard(shard_id)
+        shard_holder_read.contains_shard(&shard_id)
     }
 
     /// Returns true if shard it explicitly local, false otherwise.

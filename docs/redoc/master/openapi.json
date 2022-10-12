@@ -5054,31 +5054,20 @@
       "ShardTelemetry": {
         "oneOf": [
           {
+            "type": "string",
+            "enum": [
+              "Proxy",
+              "ForwardProxy"
+            ]
+          },
+          {
             "type": "object",
             "required": [
               "Remote"
             ],
             "properties": {
               "Remote": {
-                "type": "object",
-                "required": [
-                  "searches",
-                  "shard_id",
-                  "updates"
-                ],
-                "properties": {
-                  "shard_id": {
-                    "type": "integer",
-                    "format": "uint32",
-                    "minimum": 0
-                  },
-                  "searches": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  },
-                  "updates": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  }
-                }
+                "$ref": "#/components/schemas/RemoteShardTelemetry"
               }
             },
             "additionalProperties": false
@@ -5090,54 +5079,66 @@
             ],
             "properties": {
               "Local": {
+                "$ref": "#/components/schemas/LocalShardTelemetry"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ReplicaSet"
+            ],
+            "properties": {
+              "ReplicaSet": {
                 "type": "object",
                 "required": [
-                  "optimizers",
-                  "segments"
+                  "remote"
                 ],
                 "properties": {
-                  "segments": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/SegmentTelemetry"
-                    }
+                  "local": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/ShardTelemetry"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ]
                   },
-                  "optimizers": {
+                  "remote": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/OptimizerTelemetry"
+                      "$ref": "#/components/schemas/ShardTelemetry"
                     }
                   }
                 }
               }
             },
             "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "required": [
-              "Proxy"
-            ],
-            "properties": {
-              "Proxy": {
-                "type": "object"
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "required": [
-              "ForwardProxy"
-            ],
-            "properties": {
-              "ForwardProxy": {
-                "type": "object"
-              }
-            },
-            "additionalProperties": false
           }
         ]
+      },
+      "RemoteShardTelemetry": {
+        "type": "object",
+        "required": [
+          "searches",
+          "shard_id",
+          "updates"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "updates": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          }
+        }
       },
       "TelemetryOperationStatistics": {
         "type": "object",
@@ -5159,6 +5160,27 @@
           },
           "ok_avg_time": {
             "$ref": "#/components/schemas/Duration"
+          }
+        }
+      },
+      "LocalShardTelemetry": {
+        "type": "object",
+        "required": [
+          "optimizers",
+          "segments"
+        ],
+        "properties": {
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SegmentTelemetry"
+            }
+          },
+          "optimizers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizerTelemetry"
+            }
           }
         }
       },
@@ -5561,7 +5583,13 @@
             "$ref": "#/components/schemas/MoveShardOperation"
           },
           {
+            "$ref": "#/components/schemas/ReplicateShardOperation"
+          },
+          {
             "$ref": "#/components/schemas/AbortTransferOperation"
+          },
+          {
+            "$ref": "#/components/schemas/DropReplicaOperation"
           }
         ]
       },
@@ -5601,6 +5629,17 @@
           }
         }
       },
+      "ReplicateShardOperation": {
+        "type": "object",
+        "required": [
+          "replicate_shard"
+        ],
+        "properties": {
+          "replicate_shard": {
+            "$ref": "#/components/schemas/MoveShard"
+          }
+        }
+      },
       "AbortTransferOperation": {
         "type": "object",
         "required": [
@@ -5609,6 +5648,36 @@
         "properties": {
           "abort_transfer": {
             "$ref": "#/components/schemas/MoveShard"
+          }
+        }
+      },
+      "DropReplicaOperation": {
+        "type": "object",
+        "required": [
+          "drop_replica"
+        ],
+        "properties": {
+          "drop_replica": {
+            "$ref": "#/components/schemas/Replica"
+          }
+        }
+      },
+      "Replica": {
+        "type": "object",
+        "required": [
+          "peer_id",
+          "shard_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         }
       },

@@ -2,14 +2,17 @@ use std::time::Duration;
 
 use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use collection::operations::cluster_ops::{
-    AbortTransferOperation, ClusterOperations, MoveShardOperation,
+    AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
+    ReplicateShardOperation,
 };
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{CollectionClusterInfo, CollectionInfo};
-use collection::shard::{ShardId, ShardTransfer};
+use collection::shard::{replica_set, ShardId, ShardTransfer};
 use itertools::Itertools;
-use storage::content_manager::collection_meta_ops::CollectionMetaOperations;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
+use storage::content_manager::collection_meta_ops::{
+    CollectionMetaOperations, UpdateCollectionOperation,
+};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -74,45 +77,40 @@ pub async fn do_update_collection_cluster(
     }
     let consensus_state = dispatcher.consensus_state().unwrap();
 
+    let validate_peer_exists = |peer_id| {
+        let target_peer_exist = consensus_state
+            .persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .contains_key(&peer_id);
+        if !target_peer_exist {
+            return Err(StorageError::BadRequest {
+                description: format!("Peer {} does not exist", peer_id),
+            });
+        }
+        Ok(())
+    };
+
     let collection = toc.get_collection(&collection_name).await?;
+
     match operation {
         ClusterOperations::MoveShard(MoveShardOperation { move_shard }) => {
             // validate shard to move
-            let shard_exists = collection.contains_shard(&move_shard.shard_id).await;
-            if !shard_exists {
+            if !collection.contains_shard(move_shard.shard_id).await {
                 return Err(StorageError::BadRequest {
                     description: format!(
-                        "Shard {} for collection {} does not exist",
-                        move_shard.to_peer_id, collection_name
+                        "Shard {} of {} does not exist",
+                        move_shard.shard_id, collection_name
                     ),
                 });
-            }
+            };
 
             // validate target peer exists
-            let target_peer_exist = consensus_state
-                .persistent
-                .read()
-                .peer_address_by_id
-                .read()
-                .contains_key(&move_shard.to_peer_id);
-            if !target_peer_exist {
-                return Err(StorageError::BadRequest {
-                    description: format!("Target peer {} does not exist", move_shard.to_peer_id),
-                });
-            }
+            validate_peer_exists(move_shard.to_peer_id)?;
 
             // validate source peer exists
-            let target_peer_exist = consensus_state
-                .persistent
-                .read()
-                .peer_address_by_id
-                .read()
-                .contains_key(&move_shard.from_peer_id);
-            if !target_peer_exist {
-                return Err(StorageError::BadRequest {
-                    description: format!("Source peer {} does not exist", move_shard.from_peer_id),
-                });
-            }
+            validate_peer_exists(move_shard.from_peer_id)?;
 
             // submit operation to consensus
             dispatcher
@@ -124,6 +122,39 @@ pub async fn do_update_collection_cluster(
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
+                        }),
+                    ),
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::ReplicateShard(ReplicateShardOperation { replicate_shard }) => {
+            // validate shard to move
+            if !collection.contains_shard(replicate_shard.shard_id).await {
+                return Err(StorageError::BadRequest {
+                    description: format!(
+                        "Shard {} of {} does not exist",
+                        replicate_shard.shard_id, collection_name
+                    ),
+                });
+            };
+
+            // validate target peer exists
+            validate_peer_exists(replicate_shard.to_peer_id)?;
+
+            // validate source peer exists
+            validate_peer_exists(replicate_shard.from_peer_id)?;
+
+            // submit operation to consensus
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::TransferShard(
+                        collection_name,
+                        Start(ShardTransfer {
+                            shard_id: replicate_shard.shard_id,
+                            to: replicate_shard.to_peer_id,
+                            from: replicate_shard.from_peer_id,
+                            sync: true,
                         }),
                     ),
                     wait_timeout,
@@ -156,6 +187,32 @@ pub async fn do_update_collection_cluster(
                             reason: "user request".to_string(),
                         },
                     ),
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::DropReplica(DropReplicaOperation { drop_replica }) => {
+            if !collection.contains_shard(drop_replica.shard_id).await {
+                return Err(StorageError::BadRequest {
+                    description: format!(
+                        "Shard {} of {} does not exist",
+                        drop_replica.shard_id, collection_name
+                    ),
+                });
+            };
+
+            validate_peer_exists(drop_replica.peer_id)?;
+
+            let mut update_operation = UpdateCollectionOperation::new_empty(collection_name);
+
+            update_operation.set_shard_replica_changes(vec![replica_set::Change::Remove(
+                drop_replica.shard_id,
+                drop_replica.peer_id,
+            )]);
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::UpdateCollection(update_operation),
                     wait_timeout,
                 )
                 .await
