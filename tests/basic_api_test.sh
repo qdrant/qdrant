@@ -40,6 +40,14 @@ curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
       "field_schema": "integer"
     }' | jq
 
+curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{
+      "field_name": "coords",
+      "field_schema": "geo"
+    }' | jq
+
 curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq
 
 # insert points

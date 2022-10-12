@@ -82,12 +82,12 @@ pub fn encode_max_precision(lon: f64, lat: f64) -> Result<GeoHash, GeohashError>
 pub fn geo_hash_to_box(geo_hash: &GeoHash) -> GeoBoundingBox {
     let rectangle = decode_bbox(geo_hash).unwrap();
     let top_left = GeoPoint {
-        lat: rectangle.max().y,
         lon: rectangle.min().x,
+        lat: rectangle.max().y,
     };
     let bottom_right = GeoPoint {
-        lat: rectangle.min().y,
         lon: rectangle.max().x,
+        lat: rectangle.min().y,
     };
 
     GeoBoundingBox {

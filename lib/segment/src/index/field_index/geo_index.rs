@@ -305,8 +305,10 @@ impl GeoMapIndex {
         let mut geo_hashes = vec![];
 
         for added_point in values {
-            let added_geo_hash: GeoHash =
-                encode_max_precision(added_point.lon, added_point.lat).unwrap();
+            let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
+                .map_err(|e| {
+                    OperationError::service_error(&format!("Malformed geo points: {}", e))
+                })?;
 
             let key = Self::encode_db_key(&added_geo_hash, idx);
             let value = Self::encode_db_value(added_point);
@@ -419,7 +421,7 @@ impl ValueIndexer<GeoPoint> for GeoMapIndex {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return Some(GeoPoint { lon, lat });
+                    return GeoPoint::new(lon, lat).ok();
                 }
                 None
             }
