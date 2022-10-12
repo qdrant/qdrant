@@ -64,7 +64,7 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
             "country": "Germany" ,
             "count": 1000000,
             "square": 12.5,
-            "coords": { "lat": 1000.0, "lon": 2.0 }
+            "coords": { "lat": 1.0, "lon": 2.0 }
           }
         },
         {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": ["Berlin", "London"]}},
