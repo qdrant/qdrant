@@ -429,6 +429,7 @@ impl SegmentEntry for ProxySegment {
         read_points
     }
 
+    /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = self.wrapped_segment.get().read().read_range(from, to);
