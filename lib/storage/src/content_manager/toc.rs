@@ -110,6 +110,10 @@ impl TableOfContent {
                 &collection_path,
                 &collection_snapshots_path,
                 channel_service.clone(),
+                Self::on_peer_failure_callback(
+                    consensus_proposal_sender.clone(),
+                    collection_name.clone(),
+                ),
             ));
 
             collections.insert(collection_name, collection);
@@ -282,7 +286,10 @@ impl TableOfContent {
             &collection_config,
             collection_shard_distribution,
             self.channel_service.clone(),
-            self.on_peer_failure_callback(collection_name.to_string()),
+            Self::on_peer_failure_callback(
+                self.consensus_proposal_sender.clone(),
+                collection_name.to_string(),
+            ),
         )
         .await?;
 
@@ -294,24 +301,22 @@ impl TableOfContent {
         Ok(true)
     }
 
-    fn on_peer_failure_callback(&self, collection_name: String) -> replica_set::OnPeerFailure {
-        let proposal_sender = self.consensus_proposal_sender.clone();
+    fn on_peer_failure_callback(
+        proposal_sender: OperationSender,
+        collection_name: String,
+    ) -> replica_set::OnPeerFailure {
         Arc::new(move |peer_id, shard_id| {
-            let proposal_sender = proposal_sender.clone();
-            let collection_name = collection_name.clone();
-            Box::new(async move {
-                proposal_sender
-                    .send(ConsensusOperations::CollectionMeta(
-                        CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
-                            collection_name,
-                            shard_id,
-                            peer_id,
-                            active: false,
-                        })
-                        .into(),
-                    ))
-                    .unwrap();
-            })
+            let operation =
+                ConsensusOperations::deactivate_replica(collection_name.clone(), shard_id, peer_id);
+            if let Err(send_error) = proposal_sender.send(operation) {
+                log::error!(
+                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
+                        peer_id,
+                        shard_id,
+                        collection_name,
+                        send_error
+                    );
+            }
         })
     }
 
@@ -858,7 +863,10 @@ impl TableOfContent {
                             &state.config,
                             shard_distribution,
                             self.channel_service.clone(),
-                            self.on_peer_failure_callback(id.to_string()),
+                            Self::on_peer_failure_callback(
+                                self.consensus_proposal_sender.clone(),
+                                id.to_string(),
+                            ),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;

@@ -87,7 +87,7 @@ fn batch_search_bench(c: &mut Criterion) {
     let shared_config = Arc::new(RwLock::new(collection_config));
 
     let shard = handle
-        .block_on(LocalShard::build(
+        .block_on(LocalShard::build_local(
             0,
             "test_collection".to_string(),
             storage_dir.path(),

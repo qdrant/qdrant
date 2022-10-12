@@ -8,11 +8,12 @@ use crate::shard::PeerId;
 
 pub const SHARD_CONFIG_FILE: &str = "shard_config.json";
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub enum ShardType {
     Local,
     Remote { peer_id: PeerId },
     Temporary, // same as local, but not ready yet
+    ReplicaSet,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
@@ -23,6 +24,12 @@ pub struct ShardConfig {
 impl ShardConfig {
     pub fn get_config_path(shard_path: &Path) -> PathBuf {
         shard_path.join(SHARD_CONFIG_FILE)
+    }
+
+    pub fn new_replica_set() -> Self {
+        Self {
+            r#type: ShardType::ReplicaSet,
+        }
     }
 
     pub fn new_remote(peer_id: PeerId) -> Self {

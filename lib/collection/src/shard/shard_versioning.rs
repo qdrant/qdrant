@@ -111,6 +111,10 @@ pub async fn latest_shard_paths(
                         seen_temp_shard = true;
                     }
                 }
+                ShardType::ReplicaSet => {
+                    res.push((path, version, shard_config.r#type));
+                    break; // We don't need older replica set shards.
+                }
             }
         } else {
             log::warn!("Shard config not found for {}, skipping", path.display());
