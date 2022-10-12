@@ -374,12 +374,34 @@ struct GeoPointShadow {
     pub lat: f64,
 }
 
-pub struct GeoPointValidationError;
+pub struct GeoPointValidationError {
+    pub lon: f64,
+    pub lat: f64,
+}
 
 // The error type has to implement Display
 impl std::fmt::Display for GeoPointValidationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "Wrong format of GeoPoint payload: expected `lat` within [-90;90] and `lon` within [-180;180]")
+        write!(formatter, "Wrong format of GeoPoint payload: expected `lat` = {} within [-90;90] and `lon` = {} within [-180;180]", self.lat, self.lon)
+    }
+}
+
+impl GeoPoint {
+    pub fn validate(lon: f64, lat: f64) -> Result<(), GeoPointValidationError> {
+        let max_lon = 180f64;
+        let min_lon = -180f64;
+        let max_lat = 90f64;
+        let min_lat = -90f64;
+
+        if !(min_lon..=max_lon).contains(&lon) || !(min_lat..=max_lat).contains(&lat) {
+            return Err(GeoPointValidationError { lon, lat });
+        }
+        Ok(())
+    }
+
+    pub fn new(lon: f64, lat: f64) -> Result<Self, GeoPointValidationError> {
+        Self::validate(lon, lat)?;
+        Ok(GeoPoint { lon, lat })
     }
 }
 
@@ -387,14 +409,7 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
     type Error = GeoPointValidationError;
 
     fn try_from(value: GeoPointShadow) -> Result<Self, Self::Error> {
-        let max_lat = 90f64;
-        let min_lat = -90f64;
-        let max_lon = 180f64;
-        let min_lon = -180f64;
-
-        if !(min_lon..=max_lon).contains(&value.lon) || !(min_lat..=max_lat).contains(&value.lat) {
-            return Err(GeoPointValidationError);
-        }
+        GeoPoint::validate(value.lon, value.lat)?;
 
         Ok(Self {
             lon: value.lon,

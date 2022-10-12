@@ -40,6 +40,14 @@ curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
       "field_schema": "integer"
     }' | jq
 
+curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{
+      "field_name": "coords",
+      "field_schema": "geo"
+    }' | jq
+
 curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq
 
 # insert points
@@ -56,7 +64,7 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
             "country": "Germany" ,
             "count": 1000000,
             "square": 12.5,
-            "coords": { "lat": 1.0, "lon": 2.0 }
+            "coords": { "lat": 1000.0, "lon": 2.0 }
           }
         },
         {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": ["Berlin", "London"]}},
