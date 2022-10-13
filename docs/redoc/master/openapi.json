@@ -5213,6 +5213,21 @@
               }
             },
             "additionalProperties": false
+          }
+        ]
+      },
+      "RemoteShardTelemetry": {
+        "type": "object",
+        "required": [
+          "searches",
+          "shard_id",
+          "updates"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
           },
           {
             "type": "object",
@@ -5245,7 +5260,7 @@
             },
             "additionalProperties": false
           }
-        ]
+        }
       },
       "RemoteShardTelemetry": {
         "type": "object",
@@ -5298,6 +5313,27 @@
             "type": "number",
             "format": "float",
             "nullable": true
+          }
+        }
+      },
+      "LocalShardTelemetry": {
+        "type": "object",
+        "required": [
+          "optimizers",
+          "segments"
+        ],
+        "properties": {
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SegmentTelemetry"
+            }
+          },
+          "optimizers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizerTelemetry"
+            }
           }
         }
       },
