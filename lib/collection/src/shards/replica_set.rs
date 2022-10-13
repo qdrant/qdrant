@@ -19,7 +19,7 @@ use tokio::sync::RwLock;
 
 use super::local_shard::{drop_and_delete_from_disk, LocalShard};
 use super::remote_shard::RemoteShard;
-use super::{create_shard_dir, CollectionId, PeerId, ShardId, ShardOperation};
+use super::{create_shard_dir, CollectionId};
 use crate::config::CollectionConfig;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
@@ -27,10 +27,12 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
-use crate::shard::forward_proxy_shard::ForwardProxyShard;
-use crate::shard::shard_config::ShardConfig;
-use crate::shard::Shard::{ForwardProxy, Local, Remote};
-use crate::shard::{ChannelService, Shard};
+use crate::shards::channel_service::ChannelService;
+use crate::shards::forward_proxy_shard::ForwardProxyShard;
+use crate::shards::shard::Shard::{ForwardProxy, Local, Remote};
+use crate::shards::shard::{PeerId, Shard, ShardId};
+use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_trait::ShardOperation;
 use crate::telemetry::ShardTelemetry;
 
 pub type IsActive = bool;

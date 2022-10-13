@@ -2,8 +2,8 @@ use std::cmp::{self, Reverse};
 use std::collections::BinaryHeap;
 use std::num::NonZeroU32;
 
-use collection::shard::collection_shard_distribution::{CollectionShardDistribution, ShardType};
-use collection::shard::{PeerId, ShardId};
+use collection::shards::collection_shard_distribution::{CollectionShardDistribution, ShardType};
+use collection::shards::shard::{PeerId, ShardId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

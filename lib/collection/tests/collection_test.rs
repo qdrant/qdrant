@@ -6,7 +6,7 @@ use collection::operations::types::{
     CountRequest, PointRequest, RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::shard::ShardTransfer;
+use collection::shards::ShardTransfer;
 use itertools::Itertools;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{

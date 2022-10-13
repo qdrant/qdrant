@@ -8,9 +8,10 @@ use tempfile::Builder;
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
-use crate::shard::replica_set::OnPeerFailure;
-use crate::shard::{ChannelService, Shard};
+use crate::shards::channel_service::ChannelService;
+use crate::shards::collection_shard_distribution::{self, CollectionShardDistribution};
+use crate::shards::replica_set::OnPeerFailure;
+use crate::shards::shard::Shard;
 
 const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,

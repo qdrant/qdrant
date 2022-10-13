@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::collection_state::ShardInfo;
-use crate::shard::{PeerId, ShardId};
+use crate::shards::shard::{PeerId, ShardId};
 
 #[derive(Debug)]
 pub enum ShardType {

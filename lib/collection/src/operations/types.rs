@@ -25,7 +25,7 @@ use tonic::codegen::http::uri::InvalidUri;
 
 use crate::config::CollectionConfig;
 use crate::save_on_disk;
-use crate::shard::{PeerId, ShardId};
+use crate::shards::shard::{PeerId, ShardId};
 use crate::wal::WalError;
 
 /// Current state of the collection

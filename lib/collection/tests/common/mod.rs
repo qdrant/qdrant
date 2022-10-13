@@ -8,9 +8,10 @@ use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::shard::collection_shard_distribution::CollectionShardDistribution;
-use collection::shard::replica_set::OnPeerFailure;
-use collection::shard::{ChannelService, CollectionId};
+use collection::shards::channel_service::ChannelService;
+use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set::OnPeerFailure;
+use collection::shards::CollectionId;
 use segment::types::Distance;
 
 /// Test collections for this upper bound of shards.

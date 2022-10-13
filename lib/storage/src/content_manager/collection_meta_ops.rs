@@ -2,7 +2,8 @@ use collection::config::VectorsConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
 };
-use collection::shard::{replica_set, CollectionId, PeerId, ShardId, ShardTransfer};
+use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::{replica_set, CollectionId, ShardTransfer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

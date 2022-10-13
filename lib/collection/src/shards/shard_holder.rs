@@ -6,18 +6,19 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use super::PeerId;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
-use crate::shard::local_shard::LocalShard;
-use crate::shard::remote_shard::RemoteShard;
-use crate::shard::replica_set::{OnPeerFailure, ReplicaSet};
-use crate::shard::shard_config::ShardType;
-use crate::shard::shard_versioning::latest_shard_paths;
-use crate::shard::{ChannelService, CollectionId, Shard, ShardId, ShardTransfer};
+use crate::shards::channel_service::ChannelService;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::replica_set::{OnPeerFailure, ReplicaSet};
+use crate::shards::shard::{PeerId, Shard, ShardId};
+use crate::shards::shard_config::ShardType;
+use crate::shards::shard_versioning::latest_shard_paths;
+use crate::shards::{CollectionId, ShardTransfer};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 
@@ -359,8 +360,9 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::shard::remote_shard::RemoteShard;
-    use crate::shard::ChannelService;
+    use crate::shards::channel_service::ChannelService;
+    use crate::shards::remote_shard::RemoteShard;
+    use crate::shards::shard::Shard;
 
     #[tokio::test]
     async fn test_shard_holder() {

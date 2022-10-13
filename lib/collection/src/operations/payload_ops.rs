@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
-use crate::shard::ShardId;
+use crate::shards::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SetPayload {

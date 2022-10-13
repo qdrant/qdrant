@@ -10,15 +10,15 @@ use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncT
 use crate::operations::types::{
     CollectionError, CollectionResult, CollectionStatus, OptimizersStatus,
 };
-use crate::shard::forward_proxy_shard::ForwardProxyShard;
-use crate::shard::remote_shard::RemoteShard;
-use crate::shard::shard_config::ShardConfig;
-use crate::shard::shard_holder::LockedShardHolder;
-use crate::shard::shard_versioning::drop_old_shards;
-use crate::shard::{
-    create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
-    ShardTransfer,
-};
+use crate::shards::channel_service::ChannelService;
+use crate::shards::forward_proxy_shard::ForwardProxyShard;
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::shard::{PeerId, Shard, ShardId};
+use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_versioning::drop_old_shards;
+use crate::shards::{create_shard_dir, CollectionId, ShardTransfer};
 
 const TRANSFER_BATCH_SIZE: usize = 100;
 const RETRY_TIMEOUT: Duration = Duration::from_secs(1);

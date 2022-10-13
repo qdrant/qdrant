@@ -1,6 +1,6 @@
 use std::sync::mpsc::Sender;
 
-use collection::shard::{CollectionId, ShardTransfer};
+use collection::shards::{CollectionId, ShardTransfer};
 use parking_lot::Mutex;
 
 use crate::content_manager::collection_meta_ops::ShardTransferOperations;

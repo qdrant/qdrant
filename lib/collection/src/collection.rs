@@ -36,22 +36,24 @@ use crate::operations::types::{
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shard::collection_shard_distribution::{self, CollectionShardDistribution};
-use crate::shard::local_shard::{drop_and_delete_from_disk, LocalShard};
-use crate::shard::remote_shard::RemoteShard;
-use crate::shard::replica_set::{Change, OnPeerFailure, ReplicaSet as ReplicaSetShard}; // TODO rename ReplicaShard to ReplicaSetShard
-use crate::shard::shard_config::{self, ShardConfig};
-use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
-use crate::shard::shard_versioning::{latest_shard_paths, versioned_shard_path};
-use crate::shard::transfer::shard_transfer::{
+use crate::shards::channel_service::ChannelService;
+use crate::shards::collection_shard_distribution::{self, CollectionShardDistribution};
+use crate::shards::local_shard::{drop_and_delete_from_disk, LocalShard};
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::replica_set::{Change, OnPeerFailure, ReplicaSet as ReplicaSetShard}; // TODO rename ReplicaShard to ReplicaSetShard
+use crate::shards::shard::{PeerId, Shard, ShardId};
+use crate::shards::shard_config::{self, ShardConfig};
+use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
+use crate::shards::shard_trait::ShardOperation;
+use crate::shards::shard_versioning::{latest_shard_paths, versioned_shard_path};
+use crate::shards::transfer::shard_transfer::{
     activate_peer_for_replica, change_remote_shard_route, drop_temporary_shard,
     promote_proxy_to_remote_shard, promote_temporary_shard_to_local, revert_proxy_shard_to_local,
     spawn_transfer_task, un_proxify_replica_set,
 };
-use crate::shard::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shard::{
-    create_shard_dir, replica_set, ChannelService, CollectionId, PeerId, Shard, ShardId,
-    ShardOperation, ShardTransfer, HASH_RING_SHARD_SCALE,
+use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
+use crate::shards::{
+    create_shard_dir, replica_set, CollectionId, ShardTransfer, HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
 

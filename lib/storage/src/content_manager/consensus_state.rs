@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use chrono::Utc;
 use collection::collection_state;
-use collection::shard::{CollectionId, PeerId};
+use collection::shards::shard::PeerId;
+use collection::shards::CollectionId;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
@@ -609,7 +610,7 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 mod tests {
     use std::sync::{mpsc, Arc};
 
-    use collection::shard::PeerId;
+    use collection::shards::shard::PeerId;
     use proptest::prelude::*;
     use raft::eraftpb::Entry;
     use raft::storage::{MemStorage, Storage};

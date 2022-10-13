@@ -15,8 +15,10 @@ use collection::operations::types::{
     ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::shard::collection_shard_distribution::CollectionShardDistribution;
-use collection::shard::{replica_set, ChannelService, CollectionId, PeerId, ShardId};
+use collection::shards::channel_service::ChannelService;
+use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;

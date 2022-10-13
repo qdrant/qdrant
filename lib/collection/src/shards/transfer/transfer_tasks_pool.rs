@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
-use crate::shard::ShardTransfer;
+use crate::shards::ShardTransfer;
 
 #[derive(Default)]
 pub struct TransferTasksPool {

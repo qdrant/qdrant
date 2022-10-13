@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::collection::Collection;
 use crate::config::CollectionConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shard::replica_set::IsActive;
-use crate::shard::{PeerId, Shard, ShardId, ShardTransfer};
+use crate::shards::replica_set::IsActive;
+use crate::shards::shard::{PeerId, Shard, ShardId};
+use crate::shards::ShardTransfer;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ShardInfo {

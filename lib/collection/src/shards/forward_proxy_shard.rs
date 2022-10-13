@@ -17,9 +17,9 @@ use crate::operations::types::{
     SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
-use crate::shard::local_shard::LocalShard;
-use crate::shard::remote_shard::RemoteShard;
-use crate::shard::ShardOperation;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::shard_trait::ShardOperation;
 use crate::telemetry::ShardTelemetry;
 
 /// ForwardProxyShard
