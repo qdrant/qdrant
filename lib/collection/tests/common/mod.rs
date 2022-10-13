@@ -69,7 +69,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
 }
 
 pub fn dummy_on_replica_failure() -> OnPeerFailure {
-    Arc::new(move |_peer_id, _shard_id| Box::new(async {}))
+    Arc::new(move |_peer_id, _shard_id| {})
 }
 
 /// Default to a collection with all the shards local
@@ -99,5 +99,12 @@ pub async fn load_local_collection(
     path: &Path,
     snapshots_path: &Path,
 ) -> Collection {
-    Collection::load(id, path, snapshots_path, ChannelService::default()).await
+    Collection::load(
+        id,
+        path,
+        snapshots_path,
+        ChannelService::default(),
+        dummy_on_replica_failure(),
+    )
+    .await
 }

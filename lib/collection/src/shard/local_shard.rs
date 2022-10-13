@@ -27,7 +27,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shard::{CollectionId, ShardId};
-use crate::telemetry::ShardTelemetry;
+use crate::telemetry::{LocalShardTelemetry, ShardTelemetry};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
 
@@ -114,6 +114,10 @@ impl LocalShard {
         self.segments.deref()
     }
 
+    /// Recovers shard from disk.
+    ///
+    /// WARN: This method intended to be used only on the initial start of the node.
+    /// It does not implement any logic to recover from a failure. Will panic if there is a failure.
     pub async fn load(
         id: ShardId,
         collection_id: CollectionId,
@@ -153,7 +157,12 @@ impl LocalShard {
                 });
                 continue;
             }
-            load_handlers.push(thread::spawn(move || load_segment(&segments_path)));
+            load_handlers.push(
+                thread::Builder::new()
+                    .name("shard-load".to_string())
+                    .spawn(move || load_segment(&segments_path))
+                    .unwrap(),
+            );
         }
 
         for handler in load_handlers {
@@ -216,17 +225,12 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize temporary shard config file
         let temp_shard_config = ShardConfig::new_temp();
-        Self::_build(
-            id,
-            collection_id,
-            shard_path,
-            shared_config,
-            temp_shard_config,
-        )
-        .await
+        let shard = Self::build(id, collection_id, shard_path, shared_config).await?;
+        temp_shard_config.save(shard_path)?;
+        Ok(shard)
     }
 
-    pub async fn build(
+    pub async fn build_local(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
@@ -234,26 +238,18 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_local();
-        Self::_build(
-            id,
-            collection_id,
-            shard_path,
-            shared_config,
-            local_shard_config,
-        )
-        .await
+        let shard = Self::build(id, collection_id, shard_path, shared_config).await?;
+        local_shard_config.save(shard_path)?;
+        Ok(shard)
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
-    async fn _build(
+    pub async fn build(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        config: ShardConfig,
     ) -> CollectionResult<LocalShard> {
-        config.save(shard_path)?;
-
         let config = shared_config.read().await;
 
         let wal_path = shard_path.join("wal");
@@ -289,7 +285,10 @@ impl LocalShard {
                     false => PayloadStorageType::InMemory,
                 },
             };
-            let segment = thread::spawn(move || build_segment(&path_clone, &segment_config));
+            let segment = thread::Builder::new()
+                .name("shard-build".to_string())
+                .spawn(move || build_segment(&path_clone, &segment_config))
+                .unwrap();
             build_handlers.push(segment);
         }
 
@@ -546,10 +545,10 @@ impl LocalShard {
             .iter()
             .map(|optimizer| optimizer.get_telemetry_data())
             .fold(Default::default(), |acc, x| acc + x);
-        ShardTelemetry::Local {
+        ShardTelemetry::Local(LocalShardTelemetry {
             segments,
-            optimizations,
-        }
+            optimizers,
+        })
     }
 
     fn assert_before_drop_called(&self) {

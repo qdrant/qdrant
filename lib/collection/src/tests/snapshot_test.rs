@@ -24,7 +24,7 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 };
 
 pub fn dummy_on_replica_failure() -> OnPeerFailure {
-    Arc::new(move |_peer_id, _shard_id| Box::new(async {}))
+    Arc::new(move |_peer_id, _shard_id| {})
 }
 
 #[tokio::test]
@@ -39,7 +39,7 @@ async fn test_snapshot_collection() {
             size: NonZeroU64::new(4).unwrap(),
             distance: Distance::Dot,
         }),
-        shard_number: NonZeroU32::new(3).unwrap(),
+        shard_number: NonZeroU32::new(4).unwrap(),
         replication_factor: NonZeroU32::new(3).unwrap(),
         on_disk_payload: false,
     };
@@ -63,6 +63,13 @@ async fn test_snapshot_collection() {
     shards.insert(0, collection_shard_distribution::ShardType::Local);
     shards.insert(1, collection_shard_distribution::ShardType::Local);
     shards.insert(2, collection_shard_distribution::ShardType::Remote(10_000));
+    shards.insert(
+        3,
+        collection_shard_distribution::ShardType::ReplicaSet {
+            local: true,
+            remote: vec![20_000, 30_000].into_iter().collect(),
+        },
+    );
 
     let mut collection = Collection::new(
         collection_name,
@@ -95,6 +102,7 @@ async fn test_snapshot_collection() {
         recover_dir.path(),
         snapshots_path.path(),
         ChannelService::default(),
+        dummy_on_replica_failure(),
     )
     .await;
 
@@ -107,6 +115,13 @@ async fn test_snapshot_collection() {
         assert!(matches!(shard_1, Shard::Local(_)));
         let shard_2 = shards_holder.get_shard(&2).unwrap();
         assert!(matches!(shard_2, Shard::Remote(_)));
+        let shard_3 = shards_holder.get_shard(&3).unwrap();
+        assert!(matches!(shard_3, Shard::ReplicaSet(_)));
+
+        if let Shard::ReplicaSet(replica_set) = shard_3 {
+            assert!(replica_set.local.is_some());
+            assert_eq!(replica_set.remotes.len(), 2);
+        }
     }
 
     collection.before_drop().await;

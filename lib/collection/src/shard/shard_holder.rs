@@ -14,6 +14,7 @@ use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
+use crate::shard::replica_set::{OnPeerFailure, ReplicaSet};
 use crate::shard::shard_config::ShardType;
 use crate::shard::shard_versioning::latest_shard_paths;
 use crate::shard::Shard::Local;
@@ -230,6 +231,7 @@ impl ShardHolder {
         collection_id: &CollectionId,
         shared_collection_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
+        on_peer_failure: OnPeerFailure,
     ) {
         let shard_number = shared_collection_config
             .read()
@@ -278,6 +280,18 @@ impl ShardHolder {
                             .await,
                         );
                         debug_assert!(replaces_shard.is_none())
+                    }
+                    ShardType::ReplicaSet => {
+                        let shard = ReplicaSet::load(
+                            shard_id,
+                            collection_id.clone(),
+                            &path,
+                            shared_collection_config.clone(),
+                            channel_service.clone(),
+                            on_peer_failure.clone(),
+                        )
+                        .await;
+                        self.add_shard(shard_id, Shard::ReplicaSet(shard));
                     }
                 }
             }

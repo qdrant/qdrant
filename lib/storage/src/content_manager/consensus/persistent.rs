@@ -188,6 +188,7 @@ impl Persistent {
             let writer = BufWriter::new(file);
             serde_cbor::to_writer(writer, self)
         });
+        log::debug!("Saved state: {:?}", self);
         self.dirty.store(result.is_err(), Ordering::Relaxed);
         Ok(result?)
     }

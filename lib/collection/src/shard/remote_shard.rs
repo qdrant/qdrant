@@ -36,7 +36,7 @@ use crate::shard::conversions::{
 };
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::{ChannelService, CollectionId, PeerId, ShardId, ShardOperation};
-use crate::telemetry::ShardTelemetry;
+use crate::telemetry::{RemoteShardTelemetry, ShardTelemetry};
 
 /// RemoteShard
 ///
@@ -138,7 +138,7 @@ impl RemoteShard {
     }
 
     pub fn get_telemetry_data(&self) -> ShardTelemetry {
-        ShardTelemetry::Remote {
+        ShardTelemetry::Remote(RemoteShardTelemetry {
             shard_id: self.id,
             searches: self.telemetry_search_durations.lock().get_statistics(),
             updates: self.telemetry_update_durations.lock().get_statistics(),

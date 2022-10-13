@@ -101,7 +101,7 @@ impl Shard {
             Shard::Remote(remote_shard) => remote_shard.get_telemetry_data(),
             Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
             Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(),
-            Shard::ReplicaSet(_) => todo!("Add ReplicaSet variant for ShardTelemetry"),
+            Shard::ReplicaSet(replica_set) => replica_set.get_telemetry_data(),
         }
     }
 }

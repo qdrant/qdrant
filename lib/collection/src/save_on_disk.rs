@@ -57,7 +57,12 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de>> SaveOnDisk<T> {
     }
 
     pub fn save(&self) -> Result<(), Error> {
-        AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
+        self.save_to(&self.path)
+    }
+
+    pub fn save_to(&self, path: impl Into<PathBuf>) -> Result<(), Error> {
+        let path: PathBuf = path.into();
+        AtomicFile::new(&path, AllowOverwrite).write(|file| {
             let writer = BufWriter::new(file);
             serde_json::to_writer(writer, &self.data)
         })?;

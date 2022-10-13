@@ -430,14 +430,31 @@ impl Consensus {
         if !self.node.has_ready() {
             return Ok(false);
         }
+        self.store().record_consensus_working();
         // Get the `Ready` with `RawNode::ready` interface.
         let ready = self.node.ready();
-        let light_rd = self.process_ready(ready)?;
+        let (light_rd, role_change) = self.process_ready(ready)?;
         if let Some(light_ready) = light_rd {
-            Ok(self.process_light_ready(light_ready)?)
+            let result = self.process_light_ready(light_ready)?;
+            if let Some(role_change) = role_change {
+                self.process_role_change(role_change);
+            }
+            Ok(result)
         } else {
             // No light ready, so we need to stop consensus.
             Ok(true)
+        }
+    }
+
+    fn process_role_change(&self, role_change: StateRole) {
+        // Explicit match here for better readability
+        match role_change {
+            StateRole::Candidate | StateRole::PreCandidate => {
+                self.store().is_leader_established.make_not_ready()
+            }
+            StateRole::Leader | StateRole::Follower => {
+                self.store().is_leader_established.make_ready()
+            }
         }
     }
 
@@ -448,7 +465,7 @@ impl Consensus {
     fn process_ready(
         &mut self,
         mut ready: raft::Ready,
-    ) -> anyhow::Result<Option<raft::LightReady>> {
+    ) -> anyhow::Result<(Option<raft::LightReady>, Option<StateRole>)> {
         let store = self.store();
         let peer_address_by_id = store.peer_address_by_id();
 
@@ -471,7 +488,7 @@ impl Consensus {
                 .context("Failed to apply committed entries")?;
 
         if stop_consensus {
-            return Ok(None);
+            return Ok((None, None));
         }
 
         if !ready.entries().is_empty() {
@@ -488,6 +505,7 @@ impl Consensus {
                 .set_hard_state(hs.clone())
                 .context("Failed to set hard state")?;
         }
+        let role_change = ready.ss().map(|ss| ss.raft_state);
         if let Some(ss) = ready.ss() {
             log::debug!("Changing soft state. New soft state: {ss:?}");
             self.handle_soft_state(ss);
@@ -506,7 +524,7 @@ impl Consensus {
 
         // Advance the Raft.
         let light_rd = self.node.advance(ready);
-        Ok(Some(light_rd))
+        Ok((Some(light_rd), role_change))
     }
 
     /// Tries to process raft's light ready state.
