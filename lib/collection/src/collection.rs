@@ -71,7 +71,7 @@ pub struct Collection {
     path: PathBuf,
     snapshots_path: PathBuf,
     telemetry: CollectionTelemetry,
-    channel_service: ChannelService,
+    pub(crate) channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
 }
 

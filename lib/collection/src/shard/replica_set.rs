@@ -233,6 +233,8 @@ impl ReplicaSet {
     pub async fn apply_state(
         &mut self,
         replicas: HashMap<PeerId, IsActive>,
+        collection_id: &CollectionId,
+        channel_service: &ChannelService,
     ) -> CollectionResult<()> {
         let removed_peers = self
             .replica_state
@@ -242,27 +244,26 @@ impl ReplicaSet {
             .copied()
             .collect::<Vec<_>>();
         for peer_id in removed_peers {
-            if peer_id == self.this_peer_id {
-                if let Some(mut shard) = self.local.take() {
-                    shard.before_drop().await;
-                    drop_and_delete_from_disk(shard).await?;
-                } else {
-                    debug_assert!(false, "inconsistent `replica_set` map with actual shards")
-                }
-            } else if let Some(_remote_shard) =
-                &mut self.remotes.iter().find(|rs| rs.peer_id == peer_id)
-            {
-                todo!("remote_shard.remove_peer(peer_id)")
-            }
-            self.replica_state.peers.remove(&peer_id);
+            self.remove_replica(&peer_id).await?;
         }
         for (peer_id, is_active) in replicas {
             if let Some(state) = self.replica_state.peers.get_mut(&peer_id) {
                 *state = is_active;
             } else if peer_id == self.this_peer_id {
-                todo!("clone replica from another peer or log error that it should be cloned with normal operation")
+                if !is_active {
+                    todo!("[Depends on #1085 PR] Add local replica")
+                } else {
+                    return Err(CollectionError::ServiceError { error: format!("Impossible state: replica at peer: {peer_id} could not have been added and activated without receiving side knowing.") });
+                }
             } else {
-                todo!("Add remote replica")
+                let new_remote = RemoteShard::new(
+                    self.shard_id,
+                    collection_id.clone(),
+                    peer_id,
+                    channel_service.clone(),
+                );
+                self.remotes.push(new_remote);
+                self.replica_state.peers.insert(peer_id, is_active);
             }
         }
         self.replica_state.save()?;

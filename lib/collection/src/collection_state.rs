@@ -64,7 +64,6 @@ impl State {
         Ok(())
     }
 
-    #[allow(unreachable_code, clippy::diverging_sub_expression)]
     async fn apply_config(
         new_config: CollectionConfig,
         collection: &Collection,
@@ -76,9 +75,6 @@ impl State {
         // updating replication factor
         let mut config = collection.config.write().await;
         config.params.replication_factor = new_config.params.replication_factor;
-        todo!("supply replica changes");
-        let changes = HashSet::new();
-        collection.handle_replica_changes(changes).await?;
         Ok(())
     }
 
@@ -109,9 +105,13 @@ impl State {
                 }
                 (Some(shard), ShardInfo::ReplicaSet { replicas }) => {
                     if let Shard::ReplicaSet(replica_set) = shard {
-                        replica_set.apply_state(replicas).await?;
+                        replica_set
+                            .apply_state(replicas, &collection.name(), &collection.channel_service)
+                            .await?;
                     } else {
-                        todo!("check if replication factor was increased and upgrade shard to replica set")
+                        todo!(
+                            "[Depends on #1085 PR] Upgrade shard to replica set, then apply state"
+                        )
                     }
                 }
                 (None, _) => {
