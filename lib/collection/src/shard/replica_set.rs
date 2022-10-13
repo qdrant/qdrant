@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_recursion::async_recursion;
-use futures::future::{try_join, try_join_all};
+use futures::future::{join, join_all};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -622,7 +623,7 @@ impl ShardOperation for ReplicaSet {
             });
         }
 
-        let all_res = match &self.local {
+        let all_res: Vec<Result<_, _>> = match &self.local {
             Some(local) if self.peer_is_active(&self.this_peer_id) => {
                 let local_update = async move {
                     local
@@ -631,33 +632,36 @@ impl ShardOperation for ReplicaSet {
                         .await
                         .map_err(|err| (self.this_peer_id, err))
                 };
-                let remote_updates = try_join_all(remote_futures);
+                let remote_updates = join_all(remote_futures);
 
                 // run local and remote shards read concurrently
-                try_join(remote_updates, local_update)
-                    .await
-                    .map(|(remote_res, _local_res)| remote_res)
+                let (mut remote_res, local_res) = join(remote_updates, local_update).await;
+                // return both remote and local results
+                remote_res.push(local_res);
+                remote_res
             }
-            _ => try_join_all(remote_futures).await,
+            _ => join_all(remote_futures).await,
         };
 
-        match all_res {
-            Ok(results) => {
-                // return first result
-                match results.into_iter().next() {
-                    None => Err(CollectionError::service_error(format!(
-                        "None of the replicas replied for Replica set {} on peer {}",
-                        self.shard_id, self.this_peer_id
-                    ))),
-                    Some(res) => Ok(res),
-                }
-            }
-            Err((peer_id, err)) => {
-                // report failing `peer_id`
-                self.notify_peer_failure(peer_id);
-                Err(err)
-            }
+        let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
+
+        // report all failing peers to consensus
+        for (peer_id, _err) in &failures {
+            self.notify_peer_failure(*peer_id);
         }
+
+        return if successes.is_empty() {
+            // completely failed - report error to user
+            let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
+            Err(err)
+        } else {
+            // at least one replica succeeded
+            let res = successes
+                .into_iter()
+                .next()
+                .expect("successes is not empty");
+            Ok(res)
+        };
     }
 
     #[allow(clippy::too_many_arguments)]
