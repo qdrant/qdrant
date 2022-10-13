@@ -5179,25 +5179,7 @@
             ],
             "properties": {
               "Remote": {
-                "type": "object",
-                "required": [
-                  "searches",
-                  "shard_id",
-                  "updates"
-                ],
-                "properties": {
-                  "shard_id": {
-                    "type": "integer",
-                    "format": "uint32",
-                    "minimum": 0
-                  },
-                  "searches": {
-                    "$ref": "#/components/schemas/OperationDurationStatistics"
-                  },
-                  "updates": {
-                    "$ref": "#/components/schemas/OperationDurationStatistics"
-                  }
-                }
+                "$ref": "#/components/schemas/RemoteShardTelemetry"
               }
             },
             "additionalProperties": false
@@ -5210,6 +5192,39 @@
             "properties": {
               "Local": {
                 "$ref": "#/components/schemas/LocalShardTelemetry"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ReplicaSet"
+            ],
+            "properties": {
+              "ReplicaSet": {
+                "type": "object",
+                "required": [
+                  "remote"
+                ],
+                "properties": {
+                  "local": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/ShardTelemetry"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ]
+                  },
+                  "remote": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ShardTelemetry"
+                    }
+                  }
+                }
               }
             },
             "additionalProperties": false
@@ -5229,57 +5244,11 @@
             "format": "uint32",
             "minimum": 0
           },
-          {
-            "type": "object",
-            "required": [
-              "ReplicaSet"
-            ],
-            "properties": {
-              "ReplicaSet": {
-                "type": "object",
-                "required": [
-                  "optimizations",
-                  "segments"
-                ],
-                "properties": {
-                  "local": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/ShardTelemetry"
-                      },
-                      {
-                        "nullable": true
-                      }
-                    ]
-                  },
-                  "optimizations": {
-                    "$ref": "#/components/schemas/OptimizerTelemetry"
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "RemoteShardTelemetry": {
-        "type": "object",
-        "required": [
-          "searches",
-          "shard_id",
-          "updates"
-        ],
-        "properties": {
-          "shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
-          },
           "searches": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "updates": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           }
         }
       },
@@ -5319,7 +5288,7 @@
       "LocalShardTelemetry": {
         "type": "object",
         "required": [
-          "optimizers",
+          "optimizations",
           "segments"
         ],
         "properties": {
@@ -5329,32 +5298,8 @@
               "$ref": "#/components/schemas/SegmentTelemetry"
             }
           },
-          "optimizers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OptimizerTelemetry"
-            }
-          }
-        }
-      },
-      "LocalShardTelemetry": {
-        "type": "object",
-        "required": [
-          "optimizers",
-          "segments"
-        ],
-        "properties": {
-          "segments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SegmentTelemetry"
-            }
-          },
-          "optimizers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OptimizerTelemetry"
-            }
+          "optimizations": {
+            "$ref": "#/components/schemas/OptimizerTelemetry"
           }
         }
       },
