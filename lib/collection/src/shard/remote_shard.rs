@@ -142,7 +142,7 @@ impl RemoteShard {
             shard_id: self.id,
             searches: self.telemetry_search_durations.lock().get_statistics(),
             updates: self.telemetry_update_durations.lock().get_statistics(),
-        }
+        })
     }
 
     pub async fn initiate_transfer(&self) -> CollectionResult<CollectionOperationResponse> {
