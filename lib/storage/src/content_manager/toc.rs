@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use collection::collection::Collection;
@@ -58,6 +59,7 @@ pub struct TableOfContent {
     channel_service: ChannelService,
     /// Backlink to the consensus
     consensus_proposal_sender: OperationSender,
+    enable_updating: AtomicBool,
 }
 
 impl TableOfContent {
@@ -130,6 +132,7 @@ impl TableOfContent {
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
+            enable_updating: AtomicBool::new(true),
         }
     }
 
@@ -215,6 +218,15 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
+        if !self
+            .enable_updating
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(StorageError::BadRequest {
+                description: "Updating is disabled".to_string(),
+            });
+        }
+
         let CreateCollection {
             vectors,
             shard_number,
@@ -778,6 +790,15 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
+        if !self
+            .enable_updating
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(StorageError::BadRequest {
+                description: "Updating is disabled".to_string(),
+            });
+        }
+
         let collection = self.get_collection(collection_name).await?;
         let result = match shard_selection {
             Some(shard_selection) => {
@@ -995,6 +1016,16 @@ impl TableOfContent {
             }
         }
         false
+    }
+
+    pub fn enable_updating(&self, enable: bool) -> bool {
+        self.enable_updating
+            .swap(enable, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn is_updating_enabled(&self) -> bool {
+        self.enable_updating
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {

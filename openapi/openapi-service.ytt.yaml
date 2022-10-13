@@ -1,0 +1,30 @@
+#@ load("openapi.lib.yml", "response", "reference", "type", "array")
+
+paths:
+  /telemetry:
+    get:
+      summary: Collect telemetry data
+      description: Collect telemetry data including app info, system info, collections info, cluster info, configs and statistics
+      operationId: telemetry
+      parameters:
+        - name: anonymize
+          in: query
+          description: "If true, anonymize result"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(array(reference("TelemetryData")))
+
+  /enable_updating:
+    post:
+      summary: Enable data updating
+      description: Set updating mode. If disabled, all update operations and collections creation are forbidden. Returns previous enable value
+      operationId: enable_updating
+      responses: #@ response(type("boolean"))
+
+  /is_updating_enabled:
+    post:
+      summary: Get updating enable value
+      description:  Get updating enable value. If false, all update operations and collections creation are forbidden
+      operationId: is_updating_enabled
+      responses: #@ response(type("boolean"))
