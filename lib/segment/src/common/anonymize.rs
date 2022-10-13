@@ -18,6 +18,12 @@ impl<T: Anonymize> Anonymize for Vec<T> {
     }
 }
 
+impl<T: Anonymize> Anonymize for Box<T> {
+    fn anonymize(&self) -> Self {
+        Box::new(self.as_ref().anonymize())
+    }
+}
+
 impl<K: Anonymize + Hash + Eq, V: Anonymize> Anonymize for HashMap<K, V> {
     fn anonymize(&self) -> Self {
         self.iter()

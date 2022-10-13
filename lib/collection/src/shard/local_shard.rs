@@ -547,7 +547,7 @@ impl LocalShard {
             .fold(Default::default(), |acc, x| acc + x);
         ShardTelemetry::Local(LocalShardTelemetry {
             segments,
-            optimizers,
+            optimizations,
         })
     }
 

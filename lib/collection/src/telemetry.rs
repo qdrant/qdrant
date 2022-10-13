@@ -30,7 +30,7 @@ pub struct RemoteShardTelemetry {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct LocalShardTelemetry {
     pub segments: Vec<SegmentTelemetry>,
-    pub optimizers: Vec<OptimizerTelemetry>,
+    pub optimizations: OptimizerTelemetry,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -104,8 +104,8 @@ impl CollectionTelemetry {
         let mut result = OptimizerTelemetry::default();
         if let Some(shards) = &self.shards {
             for shard in shards {
-                if let ShardTelemetry::Local { optimizations, .. } = shard {
-                    result = result + optimizations.clone();
+                if let ShardTelemetry::Local(local_shard) = shard {
+                    result = result + local_shard.optimizations.clone();
                 }
             }
         }
@@ -116,8 +116,8 @@ impl CollectionTelemetry {
         let mut result = VectorIndexSearchesTelemetry::default();
         if let Some(shards) = &self.shards {
             for shard in shards {
-                if let ShardTelemetry::Local { segments, .. } = shard {
-                    for segment in segments {
+                if let ShardTelemetry::Local(local_shard) = shard {
+                    for segment in &local_shard.segments {
                         result = result + segment.vector_index_searches.clone().unwrap();
                     }
                 }
@@ -196,8 +196,8 @@ impl Anonymize for ShardTelemetry {
             ShardTelemetry::Proxy => ShardTelemetry::Proxy,
             ShardTelemetry::ForwardProxy => ShardTelemetry::ForwardProxy,
             ShardTelemetry::ReplicaSet { local, remote } => ShardTelemetry::ReplicaSet {
-                local: local.as_ref().map(|local| Box::new(local.anonymize())),
-                remote: remote.iter().map(|remote| remote.anonymize()).collect(),
+                local: local.anonymize(),
+                remote: remote.anonymize(),
             },
         }
     }
@@ -206,16 +206,8 @@ impl Anonymize for ShardTelemetry {
 impl Anonymize for LocalShardTelemetry {
     fn anonymize(&self) -> Self {
         LocalShardTelemetry {
-            segments: self
-                .segments
-                .iter()
-                .map(|segment| segment.anonymize())
-                .collect(),
-            optimizers: self
-                .optimizers
-                .iter()
-                .map(|optimizer| optimizer.anonymize())
-                .collect(),
+            segments: self.segments.anonymize(),
+            optimizations: self.optimizations.anonymize(),
         }
     }
 }
