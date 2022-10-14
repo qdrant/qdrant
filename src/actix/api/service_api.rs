@@ -41,7 +41,7 @@ async fn put_write_lock(
     let timing = Instant::now();
     let result = toc
         .get_ref()
-        .set_write_lock(request.enabled, request.error_message.clone());
+        .set_write_lock(request.locked, request.error_message.clone());
     process_response(Ok(result), timing)
 }
 

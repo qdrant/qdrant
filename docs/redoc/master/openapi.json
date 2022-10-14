@@ -75,13 +75,13 @@
     "/write_lock": {
       "put": {
         "summary": "Set write lock",
-        "description": "Set write lock. If disabled, all write operations and collections creation are forbidden. Returns previous lock value",
+        "description": "Set write lock. If locked, all write operations and collections creation are forbidden. Returns previous lock value",
         "operationId": "put_write_lock",
         "tags": [
           "service"
         ],
         "requestBody": {
-          "description": "Operation to perform on points",
+          "description": "Lock status and optional error message",
           "content": {
             "application/json": {
               "schema": {
@@ -140,8 +140,8 @@
         }
       },
       "get": {
-        "summary": "Get write lock enable",
-        "description": "If false, all write operations and collections creation are forbidden",
+        "summary": "Get write lock status",
+        "description": "If locked, all write operations and collections creation are forbidden",
         "operationId": "get_write_lock",
         "tags": [
           "service"
@@ -5839,10 +5839,10 @@
       "WriteLockStatus": {
         "type": "object",
         "required": [
-          "enabled"
+          "locked"
         ],
         "properties": {
-          "enabled": {
+          "locked": {
             "type": "boolean"
           },
           "error_message": {

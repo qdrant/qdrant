@@ -60,7 +60,7 @@ pub struct TableOfContent {
     channel_service: ChannelService,
     /// Backlink to the consensus
     consensus_proposal_sender: OperationSender,
-    write_lock_enabled: AtomicBool,
+    write_lock: AtomicBool,
     write_lock_error_message: parking_lot::Mutex<Option<String>>,
 }
 
@@ -134,7 +134,7 @@ impl TableOfContent {
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
-            write_lock_enabled: AtomicBool::new(true),
+            write_lock: AtomicBool::new(false),
             write_lock_error_message: parking_lot::Mutex::new(None),
         }
     }
@@ -221,10 +221,7 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
-        if !self
-            .write_lock_enabled
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if self.write_lock.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(StorageError::BadRequest {
                 description: self
                     .write_lock_error_message
@@ -797,10 +794,7 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
-        if !self
-            .write_lock_enabled
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if self.write_lock.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(StorageError::BadRequest {
                 description: self
                     .write_lock_error_message
@@ -1029,17 +1023,16 @@ impl TableOfContent {
         false
     }
 
-    pub fn set_write_lock(&self, enable: bool, error_message: Option<String>) -> bool {
+    pub fn set_write_lock(&self, locked: bool, error_message: Option<String>) -> bool {
         let prev_value = self
-            .write_lock_enabled
-            .swap(enable, std::sync::atomic::Ordering::Relaxed);
+            .write_lock
+            .swap(locked, std::sync::atomic::Ordering::Relaxed);
         *self.write_lock_error_message.lock() = error_message;
         prev_value
     }
 
     pub fn is_locked(&self) -> bool {
-        self.write_lock_enabled
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.write_lock.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {

@@ -7,7 +7,7 @@ use tokio::runtime::Runtime;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct WriteLockStatus {
-    pub enabled: bool,
+    pub locked: bool,
     pub error_message: Option<String>,
 }
 

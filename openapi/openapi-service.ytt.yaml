@@ -20,7 +20,7 @@ paths:
   /write_lock:
     put:
       summary: Set write lock
-      description: Set write lock. If disabled, all write operations and collections creation are forbidden. Returns previous lock value
+      description: Set write lock. If locked, all write operations and collections creation are forbidden. Returns previous lock value
       operationId: put_write_lock
       tags:
         - service
@@ -33,8 +33,8 @@ paths:
       responses: #@ response(type("boolean"))
 
     get:
-      summary: Get write lock enable
-      description:  If false, all write operations and collections creation are forbidden
+      summary: Get write lock status
+      description:  If locked, all write operations and collections creation are forbidden
       operationId: get_write_lock
       tags:
         - service
