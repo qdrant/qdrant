@@ -39,7 +39,10 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         } else {
             Default::default()
         };
-        Ok(Self { data: RwLock::new(data), path })
+        Ok(Self {
+            data: RwLock::new(data),
+            path,
+        })
     }
 
     pub fn write_with_res<O, E: std::error::Error + 'static>(

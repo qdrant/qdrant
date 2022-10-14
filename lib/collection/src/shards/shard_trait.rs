@@ -48,5 +48,4 @@ pub trait ShardOperation {
     ) -> CollectionResult<Vec<Record>>;
 }
 
-
 pub type ShardOperationSS = dyn ShardOperation + Send + Sync;

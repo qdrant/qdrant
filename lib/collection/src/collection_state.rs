@@ -11,7 +11,7 @@ use crate::shards::ShardTransfer;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ShardInfo {
-    pub replicas: HashMap<PeerId, ReplicaState>
+    pub replicas: HashMap<PeerId, ReplicaState>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

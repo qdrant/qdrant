@@ -885,9 +885,8 @@ impl TableOfContent {
                     None => {
                         let collection_path = self.create_collection_path(id).await?;
                         let snapshots_path = self.create_snapshots_path(id).await?;
-                        let shard_distribution = CollectionShardDistribution::from_shards_info(
-                            state.shards.clone(),
-                        );
+                        let shard_distribution =
+                            CollectionShardDistribution::from_shards_info(state.shards.clone());
                         let collection = Collection::new(
                             id.to_string(),
                             self.this_peer_id,

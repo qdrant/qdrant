@@ -51,7 +51,6 @@ pub struct LocalShard {
 
 /// Shard holds information about segments and WAL.
 impl LocalShard {
-
     /// Clear local shard related data.
     ///
     /// Do NOT remove config file.
@@ -69,7 +68,6 @@ impl LocalShard {
 
         Ok(())
     }
-
 
     #[allow(clippy::too_many_arguments)]
     pub async fn new(

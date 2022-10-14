@@ -2,11 +2,11 @@ use collection::config::VectorsConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
 };
+use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{replica_set, CollectionId, ShardTransfer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use collection::shards::replica_set::ReplicaState;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 

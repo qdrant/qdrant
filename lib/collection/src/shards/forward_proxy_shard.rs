@@ -9,8 +9,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
-use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation,
-};
+use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
     SearchRequestBatch, UpdateResult,
