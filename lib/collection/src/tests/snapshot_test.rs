@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 
@@ -65,16 +65,10 @@ async fn test_snapshot_collection() {
     let collection_name = "test".to_string();
     let collection_name_rec = "test_rec".to_string();
     let mut shards = HashMap::new();
-    shards.insert(0, collection_shard_distribution::ShardType::Local);
-    shards.insert(1, collection_shard_distribution::ShardType::Local);
-    shards.insert(2, collection_shard_distribution::ShardType::Remote(10_000));
-    shards.insert(
-        3,
-        collection_shard_distribution::ShardType::ReplicaSet {
-            local: true,
-            remote: vec![20_000, 30_000].into_iter().collect(),
-        },
-    );
+    shards.insert(0, HashSet::from([1]));
+    shards.insert(1, HashSet::from([1]));
+    shards.insert(2, HashSet::from([10_000])); // remote shard
+    shards.insert(3, HashSet::from([1, 20_000, 30_000]));
 
     let mut collection = Collection::new(
         collection_name,
@@ -117,19 +111,18 @@ async fn test_snapshot_collection() {
     {
         let shards_holder = &recovered_collection.shards_holder.read().await;
 
-        let shard_0 = shards_holder.get_shard(&0).unwrap();
-        assert!(matches!(shard_0, Shard::Local(_)));
-        let shard_1 = shards_holder.get_shard(&1).unwrap();
-        assert!(matches!(shard_1, Shard::Local(_)));
-        let shard_2 = shards_holder.get_shard(&2).unwrap();
-        assert!(matches!(shard_2, Shard::Remote(_)));
-        let shard_3 = shards_holder.get_shard(&3).unwrap();
-        assert!(matches!(shard_3, Shard::ReplicaSet(_)));
+        let replica_ser_0 = shards_holder.get_shard(&0).unwrap();
+        assert!(replica_ser_0.is_local().await);
+        let replica_ser_1 = shards_holder.get_shard(&1).unwrap();
+        assert!(replica_ser_1.is_local().await);
+        let replica_ser_2 = shards_holder.get_shard(&2).unwrap();
+        assert!(!replica_ser_2.is_local().await);
+        assert_eq!(replica_ser_2.peers().len(), 1);
 
-        if let Shard::ReplicaSet(replica_set) = shard_3 {
-            assert!(replica_set.local.is_some());
-            assert_eq!(replica_set.remotes.len(), 2);
-        }
+        let replica_ser_3 = shards_holder.get_shard(&3).unwrap();
+
+        assert!(replica_ser_3.is_local().await);
+        assert_eq!(replica_ser_3.peers().len(), 3); // 2 remotes + 1 local
     }
 
     collection.before_drop().await;

@@ -47,3 +47,6 @@ pub trait ShardOperation {
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>>;
 }
+
+
+pub type ShardOperationSS = dyn ShardOperation + Send + Sync;

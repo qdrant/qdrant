@@ -13,19 +13,17 @@ use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::remote_shard::RemoteShard;
-use crate::shards::replica_set::{OnPeerFailure, ReplicaSet};
-use crate::shards::shard::{PeerId, Shard, ShardId};
-use crate::shards::shard_config::ShardType;
+use crate::shards::replica_set::{OnPeerFailure, ReplicaSet, ReplicaState};
+use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
 use crate::shards::{CollectionId, ShardTransfer};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 
 pub struct ShardHolder {
-    shards: HashMap<ShardId, Shard>,
+    shards: HashMap<ShardId, ReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
-    temporary_shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
 }
 
@@ -37,17 +35,16 @@ impl ShardHolder {
         Ok(Self {
             shards: HashMap::new(),
             shard_transfers,
-            temporary_shards: HashMap::new(),
             ring: hashring,
         })
     }
 
-    pub fn add_shard(&mut self, shard_id: ShardId, shard: Shard) {
+    pub fn add_shard(&mut self, shard_id: ShardId, shard: ReplicaSet) {
         self.shards.insert(shard_id, shard);
         self.ring.add(shard_id);
     }
 
-    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
+    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<ReplicaSet> {
         let shard = self.shards.remove(&shard_id);
         self.ring.remove(&shard_id);
         shard
@@ -56,14 +53,14 @@ impl ShardHolder {
     /// Take shard
     ///
     /// remove shard and return ownership
-    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
+    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<ReplicaSet> {
         self.shards.remove(&shard_id)
     }
 
     /// Replace shard
     ///
     /// return old shard
-    pub fn replace_shard(&mut self, shard_id: ShardId, shard: Shard) -> Option<Shard> {
+    pub fn replace_shard(&mut self, shard_id: ShardId, shard: ReplicaSet) -> Option<ReplicaSet> {
         self.shards.insert(shard_id, shard)
     }
 
@@ -71,39 +68,23 @@ impl ShardHolder {
         self.shards.contains_key(shard_id)
     }
 
-    pub fn get_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
+    pub fn get_shard(&self, shard_id: &ShardId) -> Option<&ReplicaSet> {
         self.shards.get(shard_id)
     }
 
-    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut Shard> {
+    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut ReplicaSet> {
         self.shards.get_mut(shard_id)
     }
 
-    pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &Shard)> {
+    pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &ReplicaSet)> {
         self.shards.iter()
     }
 
-    pub fn all_shards(&self) -> impl Iterator<Item = &Shard> {
+    pub fn all_shards(&self) -> impl Iterator<Item = &ReplicaSet> {
         self.shards.values()
     }
 
-    pub fn get_temporary_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
-        self.temporary_shards.get(shard_id)
-    }
-
-    pub fn take_temporary_shard(&mut self, shard_id: &ShardId) -> Option<Shard> {
-        self.temporary_shards.remove(shard_id)
-    }
-
-    pub fn all_temporary_shards(&self) -> impl Iterator<Item = &Shard> {
-        self.temporary_shards.values()
-    }
-
-    pub fn get_shard_transfers(&self) -> impl Iterator<Item = &ShardTransfer> {
-        self.shard_transfers.iter()
-    }
-
-    pub fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {
+    pub fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&ReplicaSet, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
             OperationToShard::ByShard(by_shard) => by_shard
@@ -118,95 +99,45 @@ impl ShardHolder {
         shard_ops
     }
 
-    /// Add temporary shard
-    pub fn add_temporary_shard(
-        &mut self,
-        shard_id: ShardId,
-        temporary_shard: LocalShard,
-    ) -> Option<Shard> {
-        self.temporary_shards
-            .insert(shard_id, Shard::Local(temporary_shard))
-    }
-
-    /// Remove temporary shard
-    pub fn remove_temporary_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
-        self.temporary_shards.remove(&shard_id)
-    }
-
-    pub fn register_start_shard_transfer(
-        &mut self,
-        transfer: ShardTransfer,
-    ) -> CollectionResult<bool> {
+    pub fn register_start_shard_transfer(&self, transfer: ShardTransfer) -> CollectionResult<bool> {
         Ok(self
             .shard_transfers
             .write(|transfers| transfers.insert(transfer))?)
     }
 
-    pub fn register_finish_transfer(&mut self, transfer: &ShardTransfer) -> CollectionResult<bool> {
+    pub fn register_finish_transfer(&self, transfer: &ShardTransfer) -> CollectionResult<bool> {
         Ok(self
             .shard_transfers
             .write(|transfers| transfers.remove(transfer))?)
     }
 
     pub fn set_shard_replica_state(
-        &mut self,
+        &self,
         shard_id: ShardId,
         peer_id: PeerId,
-        active: bool,
+        active: ReplicaState,
     ) -> CollectionResult<()> {
-        if let Shard::ReplicaSet(replica_set) =
-            self.get_mut_shard(&shard_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {shard_id}"),
-                })?
-        {
-            replica_set.set_active(&peer_id, active)
-        } else {
-            Err(CollectionError::ServiceError {
-                error: format!("Shard {shard_id} is not a replica set"),
-            })
-        }
+        let replica_set = self
+            .get_shard(&shard_id)
+            .ok_or_else(|| CollectionError::NotFound {
+                what: format!("Shard {shard_id}"),
+            })?;
+        replica_set.set_replica_state(&peer_id, active)
     }
 
-    pub fn target_shards(&self, shard_selection: Option<ShardId>) -> CollectionResult<Vec<&Shard>> {
+    pub fn target_shard(
+        &self,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<&ReplicaSet>> {
         match shard_selection {
             None => Ok(self.all_shards().collect()),
             Some(shard_selection) => {
                 let shard_opt = self.get_shard(&shard_selection);
-                let target_shards = match shard_opt {
-                    None => {
-                        // check if a temporary shard exist for the shard_selection
-                        let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
-                        match temporary_shard_opt {
-                            Some(temp) => vec![temp],
-                            None => {
-                                return Err(CollectionError::bad_shard_selection(format!(
-                                    "Shard {} does not exist",
-                                    shard_selection
-                                )))
-                            }
-                        }
-                    }
-                    Some(shard) => match shard {
-                        Shard::Local(_) | Shard::Proxy(_) | Shard::ForwardProxy(_) => vec![shard],
-                        Shard::ReplicaSet(replica_set) => {
-                            // target only the local replica if defined to not introduce loops between replica sets
-                            match &replica_set.local {
-                                Some(local) => vec![local.as_ref()],
-                                None => vec![],
-                            }
-                        }
-                        Shard::Remote(_) => {
-                            // check temporary shards if the target is a remote shard
-                            let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
-                            match temporary_shard_opt {
-                                None => vec![shard], // forward to the remote shard
-                                Some(temp) => vec![temp],
-                            }
-                        }
-                    },
+                let shards = match shard_opt {
+                    None => vec![],
+                    Some(shard) => vec![shard],
                 };
-                Ok(target_shards)
+                Ok(shards)
             }
         }
     }
@@ -215,7 +146,6 @@ impl ShardHolder {
         let futures: FuturesUnordered<_> = self
             .shards
             .iter_mut()
-            .chain(self.temporary_shards.iter_mut())
             .map(|(_, shard)| shard.before_drop())
             .collect();
         futures.collect::<Vec<()>>().await;
@@ -236,6 +166,7 @@ impl ShardHolder {
         shared_collection_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
         on_peer_failure: OnPeerFailure,
+        this_peer_id: PeerId,
     ) {
         let shard_number = shared_collection_config
             .read()
@@ -248,56 +179,66 @@ impl ShardHolder {
             for (path, _shard_version, shard_type) in
                 latest_shard_paths(collection_path, shard_id).await.unwrap()
             {
+                let replica_set = ReplicaSet::load(
+                    shard_id,
+                    collection_id.clone(),
+                    &path,
+                    shared_collection_config.clone(),
+                    channel_service.clone(),
+                    on_peer_failure.clone(),
+                    this_peer_id,
+                )
+                .await;
+
+                let mut require_migration = true;
                 match shard_type {
                     ShardType::Local => {
-                        self.add_shard(
-                            shard_id,
-                            Shard::Local(
-                                LocalShard::load(
-                                    shard_id,
-                                    collection_id.clone(),
-                                    &path,
-                                    shared_collection_config.clone(),
-                                )
-                                .await,
-                            ),
-                        );
-                    }
-                    ShardType::Remote { peer_id } => {
-                        let shard = RemoteShard::new(
-                            shard_id,
-                            collection_id.clone(),
-                            peer_id,
-                            channel_service.clone(),
-                        );
-                        self.add_shard(shard_id, Shard::Remote(shard));
-                    }
-                    ShardType::Temporary => {
-                        let replaces_shard = self.add_temporary_shard(
-                            shard_id,
-                            LocalShard::load(
-                                shard_id,
-                                collection_id.clone(),
-                                &path,
-                                shared_collection_config.clone(),
-                            )
-                            .await,
-                        );
-                        debug_assert!(replaces_shard.is_none())
-                    }
-                    ShardType::ReplicaSet => {
-                        let shard = ReplicaSet::load(
+                        let local_shard = LocalShard::load(
                             shard_id,
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
-                            channel_service.clone(),
-                            on_peer_failure.clone(),
                         )
                         .await;
-                        self.add_shard(shard_id, Shard::ReplicaSet(shard));
+                        replica_set
+                            .set_local(local_shard, Some(ReplicaState::Active))
+                            .await
+                            .unwrap();
+                    }
+                    ShardType::Remote { peer_id } => {
+                        replica_set
+                            .add_remote(peer_id, ReplicaState::Active)
+                            .await
+                            .unwrap();
+                    }
+                    ShardType::Temporary => {
+                        let temp_shard = LocalShard::load(
+                            shard_id,
+                            collection_id.clone(),
+                            &path,
+                            shared_collection_config.clone(),
+                        )
+                        .await;
+
+                        replica_set
+                            .set_local(temp_shard, Some(ReplicaState::Partial))
+                            .await
+                            .unwrap();
+                    }
+                    ShardType::ReplicaSet => {
+                        require_migration = false;
+                        // nothing to do, replicate set should be loaded already
                     }
                 }
+                // Migrate shard config to replica set
+                // Override existing shard configuration
+                if require_migration {
+                    ShardConfig::new_replica_set()
+                        .save(&path)
+                        .map_err(|e| panic!("Failed to save shard config {:?}: {}", path, e))
+                        .unwrap();
+                }
+                self.add_shard(shard_id, replica_set);
             }
         }
     }
@@ -308,42 +249,9 @@ impl LockedShardHolder {
         Self(RwLock::new(shard_holder))
     }
 
-    async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, Shard>> {
+    async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, ReplicaSet>> {
         let holder = self.0.read().await;
         RwLockReadGuard::try_map(holder, |h| h.shards.get(&shard_id)).ok()
-    }
-
-    /// Fails if the shard is not found or not local.
-    pub async fn local_shard_by_id(
-        &self,
-        id: ShardId,
-    ) -> CollectionResult<RwLockReadGuard<'_, Shard>> {
-        let shard_opt = self.get_shard(id).await;
-        match shard_opt {
-            None => Err(CollectionError::bad_shard_selection(format!(
-                "Shard {} does not exist",
-                id
-            ))),
-            Some(shard) => match &*shard {
-                Shard::Local(_) => Ok(shard),
-                Shard::Proxy(_) => Ok(shard),
-                Shard::ForwardProxy(_) => Ok(shard),
-                Shard::Remote(_) => Err(CollectionError::bad_shard_selection(format!(
-                    "Shard {} is not local on peer",
-                    id
-                ))),
-                Shard::ReplicaSet(rs) => {
-                    if rs.local.is_some() {
-                        Ok(shard)
-                    } else {
-                        Err(CollectionError::bad_shard_selection(format!(
-                            "Shard {} is not local on peer",
-                            id
-                        )))
-                    }
-                }
-            },
-        }
     }
 
     pub async fn read(&self) -> RwLockReadGuard<'_, ShardHolder> {
@@ -352,49 +260,5 @@ impl LockedShardHolder {
 
     pub async fn write(&self) -> RwLockWriteGuard<'_, ShardHolder> {
         self.0.write().await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tempfile::Builder;
-
-    use super::*;
-    use crate::shards::channel_service::ChannelService;
-    use crate::shards::remote_shard::RemoteShard;
-    use crate::shards::shard::Shard;
-
-    #[tokio::test]
-    async fn test_shard_holder() {
-        let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
-        let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
-
-        let shard = RemoteShard::init(
-            2,
-            "test_collection".to_string(),
-            123,
-            shard_dir.path().to_owned(),
-            ChannelService::default(),
-        )
-        .unwrap();
-
-        let mut shard_holder =
-            ShardHolder::new(collection_dir.path(), HashRing::fair(100)).unwrap();
-        shard_holder.add_shard(2, Shard::Remote(shard));
-        let locked_shard_holder = LockedShardHolder::new(shard_holder);
-
-        let retrieved_shard = locked_shard_holder.get_shard(2).await;
-
-        match retrieved_shard {
-            Some(shard) => match &*shard {
-                Shard::Remote(shard) => {
-                    assert_eq!(shard.id, 2);
-                }
-                _ => panic!("Wrong shard type"),
-            },
-            None => {
-                panic!("Shard not found");
-            }
-        }
     }
 }

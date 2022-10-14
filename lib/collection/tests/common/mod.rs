@@ -31,7 +31,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     max_optimization_threads: 2,
 };
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32) -> Collection {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
@@ -78,6 +78,7 @@ pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
 }
 
 /// Default to a collection with all the shards local
+#[cfg(test)]
 pub async fn new_local_collection(
     id: CollectionId,
     path: &Path,
@@ -90,7 +91,7 @@ pub async fn new_local_collection(
         path,
         snapshots_path,
         config,
-        CollectionShardDistribution::all_local(Some(config.params.shard_number.into())),
+        CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),

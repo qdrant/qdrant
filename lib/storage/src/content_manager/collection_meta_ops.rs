@@ -6,6 +6,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{replica_set, CollectionId, ShardTransfer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use collection::shards::replica_set::ReplicaState;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
@@ -220,8 +221,8 @@ pub struct SetShardReplicaState {
     pub collection_name: String,
     pub shard_id: ShardId,
     pub peer_id: PeerId,
-    /// If `true` then the replica is up to date and can receive updates and answer requests
-    pub active: bool,
+    /// If `Active` then the replica is up to date and can receive updates and answer requests
+    pub state: ReplicaState,
 }
 
 /// Enumeration of all possible collection update operations

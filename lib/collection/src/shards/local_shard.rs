@@ -51,6 +51,26 @@ pub struct LocalShard {
 
 /// Shard holds information about segments and WAL.
 impl LocalShard {
+
+    /// Clear local shard related data.
+    ///
+    /// Do NOT remove config file.
+    pub async fn clear(shard_path: &Path) -> CollectionResult<()> {
+        // Delete WAL
+        let wal_path = Self::wal_path(shard_path);
+        if wal_path.exists() {
+            remove_dir_all(wal_path).await?;
+        }
+        // Delete segments
+        let segments_path = Self::segments_path(shard_path);
+        if segments_path.exists() {
+            remove_dir_all(segments_path).await?;
+        }
+
+        Ok(())
+    }
+
+
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         id: ShardId,

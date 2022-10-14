@@ -9,8 +9,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
-use crate::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointStruct, PointSyncOperation,
+use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation,
 };
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
@@ -70,7 +69,6 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        sync: bool,
     ) -> CollectionResult<Option<PointIdType>> {
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
@@ -98,17 +96,14 @@ impl ForwardProxyShard {
 
         let points = points?;
 
-        let insert_points_operation = if sync {
+        // Use sync API to leverage potentially existing points
+        let insert_points_operation = {
             CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(
                 PointSyncOperation {
                     from_id: offset,
                     to_id: next_page_offset,
                     points,
                 },
-            ))
-        } else {
-            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-                PointInsertOperations::PointsList(points),
             ))
         };
 

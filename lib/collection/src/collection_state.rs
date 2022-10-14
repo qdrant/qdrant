@@ -4,15 +4,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::collection::Collection;
 use crate::config::CollectionConfig;
-use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::replica_set::IsActive;
-use crate::shards::shard::{PeerId, Shard, ShardId};
+use crate::operations::types::CollectionResult;
+use crate::shards::replica_set::ReplicaState;
+use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::ShardTransfer;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub enum ShardInfo {
-    ReplicaSet { replicas: HashMap<PeerId, IsActive> },
-    Single(PeerId),
+pub struct ShardInfo {
+    pub replicas: HashMap<PeerId, ReplicaState>
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -33,7 +32,7 @@ impl State {
         Self::apply_config(self.config, collection).await?;
         Self::apply_shard_transfers(self.transfers, collection, this_peer_id, abort_transfer)
             .await?;
-        Self::apply_shard_info(self.shards, this_peer_id, collection).await?;
+        Self::apply_shard_info(self.shards, collection).await?;
         Ok(())
     }
 
@@ -48,6 +47,7 @@ impl State {
             .read()
             .await
             .shard_transfers
+            .read()
             .clone();
         for transfer in shard_transfers.difference(&old_transfers) {
             if transfer.from == this_peer_id {
@@ -85,37 +85,13 @@ impl State {
 
     async fn apply_shard_info(
         shards: HashMap<ShardId, ShardInfo>,
-        this_peer_id: PeerId,
         collection: &Collection,
     ) -> CollectionResult<()> {
         for (shard_id, shard_info) in shards {
-            let mut shards_holder = collection.shards_holder.write().await;
-            match (shards_holder.get_mut_shard(&shard_id), shard_info) {
-                (Some(shard), ShardInfo::Single(peer_id)) => {
-                    let old_peer_id = match &shard.peer_ids(this_peer_id)[..] {
-                        [id] => *id,
-                        _ => return Err(CollectionError::ServiceError { error: format!("Shard {shard_id} should have only 1 peer id as it is not a replica set") }),
-                    };
-                    // shard was moved to a different peer
-                    if old_peer_id != peer_id {
-                        collection
-                            .finish_shard_transfer(ShardTransfer {
-                                shard_id,
-                                from: old_peer_id,
-                                to: peer_id,
-                                sync: false,
-                            })
-                            .await?;
-                    }
-                }
-                (Some(shard), ShardInfo::ReplicaSet { replicas }) => {
-                    if let Shard::ReplicaSet(replica_set) = shard {
-                        replica_set.apply_state(replicas).await?;
-                    } else {
-                        todo!("check if replication factor was increased and upgrade shard to replica set")
-                    }
-                }
-                (None, _) => {
+            let shards_holder = collection.shards_holder.read().await;
+            match shards_holder.get_shard(&shard_id) {
+                Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
+                None => {
                     // If collection exists - it means it should know about all of its shards.
                     // This holds true until shard number scaling is implemented.
                     log::warn!("Shard number scaling is not yet implemented. Failed to add shard {shard_id} to an initialized collection {}", collection.name());

@@ -5,13 +5,14 @@ use std::path::PathBuf;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
 
 /// Functions as a smart pointer which gives a write guard and saves data on disk
 /// when write guard is dropped.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct SaveOnDisk<T> {
-    data: T,
+    data: RwLock<T>,
     path: PathBuf,
 }
 
@@ -29,7 +30,7 @@ pub enum Error {
     FromClosure(Box<dyn std::error::Error>),
 }
 
-impl<T: Serialize + Default + for<'de> Deserialize<'de>> SaveOnDisk<T> {
+impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     pub fn load_or_init(path: impl Into<PathBuf>) -> Result<Self, Error> {
         let path: PathBuf = path.into();
         let data = if path.exists() {
@@ -38,22 +39,44 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de>> SaveOnDisk<T> {
         } else {
             Default::default()
         };
-        Ok(Self { data, path })
+        Ok(Self { data: RwLock::new(data), path })
     }
 
     pub fn write_with_res<O, E: std::error::Error + 'static>(
-        &mut self,
+        &self,
         f: impl FnOnce(&mut T) -> Result<O, E>,
     ) -> Result<O, Error> {
-        let output = f(&mut self.data).map_err(|err| Error::FromClosure(Box::new(err)))?;
-        self.save()?;
+        let read_data = self.data.upgradable_read();
+
+        let mut data_copy = (&*read_data).clone();
+        let output = f(&mut data_copy).map_err(|err| Error::FromClosure(Box::new(err)))?;
+        self.save_data_to(&self.path, &data_copy)?;
+
+        let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
+
+        *write_data = data_copy;
         Ok(output)
     }
 
-    pub fn write<O>(&mut self, f: impl FnOnce(&mut T) -> O) -> Result<O, Error> {
-        let output = f(&mut self.data);
-        self.save()?;
+    pub fn write<O>(&self, f: impl FnOnce(&mut T) -> O) -> Result<O, Error> {
+        let read_data = self.data.upgradable_read();
+        let mut data_copy = (&*read_data).clone();
+        let output = f(&mut data_copy);
+        self.save_data_to(&self.path, &data_copy)?;
+
+        let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
+
+        *write_data = data_copy;
         Ok(output)
+    }
+
+    fn save_data_to(&self, path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {
+        let path: PathBuf = path.into();
+        AtomicFile::new(&path, AllowOverwrite).write(|file| {
+            let writer = BufWriter::new(file);
+            serde_json::to_writer(writer, data)
+        })?;
+        Ok(())
     }
 
     pub fn save(&self) -> Result<(), Error> {
@@ -61,17 +84,12 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de>> SaveOnDisk<T> {
     }
 
     pub fn save_to(&self, path: impl Into<PathBuf>) -> Result<(), Error> {
-        let path: PathBuf = path.into();
-        AtomicFile::new(&path, AllowOverwrite).write(|file| {
-            let writer = BufWriter::new(file);
-            serde_json::to_writer(writer, &self.data)
-        })?;
-        Ok(())
+        self.save_data_to(path, &self.data.read())
     }
 }
 
 impl<T> Deref for SaveOnDisk<T> {
-    type Target = T;
+    type Target = RwLock<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.data

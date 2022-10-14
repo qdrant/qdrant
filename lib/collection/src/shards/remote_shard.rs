@@ -46,7 +46,7 @@ pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
-    channel_service: ChannelService,
+    pub channel_service: ChannelService,
     searches_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
     updates_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
 }

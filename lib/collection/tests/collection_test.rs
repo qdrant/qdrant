@@ -538,7 +538,7 @@ async fn test_promote_temporary_shards() {
     assert_eq!(result.points.len(), 2);
 
     // initiate temporary shard for shard_id 1
-    collection.initiate_temporary_shard(0).await.unwrap();
+    collection.initiate_local_partial_shard(0).await.unwrap();
 
     // validate collection non empty
     let result = collection

@@ -453,8 +453,9 @@ impl TableOfContent {
                 let distribution = match operation.take_distribution() {
                     None => CollectionShardDistribution::all_local(
                         operation.create_collection.shard_number,
+                        self.this_peer_id,
                     ),
-                    Some(distribution) => distribution.into(self.this_peer_id),
+                    Some(distribution) => distribution.into(),
                 };
                 self.create_collection(
                     &operation.collection_name,
@@ -488,7 +489,7 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         self.get_collection(&operation.collection_name)
             .await?
-            .set_shard_replica_state(operation.shard_id, operation.peer_id, operation.active)
+            .set_shard_replica_state(operation.shard_id, operation.peer_id, operation.state)
             .await?;
         Ok(())
     }
@@ -566,7 +567,7 @@ impl TableOfContent {
                 };
 
                 collection
-                    .start_shard_transfer(transfer, on_finish, on_failure, is_sync)
+                    .start_shard_transfer(transfer, on_finish, on_failure)
                     .await
             }
             ShardTransferOperations::Finish(transfer) => {
@@ -592,10 +593,10 @@ impl TableOfContent {
         }))
     }
 
-    /// Initiate temporary shard.
+    /// Initiate receiving shard.
     ///
     /// Fails if the collection does not exist
-    pub async fn initiate_temporary_shard(
+    pub async fn initiate_receiving_shard(
         &self,
         collection_name: String,
         shard_id: ShardId,
@@ -606,7 +607,7 @@ impl TableOfContent {
             shard_id
         );
         let collection = self.get_collection(&collection_name).await?;
-        collection.initiate_temporary_shard(shard_id).await?;
+        collection.initiate_local_partial_shard(shard_id).await?;
         Ok(())
     }
 
@@ -839,7 +840,7 @@ impl TableOfContent {
     pub async fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
         let mut collections: HashMap<CollectionId, collection_state::State> = HashMap::new();
         for (id, collection) in self.collections.read().await.iter() {
-            collections.insert(id.clone(), collection.state(self.this_peer_id()).await);
+            collections.insert(id.clone(), collection.state().await);
         }
         consensus_state::CollectionsSnapshot {
             collections,
@@ -858,7 +859,7 @@ impl TableOfContent {
                 match collection {
                     // Update state if collection present locally
                     Some(collection) => {
-                        if &collection.state(self.this_peer_id()).await != state {
+                        if &collection.state().await != state {
                             let proposal_sender = self.consensus_proposal_sender.clone();
                             // In some cases on state application it might be needed to abort the transfer
                             let abort_transfer = |transfer| {
@@ -885,7 +886,6 @@ impl TableOfContent {
                         let collection_path = self.create_collection_path(id).await?;
                         let snapshots_path = self.create_snapshots_path(id).await?;
                         let shard_distribution = CollectionShardDistribution::from_shards_info(
-                            self.this_peer_id,
                             state.shards.clone(),
                         );
                         let collection = Collection::new(
@@ -997,7 +997,6 @@ impl TableOfContent {
             .suggest_shard_replica_changes(
                 new_repl_factor,
                 self.peer_address_by_id().into_keys().collect(),
-                self.this_peer_id(),
             )
             .await?;
         Ok(changes)
@@ -1018,14 +1017,11 @@ impl TableOfContent {
 
     pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         for collection in self.collections.read().await.values() {
-            let state = collection.state(self.this_peer_id()).await;
+            let state = collection.state().await;
             let peers_with_shards: HashSet<_> = state
                 .shards
                 .into_values()
-                .flat_map(|shard_info| match shard_info {
-                    ShardInfo::ReplicaSet { replicas } => replicas.into_keys().collect::<Vec<_>>(),
-                    ShardInfo::Single(peer_id) => vec![peer_id],
-                })
+                .flat_map(|shard_info| shard_info.replicas.into_keys().collect::<Vec<_>>())
                 .collect();
             if peers_with_shards.contains(&peer_id) {
                 return true;
