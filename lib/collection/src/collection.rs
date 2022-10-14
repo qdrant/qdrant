@@ -1,5 +1,5 @@
-use std::cmp::max;
-use std::collections::{HashMap, HashSet};
+use std::cmp::{max, Reverse};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -1525,7 +1525,6 @@ impl Collection {
             .collect()
     }
 
-    #[allow(unreachable_code)]
     pub async fn suggest_shard_replica_changes(
         &self,
         new_repl_factor: NonZeroU32,
@@ -1563,6 +1562,18 @@ impl Collection {
                 // Add replicas
                 let add_n = new_repl_factor.get() - repl_factor.get();
                 let shard_holder = self.shards_holder.read().await;
+                let transfer_tasks = self
+                    .transfer_tasks
+                    .lock()
+                    .await
+                    .tasks
+                    .keys()
+                    .cloned()
+                    .collect_vec();
+                let mut transfer_count_by_peer = transfer_tasks
+                    .iter()
+                    .map(|transfer| (transfer.from))
+                    .counts();
                 let changes: HashSet<_> = shard_holder
                     .get_shards()
                     .flat_map(|(shard_id, shard)| {
@@ -1571,13 +1582,30 @@ impl Collection {
                         // That is why a more concrete variant (ReplicaSet) is not used here, instead general shard enum is used
                         let shard_peers: HashSet<_> =
                             shard.peer_ids(this_peer_id).into_iter().collect();
+                        let mut transfer_count_heap: BinaryHeap<Reverse<(usize, PeerId)>> =
+                            shard_peers
+                                .iter()
+                                .map(|peer| {
+                                    if let Some(count) = transfer_count_by_peer.get_mut(peer) {
+                                        Reverse((*count, *peer))
+                                    } else {
+                                        Reverse((0, *peer))
+                                    }
+                                })
+                                .collect();
                         all_peers
                             .difference(&shard_peers)
                             .take(add_n as usize)
                             .map(|peer_id| replica_set::Change::Add {
                                 shard: *shard_id,
                                 to: *peer_id,
-                                from: todo!("add peer from which to sync"),
+                                from: {
+                                    // It is safe to unwrap here as the number of peers in the heap is always non zero
+                                    let Reverse((count, peer)) = transfer_count_heap.pop().unwrap();
+                                    transfer_count_heap.push(Reverse((count + 1, peer)));
+                                    *transfer_count_by_peer.entry(peer).or_insert(0) = count + 1;
+                                    peer
+                                },
                             })
                             .collect_vec()
                     })

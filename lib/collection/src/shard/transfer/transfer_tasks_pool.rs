@@ -5,7 +5,7 @@ use crate::shard::ShardTransfer;
 
 #[derive(Default)]
 pub struct TransferTasksPool {
-    tasks: HashMap<ShardTransfer, StoppableAsyncTaskHandle<bool>>,
+    pub(crate) tasks: HashMap<ShardTransfer, StoppableAsyncTaskHandle<bool>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
