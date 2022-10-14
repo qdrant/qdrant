@@ -53,7 +53,7 @@ async fn get_write_lock(toc: web::Data<TableOfContent>) -> impl Responder {
 }
 
 // Configure services
-pub fn config_telemetry_api(cfg: &mut web::ServiceConfig) {
+pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
         .service(put_write_lock)
         .service(get_write_lock);
