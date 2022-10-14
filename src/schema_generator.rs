@@ -16,6 +16,7 @@ use storage::content_manager::collection_meta_ops::{
 };
 use storage::types::ClusterStatus;
 
+use crate::common::helpers::WriteLockStatus;
 use crate::common::points::CreateFieldIndex;
 use crate::common::telemetry::TelemetryData;
 
@@ -54,6 +55,7 @@ struct AllDefinitions {
     ar: ClusterOperations,
     at: SearchRequestBatch,
     au: RecommendRequestBatch,
+    av: WriteLockStatus,
 }
 
 fn save_schema<T: JsonSchema>() {

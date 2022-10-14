@@ -5,6 +5,9 @@
         "summary": "Collect telemetry data",
         "description": "Collect telemetry data including app info, system info, collections info, cluster info, configs and statistics",
         "operationId": "telemetry",
+        "tags": [
+          "service"
+        ],
         "parameters": [
           {
             "name": "anonymize",
@@ -69,11 +72,24 @@
         }
       }
     },
-    "/enable_updating": {
-      "post": {
-        "summary": "Enable data updating",
-        "description": "Set updating mode. If disabled, all update operations and collections creation are forbidden. Returns previous enable value",
-        "operationId": "enable_updating",
+    "/write_lock": {
+      "put": {
+        "summary": "Set write lock",
+        "description": "Set write lock. If disabled, all write operations and collections creation are forbidden. Returns previous lock value",
+        "operationId": "put_write_lock",
+        "tags": [
+          "service"
+        ],
+        "requestBody": {
+          "description": "Operation to perform on points",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteLockStatus"
+              }
+            }
+          }
+        },
         "responses": {
           "default": {
             "description": "error",
@@ -122,13 +138,14 @@
             }
           }
         }
-      }
-    },
-    "/is_updating_enabled": {
-      "post": {
-        "summary": "Get updating enable value",
-        "description": "Get updating enable value. If false, all update operations and collections creation are forbidden",
-        "operationId": "is_updating_enabled",
+      },
+      "get": {
+        "summary": "Get write lock enable",
+        "description": "If false, all write operations and collections creation are forbidden",
+        "operationId": "get_write_lock",
+        "tags": [
+          "service"
+        ],
         "responses": {
           "default": {
             "description": "error",
@@ -5816,6 +5833,21 @@
             "items": {
               "$ref": "#/components/schemas/RecommendRequest"
             }
+          }
+        }
+      },
+      "WriteLockStatus": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true
           }
         }
       }

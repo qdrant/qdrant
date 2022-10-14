@@ -45,6 +45,7 @@ pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
+pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidden";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -59,7 +60,8 @@ pub struct TableOfContent {
     channel_service: ChannelService,
     /// Backlink to the consensus
     consensus_proposal_sender: OperationSender,
-    enable_updating: AtomicBool,
+    write_lock_enabled: AtomicBool,
+    write_lock_error_message: parking_lot::Mutex<Option<String>>,
 }
 
 impl TableOfContent {
@@ -132,7 +134,8 @@ impl TableOfContent {
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
-            enable_updating: AtomicBool::new(true),
+            write_lock_enabled: AtomicBool::new(true),
+            write_lock_error_message: parking_lot::Mutex::new(None),
         }
     }
 
@@ -219,11 +222,15 @@ impl TableOfContent {
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
         if !self
-            .enable_updating
+            .write_lock_enabled
             .load(std::sync::atomic::Ordering::Relaxed)
         {
             return Err(StorageError::BadRequest {
-                description: "Updating is disabled".to_string(),
+                description: self
+                    .write_lock_error_message
+                    .lock()
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
             });
         }
 
@@ -791,11 +798,15 @@ impl TableOfContent {
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
         if !self
-            .enable_updating
+            .write_lock_enabled
             .load(std::sync::atomic::Ordering::Relaxed)
         {
             return Err(StorageError::BadRequest {
-                description: "Updating is disabled".to_string(),
+                description: self
+                    .write_lock_error_message
+                    .lock()
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
             });
         }
 
@@ -1018,13 +1029,16 @@ impl TableOfContent {
         false
     }
 
-    pub fn enable_updating(&self, enable: bool) -> bool {
-        self.enable_updating
-            .swap(enable, std::sync::atomic::Ordering::Relaxed)
+    pub fn set_write_lock(&self, enable: bool, error_message: Option<String>) -> bool {
+        let prev_value = self
+            .write_lock_enabled
+            .swap(enable, std::sync::atomic::Ordering::Relaxed);
+        *self.write_lock_error_message.lock() = error_message;
+        prev_value
     }
 
-    pub fn is_updating_enabled(&self) -> bool {
-        self.enable_updating
+    pub fn is_locked(&self) -> bool {
+        self.write_lock_enabled
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 

@@ -1,7 +1,15 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use tokio::runtime::Runtime;
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct WriteLockStatus {
+    pub enabled: bool,
+    pub error_message: Option<String>,
+}
 
 pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runtime> {
     let mut search_threads = max_search_threads;
