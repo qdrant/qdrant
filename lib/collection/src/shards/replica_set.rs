@@ -94,6 +94,7 @@ pub struct ReplicaSet {
     notify_peer_failure_cb: OnPeerFailure,
     channel_service: ChannelService,
     collection_id: CollectionId,
+    collection_config: Arc<RwLock<CollectionConfig>>,
 }
 
 impl ReplicaSet {
@@ -213,6 +214,7 @@ impl ReplicaSet {
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
+            collection_config: shared_config,
         })
     }
 
@@ -277,6 +279,15 @@ impl ReplicaSet {
         Ok(old_shard)
     }
 
+    pub async fn remove_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        if self.this_peer_id() == peer_id {
+            self.remove_local().await?;
+        } else {
+            self.remove_remote(peer_id).await?;
+        }
+        Ok(())
+    }
+
     /// Recovers shard from disk.
     ///
     /// WARN: This method intended to be used only on the initial start of the node.
@@ -335,6 +346,7 @@ impl ReplicaSet {
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
+            collection_config: shared_config,
         }
     }
 
@@ -398,7 +410,7 @@ impl ReplicaSet {
             }
         }
 
-        for (peer_id, _) in replicas {
+        for (peer_id, state) in replicas {
             let peer_already_exists = old_peers.get(&peer_id).is_some();
 
             if peer_already_exists {
@@ -408,11 +420,32 @@ impl ReplicaSet {
             }
 
             if peer_id == self.this_peer_id() {
-                // We got a new local replica
-                // We need to request a transfer from an existing replica if exists
-                // Or create empty if there are no remote replicas
-                todo!();
-                // continue;
+                // Consensus wants a local replica on this peer
+                let local_shard = LocalShard::load(
+                    self.shard_id,
+                    self.collection_id.clone(),
+                    &self.shard_path,
+                    self.collection_config.clone(),
+                )
+                .await;
+                match state {
+                    ReplicaState::Active => {
+                        // No way we can provide up-to-date replica right away at this point,
+                        // so we report a failure to consensus
+                        self.set_local(local_shard, Some(ReplicaState::Active))
+                            .await?;
+                        self.notify_peer_failure(peer_id);
+                    }
+                    ReplicaState::Dead => {
+                        self.set_local(local_shard, Some(ReplicaState::Dead))
+                            .await?;
+                    }
+                    ReplicaState::Partial => {
+                        self.set_local(local_shard, Some(ReplicaState::Partial))
+                            .await?;
+                    }
+                }
+                continue;
             }
 
             // Otherwise it is a missing remote replica, we simply create it

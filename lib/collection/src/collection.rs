@@ -1026,22 +1026,35 @@ impl Collection {
         if replica_changes.is_empty() {
             return Ok(());
         }
-
-        // validate replica set existence
         let read_shard_holder = self.shards_holder.read().await;
-        // all existing replica sets in the collection
-        let mut replica_sets = Vec::new();
-        for replica_set in read_shard_holder.all_shards() {
-            replica_sets.push(replica_set.shard_id)
-        }
-        debug_assert!(
-            !replica_sets.is_empty(),
-            "at least one replica set definition per collection"
-        );
-        // drop read lock
-        drop(read_shard_holder);
 
-        todo!("handle replica changes")
+        for change in replica_changes {
+            match change {
+                Change::Add { shard, to, from } => {
+                    if self.this_peer_id == from {
+                        self.request_shard_transfer(ShardTransfer {
+                            shard_id: shard,
+                            from,
+                            to,
+                            sync: true,
+                        });
+                    }
+                }
+                Change::Remove(shard_id, peer_id) => {
+                    let replica_set_opt = read_shard_holder.get_shard(&shard_id);
+                    let replica_set = if let Some(replica_set) = replica_set_opt {
+                        replica_set
+                    } else {
+                        return Err(CollectionError::BadRequest {
+                            description: format!("Shard {} of {} not found", shard_id, self.name()),
+                        });
+                    };
+
+                    replica_set.remove_peer(peer_id).await?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Updates shard optimization params:
