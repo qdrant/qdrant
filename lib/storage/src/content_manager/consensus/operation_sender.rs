@@ -1,8 +1,8 @@
 use std::sync::mpsc::Sender;
 
+use collection::shards::transfer::shard_transfer::ShardTransfer;
 use collection::shards::CollectionId;
 use parking_lot::Mutex;
-use collection::shards::transfer::shard_transfer::ShardTransfer;
 
 use crate::content_manager::collection_meta_ops::ShardTransferOperations;
 use crate::{CollectionMetaOperations, ConsensusOperations, StorageError};

@@ -4,10 +4,10 @@ use collection::operations::config_diff::{
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::{CollectionId, replica_set};
+use collection::shards::transfer::shard_transfer::ShardTransfer;
+use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use collection::shards::transfer::shard_transfer::ShardTransfer;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 

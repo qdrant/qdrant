@@ -7,10 +7,10 @@ use collection::operations::cluster_ops::{
 };
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{CollectionClusterInfo, CollectionInfo};
-use collection::shards::shard::ShardId;
 use collection::shards::replica_set;
-use itertools::Itertools;
+use collection::shards::shard::ShardId;
 use collection::shards::transfer::shard_transfer::ShardTransfer;
+use itertools::Itertools;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, UpdateCollectionOperation,

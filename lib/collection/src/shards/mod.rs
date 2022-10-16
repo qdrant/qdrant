@@ -16,6 +16,7 @@ pub mod shard_versioning;
 pub mod transfer;
 
 use std::path::{Path, PathBuf};
+
 use shard::ShardId;
 
 use crate::operations::types::{CollectionError, CollectionResult};
