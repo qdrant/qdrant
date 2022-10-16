@@ -18,9 +18,10 @@ pub mod toc;
 pub mod consensus_ops {
     use collection::shards::replica_set::ReplicaState;
     use collection::shards::shard::PeerId;
-    use collection::shards::{CollectionId, ShardTransfer};
+    use collection::shards::CollectionId;
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
+    use collection::shards::transfer::shard_transfer::ShardTransfer;
 
     use crate::content_manager::collection_meta_ops::{
         CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations,

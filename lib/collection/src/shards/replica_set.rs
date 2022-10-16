@@ -342,20 +342,6 @@ impl ReplicaSet {
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
     }
 
-    pub async fn peer_ids(&self) -> Vec<PeerId> {
-        let mut peer_ids: Vec<_> = self
-            .remotes
-            .read()
-            .await
-            .iter()
-            .map(|r| r.peer_id)
-            .collect();
-        if self.has_local_shard().await {
-            peer_ids.push(self.this_peer_id())
-        }
-        peer_ids
-    }
-
     pub fn set_replica_state(
         &self,
         peer_id: &PeerId,

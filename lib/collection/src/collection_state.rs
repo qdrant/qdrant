@@ -7,7 +7,7 @@ use crate::config::CollectionConfig;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::ShardTransfer;
+use crate::shards::transfer::shard_transfer::ShardTransfer;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ShardInfo {

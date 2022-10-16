@@ -51,9 +51,10 @@ use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
     change_remote_shard_route, drop_partial_shard, finalize_partial_shard,
     handle_transferred_shard_proxy, revert_proxy_shard_to_local, spawn_transfer_task,
+    ShardTransfer,
 };
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shards::{replica_set, CollectionId, ShardTransfer, HASH_RING_SHARD_SCALE};
+use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
 use crate::telemetry::CollectionTelemetry;
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -1327,45 +1328,43 @@ impl Collection {
         Ok(())
     }
 
-    #[allow(unreachable_code)]
     pub async fn suggest_shard_replica_changes(
         &self,
         new_repl_factor: NonZeroU32,
-        all_peers: HashSet<PeerId>,
-    ) -> CollectionResult<Option<HashSet<replica_set::Change>>> {
-        let repl_factor = self.config.read().await.params.replication_factor;
-        match new_repl_factor.cmp(&repl_factor) {
-            std::cmp::Ordering::Less => {
-                // Remove replicas
-                let remove_n = repl_factor.get() - new_repl_factor.get();
-                let shard_holder = self.shards_holder.read().await;
-                let mut changes: HashSet<Change> = HashSet::new();
-                for (shard_id, shard) in shard_holder.get_shards() {
-                    for peer_id in shard.peer_ids().await.into_iter().take(remove_n as usize) {
-                        changes.insert(Change::Remove(*shard_id, peer_id));
-                    }
-                }
-                Ok(Some(changes))
+        _all_peers: HashSet<PeerId>,
+    ) -> CollectionResult<HashSet<replica_set::Change>> {
+        let changes: HashSet<Change> = HashSet::new();
+
+        let shard_holder = self.shards_holder.read().await;
+        let mut shard_to_peers: HashMap<ShardId, HashSet<PeerId>> = HashMap::new();
+
+        for (shard_id, replica_set) in shard_holder.get_shards() {
+            let peers = replica_set.peers();
+            shard_to_peers.insert(*shard_id, peers.keys().copied().collect());
+        }
+
+        // ToDo: functions to use:
+        // * suggest_transfer_source
+        // * suggest_peer_to_add_replica
+        // * suggest_peer_to_remove_replica
+
+        for (_shard_id, replica_set) in shard_holder.get_shards() {
+            let peers = replica_set.peers();
+            let current_number_of_replicas = peers.len();
+            let required_number_of_replicas = new_repl_factor.get() as usize;
+            if current_number_of_replicas < required_number_of_replicas {
+                // We need to add replicas
+                // ToDo add replicas
+                log::warn!("Automatic replica addition is not implemented yet");
             }
-            std::cmp::Ordering::Equal => Ok(None),
-            std::cmp::Ordering::Greater => {
-                // Add replicas
-                let add_n = new_repl_factor.get() - repl_factor.get();
-                let shard_holder = self.shards_holder.read().await;
-                let mut changes: HashSet<Change> = HashSet::new();
-                for (shard_id, shard) in shard_holder.get_shards() {
-                    let shard_peers: HashSet<_> = shard.peer_ids().await.into_iter().collect();
-                    for peer_id in all_peers.difference(&shard_peers).take(add_n as usize) {
-                        changes.insert(Change::Add {
-                            shard: *shard_id,
-                            to: *peer_id,
-                            from: todo!("add peer from which to sync"),
-                        });
-                    }
-                }
-                Ok(Some(changes))
+            if current_number_of_replicas > required_number_of_replicas {
+                // We need to remove replicas
+                // ToDo remove replicas
+                log::warn!("Automatic replica removal is not implemented yet");
             }
         }
+
+        Ok(changes)
     }
 }
 

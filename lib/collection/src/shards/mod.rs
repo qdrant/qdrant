@@ -16,10 +16,7 @@ pub mod shard_versioning;
 pub mod transfer;
 
 use std::path::{Path, PathBuf};
-
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use shard::{PeerId, ShardId};
+use shard::ShardId;
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::shard_versioning::suggest_next_version_path;
@@ -29,16 +26,6 @@ pub const HASH_RING_SHARD_SCALE: u32 = 100;
 pub type CollectionId = String;
 
 pub type ShardVersion = usize;
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ShardTransfer {
-    pub shard_id: ShardId,
-    pub from: PeerId,
-    pub to: PeerId,
-    /// If this flag is true, the is a replication related transfer of shard from 1 peer to another
-    /// Shard on original peer will not be deleted in this case
-    pub sync: bool,
-}
 
 pub async fn create_shard_dir(
     collection_path: &Path,

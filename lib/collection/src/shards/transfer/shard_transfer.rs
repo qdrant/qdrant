@@ -1,8 +1,12 @@
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
@@ -12,11 +16,21 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::LockedShardHolder;
-use crate::shards::{CollectionId, ShardTransfer};
+use crate::shards::CollectionId;
 
 const TRANSFER_BATCH_SIZE: usize = 100;
 const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_RETRY_COUNT: usize = 3;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ShardTransfer {
+    pub shard_id: ShardId,
+    pub from: PeerId,
+    pub to: PeerId,
+    /// If this flag is true, the is a replication related transfer of shard from 1 peer to another
+    /// Shard on original peer will not be deleted in this case
+    pub sync: bool,
+}
 
 async fn transfer_batches(
     shard_holder: Arc<LockedShardHolder>,
@@ -223,6 +237,123 @@ pub async fn transfer_shard(
     };
     // Transfer contents batch by batch
     transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
+}
+
+/// Selects a best peer to transfer shard from.
+///
+/// Requirements:
+/// 1. Peer should have an active replica of the shard
+/// 2. There should be no active transfers from this peer with the same shard
+/// 3. Prefer peer with the lowest number of active transfers
+///
+/// If there are no peers that satisfy the requirements, returns `None`.
+pub fn suggest_transfer_source(
+    shard_id: ShardId,
+    target_peer: PeerId,
+    current_transfers: &[ShardTransfer],
+    shard_peers: &HashMap<PeerId, ReplicaState>,
+) -> Option<PeerId> {
+    let mut candidates = HashSet::new();
+    for (peer_id, state) in shard_peers {
+        if *state == ReplicaState::Active && *peer_id != target_peer {
+            candidates.insert(*peer_id);
+        }
+    }
+
+    let currently_transferring = current_transfers
+        .iter()
+        .filter(|transfer| transfer.shard_id == shard_id)
+        .map(|transfer| transfer.from)
+        .collect::<HashSet<PeerId>>();
+
+    candidates = candidates
+        .difference(&currently_transferring)
+        .cloned()
+        .collect();
+
+    let transfer_counts = current_transfers
+        .iter()
+        .fold(HashMap::new(), |mut counts, transfer| {
+            *counts.entry(transfer.from).or_insert(0_usize) += 1;
+            counts
+        });
+
+    // Sort candidates by the number of active transfers
+    let mut candidates = candidates
+        .into_iter()
+        .map(|peer_id| (peer_id, transfer_counts.get(&peer_id).unwrap_or(&0)))
+        .collect::<Vec<(PeerId, &usize)>>();
+    candidates.sort_unstable_by_key(|(_, count)| **count);
+
+    candidates.first().map(|(peer_id, _)| *peer_id)
+}
+
+/// Selects the best peer to add a replica to.
+///
+/// Requirements:
+/// 1. Peer should not have an active replica of the shard
+/// 2. Peer should have minimal number of active transfers
+pub fn suggest_peer_to_add_replica(
+    shard_id: ShardId,
+    shard_distribution: HashMap<ShardId, HashSet<PeerId>>,
+) -> Option<PeerId> {
+    let mut peer_loads: HashMap<PeerId, usize> = HashMap::new();
+    for peers in shard_distribution.values() {
+        for peer_id in peers {
+            *peer_loads.entry(*peer_id).or_insert(0_usize) += 1;
+        }
+    }
+    let peers_with_shard = shard_distribution
+        .get(&shard_id)
+        .cloned()
+        .unwrap_or_default();
+    for peer_with_shard in peers_with_shard {
+        peer_loads.remove(&peer_with_shard);
+    }
+
+    let mut candidates = peer_loads.into_iter().collect::<Vec<(PeerId, usize)>>();
+    candidates.sort_unstable_by_key(|(_, count)| *count);
+    candidates.first().map(|(peer_id, _)| *peer_id)
+}
+
+/// Selects the best peer to remove a replica from.
+///
+/// Requirements:
+/// 1. Peer should have a replica of the shard
+/// 2. Peer should maximal number of active shards
+/// 3. Shard replica should preferably be non-active
+pub fn suggest_peer_to_remove_replica(
+    shard_distribution: HashMap<ShardId, HashSet<PeerId>>,
+    shard_peers: HashMap<PeerId, ReplicaState>,
+) -> Option<PeerId> {
+    let mut peer_loads: HashMap<PeerId, usize> = HashMap::new();
+    for (_, peers) in shard_distribution {
+        for peer_id in peers {
+            *peer_loads.entry(peer_id).or_insert(0_usize) += 1;
+        }
+    }
+
+    let mut candidates: Vec<_> = shard_peers
+        .into_iter()
+        .map(|(peer_id, status)| {
+            (
+                peer_id,
+                status,
+                peer_loads.get(&peer_id).copied().unwrap_or(0),
+            )
+        })
+        .collect();
+
+    candidates.sort_unstable_by(|(_, status1, count1), (_, status2, count2)| {
+        match (status1, status2) {
+            (ReplicaState::Active, ReplicaState::Active) => count2.cmp(count1),
+            (ReplicaState::Active, _) => Ordering::Less,
+            (_, ReplicaState::Active) => Ordering::Greater,
+            (_, _) => count2.cmp(count1),
+        }
+    });
+
+    candidates.into_iter().next().map(|(peer_id, _, _)| peer_id)
 }
 
 pub fn spawn_transfer_task<T, F>(

@@ -4,9 +4,10 @@ use collection::operations::config_diff::{
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::{replica_set, CollectionId, ShardTransfer};
+use collection::shards::{CollectionId, replica_set};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use collection::shards::transfer::shard_transfer::ShardTransfer;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
@@ -187,7 +188,11 @@ impl UpdateCollectionOperation {
     }
 
     pub fn set_shard_replica_changes(&mut self, changes: Vec<replica_set::Change>) {
-        self.shard_replica_changes = Some(changes);
+        if changes.is_empty() {
+            self.shard_replica_changes = None;
+        } else {
+            self.shard_replica_changes = Some(changes);
+        }
     }
 }
 

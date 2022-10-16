@@ -17,7 +17,8 @@ use crate::shards::replica_set::{OnPeerFailure, ReplicaSet, ReplicaState};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
-use crate::shards::{CollectionId, ShardTransfer};
+use crate::shards::CollectionId;
+use crate::shards::transfer::shard_transfer::ShardTransfer;
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 
