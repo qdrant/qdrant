@@ -80,6 +80,7 @@ pub struct Collection {
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
+    #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: OnPeerFailure,
 }
 
@@ -116,7 +117,7 @@ impl Collection {
                 is_local,
                 peers,
                 on_replica_failure.clone(),
-                path.clone(),
+                path,
                 shared_config.clone(),
                 channel_service.clone(),
             )
@@ -340,15 +341,15 @@ impl Collection {
             let replica_set = shards_holder.get_shard(&shard_id);
 
             // Check if current node owns the shard which should be transferred
-            let able_to_transfer = match replica_set {
+            // and therefor able to transfer
+            match replica_set {
                 None => {
                     return Err(CollectionError::service_error(format!(
                         "Shard {shard_id} doesn't exist"
                     )))
                 }
                 Some(replica_set) => replica_set.is_local().await,
-            };
-            able_to_transfer
+            }
         };
         if do_transfer {
             self.send_shard(shard_transfer, on_finish, on_error).await;
@@ -357,12 +358,6 @@ impl Collection {
     }
 
     /// Handles finishing of the shard transfer.
-    ///
-    /// 1. Removes transfer state from list of active transfers.
-    /// 2. Awaits for related transfer task to finish.
-    /// 3. Converts proxy shard -> remote shard
-    /// 4. Promotes temporary shard to local shard.
-    /// 5. Point remote shard to new location
     ///
     /// Returns true if state was changed, false otherwise.
     pub async fn finish_shard_transfer(&self, transfer: ShardTransfer) -> CollectionResult<()> {
@@ -382,6 +377,8 @@ impl Collection {
         log::debug!("transfer_finished: {}", transfer_finished);
 
         // Should happen on transfer side
+        // Unwrap forward proxy into local shard, or replace it with remote shard
+        // depending on the `sync` flag.
         if self.this_peer_id == transfer.from {
             let proxy_promoted = handle_transferred_shard_proxy(
                 self.shards_holder.clone(),
@@ -394,6 +391,7 @@ impl Collection {
         }
 
         // Should happen on receiving side
+        // Promote partial shard to active shard
         if self.this_peer_id == transfer.to {
             let shard_promoted =
                 finalize_partial_shard(self.shards_holder.clone(), transfer.shard_id).await?;
@@ -401,6 +399,7 @@ impl Collection {
         }
 
         // Should happen on a third-party side
+        // Change direction of the remote shards or add a new remote shard
         if self.this_peer_id != transfer.from && self.this_peer_id != transfer.to {
             let remote_shard_rerouted = change_remote_shard_route(
                 self.shards_holder.clone(),
@@ -438,6 +437,7 @@ impl Collection {
         let proxy_unwrapped =
             revert_proxy_shard_to_local(self.shards_holder.clone(), transfer.shard_id).await?;
 
+        // ToDo: might be it makes sense to keep dead shard for faster recovery
         let temp_shard_removed =
             drop_partial_shard(self.shards_holder.clone(), transfer.shard_id).await?;
 

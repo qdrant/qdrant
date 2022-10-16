@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::collection_state;
-use collection::collection_state::ShardInfo;
 use collection::config::{default_replication_factor, CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -516,7 +515,6 @@ impl TableOfContent {
         let collection = self.get_collection(&collection_id).await?;
         match transfer_operation {
             ShardTransferOperations::Start(transfer) => {
-                let is_sync = transfer.sync;
                 // check that transfer can be performed
                 if self.this_peer_id == transfer.from
                     && !collection
@@ -568,16 +566,16 @@ impl TableOfContent {
 
                 collection
                     .start_shard_transfer(transfer, on_finish, on_failure)
-                    .await
+                    .await?;
             }
             ShardTransferOperations::Finish(transfer) => {
-                collection.finish_shard_transfer(transfer).await
+                collection.finish_shard_transfer(transfer).await?;
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 log::warn!("Aborting shard transfer: {reason}");
-                collection.abort_shard_transfer(transfer).await
+                collection.abort_shard_transfer(transfer).await?;
             }
-        }?;
+        };
         Ok(())
     }
 

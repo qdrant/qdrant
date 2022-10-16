@@ -44,7 +44,7 @@ const READ_REMOTE_REPLICAS: u32 = 2;
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
 /// State of the single shard within replica set
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum ReplicaState {
     /// Active and sound
     #[default]
@@ -113,8 +113,8 @@ impl ReplicaSet {
     // return true if was activated
     pub fn activate_replica(&mut self, peer_id: PeerId) -> CollectionResult<bool> {
         Ok(self.replica_state.write(|state| {
-            if state.peers.contains_key(&peer_id) {
-                state.peers.insert(peer_id, ReplicaState::Active);
+            if let std::collections::hash_map::Entry::Occupied(mut e) = state.peers.entry(peer_id) {
+                e.insert(ReplicaState::Active);
                 true
             } else {
                 false
@@ -457,24 +457,35 @@ impl ReplicaSet {
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
     /// 3 - Fallbacks to all remaining shards if the optimisations fails.
     /// It does not report failing peer_ids to the consensus.
-    pub async fn execute_read_operation<F, Fut, Res>(&self, read: F) -> CollectionResult<Res>
+    pub async fn execute_read_operation<'a, F, Fut, Res>(
+        &'_ self,
+        read_operation: F,
+        local: &'a Option<Shard>,
+        remotes: &'a [RemoteShard],
+    ) -> CollectionResult<Res>
     where
-        F: Fn(&(dyn ShardOperation + Send + Sync)) -> Fut,
+        F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
         Fut: Future<Output = CollectionResult<Res>>,
     {
-        {
-            let local = self.local.read().await;
-            // 1 - prefer the local shard if it is active
-            if let Some(local) = &*local {
-                if self.peer_is_active(&self.this_peer_id()) {
-                    if let ok @ Ok(_) = read(local.get()).await {
-                        return ok;
+        let mut local_result = None;
+        // 1 - prefer the local shard if it is active
+        if let Some(local) = local {
+            if self.peer_is_active(&self.this_peer_id()) {
+                let read_operation_res = read_operation(local.get()).await;
+                match read_operation_res {
+                    Ok(_) => return read_operation_res,
+                    res @ Err(CollectionError::ServiceError { .. }) => {
+                        local_result = Some(res);
+                    }
+                    res @ Err(CollectionError::Cancelled { .. }) => {
+                        local_result = Some(res);
+                    }
+                    res @ Err(_) => {
+                        return res; // Validation errors are not recoverable, reply immediately
                     }
                 }
             }
         }
-
-        let remotes = self.remotes.read().await;
 
         // 2 - try a subset of active remote shards in parallel for fast response
         let mut active_remote_shards: Vec<_> = remotes
@@ -483,6 +494,10 @@ impl ReplicaSet {
             .collect();
 
         if active_remote_shards.is_empty() {
+            if let Some(local_result) = local_result {
+                return local_result;
+            }
+
             return Err(CollectionError::service_error(format!(
                 "The replica set for shard {} on peer {} has no active replica",
                 self.shard_id,
@@ -500,7 +515,7 @@ impl ReplicaSet {
 
         let mut futures = FuturesUnordered::new();
         for remote in &active_remote_shards[0..fan_out_selection] {
-            let fut = read(*remote);
+            let fut = read_operation(*remote);
             futures.push(fut);
         }
 
@@ -509,6 +524,8 @@ impl ReplicaSet {
         while let Some(result) = futures.next().await {
             match result {
                 Ok(res) => return Ok(res),
+                err @ Err(CollectionError::ServiceError { .. }) => return err,
+                err @ Err(CollectionError::Cancelled { .. }) => return err,
                 err @ Err(_) => captured_error = Some(err), // capture error for possible error reporting
             }
         }
@@ -520,14 +537,17 @@ impl ReplicaSet {
         // 3 - fallback to remaining remote shards as last chance
         let mut futures = FuturesUnordered::new();
         for remote in &active_remote_shards[fan_out_selection..] {
-            let fut = read(*remote);
+            let fut = read_operation(*remote);
             futures.push(fut);
         }
 
         // shortcut at first successful result
         while let Some(result) = futures.next().await {
-            if let ok @ Ok(_) = result {
-                return ok;
+            match result {
+                Ok(res) => return Ok(res),
+                err @ Err(CollectionError::ServiceError { .. }) => return err,
+                err @ Err(CollectionError::Cancelled { .. }) => return err,
+                err @ Err(_) => captured_error = Some(err), // capture error for possible error reporting
             }
         }
         captured_error.expect("at this point `captured_error` must be defined by construction")
@@ -808,14 +828,23 @@ impl ShardOperation for ReplicaSet {
         with_vector: &WithVector,
         filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>> {
-        self.execute_read_operation(|shard| {
-            shard.scroll_by(offset, limit, with_payload_interface, with_vector, filter)
-        })
+        let local = self.local.read().await;
+        let remotes = self.remotes.read().await;
+
+        self.execute_read_operation(
+            |shard| shard.scroll_by(offset, limit, with_payload_interface, with_vector, filter),
+            &local,
+            &remotes,
+        )
         .await
     }
 
     async fn info(&self) -> CollectionResult<CollectionInfo> {
-        self.execute_read_operation(|shard| shard.info()).await
+        let local = self.local.read().await;
+        let remotes = self.remotes.read().await;
+
+        self.execute_read_operation(|shard| shard.info(), &local, &remotes)
+            .await
     }
 
     async fn search(
@@ -823,12 +852,22 @@ impl ShardOperation for ReplicaSet {
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.execute_read_operation(|shard| shard.search(request.clone(), search_runtime_handle))
-            .await
+        let local = self.local.read().await;
+        let remotes = self.remotes.read().await;
+
+        self.execute_read_operation(
+            |shard| shard.search(request.clone(), search_runtime_handle),
+            &local,
+            &remotes,
+        )
+        .await
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
-        self.execute_read_operation(|shard| shard.count(request.clone()))
+        let local = self.local.read().await;
+        let remotes = self.remotes.read().await;
+
+        self.execute_read_operation(|shard| shard.count(request.clone()), &local, &remotes)
             .await
     }
 
@@ -838,9 +877,14 @@ impl ShardOperation for ReplicaSet {
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
-        self.execute_read_operation(|shard| {
-            shard.retrieve(request.clone(), with_payload, with_vector)
-        })
+        let local = self.local.read().await;
+        let remotes = self.remotes.read().await;
+
+        self.execute_read_operation(
+            |shard| shard.retrieve(request.clone(), with_payload, with_vector),
+            &local,
+            &remotes,
+        )
         .await
     }
 }

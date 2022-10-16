@@ -249,11 +249,6 @@ impl LockedShardHolder {
         Self(RwLock::new(shard_holder))
     }
 
-    async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, ReplicaSet>> {
-        let holder = self.0.read().await;
-        RwLockReadGuard::try_map(holder, |h| h.shards.get(&shard_id)).ok()
-    }
-
     pub async fn read(&self) -> RwLockReadGuard<'_, ShardHolder> {
         self.0.read().await
     }

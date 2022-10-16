@@ -51,7 +51,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     ) -> Result<O, Error> {
         let read_data = self.data.upgradable_read();
 
-        let mut data_copy = (&*read_data).clone();
+        let mut data_copy = (*read_data).clone();
         let output = f(&mut data_copy).map_err(|err| Error::FromClosure(Box::new(err)))?;
         self.save_data_to(&self.path, &data_copy)?;
 
@@ -63,7 +63,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
 
     pub fn write<O>(&self, f: impl FnOnce(&mut T) -> O) -> Result<O, Error> {
         let read_data = self.data.upgradable_read();
-        let mut data_copy = (&*read_data).clone();
+        let mut data_copy = (*read_data).clone();
         let output = f(&mut data_copy);
         self.save_data_to(&self.path, &data_copy)?;
 
@@ -117,17 +117,17 @@ mod tests {
     fn saves_data() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
-        let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
         counter.write(|counter| *counter += 1).unwrap();
-        assert_eq!(*counter, 1);
+        assert_eq!(*counter.read(), 1);
         assert_eq!(
-            counter.to_string(),
+            counter.read().to_string(),
             fs::read_to_string(&counter_file).unwrap()
         );
         counter.write(|counter| *counter += 1).unwrap();
-        assert_eq!(*counter, 2);
+        assert_eq!(*counter.read(), 2);
         assert_eq!(
-            counter.to_string(),
+            counter.read().to_string(),
             fs::read_to_string(&counter_file).unwrap()
         );
     }
@@ -136,9 +136,10 @@ mod tests {
     fn loads_data() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
-        let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
         counter.write(|counter| *counter += 1).unwrap();
         let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
-        assert_eq!(*counter, 1)
+        let value = *counter.read();
+        assert_eq!(value, 1)
     }
 }

@@ -17,9 +17,6 @@ use crate::shards::{CollectionId, ShardTransfer};
 const TRANSFER_BATCH_SIZE: usize = 100;
 const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_RETRY_COUNT: usize = 3;
-const INDEXED_THRESHOLD: f64 = 0.85;
-const OPTIMIZATION_CHECK_INTERVALS: Duration = Duration::from_secs(10);
-const MAX_OPTIMIZATION_TIME: Duration = Duration::from_secs(60 * 30); // 30 minutes
 
 async fn transfer_batches(
     shard_holder: Arc<LockedShardHolder>,
