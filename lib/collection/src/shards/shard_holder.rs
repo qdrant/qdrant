@@ -13,7 +13,7 @@ use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::replica_set::{OnPeerFailure, ShardReplicaSet, ReplicaState};
+use crate::shards::replica_set::{OnPeerFailure, ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
@@ -61,7 +61,11 @@ impl ShardHolder {
     /// Replace shard
     ///
     /// return old shard
-    pub fn replace_shard(&mut self, shard_id: ShardId, shard: ShardReplicaSet) -> Option<ShardReplicaSet> {
+    pub fn replace_shard(
+        &mut self,
+        shard_id: ShardId,
+        shard: ShardReplicaSet,
+    ) -> Option<ShardReplicaSet> {
         self.shards.insert(shard_id, shard)
     }
 
@@ -85,7 +89,10 @@ impl ShardHolder {
         self.shards.values()
     }
 
-    pub fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&ShardReplicaSet, O)> {
+    pub fn split_by_shard<O: SplitByShard + Clone>(
+        &self,
+        operation: O,
+    ) -> Vec<(&ShardReplicaSet, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
             OperationToShard::ByShard(by_shard) => by_shard

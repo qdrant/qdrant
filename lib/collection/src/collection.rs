@@ -41,7 +41,7 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::{
-    Change, OnPeerFailure, ShardReplicaSet as ReplicaSetShard, ReplicaState,
+    Change, OnPeerFailure, ReplicaState, ShardReplicaSet as ReplicaSetShard,
 }; // TODO rename ReplicaShard to ReplicaSetShard
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
