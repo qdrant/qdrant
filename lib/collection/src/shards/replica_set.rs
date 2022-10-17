@@ -74,9 +74,7 @@ pub struct ReplicaSetState {
 /// Prefers local shard for read-only operations.
 /// Perform updates on all replicas and report error if there is at least one failure.
 ///
-/// `ReplicaSet` should always have >= 2 replicas.
-///  If a user decreases replication factor to 1 - it should be converted to just `Local` or `Remote` shard.
-pub struct ReplicaSet {
+pub struct ShardReplicaSet {
     local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
     remotes: RwLock<Vec<RemoteShard>>,
     replica_state: SaveOnDisk<ReplicaSetState>,
@@ -91,7 +89,7 @@ pub struct ReplicaSet {
     collection_config: Arc<RwLock<CollectionConfig>>,
 }
 
-impl ReplicaSet {
+impl ShardReplicaSet {
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Local(_)))
@@ -752,7 +750,7 @@ impl ReplicaSet {
 }
 
 #[async_trait::async_trait]
-impl ShardOperation for ReplicaSet {
+impl ShardOperation for ShardReplicaSet {
     async fn update(
         &self,
         operation: CollectionUpdateOperations,

@@ -13,7 +13,7 @@ use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::replica_set::{OnPeerFailure, ReplicaSet, ReplicaState};
+use crate::shards::replica_set::{OnPeerFailure, ShardReplicaSet, ReplicaState};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
@@ -23,7 +23,7 @@ use crate::shards::CollectionId;
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 
 pub struct ShardHolder {
-    shards: HashMap<ShardId, ReplicaSet>,
+    shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     ring: HashRing<ShardId>,
 }
@@ -40,12 +40,12 @@ impl ShardHolder {
         })
     }
 
-    pub fn add_shard(&mut self, shard_id: ShardId, shard: ReplicaSet) {
+    pub fn add_shard(&mut self, shard_id: ShardId, shard: ShardReplicaSet) {
         self.shards.insert(shard_id, shard);
         self.ring.add(shard_id);
     }
 
-    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<ReplicaSet> {
+    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<ShardReplicaSet> {
         let shard = self.shards.remove(&shard_id);
         self.ring.remove(&shard_id);
         shard
@@ -54,14 +54,14 @@ impl ShardHolder {
     /// Take shard
     ///
     /// remove shard and return ownership
-    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<ReplicaSet> {
+    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<ShardReplicaSet> {
         self.shards.remove(&shard_id)
     }
 
     /// Replace shard
     ///
     /// return old shard
-    pub fn replace_shard(&mut self, shard_id: ShardId, shard: ReplicaSet) -> Option<ReplicaSet> {
+    pub fn replace_shard(&mut self, shard_id: ShardId, shard: ShardReplicaSet) -> Option<ShardReplicaSet> {
         self.shards.insert(shard_id, shard)
     }
 
@@ -69,23 +69,23 @@ impl ShardHolder {
         self.shards.contains_key(shard_id)
     }
 
-    pub fn get_shard(&self, shard_id: &ShardId) -> Option<&ReplicaSet> {
+    pub fn get_shard(&self, shard_id: &ShardId) -> Option<&ShardReplicaSet> {
         self.shards.get(shard_id)
     }
 
-    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut ReplicaSet> {
+    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut ShardReplicaSet> {
         self.shards.get_mut(shard_id)
     }
 
-    pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &ReplicaSet)> {
+    pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &ShardReplicaSet)> {
         self.shards.iter()
     }
 
-    pub fn all_shards(&self) -> impl Iterator<Item = &ReplicaSet> {
+    pub fn all_shards(&self) -> impl Iterator<Item = &ShardReplicaSet> {
         self.shards.values()
     }
 
-    pub fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&ReplicaSet, O)> {
+    pub fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&ShardReplicaSet, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
             OperationToShard::ByShard(by_shard) => by_shard
@@ -129,7 +129,7 @@ impl ShardHolder {
     pub fn target_shard(
         &self,
         shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<&ReplicaSet>> {
+    ) -> CollectionResult<Vec<&ShardReplicaSet>> {
         match shard_selection {
             None => Ok(self.all_shards().collect()),
             Some(shard_selection) => {
@@ -175,12 +175,12 @@ impl ShardHolder {
             .params
             .shard_number
             .get();
-
+        // ToDo: remove after version 0.11.0
         for shard_id in 0..shard_number {
             for (path, _shard_version, shard_type) in
                 latest_shard_paths(collection_path, shard_id).await.unwrap()
             {
-                let replica_set = ReplicaSet::load(
+                let replica_set = ShardReplicaSet::load(
                     shard_id,
                     collection_id.clone(),
                     &path,
