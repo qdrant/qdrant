@@ -14,7 +14,7 @@ use crate::operations::payload_ops::{DeletePayload, SetPayload};
 use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation};
 use crate::operations::types::CollectionResult;
 use crate::operations::CreateIndex;
-use crate::shard::remote_shard::RemoteShard;
+use crate::shards::remote_shard::RemoteShard;
 
 pub fn internal_sync_points(
     points_sync_operation: PointSyncOperation,

@@ -55,7 +55,7 @@ impl CollectionsInternal for CollectionsInternalService {
         } = request.into_inner();
 
         self.toc
-            .initiate_temporary_shard(collection_name, shard_id)
+            .initiate_receiving_shard(collection_name, shard_id)
             .await
             .map_err(error_to_status)?;
 

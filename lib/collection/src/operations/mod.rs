@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use self::types::CollectionResult;
 use crate::hash_ring::HashRing;
-use crate::shard::ShardId;
+use crate::shards::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 #[serde(rename_all = "snake_case")]

@@ -142,11 +142,11 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn assign(&mut self, _point_id: PointOffsetType, _payload: &Payload) -> OperationResult<()> {
-        todo!()
+        unreachable!()
     }
 
     fn payload(&self, _point_id: PointOffsetType) -> OperationResult<Payload> {
-        todo!()
+        unreachable!()
     }
 
     fn delete(
@@ -154,26 +154,26 @@ impl PayloadIndex for PlainPayloadIndex {
         _point_id: PointOffsetType,
         _key: PayloadKeyTypeRef,
     ) -> OperationResult<Option<Value>> {
-        todo!()
+        unreachable!()
     }
 
     fn drop(&mut self, _point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
-        todo!()
+        unreachable!()
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
-        todo!()
+        unreachable!()
     }
 
     fn flusher(&self) -> Flusher {
-        todo!()
+        unreachable!()
     }
 
     fn infer_payload_type(
         &self,
         _key: PayloadKeyTypeRef,
     ) -> OperationResult<Option<PayloadSchemaType>> {
-        todo!()
+        unreachable!()
     }
 }
 

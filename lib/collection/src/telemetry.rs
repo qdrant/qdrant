@@ -5,7 +5,7 @@ use segment::telemetry::{
 use serde::{Deserialize, Serialize};
 
 use crate::config::CollectionConfig;
-use crate::shard::ShardId;
+use crate::shards::shard::ShardId;
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub enum ShardTelemetry {

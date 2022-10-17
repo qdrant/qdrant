@@ -5,7 +5,7 @@ use collection::operations::types::{
     SearchRequestBatch, UpdateResult,
 };
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
-use collection::shard::ShardId;
+use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
 use segment::types::{PayloadFieldSchema, ScoredPoint};
 use serde::{Deserialize, Serialize};

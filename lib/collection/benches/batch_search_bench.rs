@@ -10,8 +10,8 @@ use collection::operations::point_ops::{PointInsertOperations, PointOperations, 
 use collection::operations::types::{SearchRequest, SearchRequestBatch};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::shard::local_shard::LocalShard;
-use collection::shard::ShardOperation;
+use collection::shards::local_shard::LocalShard;
+use collection::shards::shard_trait::ShardOperation;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
 use segment::data_types::vectors::only_default_vector;

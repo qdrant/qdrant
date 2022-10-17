@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use collection::shard::PeerId;
+use collection::shards::shard::PeerId;
 use http::Uri;
 use parking_lot::RwLock;
 use raft::eraftpb::{ConfState, HardState, SnapshotMetadata};

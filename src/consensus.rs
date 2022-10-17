@@ -10,7 +10,7 @@ use anyhow::Context;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{PeerId, RaftMessage as GrpcRaftMessage};
 use api::grpc::transport_channel_pool::TransportChannelPool;
-use collection::shard::ChannelService;
+use collection::shards::channel_service::ChannelService;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole};
@@ -631,7 +631,7 @@ fn handle_committed_entries(
 }
 
 async fn who_is(
-    peer_id: collection::shard::PeerId,
+    peer_id: collection::shards::shard::PeerId,
     bootstrap_uri: Option<Uri>,
     config: Arc<ConsensusConfig>,
 ) -> anyhow::Result<Uri> {
@@ -681,7 +681,7 @@ mod tests {
     use std::thread;
 
     use collection::config::VectorParams;
-    use collection::shard::ChannelService;
+    use collection::shards::channel_service::ChannelService;
     use segment::types::Distance;
     use slog::Drain;
     use storage::content_manager::collection_meta_ops::{

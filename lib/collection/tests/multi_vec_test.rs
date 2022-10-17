@@ -32,6 +32,7 @@ async fn test_multi_vec() {
     test_multi_vec_with_shards(N_SHARDS).await;
 }
 
+#[cfg(test)]
 pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: u32) -> Collection {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
@@ -157,7 +158,11 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         .search(failed_search_request, &Handle::current(), None)
         .await;
 
-    assert!(matches!(result, Err(CollectionError::BadInput { .. })));
+    assert!(
+        matches!(result, Err(CollectionError::BadInput { .. })),
+        "{:?}",
+        result
+    );
 
     let full_search_request = SearchRequest {
         vector: NamedVector {

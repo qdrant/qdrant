@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shard::shard_config::{ShardConfig, ShardType};
-use crate::shard::{ShardId, ShardVersion};
+use crate::shards::shard::ShardId;
+use crate::shards::shard_config::{ShardConfig, ShardType};
+use crate::shards::ShardVersion;
 
 async fn shards_versions(
     collection_path: &Path,

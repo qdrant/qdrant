@@ -74,9 +74,7 @@ impl Dispatcher {
                             .toc
                             .suggest_shard_replica_changes(&op.collection_name, repl_factor)
                             .await?;
-                        if let Some(changes) = changes {
-                            op.set_shard_replica_changes(changes.into_iter().collect());
-                        }
+                        op.set_shard_replica_changes(changes.into_iter().collect());
                     }
                     CollectionMetaOperations::UpdateCollection(op)
                 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::shard::PeerId;
+use collection::shards::shard::PeerId;
 use schemars::JsonSchema;
 use segment::telemetry::{telemetry_hash, Anonymize};
 use segment::types::HnswConfig;

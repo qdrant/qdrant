@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::shard::{PeerId, ShardId};
+use crate::shards::shard::{PeerId, ShardId};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
