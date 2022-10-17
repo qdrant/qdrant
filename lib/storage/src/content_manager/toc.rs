@@ -365,9 +365,12 @@ impl TableOfContent {
             collection.update_optimizer_params_from_diff(diff).await?
         }
         if let Some(diff) = params {
-            collection
-                .update_params_from_diff(diff, replica_changes)
-                .await?;
+            collection.update_params_from_diff(diff).await?;
+            if let Some(changes) = replica_changes {
+                collection
+                    .handle_replica_changes(changes.into_iter().collect())
+                    .await?;
+            }
         }
         Ok(true)
     }

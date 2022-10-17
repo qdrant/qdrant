@@ -1001,14 +1001,9 @@ impl Collection {
     pub async fn update_params_from_diff(
         &self,
         params_diff: CollectionParamsDiff,
-        replica_changes: Option<Vec<Change>>,
     ) -> CollectionResult<()> {
         let mut config = self.config.write().await;
         config.params = params_diff.update(&config.params)?;
-        if let Some(changes) = replica_changes {
-            self.handle_replica_changes(changes.into_iter().collect())
-                .await?;
-        }
         Ok(())
     }
 
