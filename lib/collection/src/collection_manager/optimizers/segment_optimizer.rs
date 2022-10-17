@@ -358,27 +358,40 @@ pub trait SegmentOptimizer {
             PayloadFieldSchema,
         >::new()));
 
-        let proxies = optimizing_segments.iter().map(|sg| {
-            ProxySegment::new(
+        let mut proxies = Vec::new();
+        for sg in optimizing_segments.iter() {
+            let mut proxy = ProxySegment::new(
                 sg.clone(),
                 tmp_segment.clone(),
                 proxy_deleted_points.clone(),
                 proxy_created_indexes.clone(),
                 proxy_deleted_indexes.clone(),
-            )
-        });
+            );
+            // Wrapped segment is fresh, so it has no operations
+            // Operation with number 0 will be applied
+            let op_num = 0;
+            proxy.replicate_field_indexes(op_num)?;
+            proxies.push(proxy);
+        }
 
         let proxy_ids: Vec<_> = {
-            // Exclusive lock for the segments operations
+            // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segment_lock);
-
-            proxies
-                .zip(ids.iter().cloned())
-                .map(|(proxy, idx)| write_segments.swap(proxy, &[idx]).0)
-                .collect()
+            let mut proxy_ids = Vec::new();
+            for (mut proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
+                // replicate_field_indexes for the second time,
+                // because optimized segments could have been changed.
+                // The probability is small, though,
+                // so we can afford this operation under the full collection write lock
+                let op_num = 0;
+                proxy.replicate_field_indexes(op_num)?; // Slow only in case the index is change in the gap between two calls
+                proxy_ids.push(write_segments.swap(proxy, &[idx]).0);
+            }
+            proxy_ids
         };
 
         // ---- SLOW PART -----
+
         let mut optimized_segment = match self.build_new_segment(
             &optimizing_segments,
             proxy_deleted_points.clone(),

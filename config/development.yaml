@@ -17,3 +17,6 @@ storage:
   optimizers:
     # Minimum interval between forced flushes.
     flush_interval_sec: 5
+
+    # Do not create too much segments in dev
+    default_segment_number: 2
