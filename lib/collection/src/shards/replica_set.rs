@@ -58,12 +58,6 @@ pub enum ReplicaState {
 /// Represents a change in replica set, due to scaling of `replication_factor`
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {
-    Add {
-        shard: ShardId,
-        to: PeerId,
-        /// A peer which sends the shard data to the newly added peer
-        from: PeerId,
-    },
     Remove(ShardId, PeerId),
 }
 

@@ -1025,16 +1025,6 @@ impl Collection {
 
         for change in replica_changes {
             match change {
-                Change::Add { shard, to, from } => {
-                    if self.this_peer_id == from {
-                        self.request_shard_transfer(ShardTransfer {
-                            shard_id: shard,
-                            from,
-                            to,
-                            sync: true,
-                        });
-                    }
-                }
                 Change::Remove(shard_id, peer_id) => {
                     let replica_set_opt = read_shard_holder.get_shard(&shard_id);
                     let replica_set = if let Some(replica_set) = replica_set_opt {
