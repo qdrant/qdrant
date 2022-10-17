@@ -241,6 +241,67 @@ pub async fn transfer_shard(
     transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
 }
 
+
+/// Confirms that the transfer makes sense with the current state cluster
+///
+/// Checks:
+/// 1. If `from` and `to` exists
+/// 2. If `from` have local shard and it is active
+/// 3. If there is no active transfer from the same shard and peer
+///
+/// If validation fails, return `BadRequest` error.
+pub fn validate_transfer(
+    transfer: &ShardTransfer,
+    all_peers: &HashSet<PeerId>,
+    shard_state: Option<&HashMap<PeerId, ReplicaState>>,
+    current_transfers: &HashSet<ShardTransfer>,
+) -> CollectionResult<()> {
+
+    let shard_state = if let Some(shard_state) = shard_state {
+        shard_state
+    } else {
+        return Err(CollectionError::service_error(format!(
+            "Shard {} does not exist",
+            transfer.shard_id
+        )));
+    };
+
+
+    if !all_peers.contains(&transfer.from) {
+        return Err(CollectionError::bad_request(format!(
+            "Peer {} does not exist",
+            transfer.from
+        )));
+    }
+
+    if !all_peers.contains(&transfer.to) {
+        return Err(CollectionError::bad_request(format!(
+            "Peer {} does not exist",
+            transfer.to
+        )));
+    }
+
+    if shard_state.get(&transfer.from) != Some(&ReplicaState::Active) {
+        return Err(CollectionError::bad_request(format!(
+            "Shard {} is not active on peer {}",
+            transfer.shard_id, transfer.from
+        )));
+    }
+
+    if current_transfers
+        .iter()
+        .any(|t| t.shard_id == transfer.shard_id && t.from == transfer.from)
+    {
+        return Err(CollectionError::bad_request(format!(
+            "Shard {} is already being transferred from peer {}",
+            transfer.shard_id, transfer.from
+        )));
+    }
+
+    Ok(())
+}
+
+
 /// Selects a best peer to transfer shard from.
 ///
 /// Requirements:

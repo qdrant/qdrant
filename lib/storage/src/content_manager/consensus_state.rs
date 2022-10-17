@@ -407,6 +407,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
     }
 
     pub fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        // We sincerely apologize for this piece of code.
+        // The `id_to_address` is shared between `channel_pool` and `persistent`,
+        // plus we need to make additional removing in the `channel_pool`.
+        // So we handle `remove_peer` inside the `toc` and persist changes in the `persistent` after that.
         self.toc.remove_peer(peer_id);
         self.persistent.read().save()
     }

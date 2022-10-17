@@ -355,6 +355,14 @@ impl CollectionError {
         CollectionError::ServiceError { error }
     }
 
+    pub fn bad_input(description: String) -> CollectionError {
+        CollectionError::BadInput { description }
+    }
+
+    pub fn bad_request(description: String) -> CollectionError {
+        CollectionError::BadRequest { description }
+    }
+
     pub fn bad_shard_selection(description: String) -> CollectionError {
         CollectionError::BadShardSelection { description }
     }

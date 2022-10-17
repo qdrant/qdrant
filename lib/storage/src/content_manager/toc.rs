@@ -17,6 +17,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::shard_transfer::validate_transfer;
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
@@ -518,27 +519,31 @@ impl TableOfContent {
         let collection = self.get_collection(&collection_id).await?;
         match transfer_operation {
             ShardTransferOperations::Start(transfer) => {
-                // check that transfer can be performed
-                if self.this_peer_id == transfer.from
-                    && !collection
-                        .is_shard_local(&transfer.shard_id)
-                        .await
-                        .unwrap_or(false)
-                {
-                    let err = Err(StorageError::BadRequest {
-                        description: format!(
-                            "Shard {} not local on {} peer",
-                            transfer.shard_id, self.this_peer_id
-                        ),
-                    });
-                    self.consensus_proposal_sender
-                        .send(ConsensusOperations::abort_transfer(
-                            collection_id,
-                            transfer,
-                            "Bad source peer",
-                        ))?;
-                    return err;
-                }
+                let collection_state::State {
+                    config: _,
+                    shards,
+                    transfers,
+                } = collection.state().await;
+                let all_peers: HashSet<_> = self
+                    .channel_service
+                    .id_to_address
+                    .read()
+                    .keys()
+                    .cloned()
+                    .collect();
+                let shard_state = shards.get(&transfer.shard_id).map(|info| &info.replicas);
+
+                // Valid transfer:
+                // All peers: 123, 321, 111, 222, 333
+                // Peers: shard_id=1 - [{123: Active}]
+                // Transfer: {123 -> 321}, shard_id=1
+
+                // Invalid transfer:
+                // All peers: 123, 321, 111, 222, 333
+                // Peers: shard_id=1 - [{123: Active}]
+                // Transfer: {321 -> 123}, shard_id=1
+
+                validate_transfer(&transfer, &all_peers, shard_state, &transfers)?;
 
                 let proposal_sender = self.consensus_proposal_sender.clone();
                 let collection_id_clone = collection_id.clone();

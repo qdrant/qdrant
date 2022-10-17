@@ -8,6 +8,7 @@ use crate::shards::shard::PeerId;
 
 #[derive(Clone)]
 pub struct ChannelService {
+    // Shared with consensus_state
     pub id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
     pub channel_pool: Arc<TransportChannelPool>,
 }
