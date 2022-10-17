@@ -8,7 +8,7 @@ use storage::content_manager::toc::TableOfContent;
 use tokio::sync::Mutex;
 
 use crate::actix::helpers::process_response;
-use crate::common::helpers::WriteLockStatus;
+use crate::common::helpers::WriteLockOptions;
 use crate::common::telemetry::TelemetryCollector;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -36,12 +36,13 @@ async fn telemetry(
 #[put("/write_lock")]
 async fn put_write_lock(
     toc: web::Data<TableOfContent>,
-    request: web::Json<WriteLockStatus>,
+    options: Option<web::Json<WriteLockOptions>>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let result = toc
-        .get_ref()
-        .set_write_lock(request.locked, request.error_message.clone());
+    let result = toc.get_ref().set_write_lock(
+        true,
+        options.and_then(|options| options.error_message.clone()),
+    );
     process_response(Ok(result), timing)
 }
 
@@ -52,9 +53,25 @@ async fn get_write_lock(toc: web::Data<TableOfContent>) -> impl Responder {
     process_response(Ok(result), timing)
 }
 
+#[put("/write_unlock")]
+async fn put_write_unlock(toc: web::Data<TableOfContent>) -> impl Responder {
+    let timing = Instant::now();
+    let result = toc.get_ref().set_write_lock(false, None);
+    process_response(Ok(result), timing)
+}
+
+#[get("/write_unlock")]
+async fn get_write_unlock(toc: web::Data<TableOfContent>) -> impl Responder {
+    let timing = Instant::now();
+    let result = !toc.get_ref().is_locked();
+    process_response(Ok(result), timing)
+}
+
 // Configure services
 pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
         .service(put_write_lock)
-        .service(get_write_lock);
+        .service(get_write_lock)
+        .service(put_write_unlock)
+        .service(get_write_unlock);
 }

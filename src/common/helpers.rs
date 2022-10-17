@@ -6,8 +6,7 @@ use tokio::runtime;
 use tokio::runtime::Runtime;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
-pub struct WriteLockStatus {
-    pub locked: bool,
+pub struct WriteLockOptions {
     pub error_message: Option<String>,
 }
 

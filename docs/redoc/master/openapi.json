@@ -74,18 +74,18 @@
     },
     "/write_lock": {
       "put": {
-        "summary": "Set write lock",
-        "description": "Set write lock. If locked, all write operations and collections creation are forbidden. Returns previous lock value",
+        "summary": "Lock writing",
+        "description": "Lock writing. If locked, all write operations and collections creation are forbidden. Returns previous lock value",
         "operationId": "put_write_lock",
         "tags": [
           "service"
         ],
         "requestBody": {
-          "description": "Lock status and optional error message",
+          "description": "Optional error message",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WriteLockStatus"
+                "$ref": "#/components/schemas/WriteLockOptions"
               }
             }
           }
@@ -140,9 +140,123 @@
         }
       },
       "get": {
-        "summary": "Get write lock status",
-        "description": "If locked, all write operations and collections creation are forbidden",
+        "summary": "Check if writing is locked",
+        "description": "Check if writing is locked. If locked, all write operations and collections creation are forbidden",
         "operationId": "get_write_lock",
+        "tags": [
+          "service"
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/write_unlock": {
+      "put": {
+        "summary": "Unlock writing",
+        "description": "Unlock writing. If locked, all write operations and collections creation are forbidden. Returns previous lock value",
+        "operationId": "put_write_unlock",
+        "tags": [
+          "service"
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Check if writing is unlocked",
+        "description": "Check if writing is unlocked. If locked, all write operations and collections creation are forbidden",
+        "operationId": "get_write_unlock",
         "tags": [
           "service"
         ],
@@ -5836,15 +5950,9 @@
           }
         }
       },
-      "WriteLockStatus": {
+      "WriteLockOptions": {
         "type": "object",
-        "required": [
-          "locked"
-        ],
         "properties": {
-          "locked": {
-            "type": "boolean"
-          },
           "error_message": {
             "type": "string",
             "nullable": true

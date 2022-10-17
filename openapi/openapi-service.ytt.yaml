@@ -19,23 +19,40 @@ paths:
 
   /write_lock:
     put:
-      summary: Set write lock
-      description: Set write lock. If locked, all write operations and collections creation are forbidden. Returns previous lock value
+      summary: Lock writing
+      description: Lock writing. If locked, all write operations and collections creation are forbidden. Returns previous lock value
       operationId: put_write_lock
       tags:
         - service
       requestBody:
-        description: Lock status and optional error message
+        description: Optional error message
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/WriteLockStatus"
+              $ref: "#/components/schemas/WriteLockOptions"
       responses: #@ response(type("boolean"))
 
     get:
-      summary: Get write lock status
-      description:  If locked, all write operations and collections creation are forbidden
+      summary: Check if writing is locked
+      description:  Check if writing is locked. If locked, all write operations and collections creation are forbidden
       operationId: get_write_lock
+      tags:
+        - service
+      responses: #@ response(type("boolean"))
+
+  /write_unlock:
+    put:
+      summary: Unlock writing
+      description: Unlock writing. If locked, all write operations and collections creation are forbidden. Returns previous lock value
+      operationId: put_write_unlock
+      tags:
+        - service
+      responses: #@ response(type("boolean"))
+
+    get:
+      summary: Check if writing is unlocked
+      description:  Check if writing is unlocked. If locked, all write operations and collections creation are forbidden
+      operationId: get_write_unlock
       tags:
         - service
       responses: #@ response(type("boolean"))
