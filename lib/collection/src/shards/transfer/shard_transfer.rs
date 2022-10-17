@@ -178,6 +178,8 @@ pub async fn handle_transferred_shard_proxy(
         Some(replica_set) => replica_set,
     };
 
+    replica_set.add_remote(to, ReplicaState::Active).await?;
+
     if sync {
         // Keep local shard in the replica set
         replica_set.un_proxify_local().await?;
@@ -185,8 +187,6 @@ pub async fn handle_transferred_shard_proxy(
         // Remove local proxy
         replica_set.remove_local().await?;
     }
-
-    replica_set.add_remote(to, ReplicaState::Active).await?;
 
     Ok(true)
 }
