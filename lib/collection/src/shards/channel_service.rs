@@ -6,7 +6,7 @@ use tonic::transport::Uri;
 
 use crate::shards::shard::PeerId;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ChannelService {
     // Shared with consensus_state
     pub id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
@@ -28,15 +28,6 @@ impl ChannelService {
         let removed = self.id_to_address.write().remove(&peer_id);
         if let Some(uri) = removed {
             self.channel_pool.drop_pool(&uri).await;
-        }
-    }
-}
-
-impl Default for ChannelService {
-    fn default() -> Self {
-        Self {
-            id_to_address: Arc::new(Default::default()),
-            channel_pool: Arc::new(Default::default()),
         }
     }
 }

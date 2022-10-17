@@ -86,10 +86,12 @@ impl ShardDistributionProposal {
             .cloned()
             .collect()
     }
+}
 
-    pub fn into(self) -> CollectionShardDistribution {
+impl From<ShardDistributionProposal> for CollectionShardDistribution {
+    fn from(proposal: ShardDistributionProposal) -> Self {
         CollectionShardDistribution {
-            shards: self
+            shards: proposal
                 .distribution
                 .into_iter()
                 .map(|(shard_id, peers)| (shard_id, peers.into_iter().collect()))

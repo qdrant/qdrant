@@ -53,7 +53,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
 
         let mut data_copy = (*read_data).clone();
         let output = f(&mut data_copy).map_err(|err| Error::FromClosure(Box::new(err)))?;
-        self.save_data_to(&self.path, &data_copy)?;
+        Self::save_data_to(&self.path, &data_copy)?;
 
         let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
 
@@ -65,7 +65,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         let read_data = self.data.upgradable_read();
         let mut data_copy = (*read_data).clone();
         let output = f(&mut data_copy);
-        self.save_data_to(&self.path, &data_copy)?;
+        Self::save_data_to(&self.path, &data_copy)?;
 
         let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
 
@@ -73,7 +73,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         Ok(output)
     }
 
-    fn save_data_to(&self, path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {
+    fn save_data_to(path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {
         let path: PathBuf = path.into();
         AtomicFile::new(&path, AllowOverwrite).write(|file| {
             let writer = BufWriter::new(file);
@@ -87,7 +87,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     }
 
     pub fn save_to(&self, path: impl Into<PathBuf>) -> Result<(), Error> {
-        self.save_data_to(path, &self.data.read())
+        Self::save_data_to(path, &self.data.read())
     }
 }
 
