@@ -401,7 +401,7 @@ impl Collection {
 
         // Should happen on a third-party side
         // Change direction of the remote shards or add a new remote shard
-        if self.this_peer_id != transfer.from && self.this_peer_id != transfer.to {
+        if self.this_peer_id != transfer.from {
             let remote_shard_rerouted = change_remote_shard_route(
                 self.shards_holder.clone(),
                 transfer.shard_id,

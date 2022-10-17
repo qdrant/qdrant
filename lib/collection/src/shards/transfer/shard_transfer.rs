@@ -129,9 +129,11 @@ pub async fn change_remote_shard_route(
         Some(replica_set) => replica_set,
     };
 
-    replica_set
-        .add_remote(new_peer_id, ReplicaState::Active)
-        .await?;
+    if replica_set.this_peer_id() != new_peer_id {
+        replica_set
+            .add_remote(new_peer_id, ReplicaState::Active)
+            .await?;
+    }
 
     if !sync {
         // Transfer was a move, we need to remove the old peer
