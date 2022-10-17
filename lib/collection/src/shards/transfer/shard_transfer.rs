@@ -241,7 +241,6 @@ pub async fn transfer_shard(
     transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
 }
 
-
 /// Confirms that the transfer makes sense with the current state cluster
 ///
 /// Checks:
@@ -256,7 +255,6 @@ pub fn validate_transfer(
     shard_state: Option<&HashMap<PeerId, ReplicaState>>,
     current_transfers: &HashSet<ShardTransfer>,
 ) -> CollectionResult<()> {
-
     let shard_state = if let Some(shard_state) = shard_state {
         shard_state
     } else {
@@ -265,7 +263,6 @@ pub fn validate_transfer(
             transfer.shard_id
         )));
     };
-
 
     if !all_peers.contains(&transfer.from) {
         return Err(CollectionError::bad_request(format!(
@@ -300,7 +297,6 @@ pub fn validate_transfer(
 
     Ok(())
 }
-
 
 /// Selects a best peer to transfer shard from.
 ///
