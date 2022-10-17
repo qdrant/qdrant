@@ -19,7 +19,7 @@ use crate::operations::types::{
     SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shard::remote_shard::CollectionSearchRequest;
+use crate::shards::remote_shard::CollectionSearchRequest;
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {

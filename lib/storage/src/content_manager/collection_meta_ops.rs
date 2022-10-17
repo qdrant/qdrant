@@ -2,7 +2,10 @@ use collection::config::VectorsConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
 };
-use collection::shard::{replica_set, CollectionId, PeerId, ShardId, ShardTransfer};
+use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::shard_transfer::ShardTransfer;
+use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -185,7 +188,11 @@ impl UpdateCollectionOperation {
     }
 
     pub fn set_shard_replica_changes(&mut self, changes: Vec<replica_set::Change>) {
-        self.shard_replica_changes = Some(changes);
+        if changes.is_empty() {
+            self.shard_replica_changes = None;
+        } else {
+            self.shard_replica_changes = Some(changes);
+        }
     }
 }
 
@@ -219,8 +226,8 @@ pub struct SetShardReplicaState {
     pub collection_name: String,
     pub shard_id: ShardId,
     pub peer_id: PeerId,
-    /// If `true` then the replica is up to date and can receive updates and answer requests
-    pub active: bool,
+    /// If `Active` then the replica is up to date and can receive updates and answer requests
+    pub state: ReplicaState,
 }
 
 /// Enumeration of all possible collection update operations

@@ -19,7 +19,7 @@ use std::time::Duration;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
-use collection::shard::ChannelService;
+use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
 use slog::Drain;
 use startup::setup_panic_hook;

@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use chrono::Utc;
 use collection::collection_state;
-use collection::shard::{CollectionId, PeerId};
+use collection::shards::shard::PeerId;
+use collection::shards::CollectionId;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
@@ -406,6 +407,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
     }
 
     pub fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        // We sincerely apologize for this piece of code.
+        // The `id_to_address` is shared between `channel_pool` and `persistent`,
+        // plus we need to make additional removing in the `channel_pool`.
+        // So we handle `remove_peer` inside the `toc` and persist changes in the `persistent` after that.
         self.toc.remove_peer(peer_id);
         self.persistent.read().save()
     }
@@ -609,7 +614,7 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 mod tests {
     use std::sync::{mpsc, Arc};
 
-    use collection::shard::PeerId;
+    use collection::shards::shard::PeerId;
     use proptest::prelude::*;
     use raft::eraftpb::Entry;
     use raft::storage::{MemStorage, Storage};

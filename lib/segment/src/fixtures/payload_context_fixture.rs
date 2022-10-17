@@ -50,7 +50,7 @@ impl IdTracker for FixtureIdTracker {
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
         Some(match external_id {
             PointIdType::NumId(id) => id as PointOffsetType,
-            PointIdType::Uuid(_) => todo!(),
+            PointIdType::Uuid(_) => unreachable!(),
         })
     }
 
@@ -91,7 +91,7 @@ impl IdTracker for FixtureIdTracker {
             None => 0,
             Some(id) => match id {
                 PointIdType::NumId(num) => num,
-                PointIdType::Uuid(_) => todo!(),
+                PointIdType::Uuid(_) => unreachable!(),
             },
         } as PointOffsetType;
 

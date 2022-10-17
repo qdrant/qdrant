@@ -744,7 +744,7 @@ impl SegmentEntry for Segment {
         let iterator = id_tracker.iter_from(from).map(|x| x.0);
         match to {
             None => iterator.collect(),
-            Some(to_id) => iterator.take_while(|x| *x <= to_id).collect(),
+            Some(to_id) => iterator.take_while(|x| *x < to_id).collect(),
         }
     }
 

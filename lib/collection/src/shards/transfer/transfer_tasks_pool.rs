@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
-use crate::shard::ShardTransfer;
+use crate::shards::transfer::shard_transfer::ShardTransfer;
 
 #[derive(Default)]
 pub struct TransferTasksPool {
@@ -66,5 +66,9 @@ impl TransferTasksPool {
         task: StoppableAsyncTaskHandle<bool>,
     ) {
         self.tasks.insert(shard_transfer.clone(), task);
+    }
+
+    pub fn get_transfers(&self) -> Vec<ShardTransfer> {
+        self.tasks.keys().cloned().collect()
     }
 }

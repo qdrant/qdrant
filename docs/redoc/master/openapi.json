@@ -4732,7 +4732,8 @@
         "type": "object",
         "required": [
           "points_count",
-          "shard_id"
+          "shard_id",
+          "state"
         ],
         "properties": {
           "shard_id": {
@@ -4746,14 +4747,44 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReplicaState"
           }
         }
+      },
+      "ReplicaState": {
+        "description": "State of the single shard within replica set",
+        "oneOf": [
+          {
+            "description": "Active and sound",
+            "type": "string",
+            "enum": [
+              "Active"
+            ]
+          },
+          {
+            "description": "Failed for some reason",
+            "type": "string",
+            "enum": [
+              "Dead"
+            ]
+          },
+          {
+            "description": "The shard is partially loaded and is currently receiving data from other shards",
+            "type": "string",
+            "enum": [
+              "Partial"
+            ]
+          }
+        ]
       },
       "RemoteShardInfo": {
         "type": "object",
         "required": [
           "peer_id",
-          "shard_id"
+          "shard_id",
+          "state"
         ],
         "properties": {
           "shard_id": {
@@ -4767,6 +4798,9 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReplicaState"
           }
         }
       },

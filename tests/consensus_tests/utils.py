@@ -10,7 +10,6 @@ from contextlib import closing
 from pathlib import Path
 import pytest
 
-
 # Tracks processes that need to be killed at the end of the test
 processes = []
 
@@ -38,6 +37,7 @@ def get_env(p2p_port: int, grpc_port: int, http_port: int) -> dict[str, str]:
     env["QDRANT__CLUSTER__P2P__PORT"] = str(p2p_port)
     env["QDRANT__SERVICE__HTTP_PORT"] = str(http_port)
     env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
+    env["QDRANT__LOG_LEVEL"] = "DEBUG,raft::raft=info"
     return env
 
 
@@ -73,6 +73,8 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
     http_port = get_port()
     env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
+    print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
+          f" http: http://localhost:{http_port}/cluster , p2p: {p2p_port}")
     processes.append(
         Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
     return get_uri(http_port)
@@ -86,6 +88,8 @@ def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
     env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     bootstrap_uri = get_uri(p2p_port)
+    print(f"Starting first peer with uri {bootstrap_uri},"
+          f" http: http://localhost:{http_port}/cluster , p2p: {p2p_port}")
     processes.append(
         Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
     return get_uri(http_port), bootstrap_uri
@@ -197,13 +201,15 @@ def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -
     return True
 
 
-def check_collection_local_shards_count(peer_api_uri: str, collection_name: str, expected_local_shard_count: int) -> bool:
+def check_collection_local_shards_count(peer_api_uri: str, collection_name: str,
+                                        expected_local_shard_count: int) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
     local_shard_count = len(collection_cluster_info["local_shards"])
     return local_shard_count == expected_local_shard_count
 
 
-def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: str, expected_shard_transfers_count: int) -> bool:
+def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: str,
+                                           expected_shard_transfers_count: int) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
     local_shard_count = len(collection_cluster_info["shard_transfers"])
     return local_shard_count == expected_shard_transfers_count
@@ -235,7 +241,8 @@ def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [
         raise e
 
 
-def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name: str, expected_shard_transfer_count: int):
+def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name: str,
+                                              expected_shard_transfer_count: int):
     try:
         wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count)
     except Exception as e:
@@ -256,6 +263,7 @@ def wait_for(condition: Callable[..., bool], *args):
     while not condition(*args):
         elapsed = time.time() - start
         if elapsed > WAIT_TIME_SEC:
-            raise Exception(f"Timeout waiting for condition {condition.__name__} to be satisfied in {WAIT_TIME_SEC} seconds")
+            raise Exception(
+                f"Timeout waiting for condition {condition.__name__} to be satisfied in {WAIT_TIME_SEC} seconds")
         else:
             time.sleep(RETRY_INTERVAL_SEC)

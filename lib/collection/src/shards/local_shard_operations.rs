@@ -18,8 +18,8 @@ use crate::operations::types::{
     OptimizersStatus, PointRequest, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::shard::local_shard::LocalShard;
-use crate::shard::ShardOperation;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
 
 #[async_trait]
