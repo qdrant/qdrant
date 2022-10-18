@@ -67,8 +67,8 @@ pub trait SegmentOptimizer {
 
     fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>>;
 
-    /// Build temp segment
-    fn temp_segment(&self) -> CollectionResult<LockedSegment> {
+    /// Build writing segment for proxy
+    fn build_writing_segment(&self, segments: &[LockedSegment]) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
             vector_data: collection_params.get_all_vector_params()?,
@@ -79,10 +79,24 @@ pub trait SegmentOptimizer {
                 false => PayloadStorageType::InMemory,
             },
         };
-        Ok(LockedSegment::new(build_segment(
-            self.collection_path(),
-            &config,
-        )?))
+        let mut temp_segment = build_segment(self.collection_path(), &config)?;
+
+        // Wrapped segment is fresh, so it has no operations
+        // Operation with number 0 will be applied
+        let op_num = 0;
+
+        let mut added_indexed_fields = HashSet::new();
+        for segment in segments {
+            let indexed_fields = segment.get().read().get_indexed_fields();
+            for (name, schema) in &indexed_fields {
+                if !added_indexed_fields.contains(name) {
+                    temp_segment.create_field_index(op_num, name, Some(schema))?;
+                    added_indexed_fields.insert(name.clone());
+                }
+            }
+        }
+
+        Ok(LockedSegment::new(temp_segment))
     }
 
     /// Build optimized segment
@@ -349,7 +363,7 @@ pub trait SegmentOptimizer {
             return Ok(false);
         }
 
-        let tmp_segment = self.temp_segment()?;
+        let tmp_segment = self.build_writing_segment(&optimizing_segments)?;
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
