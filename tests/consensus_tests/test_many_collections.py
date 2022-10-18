@@ -45,7 +45,7 @@ def test_many_collections(tmp_path: pathlib.Path):
                     "size": 4,
                     "distance": "Dot"
                 },
-                "shard_number": 1 # single shard
+                "shard_number": 1  # single shard
             })
         assert_http_ok(r)
 

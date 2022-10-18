@@ -5,6 +5,7 @@ from .utils import *
 
 N_PEERS = 2
 N_SHARDS = 2
+N_REPLICA = 1
 
 
 def test_collection_shard_transfer(tmp_path: pathlib.Path):
@@ -44,6 +45,7 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
                 "distance": "Dot"
             },
             "shard_number": N_SHARDS,
+            "replication_factor": N_REPLICA,
         })
     assert_http_ok(r)
 
