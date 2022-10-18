@@ -15,6 +15,8 @@ pub enum StorageError {
     ServiceError { description: String },
     #[error("Bad request: {description}")]
     BadRequest { description: String },
+    #[error("Storage locked: {description}")]
+    Locked { description: String },
 }
 
 impl StorageError {

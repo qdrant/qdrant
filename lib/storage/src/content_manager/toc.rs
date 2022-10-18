@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
@@ -46,6 +47,7 @@ pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
+pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidden";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -60,6 +62,8 @@ pub struct TableOfContent {
     channel_service: ChannelService,
     /// Backlink to the consensus
     consensus_proposal_sender: OperationSender,
+    is_write_locked: AtomicBool,
+    lock_error_message: parking_lot::Mutex<Option<String>>,
 }
 
 impl TableOfContent {
@@ -137,6 +141,8 @@ impl TableOfContent {
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
+            is_write_locked: AtomicBool::new(false),
+            lock_error_message: parking_lot::Mutex::new(None),
         }
     }
 
@@ -222,6 +228,16 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
+        if self.is_write_locked.load(Ordering::Relaxed) {
+            return Err(StorageError::Locked {
+                description: self
+                    .lock_error_message
+                    .lock()
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
+            });
+        }
+
         let CreateCollection {
             vectors,
             shard_number,
@@ -818,6 +834,16 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
+        if operation.is_write_operation() && self.is_write_locked.load(Ordering::Relaxed) {
+            return Err(StorageError::Locked {
+                description: self
+                    .lock_error_message
+                    .lock()
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
+            });
+        }
+
         let collection = self.get_collection(collection_name).await?;
         let result = match shard_selection {
             Some(shard_selection) => {
@@ -1033,6 +1059,20 @@ impl TableOfContent {
             }
         }
         false
+    }
+
+    pub fn set_locks(&self, is_write_locked: bool, error_message: Option<String>) {
+        self.is_write_locked
+            .store(is_write_locked, Ordering::Relaxed);
+        *self.lock_error_message.lock() = error_message;
+    }
+
+    pub fn is_write_locked(&self) -> bool {
+        self.is_write_locked.load(Ordering::Relaxed)
+    }
+
+    pub fn get_lock_error_message(&self) -> Option<String> {
+        self.lock_error_message.lock().clone()
     }
 
     fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {

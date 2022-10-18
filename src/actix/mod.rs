@@ -19,8 +19,8 @@ use crate::actix::api::count_api::count_points;
 use crate::actix::api::recommend_api::config_recommend_api;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::config_search_api;
+use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
-use crate::actix::api::telemetry_api::config_telemetry_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
@@ -89,7 +89,7 @@ pub fn init(
                 .configure(config_snapshots_api)
                 .configure(config_update_api)
                 .configure(config_cluster_api)
-                .configure(config_telemetry_api)
+                .configure(config_service_api)
                 .configure(config_search_api)
                 .configure(config_recommend_api)
                 .service(get_point)

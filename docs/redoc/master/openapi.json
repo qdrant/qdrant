@@ -5,6 +5,9 @@
         "summary": "Collect telemetry data",
         "description": "Collect telemetry data including app info, system info, collections info, cluster info, configs and statistics",
         "operationId": "telemetry",
+        "tags": [
+          "service"
+        ],
         "parameters": [
           {
             "name": "anonymize",
@@ -60,6 +63,130 @@
                       "items": {
                         "$ref": "#/components/schemas/TelemetryData"
                       }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/locks": {
+      "post": {
+        "summary": "Set lock options",
+        "description": "Set lock options. If write is locked, all write operations and collection creation are forbidden. Returns previous lock options",
+        "operationId": "post_locks",
+        "tags": [
+          "service"
+        ],
+        "requestBody": {
+          "description": "Lock options and optional error message",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocksOption"
+              }
+            }
+          }
+        },
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/LocksOption"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get lock options",
+        "description": "Get lock options. If write is locked, all write operations and collection creation are forbidden",
+        "operationId": "get_locks",
+        "tags": [
+          "service"
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/LocksOption"
                     }
                   }
                 }
@@ -5740,6 +5867,21 @@
             "items": {
               "$ref": "#/components/schemas/RecommendRequest"
             }
+          }
+        }
+      },
+      "LocksOption": {
+        "type": "object",
+        "required": [
+          "write"
+        ],
+        "properties": {
+          "error_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "write": {
+            "type": "boolean"
           }
         }
       }
