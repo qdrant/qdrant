@@ -194,6 +194,17 @@ pub enum PointOperations {
     SyncPoints(PointSyncOperation),
 }
 
+impl PointOperations {
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            PointOperations::UpsertPoints(_) => true,
+            PointOperations::DeletePoints { .. } => false,
+            PointOperations::DeletePointsByFilter(_) => false,
+            PointOperations::SyncPoints(_) => true,
+        }
+    }
+}
+
 impl Validate for PointOperations {
     fn validate(&self) -> CollectionResult<()> {
         match self {

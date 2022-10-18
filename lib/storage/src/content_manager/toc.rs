@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use collection::collection::Collection;
@@ -60,8 +60,8 @@ pub struct TableOfContent {
     channel_service: ChannelService,
     /// Backlink to the consensus
     consensus_proposal_sender: OperationSender,
-    write_lock: AtomicBool,
-    write_lock_error_message: parking_lot::Mutex<Option<String>>,
+    is_write_locked: AtomicBool,
+    lock_error_message: parking_lot::Mutex<Option<String>>,
 }
 
 impl TableOfContent {
@@ -134,8 +134,8 @@ impl TableOfContent {
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
-            write_lock: AtomicBool::new(false),
-            write_lock_error_message: parking_lot::Mutex::new(None),
+            is_write_locked: AtomicBool::new(false),
+            lock_error_message: parking_lot::Mutex::new(None),
         }
     }
 
@@ -221,10 +221,10 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
-        if self.write_lock.load(std::sync::atomic::Ordering::Relaxed) {
+        if self.is_write_locked.load(Ordering::Relaxed) {
             return Err(StorageError::BadRequest {
                 description: self
-                    .write_lock_error_message
+                    .lock_error_message
                     .lock()
                     .clone()
                     .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
@@ -794,10 +794,10 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
-        if self.write_lock.load(std::sync::atomic::Ordering::Relaxed) {
+        if operation.is_write_operation() && self.is_write_locked.load(Ordering::Relaxed) {
             return Err(StorageError::BadRequest {
                 description: self
-                    .write_lock_error_message
+                    .lock_error_message
                     .lock()
                     .clone()
                     .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
@@ -1023,16 +1023,18 @@ impl TableOfContent {
         false
     }
 
-    pub fn set_write_lock(&self, locked: bool, error_message: Option<String>) -> bool {
-        let prev_value = self
-            .write_lock
-            .swap(locked, std::sync::atomic::Ordering::Relaxed);
-        *self.write_lock_error_message.lock() = error_message;
-        prev_value
+    pub fn set_locks(&self, is_write_locked: bool, error_message: Option<String>) {
+        self.is_write_locked
+            .store(is_write_locked, Ordering::Relaxed);
+        *self.lock_error_message.lock() = error_message;
     }
 
-    pub fn is_locked(&self) -> bool {
-        self.write_lock.load(std::sync::atomic::Ordering::Relaxed)
+    pub fn is_write_locked(&self) -> bool {
+        self.is_write_locked.load(Ordering::Relaxed)
+    }
+
+    pub fn get_lock_error_message(&self) -> Option<String> {
+        self.lock_error_message.lock().clone()
     }
 
     fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {

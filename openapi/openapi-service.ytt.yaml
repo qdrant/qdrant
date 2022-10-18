@@ -17,42 +17,25 @@ paths:
             type: boolean
       responses: #@ response(array(reference("TelemetryData")))
 
-  /write_lock:
-    put:
-      summary: Lock writing
-      description: Lock writing. If locked, all write operations and collections creation are forbidden. Returns previous lock value
-      operationId: put_write_lock
+  /locks:
+    post:
+      summary: Set lock options
+      description: Set lock options. If write is locked, all write operations and collection creation are forbidden. Returns previous lock options
+      operationId: post_locks
       tags:
         - service
       requestBody:
-        description: Optional error message
+        description: Lock options and optional error message
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/WriteLockOptions"
-      responses: #@ response(type("boolean"))
+              $ref: "#/components/schemas/LocksOption"
+      responses: #@ response(reference("LocksOption"))
 
     get:
-      summary: Check if writing is locked
-      description:  Check if writing is locked. If locked, all write operations and collections creation are forbidden
-      operationId: get_write_lock
+      summary: Get lock options
+      description: Get lock options. If write is locked, all write operations and collection creation are forbidden
+      operationId: get_locks
       tags:
         - service
-      responses: #@ response(type("boolean"))
-
-  /write_unlock:
-    put:
-      summary: Unlock writing
-      description: Unlock writing. If locked, all write operations and collections creation are forbidden. Returns previous lock value
-      operationId: put_write_unlock
-      tags:
-        - service
-      responses: #@ response(type("boolean"))
-
-    get:
-      summary: Check if writing is unlocked
-      description:  Check if writing is unlocked. If locked, all write operations and collections creation are forbidden
-      operationId: get_write_unlock
-      tags:
-        - service
-      responses: #@ response(type("boolean"))
+      responses: #@ response(reference("LocksOption"))

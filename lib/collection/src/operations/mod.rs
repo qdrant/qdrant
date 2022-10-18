@@ -70,6 +70,15 @@ impl<O> OperationToShard<O> {
     }
 }
 
+impl FieldIndexOperations {
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            FieldIndexOperations::CreateIndex(_) => true,
+            FieldIndexOperations::DeleteIndex(_) => false,
+        }
+    }
+}
+
 /// Stateless validation of operation content.
 /// Checks for `CollectionError::BadInput`
 pub trait Validate {
@@ -131,6 +140,20 @@ impl SplitByShard for CollectionUpdateOperations {
                 .map(CollectionUpdateOperations::PayloadOperation),
             operation @ CollectionUpdateOperations::FieldIndexOperation(_) => {
                 OperationToShard::to_all(operation)
+            }
+        }
+    }
+}
+
+impl CollectionUpdateOperations {
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            CollectionUpdateOperations::PointOperation(operation) => operation.is_write_operation(),
+            CollectionUpdateOperations::PayloadOperation(operation) => {
+                operation.is_write_operation()
+            }
+            CollectionUpdateOperations::FieldIndexOperation(operation) => {
+                operation.is_write_operation()
             }
         }
     }
