@@ -72,16 +72,16 @@
         }
       }
     },
-    "/write_lock": {
-      "put": {
-        "summary": "Lock writing",
-        "description": "Lock writing. If locked, all write operations and collections creation are forbidden. Returns previous lock value",
-        "operationId": "put_write_lock",
+    "/locks": {
+      "post": {
+        "summary": "Set lock options",
+        "description": "Set lock options. If write is locked, all write operations and collection creation are forbidden. Returns previous lock options",
+        "operationId": "post_locks",
         "tags": [
           "service"
         ],
         "requestBody": {
-          "description": "Optional error message",
+          "description": "Lock options and optional error message",
           "content": {
             "application/json": {
               "schema": {
@@ -140,9 +140,9 @@
         }
       },
       "get": {
-        "summary": "Check if writing is locked",
-        "description": "Check if writing is locked. If locked, all write operations and collections creation are forbidden",
-        "operationId": "get_write_lock",
+        "summary": "Get lock options",
+        "description": "Get lock options. If write is locked, all write operations and collection creation are forbidden",
+        "operationId": "get_locks",
         "tags": [
           "service"
         ],
