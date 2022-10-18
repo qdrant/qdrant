@@ -222,7 +222,7 @@ impl TableOfContent {
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
         if self.is_write_locked.load(Ordering::Relaxed) {
-            return Err(StorageError::BadRequest {
+            return Err(StorageError::Locked {
                 description: self
                     .lock_error_message
                     .lock()
@@ -795,7 +795,7 @@ impl TableOfContent {
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
         if operation.is_write_operation() && self.is_write_locked.load(Ordering::Relaxed) {
-            return Err(StorageError::BadRequest {
+            return Err(StorageError::Locked {
                 description: self
                     .lock_error_message
                     .lock()
