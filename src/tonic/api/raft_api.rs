@@ -83,7 +83,10 @@ impl Raft for RaftService {
         // the consensus operation can take up to DEFAULT_META_OP_WAIT
         self.consensus_state
             .propose_consensus_op_with_await(
-                ConsensusOperations::AddPeer(peer.id, uri.to_string()),
+                ConsensusOperations::AddPeer {
+                    peer_id: peer.id,
+                    uri: uri.to_string(),
+                },
                 None,
             )
             .await

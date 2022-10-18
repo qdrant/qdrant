@@ -339,7 +339,7 @@ impl Consensus {
                         log::debug!("Proposing network configuration change: {:?}", change);
                         self.node.propose_conf_change(vec![], change)
                     }
-                    ConsensusOperations::AddPeer(peer_id, uri) => {
+                    ConsensusOperations::AddPeer { peer_id, uri } => {
                         let mut change = ConfChangeV2::default();
                         change.set_changes(vec![raft_proto::new_conf_change_single(
                             peer_id,

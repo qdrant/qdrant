@@ -31,7 +31,7 @@ pub mod consensus_ops {
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
     pub enum ConsensusOperations {
         CollectionMeta(Box<CollectionMetaOperations>),
-        AddPeer(PeerId, String),
+        AddPeer { peer_id: PeerId, uri: String },
         RemovePeer(PeerId),
     }
 

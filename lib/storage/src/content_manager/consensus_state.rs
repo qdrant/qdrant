@@ -209,10 +209,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     {
                         let peer_uri: Uri = peer_uri;
                         self.add_peer(single_change.node_id, peer_uri.clone())?;
-                        let operation = ConsensusOperations::AddPeer(
-                            single_change.node_id,
-                            peer_uri.to_string(),
-                        );
+                        let operation = ConsensusOperations::AddPeer {
+                            peer_id: single_change.node_id,
+                            uri: peer_uri.to_string(),
+                        };
                         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
                         if let Some(on_apply) = on_apply {
                             if on_apply.send(Ok(true)).is_err() {

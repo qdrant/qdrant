@@ -24,4 +24,10 @@ paths:
           required: true
           schema:
             type: integer
+        - name: force
+          in: query
+          description: If true - removes peer even if it has shards/replicas on it.
+          schema:
+            type: boolean
+            default: false
       responses: #@ response(type("boolean"))
