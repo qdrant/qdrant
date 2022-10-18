@@ -581,7 +581,7 @@ pub enum PayloadSchemaParams {
     Text(TextIndexParams),
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum PayloadFieldSchema {
