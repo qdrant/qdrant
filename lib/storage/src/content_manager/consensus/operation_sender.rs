@@ -1,5 +1,7 @@
 use std::sync::mpsc::Sender;
+
 use parking_lot::Mutex;
+
 use crate::{ConsensusOperations, StorageError};
 
 /// Structure used to notify consensus about operation
