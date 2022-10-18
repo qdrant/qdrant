@@ -49,9 +49,8 @@ use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
-    change_remote_shard_route, drop_partial_shard, finalize_partial_shard,
-    handle_transferred_shard_proxy, revert_proxy_shard_to_local, spawn_transfer_task,
-    ShardTransfer,
+    change_remote_shard_route, finalize_partial_shard, handle_transferred_shard_proxy,
+    revert_proxy_shard_to_local, spawn_transfer_task, ShardTransfer, ShardTransferKey,
 };
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
@@ -280,9 +279,13 @@ impl Collection {
         }
     }
 
-    pub async fn check_transfer_exists(&self, transfer: &ShardTransfer) -> bool {
+    pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
         let shard_holder_read = self.shards_holder.read().await;
-        let transfers = shard_holder_read.shard_transfers.read().contains(transfer);
+        let transfers = shard_holder_read
+            .shard_transfers
+            .read()
+            .iter()
+            .any(|transfer| transfer_key.check(transfer));
         transfers
     }
 
@@ -304,7 +307,7 @@ impl Collection {
         OE: Future<Output = ()> + Send + 'static,
     {
         let mut active_transfer_tasks = self.transfer_tasks.lock().await;
-        let task_result = active_transfer_tasks.stop_if_exists(&transfer).await;
+        let task_result = active_transfer_tasks.stop_if_exists(&transfer.key()).await;
 
         debug_assert_eq!(task_result, TaskResult::NotFound);
 
@@ -339,18 +342,22 @@ impl Collection {
             let shards_holder = self.shards_holder.read().await;
             let _was_not_transferred =
                 shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
-            let replica_set = shards_holder.get_shard(&shard_id);
+            let replica_set_opt = shards_holder.get_shard(&shard_id);
 
             // Check if current node owns the shard which should be transferred
             // and therefor able to transfer
-            match replica_set {
-                None => {
-                    return Err(CollectionError::service_error(format!(
-                        "Shard {shard_id} doesn't exist"
-                    )))
-                }
-                Some(replica_set) => replica_set.is_local().await,
-            }
+            let replica_set = if let Some(replica_set) = replica_set_opt {
+                replica_set
+            } else {
+                // Service error, because it means the validation was incorrect
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} doesn't exist"
+                )));
+            };
+            // Set learning replica state on all peers
+            // This should disable queries to learning replica even if it was active
+            replica_set.set_replica_state(&shard_transfer.to, ReplicaState::Partial)?;
+            replica_set.is_local().await && replica_set.this_peer_id() == shard_transfer.from
         };
         if do_transfer {
             self.send_shard(shard_transfer, on_finish, on_error).await;
@@ -366,23 +373,25 @@ impl Collection {
             .shards_holder
             .read()
             .await
-            .register_finish_transfer(&transfer)?;
+            .register_finish_transfer(&transfer.key())?;
         let transfer_finished = self
             .transfer_tasks
             .lock()
             .await
-            .stop_if_exists(&transfer)
+            .stop_if_exists(&transfer.key())
             .await
             .is_finished();
         log::debug!("finish_was_registered: {}", finish_was_registered);
         log::debug!("transfer_finished: {}", transfer_finished);
+
+        let shards_holder_guard = self.shards_holder.read().await;
 
         // Should happen on transfer side
         // Unwrap forward proxy into local shard, or replace it with remote shard
         // depending on the `sync` flag.
         if self.this_peer_id == transfer.from {
             let proxy_promoted = handle_transferred_shard_proxy(
-                self.shards_holder.clone(),
+                &shards_holder_guard,
                 transfer.shard_id,
                 transfer.to,
                 transfer.sync,
@@ -395,7 +404,7 @@ impl Collection {
         // Promote partial shard to active shard
         if self.this_peer_id == transfer.to {
             let shard_promoted =
-                finalize_partial_shard(self.shards_holder.clone(), transfer.shard_id).await?;
+                finalize_partial_shard(&shards_holder_guard, transfer.shard_id).await?;
             log::debug!("shard_promoted: {}", shard_promoted);
         }
 
@@ -403,7 +412,7 @@ impl Collection {
         // Change direction of the remote shards or add a new remote shard
         if self.this_peer_id != transfer.from {
             let remote_shard_rerouted = change_remote_shard_route(
-                self.shards_holder.clone(),
+                &shards_holder_guard,
                 transfer.shard_id,
                 transfer.from,
                 transfer.to,
@@ -421,31 +430,42 @@ impl Collection {
     /// 2. Stop transfer task
     /// 3. Unwrap the proxy
     /// 4. Remove temp shard
-    pub async fn abort_shard_transfer(&self, transfer: ShardTransfer) -> CollectionResult<bool> {
-        let finish_was_registered = self
+    pub async fn abort_shard_transfer(
+        &self,
+        transfer_key: ShardTransferKey,
+    ) -> CollectionResult<()> {
+        let _finish_was_registered = self
             .shards_holder
             .read()
             .await
-            .register_finish_transfer(&transfer)?;
-        let transfer_finished = self
+            .register_finish_transfer(&transfer_key)?;
+        let _transfer_finished = self
             .transfer_tasks
             .lock()
             .await
-            .stop_if_exists(&transfer)
+            .stop_if_exists(&transfer_key)
             .await
             .is_finished();
 
-        let proxy_unwrapped =
-            revert_proxy_shard_to_local(self.shards_holder.clone(), transfer.shard_id).await?;
+        let shard_holder_guard = self.shards_holder.read().await;
 
-        // ToDo: might be it makes sense to keep dead shard for faster recovery
-        let temp_shard_removed =
-            drop_partial_shard(self.shards_holder.clone(), transfer.shard_id).await?;
+        let replica_set =
+            if let Some(replica_set) = shard_holder_guard.get_shard(&transfer_key.shard_id) {
+                replica_set
+            } else {
+                return Err(CollectionError::bad_request(format!(
+                    "Shard {} doesn't exist",
+                    transfer_key.shard_id
+                )));
+            };
 
-        let changed_something =
-            finish_was_registered && (transfer_finished || proxy_unwrapped || temp_shard_removed);
+        replica_set.remove_peer(transfer_key.to).await?;
 
-        Ok(changed_something)
+        if self.this_peer_id == transfer_key.from {
+            revert_proxy_shard_to_local(&shard_holder_guard, transfer_key.shard_id).await?;
+        }
+
+        Ok(())
     }
 
     /// Initiate local partial shard
@@ -1016,7 +1036,7 @@ impl Collection {
     /// add and remove replicas from replica set
     pub async fn handle_replica_changes(
         &self,
-        replica_changes: HashSet<Change>,
+        replica_changes: Vec<Change>,
     ) -> CollectionResult<()> {
         if replica_changes.is_empty() {
             return Ok(());
@@ -1034,6 +1054,26 @@ impl Collection {
                             description: format!("Shard {} of {} not found", shard_id, self.name()),
                         });
                     };
+
+                    let peers = replica_set.peers();
+
+                    if !peers.contains_key(&peer_id) {
+                        return Err(CollectionError::BadRequest {
+                            description: format!(
+                                "Peer {} has no replica of shard {}",
+                                peer_id, shard_id
+                            ),
+                        });
+                    }
+
+                    if peers.len() == 1 {
+                        return Err(CollectionError::BadRequest {
+                            description: format!(
+                                "Shard {} must have at least one replica",
+                                shard_id
+                            ),
+                        });
+                    }
 
                     replica_set.remove_peer(peer_id).await?;
                 }
@@ -1166,7 +1206,13 @@ impl Collection {
             let shard_id = shard_transfer.shard_id;
             let to = shard_transfer.to;
             let from = shard_transfer.from;
-            shard_transfers.push(ShardTransferInfo { shard_id, from, to })
+            let sync = shard_transfer.sync;
+            shard_transfers.push(ShardTransferInfo {
+                shard_id,
+                from,
+                to,
+                sync,
+            })
         }
 
         // sort by shard_id

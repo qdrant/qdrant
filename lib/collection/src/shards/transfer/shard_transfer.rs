@@ -15,7 +15,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::CollectionId;
 
 const TRANSFER_BATCH_SIZE: usize = 100;
@@ -30,6 +30,30 @@ pub struct ShardTransfer {
     /// If this flag is true, the is a replication related transfer of shard from 1 peer to another
     /// Shard on original peer will not be deleted in this case
     pub sync: bool,
+}
+
+/// Unique identifier of a transfer
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ShardTransferKey {
+    pub shard_id: ShardId,
+    pub from: PeerId,
+    pub to: PeerId,
+}
+
+impl ShardTransferKey {
+    pub fn check(&self, transfer: &ShardTransfer) -> bool {
+        self.shard_id == transfer.shard_id && self.from == transfer.from && self.to == transfer.to
+    }
+}
+
+impl ShardTransfer {
+    pub fn key(&self) -> ShardTransferKey {
+        ShardTransferKey {
+            shard_id: self.shard_id,
+            from: self.from,
+            to: self.to,
+        }
+    }
 }
 
 async fn transfer_batches(
@@ -87,11 +111,10 @@ async fn transfer_batches(
 
 /// Return local shard back from the forward proxy
 pub async fn revert_proxy_shard_to_local(
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: &ShardHolder,
     shard_id: ShardId,
 ) -> CollectionResult<bool> {
-    let shard_holder_guard = shard_holder.read().await;
-    let replica_set = match shard_holder_guard.get_shard(&shard_id) {
+    let replica_set = match shard_holder.get_shard(&shard_id) {
         None => return Ok(false),
         Some(replica_set) => replica_set,
     };
@@ -99,32 +122,14 @@ pub async fn revert_proxy_shard_to_local(
     Ok(true)
 }
 
-pub async fn drop_partial_shard(
-    shard_holder: Arc<LockedShardHolder>,
-    shard_id: ShardId,
-) -> CollectionResult<bool> {
-    let shard_holder_guard = shard_holder.read().await;
-    let replica_set = match shard_holder_guard.get_shard(&shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
-    if replica_set.peer_state(&replica_set.this_peer_id()) == Some(ReplicaState::Partial) {
-        replica_set.remove_local().await?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
 pub async fn change_remote_shard_route(
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: &ShardHolder,
     shard_id: ShardId,
     old_peer_id: PeerId,
     new_peer_id: PeerId,
     sync: bool,
 ) -> CollectionResult<bool> {
-    let shard_holder_guard = shard_holder.read().await;
-    let replica_set = match shard_holder_guard.get_shard(&shard_id) {
+    let replica_set = match shard_holder.get_shard(&shard_id) {
         None => return Ok(false),
         Some(replica_set) => replica_set,
     };
@@ -146,10 +151,9 @@ pub async fn change_remote_shard_route(
 ///
 /// Returns `true` if the shard was promoted, `false` if the shard was not found.
 pub async fn finalize_partial_shard(
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: &ShardHolder,
     shard_id: ShardId,
 ) -> CollectionResult<bool> {
-    let shard_holder = shard_holder.read().await;
     let replica_set = match shard_holder.get_shard(&shard_id) {
         None => return Ok(false),
         Some(replica_set) => replica_set,
@@ -167,12 +171,11 @@ pub async fn finalize_partial_shard(
 ///
 /// Returns true if the shard was promoted, false if it was already handled
 pub async fn handle_transferred_shard_proxy(
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: &ShardHolder,
     shard_id: ShardId,
     to: PeerId,
     sync: bool,
 ) -> CollectionResult<bool> {
-    let shard_holder = shard_holder.read().await;
     let replica_set = match shard_holder.get_shard(&shard_id) {
         None => return Ok(false),
         Some(replica_set) => replica_set,
@@ -189,23 +192,6 @@ pub async fn handle_transferred_shard_proxy(
     }
 
     Ok(true)
-}
-
-/// Activate peer for replica.
-///
-/// Returns true if the replica was enabled, false otherwise.
-pub async fn activate_peer_for_replica(
-    shard_holder: Arc<LockedShardHolder>,
-    shard_id: ShardId,
-    replica_peer: PeerId,
-) -> CollectionResult<bool> {
-    let mut shard_holder_guard = shard_holder.write().await;
-    let shard = shard_holder_guard.get_mut_shard(&shard_id);
-    if let Some(replica_set) = shard {
-        replica_set.activate_replica(replica_peer)
-    } else {
-        Ok(false)
-    }
 }
 
 pub async fn transfer_shard(

@@ -104,7 +104,7 @@ impl ShardReplicaSet {
     }
 
     // return true if was activated
-    pub fn activate_replica(&mut self, peer_id: PeerId) -> CollectionResult<bool> {
+    pub fn activate_replica(&self, peer_id: PeerId) -> CollectionResult<bool> {
         Ok(self.replica_state.write(|state| {
             if let std::collections::hash_map::Entry::Occupied(mut e) = state.peers.entry(peer_id) {
                 e.insert(ReplicaState::Active);
@@ -221,16 +221,23 @@ impl ShardReplicaSet {
     }
 
     pub async fn add_remote(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
-        self.remotes.write().await.push(RemoteShard::new(
+        self.replica_state.write(|rs| {
+            rs.peers.insert(peer_id, state);
+        })?;
+
+        let mut remotes = self.remotes.write().await;
+
+        // check remote already exists
+        if remotes.iter().any(|remote| remote.peer_id == peer_id) {
+            return Ok(());
+        }
+
+        remotes.push(RemoteShard::new(
             self.shard_id,
             self.collection_id.clone(),
             peer_id,
             self.channel_service.clone(),
         ));
-
-        self.replica_state.write(|rs| {
-            rs.peers.insert(peer_id, state);
-        })?;
 
         Ok(())
     }
@@ -276,6 +283,33 @@ impl ShardReplicaSet {
             self.remove_local().await?;
         } else {
             self.remove_remote(peer_id).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn add_peer(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
+        if self.this_peer_id() == peer_id {
+            let mut local = self.local.write().await;
+            let new_local = if local.is_none() {
+                Some(Local(
+                    LocalShard::build(
+                        self.shard_id,
+                        self.collection_id.clone(),
+                        &self.shard_path,
+                        self.collection_config.clone(),
+                    )
+                    .await?,
+                ))
+            } else {
+                None
+            };
+
+            self.set_replica_state(&peer_id, state)?;
+            if new_local.is_some() {
+                *local = new_local;
+            }
+        } else {
+            self.add_remote(peer_id, state).await?;
         }
         Ok(())
     }
@@ -346,18 +380,12 @@ impl ShardReplicaSet {
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
     }
 
-    pub fn set_replica_state(
-        &self,
-        peer_id: &PeerId,
-        active: ReplicaState,
-    ) -> CollectionResult<()> {
-        self.replica_state.write_with_res(|rs| {
-            *rs.peers
-                .get_mut(peer_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {} replica on peer {peer_id}", self.shard_id),
-                })? = active;
-            Ok::<(), CollectionError>(())
+    pub fn set_replica_state(&self, peer_id: &PeerId, state: ReplicaState) -> CollectionResult<()> {
+        self.replica_state.write(|rs| {
+            if rs.this_peer_id == *peer_id {
+                rs.is_local = true;
+            }
+            rs.peers.insert(*peer_id, state);
         })?;
         Ok(())
     }
@@ -413,13 +441,13 @@ impl ShardReplicaSet {
 
             if peer_id == self.this_peer_id() {
                 // Consensus wants a local replica on this peer
-                let local_shard = LocalShard::load(
+                let local_shard = LocalShard::build(
                     self.shard_id,
                     self.collection_id.clone(),
                     &self.shard_path,
                     self.collection_config.clone(),
                 )
-                .await;
+                .await?;
                 match state {
                     ReplicaState::Active => {
                         // No way we can provide up-to-date replica right away at this point,

@@ -52,7 +52,7 @@ pub mod consensus_ops {
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_id,
                 ShardTransferOperations::Abort {
-                    transfer,
+                    transfer: transfer.key(),
                     reason: reason.to_string(),
                 },
             )))

@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
-use crate::shards::transfer::shard_transfer::ShardTransfer;
+use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 
 #[derive(Default)]
 pub struct TransferTasksPool {
-    tasks: HashMap<ShardTransfer, StoppableAsyncTaskHandle<bool>>,
+    tasks: HashMap<ShardTransferKey, StoppableAsyncTaskHandle<bool>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -25,22 +25,22 @@ impl TaskResult {
 impl TransferTasksPool {
     /// Returns true if the task was actually stopped
     /// Returns false if the task was not found
-    pub async fn stop_if_exists(&mut self, transfer: &ShardTransfer) -> TaskResult {
-        if let Some(task) = self.tasks.remove(transfer) {
+    pub async fn stop_if_exists(&mut self, transfer_key: &ShardTransferKey) -> TaskResult {
+        if let Some(task) = self.tasks.remove(transfer_key) {
             match task.stop().await {
                 Ok(res) => {
                     if res {
                         log::info!(
                             "Transfer of shard {} -> {} finished",
-                            transfer.shard_id,
-                            transfer.to
+                            transfer_key.shard_id,
+                            transfer_key.to
                         );
                         TaskResult::Finished
                     } else {
                         log::info!(
                             "Transfer of shard {} -> {} stopped",
-                            transfer.shard_id,
-                            transfer.to
+                            transfer_key.shard_id,
+                            transfer_key.to
                         );
                         TaskResult::Stopped
                     }
@@ -48,8 +48,8 @@ impl TransferTasksPool {
                 Err(err) => {
                     log::warn!(
                         "Transfer task for shard {} -> {} failed: {}",
-                        transfer.shard_id,
-                        transfer.to,
+                        transfer_key.shard_id,
+                        transfer_key.to,
                         err
                     );
                     TaskResult::Failed
@@ -65,10 +65,6 @@ impl TransferTasksPool {
         shard_transfer: &ShardTransfer,
         task: StoppableAsyncTaskHandle<bool>,
     ) {
-        self.tasks.insert(shard_transfer.clone(), task);
-    }
-
-    pub fn get_transfers(&self) -> Vec<ShardTransfer> {
-        self.tasks.keys().cloned().collect()
+        self.tasks.insert(shard_transfer.key(), task);
     }
 }

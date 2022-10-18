@@ -4,7 +4,7 @@ use collection::operations::config_diff::{
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::shard_transfer::ShardTransfer;
+use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -215,7 +215,7 @@ pub enum ShardTransferOperations {
     Start(ShardTransfer),
     Finish(ShardTransfer),
     Abort {
-        transfer: ShardTransfer,
+        transfer: ShardTransferKey,
         reason: String,
     },
 }
