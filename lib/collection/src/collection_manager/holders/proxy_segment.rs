@@ -59,6 +59,40 @@ impl ProxySegment {
         }
     }
 
+    /// Ensure that write segment have same indexes as wrapped segment
+    pub fn replicate_field_indexes(&mut self, op_num: SeqNumberType) -> OperationResult<()> {
+        let existing_indexes = self.write_segment.get().read().get_indexed_fields();
+        let expected_indexes = self.wrapped_segment.get().read().get_indexed_fields();
+        // create missing indexes
+        for (expected_field, expected_schema) in &expected_indexes {
+            let existing_schema = existing_indexes.get(expected_field);
+
+            if existing_schema != Some(expected_schema) {
+                if existing_schema.is_some() {
+                    self.write_segment
+                        .get()
+                        .write()
+                        .delete_field_index(op_num, expected_field)?;
+                }
+                self.write_segment.get().write().create_field_index(
+                    op_num,
+                    expected_field,
+                    Some(expected_schema),
+                )?;
+            }
+        }
+        // remove extra indexes
+        for existing_field in existing_indexes.keys() {
+            if !expected_indexes.contains_key(existing_field) {
+                self.write_segment
+                    .get()
+                    .write()
+                    .delete_field_index(op_num, existing_field)?;
+            }
+        }
+        Ok(())
+    }
+
     fn move_if_exists(
         &self,
         op_num: SeqNumberType,
@@ -736,7 +770,7 @@ mod tests {
     use std::fs::read_dir;
 
     use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
-    use segment::types::FieldCondition;
+    use segment::types::{FieldCondition, PayloadSchemaType};
     use serde_json::json;
     use tempfile::{Builder, TempDir};
 
@@ -1065,6 +1099,66 @@ mod tests {
         let proxy_res = proxy_segment.read_range(None, Some(10.into()));
 
         assert_eq!(original_points.len() - 1, proxy_res.len());
+    }
+
+    #[test]
+    fn test_sync_indexes() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
+
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
+        ));
+
+        original_segment
+            .get()
+            .write()
+            .create_field_index(10, "color", Some(&PayloadSchemaType::Keyword.into()))
+            .unwrap();
+
+        let mut proxy_segment = ProxySegment::new(
+            original_segment.clone(),
+            write_segment.clone(),
+            deleted_points,
+            created_indexes,
+            deleted_indexes,
+        );
+
+        proxy_segment.replicate_field_indexes(0).unwrap();
+
+        assert!(write_segment
+            .get()
+            .read()
+            .get_indexed_fields()
+            .contains_key("color"));
+
+        original_segment
+            .get()
+            .write()
+            .create_field_index(11, "location", Some(&PayloadSchemaType::Geo.into()))
+            .unwrap();
+
+        original_segment
+            .get()
+            .write()
+            .delete_field_index(12, "color")
+            .unwrap();
+
+        proxy_segment.replicate_field_indexes(0).unwrap();
+
+        assert!(write_segment
+            .get()
+            .read()
+            .get_indexed_fields()
+            .contains_key("location"));
+        assert!(!write_segment
+            .get()
+            .read()
+            .get_indexed_fields()
+            .contains_key("color"));
     }
 
     #[test]
