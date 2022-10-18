@@ -95,16 +95,22 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
         assert r.json()["result"][1]["id"] == 1
         assert r.json()["result"][2]["id"] == 3
 
-    # Extract current cluster info
+    # Extract current collection cluster info
     collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], "test_collection")
     target_peer_id = collection_cluster_info["remote_shards"][0]["peer_id"]
+    source_uri = peer_api_uris[0]
+    target_uri = peer_api_uris[1]
+
+    target_collection_cluster_info = get_collection_cluster_info(target_uri, "test_collection")
+    target_before_local_shard_count = len(target_collection_cluster_info["local_shards"])
+
     before_local_shard_count = len(collection_cluster_info["local_shards"])
     shard_id = collection_cluster_info["local_shards"][0]["shard_id"]
     source_peer_id = collection_cluster_info["peer_id"]
 
     # Move shard `shard_id` to peer `target_peer_id`
     r = requests.post(
-        f"{peer_api_uris[0]}/collections/test_collection/cluster", json={
+        f"{source_uri}/collections/test_collection/cluster", json={
             "move_shard": {
                 "shard_id": shard_id,
                 "from_peer_id": source_peer_id,
@@ -113,14 +119,12 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Wait until the number of shard transfers is equal to 1
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], "test_collection", 1)
-
     # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], "test_collection", 0)
+    wait_for_collection_shard_transfers_count(source_uri, "test_collection", 0)
 
-    # Check the number of local shard goes does by 1
-    assert check_collection_local_shards_count(peer_api_uris[0], "test_collection", before_local_shard_count - 1)
+    # Check the number of local shard goes down by 1
+    assert check_collection_local_shards_count(source_uri, "test_collection", before_local_shard_count - 1)
+    assert check_collection_local_shards_count(target_uri, "test_collection", target_before_local_shard_count + 1)
 
     # Check that 'search' returns the same results on all peers
     for uri in peer_api_uris:
@@ -134,3 +138,35 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
         assert r.json()["result"][0]["id"] == 4
         assert r.json()["result"][1]["id"] == 1
         assert r.json()["result"][2]["id"] == 3
+
+    # Replicate shards back to the source peer
+    r = requests.post(
+        f"{source_uri}/collections/test_collection/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": target_peer_id,
+                "to_peer_id": source_peer_id
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(source_uri, "test_collection", 0)
+
+    # Check that the number of local shard goes back to the original value
+    assert check_collection_local_shards_count(source_uri, "test_collection", before_local_shard_count)
+    assert check_collection_local_shards_count(target_uri, "test_collection", target_before_local_shard_count + 1)
+
+    # Check that 'search' returns the same results on all peers
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/test_collection/points/search", json={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "top": 3,
+            }
+        )
+        assert_http_ok(r)
+        assert r.json()["result"][0]["id"] == 4
+        assert r.json()["result"][1]["id"] == 1
+        assert r.json()["result"][2]["id"] == 3
+
