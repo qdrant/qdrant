@@ -830,7 +830,9 @@ impl TableOfContent {
                     .await
             }
             None => {
-                self.check_write_lock()?;
+                if operation.is_write_operation() {
+                    self.check_write_lock()?;
+                }
                 collection.update_from_client(operation, wait).await
             }
         };
@@ -1058,7 +1060,7 @@ impl TableOfContent {
 
     /// Returns an error if the write lock is set
     pub fn check_write_lock(&self) -> Result<(), StorageError> {
-        if operation.is_write_operation() && self.is_write_locked.load(Ordering::Relaxed) {
+        if self.is_write_locked.load(Ordering::Relaxed) {
             return Err(StorageError::Locked {
                 description: self
                     .lock_error_message

@@ -88,11 +88,8 @@ impl Dispatcher {
                 )
                 .await
         } else {
-            match &operation {
-                CollectionMetaOperations::CreateCollection(_) => {
-                    self.toc.check_write_lock()?;
-                }
-                _ => {}
+            if let CollectionMetaOperations::CreateCollection(_) = &operation {
+                self.toc.check_write_lock()?;
             }
             self.toc.perform_collection_meta_op(operation).await
         }
