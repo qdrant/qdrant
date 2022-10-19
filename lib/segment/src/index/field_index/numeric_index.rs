@@ -134,7 +134,6 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         idx: PointOffsetType,
         values: impl IntoIterator<Item = T>,
     ) -> OperationResult<()> {
-
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }

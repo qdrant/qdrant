@@ -284,7 +284,6 @@ impl GeoMapIndex {
         idx: PointOffsetType,
         values: &[GeoPoint],
     ) -> OperationResult<()> {
-
         if values.is_empty() {
             return Ok(());
         }

@@ -92,7 +92,6 @@ impl FullTextIndex {
 
 impl ValueIndexer<String> for FullTextIndex {
     fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
-
         if values.is_empty() {
             return Ok(());
         }
