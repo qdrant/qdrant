@@ -228,16 +228,6 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
-        if self.is_write_locked.load(Ordering::Relaxed) {
-            return Err(StorageError::Locked {
-                description: self
-                    .lock_error_message
-                    .lock()
-                    .clone()
-                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
-            });
-        }
-
         let CreateCollection {
             vectors,
             shard_number,
@@ -832,16 +822,6 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
-        if operation.is_write_operation() && self.is_write_locked.load(Ordering::Relaxed) {
-            return Err(StorageError::Locked {
-                description: self
-                    .lock_error_message
-                    .lock()
-                    .clone()
-                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
-            });
-        }
-
         let collection = self.get_collection(collection_name).await?;
         let result = match shard_selection {
             Some(shard_selection) => {
@@ -849,7 +829,12 @@ impl TableOfContent {
                     .update_from_peer(operation, shard_selection, wait)
                     .await
             }
-            None => collection.update_from_client(operation, wait).await,
+            None => {
+                if operation.is_write_operation() {
+                    self.check_write_lock()?;
+                }
+                collection.update_from_client(operation, wait).await
+            }
         };
         result.map_err(|err| err.into())
     }
@@ -1071,6 +1056,20 @@ impl TableOfContent {
 
     pub fn get_lock_error_message(&self) -> Option<String> {
         self.lock_error_message.lock().clone()
+    }
+
+    /// Returns an error if the write lock is set
+    pub fn check_write_lock(&self) -> Result<(), StorageError> {
+        if self.is_write_locked.load(Ordering::Relaxed) {
+            return Err(StorageError::Locked {
+                description: self
+                    .lock_error_message
+                    .lock()
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
+            });
+        }
+        Ok(())
     }
 
     fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {
