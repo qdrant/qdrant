@@ -32,20 +32,11 @@ async fn remove_peer(
     let dispatcher = dispatcher.into_inner();
     let peer_id = peer_id.into_inner();
 
-    let (has_shards, has_the_only_shard) = dispatcher.peer_has_shards(peer_id).await;
+    let has_shards = dispatcher.peer_has_shards(peer_id).await;
     if !params.force && has_shards {
         return process_response(
             Err(StorageError::BadRequest {
                 description: format!("Cannot remove peer {peer_id} as there are shards on it"),
-            }),
-            timing,
-        );
-    }
-    // We cannot force remove in this case as this will break the precondition of collection - it should always have at least 1 shard
-    if has_the_only_shard {
-        return process_response(
-            Err(StorageError::BadRequest {
-                description: format!("Cannot remove peer {peer_id} as there is the only shard of a collection on it. Remove collection first."),
             }),
             timing,
         );
