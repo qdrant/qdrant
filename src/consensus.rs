@@ -789,7 +789,7 @@ mod tests {
             .unwrap();
 
         // Then
-        assert_eq!(consensus_state.hard_state().commit, 2);
+        assert_eq!(consensus_state.hard_state().commit, 3); // Collection + Nop
         assert_eq!(toc_arc.all_collections_sync(), vec!["test"]);
     }
 }

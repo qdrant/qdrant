@@ -13,6 +13,7 @@ use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
+use tokio::sync::oneshot::Receiver;
 use tonic::transport::Uri;
 
 use super::alias_mapping::AliasMapping;
@@ -27,6 +28,7 @@ use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, PeerAddressById, PeerInfo, RaftInfo,
 };
+use crate::CollectionMetaOperations;
 
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
@@ -423,10 +425,28 @@ impl<C: CollectionContainer> ConsensusState<C> {
         self.propose_sender.send(operation)
     }
 
+    async fn await_receiver(
+        receiver: Receiver<Result<bool, StorageError>>,
+        wait_timeout: Duration,
+    ) -> Result<bool, StorageError> {
+        tokio::time::timeout(wait_timeout, receiver)
+            .await
+            .map_err(
+                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
+                    description: format!(
+                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
+                        wait_timeout.as_secs_f64()
+                    ),
+                },
+                // ??? - forwards 2 possible errors: sender dropped, operation failed
+            )??
+    }
+
     pub async fn propose_consensus_op_with_await(
         &self,
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
+        with_confirmation: bool,
     ) -> Result<bool, StorageError> {
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
 
@@ -446,17 +466,27 @@ impl<C: CollectionContainer> ConsensusState<C> {
             self.propose_sender.send(operation.clone())?;
             on_apply_lock.insert(operation, sender);
         }
-        tokio::time::timeout(wait_timeout, receiver)
-            .await
-            .map_err(
-                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
-                    description: format!(
-                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                        wait_timeout.as_secs_f64()
-                    ),
-                },
-                // ?? - forwards 2 possible errors: sender dropped, operation failed
-            )??
+        let res = Self::await_receiver(receiver, wait_timeout).await?;
+
+        // Send explicit empty operation to ensure that all previous operations are applied.
+        // Assume that peer can not accept new operations until it applies all previous ones.
+        if with_confirmation {
+            let random_token: usize = rand::random();
+            // Send empty operation to make sure that the majority of consensus applied the operation
+            let empty_operation =
+                ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop {
+                    token: random_token,
+                }));
+            let (sender, receiver) = oneshot::channel();
+            {
+                let mut on_apply_lock = self.on_consensus_op_apply.lock();
+                self.propose_sender.send(empty_operation.clone())?;
+                on_apply_lock.insert(empty_operation, sender);
+            }
+            Self::await_receiver(receiver, wait_timeout).await?;
+        }
+
+        Ok(res)
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
