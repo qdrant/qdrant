@@ -17,7 +17,7 @@ use crate::shards::replica_set::{OnPeerFailure, ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
-use crate::shards::transfer::shard_transfer::ShardTransfer;
+use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
@@ -113,10 +113,12 @@ impl ShardHolder {
             .write(|transfers| transfers.insert(transfer))?)
     }
 
-    pub fn register_finish_transfer(&self, transfer: &ShardTransfer) -> CollectionResult<bool> {
-        Ok(self
-            .shard_transfers
-            .write(|transfers| transfers.remove(transfer))?)
+    pub fn register_finish_transfer(&self, key: &ShardTransferKey) -> CollectionResult<bool> {
+        Ok(self.shard_transfers.write(|transfers| {
+            let before_remove = transfers.len();
+            transfers.retain(|transfer| !key.check(transfer));
+            before_remove != transfers.len() // `true` if something was removed
+        })?)
     }
 
     pub fn set_shard_replica_state(

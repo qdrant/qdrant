@@ -9,7 +9,7 @@ use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{CollectionClusterInfo, CollectionInfo};
 use collection::shards::replica_set;
 use collection::shards::shard::ShardId;
-use collection::shards::transfer::shard_transfer::ShardTransfer;
+use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use itertools::Itertools;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
@@ -164,11 +164,10 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::AbortTransfer(AbortTransferOperation { abort_transfer }) => {
-            let transfer = ShardTransfer {
+            let transfer = ShardTransferKey {
                 shard_id: abort_transfer.shard_id,
                 to: abort_transfer.to_peer_id,
                 from: abort_transfer.from_peer_id,
-                sync: false,
             };
 
             if !collection.check_transfer_exists(&transfer).await {

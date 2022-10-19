@@ -170,3 +170,35 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
         assert r.json()["result"][1]["id"] == 1
         assert r.json()["result"][2]["id"] == 3
 
+    # Perform a replication for the second time with the target node active
+    r = requests.post(
+        f"{source_uri}/collections/test_collection/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": target_peer_id,
+                "to_peer_id": source_peer_id
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(source_uri, "test_collection", 0)
+
+    # Check that the number of local shard is still the same
+    assert check_collection_local_shards_count(source_uri, "test_collection", before_local_shard_count)
+    assert check_collection_local_shards_count(target_uri, "test_collection", target_before_local_shard_count + 1)
+
+    # Check that 'search' returns the same results on all peers
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/test_collection/points/search", json={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "top": 3,
+            }
+        )
+        assert_http_ok(r)
+        assert r.json()["result"][0]["id"] == 4
+        assert r.json()["result"][1]["id"] == 1
+        assert r.json()["result"][2]["id"] == 3
+
+
