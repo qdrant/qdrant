@@ -1029,19 +1029,20 @@ impl TableOfContent {
         result
     }
 
-    pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+    pub async fn peer_has_shards(&self, peer_id: PeerId) -> (bool, bool) {
         for collection in self.collections.read().await.values() {
             let state = collection.state().await;
+            let collection_with_one_shard = state.shards.len() == 1;
             let peers_with_shards: HashSet<_> = state
                 .shards
                 .into_values()
                 .flat_map(|shard_info| shard_info.replicas.into_keys().collect::<Vec<_>>())
                 .collect();
             if peers_with_shards.contains(&peer_id) {
-                return true;
+                return (true, collection_with_one_shard);
             }
         }
-        false
+        (false, false)
     }
 
     pub fn set_locks(&self, is_write_locked: bool, error_message: Option<String>) {
@@ -1072,9 +1073,22 @@ impl TableOfContent {
         Ok(())
     }
 
-    fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {
+    fn peer_has_shards_sync(&self, peer_id: PeerId) -> (bool, bool) {
         self.collection_management_runtime
             .block_on(self.peer_has_shards(peer_id))
+    }
+
+    pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        let collections = self.collections.read().await;
+        for collection in collections.values() {
+            collection.remove_shards_at_peer(peer_id).await?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_shards_at_peer_sync(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        self.collection_management_runtime
+            .block_on(self.remove_shards_at_peer(peer_id))
     }
 }
 
@@ -1097,11 +1111,12 @@ impl CollectionContainer for TableOfContent {
         self.apply_collections_snapshot(data)
     }
 
-    fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+    fn peer_has_shards(&self, peer_id: PeerId) -> (bool, bool) {
         self.peer_has_shards_sync(peer_id)
     }
 
-    fn remove_peer(&self, peer_id: PeerId) {
+    fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        self.remove_shards_at_peer_sync(peer_id)?;
         if self.this_peer_id == peer_id {
             // We are detaching the current peer, so we need to remove all connections
             // Remove all peers from the channel service
@@ -1123,6 +1138,7 @@ impl CollectionContainer for TableOfContent {
             self.collection_management_runtime
                 .block_on(self.channel_service.remove_peer(peer_id));
         }
+        Ok(())
     }
 }
 

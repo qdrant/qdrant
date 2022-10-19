@@ -31,7 +31,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
-use crate::shards::shard::Shard::{ForwardProxy, Local, Remote};
+use crate::shards::shard::Shard::{ForwardProxy, Local};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::{ShardOperation, ShardOperationSS};
@@ -406,28 +406,7 @@ impl ShardReplicaSet {
             .copied()
             .collect::<Vec<_>>();
         for peer_id in removed_peers {
-            if peer_id == self.this_peer_id() {
-                let mut local_write = self.local.write().await;
-                if let Some(mut shard) = local_write.take() {
-                    shard.before_drop().await;
-                    match shard {
-                        Local(local) => LocalShard::clear(&local.path).await?,
-                        ForwardProxy(forward) => {
-                            LocalShard::clear(&forward.wrapped_shard.path).await?
-                        }
-                        Remote(_) | Shard::Proxy(_) => {
-                            return Err(CollectionError::service_error(
-                                "Unexpected shard in replica set".to_string(),
-                            ))
-                        }
-                    }
-                } else {
-                    debug_assert!(false, "inconsistent `replica_set` map with actual shards")
-                }
-            } else {
-                let mut remotes = self.remotes.write().await;
-                remotes.retain(|rs| rs.peer_id != peer_id);
-            }
+            self.remove_peer(peer_id).await?;
         }
 
         for (peer_id, state) in replicas {

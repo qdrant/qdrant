@@ -209,10 +209,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     {
                         let peer_uri: Uri = peer_uri;
                         self.add_peer(single_change.node_id, peer_uri.clone())?;
-                        let operation = ConsensusOperations::AddPeer(
-                            single_change.node_id,
-                            peer_uri.to_string(),
-                        );
+                        let operation = ConsensusOperations::AddPeer {
+                            peer_id: single_change.node_id,
+                            uri: peer_uri.to_string(),
+                        };
                         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
                         if let Some(on_apply) = on_apply {
                             if on_apply.send(Ok(true)).is_err() {
@@ -411,7 +411,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
         // The `id_to_address` is shared between `channel_pool` and `persistent`,
         // plus we need to make additional removing in the `channel_pool`.
         // So we handle `remove_peer` inside the `toc` and persist changes in the `persistent` after that.
-        self.toc.remove_peer(peer_id);
+        self.toc.remove_peer(peer_id)?;
         self.persistent.read().save()
     }
 
@@ -740,11 +740,16 @@ mod tests {
             Ok(())
         }
 
-        fn peer_has_shards(&self, _: u64) -> bool {
-            false
+        fn peer_has_shards(&self, _: u64) -> (bool, bool) {
+            (false, false)
         }
 
-        fn remove_peer(&self, _peer_id: PeerId) {}
+        fn remove_peer(
+            &self,
+            _peer_id: PeerId,
+        ) -> Result<(), crate::content_manager::errors::StorageError> {
+            Ok(())
+        }
     }
 
     fn setup_storages(
