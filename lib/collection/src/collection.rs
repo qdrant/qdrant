@@ -1219,15 +1219,14 @@ impl Collection {
     pub async fn get_telemetry_data(&self) -> Option<CollectionTelemetry> {
         let mut telemetry = self.telemetry.clone();
         telemetry.shards = Some(Vec::new());
+        telemetry.short_info = Default::default();
         let shard_holder = self.shards_holder.read().await;
         for shard in shard_holder.all_shards() {
-            telemetry
-                .shards
-                .as_mut()
-                .unwrap()
-                .push(shard.get_telemetry_data());
-            if let Shard::Local(shard) = shard {
-                let info = shard.info().await.ok()?;
+            let telemetry_data = shard.get_telemetry_data().await;
+            // todo(ivan) update telemetry.short_info
+            /*
+            if let ShardTelemetry::Local(shard_telemetry) = telemetry_data {
+                //shard_telemetry.sho
                 let short_info = crate::telemetry::CollectionShortInfoTelemetry {
                     status: info.status,
                     optimizer_status: info.optimizer_status,
@@ -1236,6 +1235,8 @@ impl Collection {
                 };
                 telemetry.short_info = telemetry.short_info + short_info;
             }
+            */
+            telemetry.shards.as_mut().unwrap().push(telemetry_data);
         }
         Some(telemetry)
     }

@@ -49,8 +49,8 @@ pub struct RemoteShard {
     pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
     pub channel_service: ChannelService,
-    searches_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
-    updates_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
+    telemetry_search_durations: Arc<Mutex<OperationDurationsAggregator>>,
+    telemetry_update_durations: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl RemoteShard {
