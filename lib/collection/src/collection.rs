@@ -544,9 +544,9 @@ impl Collection {
             let shard_to_op = shards_holder.split_by_shard(operation);
 
             if shard_to_op.is_empty() {
-                return Err(CollectionError::bad_request(format!(
-                    "Empty update request"
-                )));
+                return Err(CollectionError::bad_request(
+                    "Empty update request".to_string(),
+                ));
             }
 
             let shard_requests = shard_to_op
