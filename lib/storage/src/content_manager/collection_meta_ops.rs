@@ -240,4 +240,5 @@ pub enum CollectionMetaOperations {
     ChangeAliases(ChangeAliasesOperation),
     TransferShard(CollectionId, ShardTransferOperations),
     SetShardReplicaState(SetShardReplicaState),
+    Nop, // Empty operation
 }
