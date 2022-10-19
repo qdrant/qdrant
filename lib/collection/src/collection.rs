@@ -258,10 +258,37 @@ impl Collection {
         &self,
         shard_id: ShardId,
         peer_id: PeerId,
-        active: ReplicaState,
+        state: ReplicaState,
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
-        shard_holder.set_shard_replica_state(shard_id, peer_id, active)
+        let replica_set =
+            shard_holder
+                .get_shard(&shard_id)
+                .ok_or_else(|| CollectionError::NotFound {
+                    what: format!("Shard {shard_id}"),
+                })?;
+        replica_set.set_replica_state(&peer_id, state)?;
+
+        // Try to request shard transfer if replicas on the current peer are dead
+        if state == ReplicaState::Dead && self.this_peer_id == peer_id {
+            let transfer_from = replica_set
+                .peers()
+                .into_iter()
+                .find(|(_, state)| state == &ReplicaState::Active)
+                .map(|(peer_id, _)| peer_id);
+            if let Some(transfer_from) = transfer_from {
+                self.request_shard_transfer(ShardTransfer {
+                    shard_id,
+                    from: transfer_from,
+                    to: self.this_peer_id,
+                    sync: true,
+                })
+            } else {
+                log::warn!("No alive replicas to recover shard {shard_id}");
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn contains_shard(&self, shard_id: ShardId) -> bool {
