@@ -1410,6 +1410,15 @@ impl Collection {
 
         Ok(changes)
     }
+
+    pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        let shard_holder = self.shards_holder.read().await;
+
+        for (_shard_id, replica_set) in shard_holder.get_shards() {
+            replica_set.remove_peer(peer_id).await?;
+        }
+        Ok(())
+    }
 }
 
 impl Drop for Collection {

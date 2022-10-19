@@ -411,7 +411,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
         // The `id_to_address` is shared between `channel_pool` and `persistent`,
         // plus we need to make additional removing in the `channel_pool`.
         // So we handle `remove_peer` inside the `toc` and persist changes in the `persistent` after that.
-        self.toc.remove_peer(peer_id);
+        self.toc.remove_peer(peer_id)?;
         self.persistent.read().save()
     }
 
@@ -740,11 +740,16 @@ mod tests {
             Ok(())
         }
 
-        fn peer_has_shards(&self, _: u64) -> bool {
-            false
+        fn peer_has_shards(&self, _: u64) -> (bool, bool) {
+            (false, false)
         }
 
-        fn remove_peer(&self, _peer_id: PeerId) {}
+        fn remove_peer(
+            &self,
+            _peer_id: PeerId,
+        ) -> Result<(), crate::content_manager::errors::StorageError> {
+            Ok(())
+        }
     }
 
     fn setup_storages(
