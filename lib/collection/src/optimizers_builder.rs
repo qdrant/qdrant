@@ -61,6 +61,20 @@ pub struct OptimizersConfig {
 }
 
 impl OptimizersConfig {
+    #[cfg(test)]
+    pub fn fixture() -> Self {
+        Self {
+            deleted_threshold: 0.1,
+            vacuum_min_vector_number: 1000,
+            default_segment_number: 0,
+            max_segment_size: None,
+            memmap_threshold: None,
+            indexing_threshold: 100_000,
+            flush_interval_sec: 60,
+            max_optimization_threads: 0,
+        }
+    }
+
     pub fn get_number_segments(&self) -> usize {
         if self.default_segment_number == 0 {
             let num_cpus = num_cpus::get();

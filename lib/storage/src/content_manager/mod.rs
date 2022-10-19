@@ -1,4 +1,4 @@
-use collection::shard::PeerId;
+use collection::shards::shard::PeerId;
 
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_state::CollectionsSnapshot;
@@ -16,7 +16,10 @@ pub mod snapshots;
 pub mod toc;
 
 pub mod consensus_ops {
-    use collection::shard::{CollectionId, PeerId, ShardTransfer};
+    use collection::shards::replica_set::ReplicaState;
+    use collection::shards::shard::PeerId;
+    use collection::shards::transfer::shard_transfer::ShardTransfer;
+    use collection::shards::CollectionId;
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
 
@@ -72,10 +75,17 @@ pub mod consensus_ops {
                     collection_name,
                     shard_id,
                     peer_id,
-                    active: false,
+                    state: ReplicaState::Dead,
                 })
                 .into(),
             )
+        }
+
+        pub fn start_transfer(collection_id: CollectionId, transfer: ShardTransfer) -> Self {
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection_id,
+                ShardTransferOperations::Start(transfer),
+            )))
         }
     }
 }

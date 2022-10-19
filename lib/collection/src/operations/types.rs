@@ -25,7 +25,8 @@ use tonic::codegen::http::uri::InvalidUri;
 
 use crate::config::CollectionConfig;
 use crate::save_on_disk;
-use crate::shard::{PeerId, ShardId};
+use crate::shards::replica_set::ReplicaState;
+use crate::shards::shard::{PeerId, ShardId};
 use crate::wal::WalError;
 
 /// Current state of the collection
@@ -115,6 +116,8 @@ pub struct LocalShardInfo {
     pub shard_id: ShardId,
     /// Number of points in the shard
     pub points_count: usize,
+    /// Is replica active
+    pub state: ReplicaState,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -124,6 +127,8 @@ pub struct RemoteShardInfo {
     pub shard_id: ShardId,
     /// Remote peer id
     pub peer_id: PeerId,
+    /// Is replica active
+    pub state: ReplicaState,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -348,6 +353,14 @@ pub enum CollectionError {
 impl CollectionError {
     pub fn service_error(error: String) -> CollectionError {
         CollectionError::ServiceError { error }
+    }
+
+    pub fn bad_input(description: String) -> CollectionError {
+        CollectionError::BadInput { description }
+    }
+
+    pub fn bad_request(description: String) -> CollectionError {
+        CollectionError::BadRequest { description }
     }
 
     pub fn bad_shard_selection(description: String) -> CollectionError {

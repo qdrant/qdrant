@@ -25,8 +25,9 @@ use crate::config::CollectionConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
-use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
-use crate::shard::{CollectionId, ShardId};
+use crate::shards::shard::ShardId;
+use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
+use crate::shards::CollectionId;
 use crate::telemetry::{LocalShardTelemetry, ShardTelemetry};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
@@ -50,6 +51,24 @@ pub struct LocalShard {
 
 /// Shard holds information about segments and WAL.
 impl LocalShard {
+    /// Clear local shard related data.
+    ///
+    /// Do NOT remove config file.
+    pub async fn clear(shard_path: &Path) -> CollectionResult<()> {
+        // Delete WAL
+        let wal_path = Self::wal_path(shard_path);
+        if wal_path.exists() {
+            remove_dir_all(wal_path).await?;
+        }
+        // Delete segments
+        let segments_path = Self::segments_path(shard_path);
+        if segments_path.exists() {
+            remove_dir_all(segments_path).await?;
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         id: ShardId,

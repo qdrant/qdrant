@@ -9,15 +9,15 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
-use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
     SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
-use crate::shard::local_shard::LocalShard;
-use crate::shard::remote_shard::RemoteShard;
-use crate::shard::ShardOperation;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::shard_trait::ShardOperation;
 use crate::telemetry::ShardTelemetry;
 
 /// ForwardProxyShard
@@ -30,7 +30,7 @@ pub struct ForwardProxyShard {
     pub(crate) wrapped_shard: LocalShard,
     pub(crate) remote_shard: RemoteShard,
     /// Lock required to protect transfer-in-progress updates.
-    /// It should block data updating operations while the batch it being transferred.
+    /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
 }
 
@@ -90,16 +90,21 @@ impl ForwardProxyShard {
             Some(batch.pop().unwrap().id)
         };
 
-        if batch.is_empty() {
-            return Ok(next_page_offset);
-        }
-
         let points: Result<Vec<PointStruct>, String> =
             batch.into_iter().map(|point| point.try_into()).collect();
 
-        let insert_points_operation = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::PointsList(points?)),
-        );
+        let points = points?;
+
+        // Use sync API to leverage potentially existing points
+        let insert_points_operation = {
+            CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(
+                PointSyncOperation {
+                    from_id: offset,
+                    to_id: next_page_offset,
+                    points,
+                },
+            ))
+        };
 
         // We only need to wait for the last batch.
         let wait = next_page_offset.is_none();

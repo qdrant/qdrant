@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use api::grpc::qdrant::{GetCollectionInfoRequest, GetCollectionInfoResponse};
-use collection::shard::ShardId;
+use collection::shards::shard::ShardId;
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Response, Status};

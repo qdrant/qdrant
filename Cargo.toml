@@ -1,9 +1,8 @@
 [package]
 name = "qdrant"
-version = "0.10.4"
+version = "0.10.5"
 authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
 edition = "2021"
-doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -35,7 +34,7 @@ itertools = "0.10"
 anyhow = "1.0.65"
 futures = "0.3.24"
 futures-util = "0.3.24"
-clap = { version = "4.0.14", features = ["derive"] }
+clap = { version = "4.0.15", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.2", features = ["v4", "serde"] }
 sys-info = "0.9.1"

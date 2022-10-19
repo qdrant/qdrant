@@ -21,8 +21,8 @@ use crate::operations::types::{
     Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::shard::local_shard::LocalShard;
-use crate::shard::ShardOperation;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::shard_trait::ShardOperation;
 use crate::telemetry::ShardTelemetry;
 use crate::update_handler::UpdateSignal;
 

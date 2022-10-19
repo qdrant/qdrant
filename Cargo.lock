@@ -293,7 +293,7 @@ checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
 
 [[package]]
 name = "api"
-version = "0.10.4"
+version = "0.10.5"
 dependencies = [
  "chrono",
  "prost 0.10.4",
@@ -750,9 +750,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.0.14"
+version = "4.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ea54a38e4bce14ff6931c72e5b3c43da7051df056913d4e7e1fcdb1c03df69d"
+checksum = "6bf8832993da70a4c6d13c581f4463c2bdda27b9bf1c5498dc4365543abe6d6f"
 dependencies = [
  "atty",
  "bitflags",
@@ -2606,7 +2606,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.10.4"
+version = "0.10.5"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -2615,7 +2615,7 @@ dependencies = [
  "api",
  "atty",
  "chrono",
- "clap 4.0.14",
+ "clap 4.0.15",
  "collection",
  "colored",
  "config",

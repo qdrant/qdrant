@@ -5,9 +5,6 @@
         "summary": "Collect telemetry data",
         "description": "Collect telemetry data including app info, system info, collections info, cluster info, configs and statistics",
         "operationId": "telemetry",
-        "tags": [
-          "service"
-        ],
         "parameters": [
           {
             "name": "anonymize",
@@ -63,130 +60,6 @@
                       "items": {
                         "$ref": "#/components/schemas/TelemetryData"
                       }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/locks": {
-      "post": {
-        "summary": "Set lock options",
-        "description": "Set lock options. If write is locked, all write operations and collection creation are forbidden. Returns previous lock options",
-        "operationId": "post_locks",
-        "tags": [
-          "service"
-        ],
-        "requestBody": {
-          "description": "Lock options and optional error message",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LocksOption"
-              }
-            }
-          }
-        },
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request"
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
-                    },
-                    "result": {
-                      "$ref": "#/components/schemas/LocksOption"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "summary": "Get lock options",
-        "description": "Get lock options. If write is locked, all write operations and collection creation are forbidden",
-        "operationId": "get_locks",
-        "tags": [
-          "service"
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request"
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
-                    },
-                    "result": {
-                      "$ref": "#/components/schemas/LocksOption"
                     }
                   }
                 }
@@ -2581,7 +2454,7 @@
       "name": "Apache 2.0",
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "version": "master"
+    "version": "v0.10.5"
   },
   "externalDocs": {
     "description": "Find out more about Qdrant applications and demo",
@@ -2816,13 +2689,6 @@
           },
           "shard_number": {
             "description": "Number of shards the collection has",
-            "default": 1,
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 1
-          },
-          "replication_factor": {
-            "description": "Number of replicas for each shard",
             "default": 1,
             "type": "integer",
             "format": "uint32",
@@ -4014,14 +3880,6 @@
             "minimum": 0,
             "nullable": true
           },
-          "replication_factor": {
-            "description": "Number of shards replicas. Default is 1 Minimum is 1",
-            "default": null,
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
-          },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": null,
@@ -4182,29 +4040,6 @@
                 "nullable": true
               }
             ]
-          },
-          "params": {
-            "description": "Collection base params.  If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionParamsDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
-      "CollectionParamsDiff": {
-        "type": "object",
-        "properties": {
-          "replication_factor": {
-            "description": "Number of replicas for each shard",
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 1,
-            "nullable": true
           }
         }
       },
@@ -4859,8 +4694,7 @@
         "type": "object",
         "required": [
           "points_count",
-          "shard_id",
-          "state"
+          "shard_id"
         ],
         "properties": {
           "shard_id": {
@@ -4874,44 +4708,14 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
-          },
-          "state": {
-            "$ref": "#/components/schemas/ReplicaState"
           }
         }
-      },
-      "ReplicaState": {
-        "description": "State of the single shard within replica set",
-        "oneOf": [
-          {
-            "description": "Active and sound",
-            "type": "string",
-            "enum": [
-              "Active"
-            ]
-          },
-          {
-            "description": "Failed for some reason",
-            "type": "string",
-            "enum": [
-              "Dead"
-            ]
-          },
-          {
-            "description": "The shard is partially loaded and is currently receiving data from other shards",
-            "type": "string",
-            "enum": [
-              "Partial"
-            ]
-          }
-        ]
       },
       "RemoteShardInfo": {
         "type": "object",
         "required": [
           "peer_id",
-          "shard_id",
-          "state"
+          "shard_id"
         ],
         "properties": {
           "shard_id": {
@@ -4925,9 +4729,6 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
-          },
-          "state": {
-            "$ref": "#/components/schemas/ReplicaState"
           }
         }
       },
@@ -4959,104 +4760,42 @@
       "TelemetryData": {
         "type": "object",
         "required": [
-          "id"
+          "app",
+          "cluster_status",
+          "collections",
+          "configs",
+          "grpc_calls_statistics",
+          "id",
+          "system",
+          "web"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
           "app": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AppBuildTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/AppBuildTelemetry"
           },
           "system": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
           },
           "configs": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConfigsTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "collections_short_info": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ConfigsTelemetry"
           },
           "collections": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CollectionTelemetry"
-            },
-            "nullable": true
+            }
           },
           "web": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WebApiTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WebApiTelemetry"
           },
           "grpc_calls_statistics": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GrpcTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
           },
           "cluster_status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ClusterStatus"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "vector_index_searches": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "peers_count": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "$ref": "#/components/schemas/ClusterStatus"
           }
         }
       },
@@ -5229,110 +4968,53 @@
           }
         }
       },
-      "CollectionShortInfoTelemetry": {
-        "type": "object",
-        "required": [
-          "indexed_vectors_count",
-          "optimizer_status",
-          "status",
-          "vectors_count"
-        ],
-        "properties": {
-          "status": {
-            "$ref": "#/components/schemas/CollectionStatus"
-          },
-          "optimizer_status": {
-            "$ref": "#/components/schemas/OptimizersStatus"
-          },
-          "vectors_count": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "indexed_vectors_count": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          }
-        }
-      },
       "CollectionTelemetry": {
         "type": "object",
         "required": [
+          "config",
           "id",
-          "init_time_micros",
-          "short_info"
+          "init_time",
+          "shards"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
-          "init_time_micros": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
-          },
-          "short_info": {
-            "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
-          },
-          "params": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
           "config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/CollectionConfig"
+          },
+          "init_time": {
+            "$ref": "#/components/schemas/Duration"
           },
           "shards": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShardTelemetry"
-            },
-            "nullable": true
+            }
+          }
+        }
+      },
+      "Duration": {
+        "type": "object",
+        "required": [
+          "nanos",
+          "secs"
+        ],
+        "properties": {
+          "secs": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           },
-          "vector_index_searches": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "optimizations": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizerTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+          "nanos": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
           }
         }
       },
       "ShardTelemetry": {
         "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "Proxy",
-              "ForwardProxy"
-            ]
-          },
           {
             "type": "object",
             "required": [
@@ -5340,7 +5022,25 @@
             ],
             "properties": {
               "Remote": {
-                "$ref": "#/components/schemas/RemoteShardTelemetry"
+                "type": "object",
+                "required": [
+                  "searches",
+                  "shard_id",
+                  "updates"
+                ],
+                "properties": {
+                  "shard_id": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0
+                  },
+                  "searches": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  },
+                  "updates": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
               }
             },
             "additionalProperties": false
@@ -5352,7 +5052,25 @@
             ],
             "properties": {
               "Local": {
-                "$ref": "#/components/schemas/LocalShardTelemetry"
+                "type": "object",
+                "required": [
+                  "optimizers",
+                  "segments"
+                ],
+                "properties": {
+                  "segments": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/SegmentTelemetry"
+                    }
+                  },
+                  "optimizers": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/OptimizerTelemetry"
+                    }
+                  }
+                }
               }
             },
             "additionalProperties": false
@@ -5360,66 +5078,38 @@
           {
             "type": "object",
             "required": [
-              "ReplicaSet"
+              "Proxy"
             ],
             "properties": {
-              "ReplicaSet": {
-                "type": "object",
-                "required": [
-                  "remote"
-                ],
-                "properties": {
-                  "local": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/ShardTelemetry"
-                      },
-                      {
-                        "nullable": true
-                      }
-                    ]
-                  },
-                  "remote": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/ShardTelemetry"
-                    }
-                  }
-                }
+              "Proxy": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ForwardProxy"
+            ],
+            "properties": {
+              "ForwardProxy": {
+                "type": "object"
               }
             },
             "additionalProperties": false
           }
         ]
       },
-      "RemoteShardTelemetry": {
+      "TelemetryOperationStatistics": {
         "type": "object",
         "required": [
-          "searches",
-          "shard_id",
-          "updates"
+          "fail_count",
+          "ok_avg_time",
+          "ok_count"
         ],
         "properties": {
-          "shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
-          },
-          "searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
-          },
-          "updates": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
-          }
-        }
-      },
-      "OperationDurationStatistics": {
-        "type": "object",
-        "required": [
-          "count"
-        ],
-        "properties": {
-          "count": {
+          "ok_count": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -5429,83 +5119,37 @@
             "format": "uint",
             "minimum": 0
           },
-          "avg_duration_micros": {
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "min_duration_micros": {
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "max_duration_micros": {
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          }
-        }
-      },
-      "LocalShardTelemetry": {
-        "type": "object",
-        "required": [
-          "optimizations",
-          "segments"
-        ],
-        "properties": {
-          "segments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SegmentTelemetry"
-            }
-          },
-          "optimizations": {
-            "$ref": "#/components/schemas/OptimizerTelemetry"
+          "ok_avg_time": {
+            "$ref": "#/components/schemas/Duration"
           }
         }
       },
       "SegmentTelemetry": {
         "type": "object",
         "required": [
-          "info"
+          "config",
+          "info",
+          "payload_field_indices",
+          "vector_index"
         ],
         "properties": {
           "info": {
             "$ref": "#/components/schemas/SegmentInfo"
           },
           "config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SegmentConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SegmentConfig"
           },
-          "vector_index_searches": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "vector_index_searches_with_names": {
+          "vector_index": {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
-            },
-            "nullable": true
+              "$ref": "#/components/schemas/VectorIndexTelemetry"
+            }
           },
           "payload_field_indices": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PayloadIndexTelemetry"
-            },
-            "nullable": true
+            }
           }
         }
       },
@@ -5745,29 +5389,26 @@
           }
         ]
       },
-      "VectorIndexSearchesTelemetry": {
+      "VectorIndexTelemetry": {
         "type": "object",
+        "required": [
+          "large_cardinality_searches",
+          "negative_check_cardinality_searches",
+          "positive_check_cardinality_searches",
+          "small_cardinality_searches"
+        ],
         "properties": {
-          "unfiltered_plain_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          "small_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
           },
-          "unfiltered_hnsw_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          "large_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
           },
-          "filtered_plain_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          "positive_check_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
           },
-          "filtered_small_cardinality_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
-          },
-          "filtered_large_cardinality_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
-          },
-          "filtered_positive_check_cardinality_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
-          },
-          "filtered_negative_check_cardinality_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          "negative_check_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
           }
         }
       },
@@ -5797,23 +5438,68 @@
         }
       },
       "OptimizerTelemetry": {
-        "type": "object",
-        "required": [
-          "indexing",
-          "merge",
-          "vacuum"
-        ],
-        "properties": {
-          "indexing": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Indexing"
+            ],
+            "properties": {
+              "Indexing": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
           },
-          "merge": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          {
+            "type": "object",
+            "required": [
+              "Merge"
+            ],
+            "properties": {
+              "Merge": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
           },
-          "vacuum": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          {
+            "type": "object",
+            "required": [
+              "Vacuum"
+            ],
+            "properties": {
+              "Vacuum": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
           }
-        }
+        ]
       },
       "WebApiTelemetry": {
         "type": "object",
@@ -5824,24 +5510,9 @@
           "responses": {
             "type": "object",
             "additionalProperties": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/components/schemas/OperationDurationStatistics"
-              }
-            }
-          }
-        }
-      },
-      "GrpcTelemetry": {
-        "type": "object",
-        "required": [
-          "responses"
-        ],
-        "properties": {
-          "responses": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/OperationDurationStatistics"
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
             }
           }
         }
@@ -5852,13 +5523,7 @@
             "$ref": "#/components/schemas/MoveShardOperation"
           },
           {
-            "$ref": "#/components/schemas/ReplicateShardOperation"
-          },
-          {
             "$ref": "#/components/schemas/AbortTransferOperation"
-          },
-          {
-            "$ref": "#/components/schemas/DropReplicaOperation"
           }
         ]
       },
@@ -5898,17 +5563,6 @@
           }
         }
       },
-      "ReplicateShardOperation": {
-        "type": "object",
-        "required": [
-          "replicate_shard"
-        ],
-        "properties": {
-          "replicate_shard": {
-            "$ref": "#/components/schemas/MoveShard"
-          }
-        }
-      },
       "AbortTransferOperation": {
         "type": "object",
         "required": [
@@ -5917,36 +5571,6 @@
         "properties": {
           "abort_transfer": {
             "$ref": "#/components/schemas/MoveShard"
-          }
-        }
-      },
-      "DropReplicaOperation": {
-        "type": "object",
-        "required": [
-          "drop_replica"
-        ],
-        "properties": {
-          "drop_replica": {
-            "$ref": "#/components/schemas/Replica"
-          }
-        }
-      },
-      "Replica": {
-        "type": "object",
-        "required": [
-          "peer_id",
-          "shard_id"
-        ],
-        "properties": {
-          "shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
-          },
-          "peer_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
           }
         }
       },
@@ -5975,21 +5599,6 @@
             "items": {
               "$ref": "#/components/schemas/RecommendRequest"
             }
-          }
-        }
-      },
-      "LocksOption": {
-        "type": "object",
-        "required": [
-          "write"
-        ],
-        "properties": {
-          "error_message": {
-            "type": "string",
-            "nullable": true
-          },
-          "write": {
-            "type": "boolean"
           }
         }
       }

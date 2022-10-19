@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::operations::types::{CollectionStatus, OptimizersStatus};
-use crate::shard::ShardId;
+use crate::shards::shard::ShardId;
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub enum ShardTelemetry {

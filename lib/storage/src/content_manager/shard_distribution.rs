@@ -2,8 +2,8 @@ use std::cmp::{self, Reverse};
 use std::collections::BinaryHeap;
 use std::num::NonZeroU32;
 
-use collection::shard::collection_shard_distribution::{CollectionShardDistribution, ShardType};
-use collection::shard::{PeerId, ShardId};
+use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::shard::{PeerId, ShardId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -86,27 +86,15 @@ impl ShardDistributionProposal {
             .cloned()
             .collect()
     }
+}
 
-    pub fn into(self, this_peer_id: PeerId) -> CollectionShardDistribution {
+impl From<ShardDistributionProposal> for CollectionShardDistribution {
+    fn from(proposal: ShardDistributionProposal) -> Self {
         CollectionShardDistribution {
-            shards: self
+            shards: proposal
                 .distribution
                 .into_iter()
-                .map(|(shard_id, peers)| match &peers[..] {
-                    [peer] if *peer == this_peer_id => (shard_id, ShardType::Local),
-                    [peer] => (shard_id, ShardType::Remote(*peer)),
-                    peers => (
-                        shard_id,
-                        ShardType::ReplicaSet {
-                            local: peers.contains(&this_peer_id),
-                            remote: peers
-                                .iter()
-                                .copied()
-                                .filter(|peer| peer != &this_peer_id)
-                                .collect(),
-                        },
-                    ),
-                })
+                .map(|(shard_id, peers)| (shard_id, peers.into_iter().collect()))
                 .collect(),
         }
     }

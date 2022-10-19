@@ -148,6 +148,7 @@ impl ConsensusOpWal {
 
             let mut buf = vec![];
             entry.encode(&mut buf)?;
+            #[allow(unused_variables)]
             let wal_index = self.0.append(&buf)?;
             #[cfg(debug_assertions)]
             if let Some(offset) = index_offset {
