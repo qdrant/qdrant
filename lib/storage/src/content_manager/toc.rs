@@ -487,7 +487,7 @@ impl TableOfContent {
             CollectionMetaOperations::SetShardReplicaState(operation) => {
                 self.set_shard_replica_state(operation).await.map(|()| true)
             }
-            CollectionMetaOperations::Nop => Ok(true),
+            CollectionMetaOperations::Nop { .. } => Ok(true),
         }
     }
 

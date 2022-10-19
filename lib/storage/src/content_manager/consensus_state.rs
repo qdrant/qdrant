@@ -467,9 +467,12 @@ impl<C: CollectionContainer> ConsensusState<C> {
         }
         let res = Self::await_receiver(receiver, wait_timeout).await?;
 
+        let random_token: usize = rand::random();
         // Send empty operation to make sure that the majority of consensus applied the operation
         let empty_operation =
-            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop));
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop {
+                token: random_token,
+            }));
         let (sender, receiver) = oneshot::channel();
         {
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
