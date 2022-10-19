@@ -47,6 +47,7 @@ impl Dispatcher {
         if let Some(state) = self.consensus_state.as_ref() {
             let op = match operation {
                 CollectionMetaOperations::CreateCollection(mut op) => {
+                    self.toc.check_write_lock()?;
                     debug_assert!(
                         op.take_distribution().is_none(),
                         "Distribution should be only set in this method."
@@ -87,6 +88,12 @@ impl Dispatcher {
                 )
                 .await
         } else {
+            match &operation {
+                CollectionMetaOperations::CreateCollection(_) => {
+                    self.toc.check_write_lock()?;
+                }
+                _ => {}
+            }
             self.toc.perform_collection_meta_op(operation).await
         }
     }
