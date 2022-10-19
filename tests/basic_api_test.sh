@@ -21,7 +21,8 @@ curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
       },
       "optimizers_config": {
         "default_segment_number": 2
-      }
+      },
+      "replication_factor": 2
     }' | jq
 
 curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
