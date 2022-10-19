@@ -158,7 +158,7 @@ fn upsert_with_payload(
 ) -> OperationResult<bool> {
     let mut res = segment.upsert_vector(op_num, point_id, vectors)?;
     if let Some(full_payload) = payload {
-        res &= segment.set_payload(op_num, point_id, full_payload)?;
+        res &= segment.set_full_payload(op_num, point_id, full_payload)?;
     }
     Ok(res)
 }
