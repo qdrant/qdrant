@@ -228,7 +228,6 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
-
         let CreateCollection {
             vectors,
             shard_number,
@@ -823,7 +822,6 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
-
         let collection = self.get_collection(collection_name).await?;
         let result = match shard_selection {
             Some(shard_selection) => {
@@ -834,7 +832,7 @@ impl TableOfContent {
             None => {
                 self.check_write_lock()?;
                 collection.update_from_client(operation, wait).await
-            },
+            }
         };
         result.map_err(|err| err.into())
     }
