@@ -88,7 +88,7 @@ impl Raft for RaftService {
                     uri: uri.to_string(),
                 },
                 None,
-                true
+                true,
             )
             .await
             .map_err(|err| Status::internal(format!("Failed to add peer: {err}")))?;

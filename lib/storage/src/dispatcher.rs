@@ -85,7 +85,7 @@ impl Dispatcher {
                 .propose_consensus_op_with_await(
                     ConsensusOperations::CollectionMeta(Box::new(op)),
                     wait_timeout,
-                    true
+                    true,
                 )
                 .await
         } else {
