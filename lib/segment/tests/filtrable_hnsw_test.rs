@@ -158,7 +158,10 @@ mod tests {
                 &query,
                 filter_query,
                 top,
-                Some(&SearchParams { hnsw_ef: Some(ef) }),
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    exact: false,
+                }),
             );
 
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]

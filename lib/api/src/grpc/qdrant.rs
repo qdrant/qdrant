@@ -1551,6 +1551,10 @@ pub struct SearchParams {
     ///Larger the value - more accurate the result, more time required for search.
     #[prost(uint64, optional, tag="1")]
     pub hnsw_ef: ::core::option::Option<u64>,
+    ///
+    ///Search without approximation. If set to true, search may run long but with exact results.
+    #[prost(bool, optional, tag="2")]
+    pub exact: ::core::option::Option<bool>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPoints {
