@@ -132,7 +132,7 @@ mod tests {
         hnsw_index.build_index(&stopped).unwrap();
 
         let top = 3;
-        let attempts = 300;
+        let attempts = 50;
         for _i in 0..attempts {
             let query = random_vector(&mut rnd, dim);
 
