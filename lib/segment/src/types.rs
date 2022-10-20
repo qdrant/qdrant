@@ -214,6 +214,10 @@ pub struct SearchParams {
     /// Params relevant to HNSW index
     /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
     pub hnsw_ef: Option<usize>,
+
+    /// Search without approximation. If set to true, search may run long but with exact results.
+    #[serde(default)]
+    pub exact: bool,
 }
 
 /// Vector index configuration of the segment

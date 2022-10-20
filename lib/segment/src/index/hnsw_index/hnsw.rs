@@ -212,36 +212,51 @@ impl VectorIndex for HNSWIndex {
         top: usize,
         params: Option<&SearchParams>,
     ) -> Vec<Vec<ScoredPointOffset>> {
+        let exact = params.map(|params| params.exact).unwrap_or(false);
         match filter {
-            None => self.search_vectors_with_graph(vectors, None, top, params),
+            None => {
+                if exact {
+                    let vector_storage = self.vector_storage.borrow();
+                    vectors
+                        .iter()
+                        .map(|vector| vector_storage.score_all(vector, top))
+                        .collect()
+                } else {
+                    self.search_vectors_with_graph(vectors, None, top, params)
+                }
+            }
             Some(query_filter) => {
                 // depending on the amount of filtered-out points the optimal strategy could be
                 // - to retrieve possible points and score them after
                 // - to use HNSW index with filtering condition
 
                 let payload_index = self.payload_index.borrow();
+                let vector_storage = self.vector_storage.borrow();
+
+                let plain_search = || -> Vec<Vec<ScoredPointOffset>> {
+                    let mut filtered_iter = payload_index.query_points(query_filter);
+                    return vectors
+                        .iter()
+                        .map(|vector| {
+                            vector_storage.score_points(vector, filtered_iter.as_mut(), top)
+                        })
+                        .collect();
+                };
+
+                // if exact search is requested, we should not use HNSW index
+                if exact {
+                    return plain_search();
+                }
+
                 let query_cardinality = payload_index.estimate_cardinality(query_filter);
 
                 // debug!("query_cardinality: {:#?}", query_cardinality);
-
-                let vector_storage = self.vector_storage.borrow();
 
                 if query_cardinality.max < self.config.indexing_threshold {
                     // if cardinality is small - use plain index
                     let _timer =
                         TelemetryOperationTimer::new(&self.small_cardinality_search_telemetry);
-                    let filtered_ids: Vec<_> = payload_index.query_points(query_filter).collect();
-
-                    return vectors
-                        .iter()
-                        .map(|vector| {
-                            vector_storage.score_points(
-                                vector,
-                                &mut filtered_ids.iter().copied(),
-                                top,
-                            )
-                        })
-                        .collect();
+                    return plain_search();
                 }
 
                 if query_cardinality.min > self.config.indexing_threshold {
@@ -255,7 +270,7 @@ impl VectorIndex for HNSWIndex {
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
 
-                return if sample_check_cardinality(
+                if sample_check_cardinality(
                     vector_storage.sample_ids(),
                     |idx| filter_context.check(idx),
                     self.config.indexing_threshold,
@@ -271,19 +286,8 @@ impl VectorIndex for HNSWIndex {
                     let _timer = TelemetryOperationTimer::new(
                         &self.negative_check_cardinality_search_telemetry,
                     );
-                    let filtered_ids: Vec<_> = payload_index.query_points(query_filter).collect();
-                    vectors
-                        .iter()
-                        .map(|vector| {
-                            vector_storage.score_points(
-                                vector,
-                                &mut filtered_ids.iter().copied(),
-                                top,
-                            )
-                        })
-                        .collect()
-                    // vector_storage.score_points(vector, &mut filtered_ids, top)
-                };
+                    plain_search()
+                }
             }
         }
     }

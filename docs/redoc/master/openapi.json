@@ -3735,6 +3735,11 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "exact": {
+            "description": "Search without approximation. If set to true, search may run long but with exact results.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
