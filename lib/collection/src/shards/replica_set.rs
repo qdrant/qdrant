@@ -541,10 +541,10 @@ impl ShardReplicaSet {
         let mut captured_error = None;
         while let Some(result) = futures.next().await {
             match result {
-                Ok(res) => return Ok(res),
-                err @ Err(CollectionError::ServiceError { .. }) => return err,
-                err @ Err(CollectionError::Cancelled { .. }) => return err,
-                err @ Err(_) => captured_error = Some(err), // capture error for possible error reporting
+                Ok(res) => return Ok(res), // We only need one successful result
+                err @ Err(CollectionError::ServiceError { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(CollectionError::Cancelled { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(_) => return err, // Validation or user errors reported immediately
             }
         }
         debug_assert!(
@@ -562,10 +562,10 @@ impl ShardReplicaSet {
         // shortcut at first successful result
         while let Some(result) = futures.next().await {
             match result {
-                Ok(res) => return Ok(res),
-                err @ Err(CollectionError::ServiceError { .. }) => return err,
-                err @ Err(CollectionError::Cancelled { .. }) => return err,
-                err @ Err(_) => captured_error = Some(err), // capture error for possible error reporting
+                Ok(res) => return Ok(res), // We only need one successful result
+                err @ Err(CollectionError::ServiceError { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(CollectionError::Cancelled { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(_) => return err, // Validation or user errors reported immediately
             }
         }
         captured_error.expect("at this point `captured_error` must be defined by construction")
@@ -818,9 +818,15 @@ impl ShardOperation for ShardReplicaSet {
 
         let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
-        // report all failing peers to consensus
-        for (peer_id, _err) in &failures {
-            self.notify_peer_failure(*peer_id);
+        // Notify consensus about failures if:
+        // 1. There is at least one success, otherwise it might be a problem of sending node
+        // 2. ???
+
+        if !successes.is_empty() {
+            // report all failing peers to consensus
+            for (peer_id, _err) in &failures {
+                self.notify_peer_failure(*peer_id);
+            }
         }
 
         return if successes.is_empty() {

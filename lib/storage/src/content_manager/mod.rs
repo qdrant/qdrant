@@ -102,9 +102,5 @@ pub trait CollectionContainer {
 
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
-    /// First bool - if peer contains shards
-    /// Second bool - if peer contains any shard that is the only one in that collection
-    fn peer_has_shards(&self, peer_id: PeerId) -> (bool, bool);
-
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 }

@@ -165,6 +165,40 @@ impl<C: CollectionContainer> ConsensusState<C> {
         })
     }
 
+    /// Handle peer removal operation.
+    ///
+    /// 1. Try to remove peer
+    /// 2. Handle peer removal error
+    /// 3. Report to the listeners
+    ///
+    /// Return if consensus should be stopped.
+    pub fn on_peer_remove(&self, peer_id: PeerId) -> Result<bool, StorageError> {
+        let mut stop_consensus: bool = false;
+
+        let report = match self.remove_peer(peer_id) {
+            Ok(()) => {
+                if self.this_peer_id() == peer_id {
+                    stop_consensus = true;
+                }
+                Ok(true)
+            }
+            Err(err) => match err {
+                err @ StorageError::ServiceError { .. } => {
+                    return Err(err);
+                }
+                _ => Err(err),
+            },
+        };
+        let operation = ConsensusOperations::RemovePeer(peer_id);
+        let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+        if let Some(on_apply) = on_apply {
+            if on_apply.send(report).is_err() {
+                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+            }
+        }
+        Ok(stop_consensus)
+    }
+
     pub fn apply_conf_change_entry<T: Storage>(
         &self,
         entry: &RaftEntry,
@@ -191,17 +225,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 }
                 ConfChangeType::RemoveNode => {
                     log::debug!("Removing node {}", single_change.node_id);
-                    if self.this_peer_id() == single_change.node_id {
-                        stop_consensus = true;
-                    }
-                    self.remove_peer(single_change.node_id)?;
-                    let operation = ConsensusOperations::RemovePeer(single_change.node_id);
-                    let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-                    if let Some(on_apply) = on_apply {
-                        if on_apply.send(Ok(true)).is_err() {
-                            log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
-                        }
-                    }
+                    stop_consensus |= self.on_peer_remove(single_change.node_id)?;
                 }
                 ConfChangeType::AddLearnerNode => {
                     log::debug!("Adding learner node {}", single_change.node_id);
@@ -768,10 +792,6 @@ mod tests {
             _data: super::CollectionsSnapshot,
         ) -> Result<(), crate::content_manager::errors::StorageError> {
             Ok(())
-        }
-
-        fn peer_has_shards(&self, _: u64) -> (bool, bool) {
-            (false, false)
         }
 
         fn remove_peer(

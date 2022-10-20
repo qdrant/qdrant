@@ -1030,20 +1030,19 @@ impl TableOfContent {
         result
     }
 
-    pub async fn peer_has_shards(&self, peer_id: PeerId) -> (bool, bool) {
+    pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         for collection in self.collections.read().await.values() {
             let state = collection.state().await;
-            let collection_with_one_shard = state.shards.len() == 1;
-            let peers_with_shards: HashSet<_> = state
+            if state
                 .shards
                 .into_values()
-                .flat_map(|shard_info| shard_info.replicas.into_keys().collect::<Vec<_>>())
-                .collect();
-            if peers_with_shards.contains(&peer_id) {
-                return (true, collection_with_one_shard);
+                .flat_map(|shard_info| shard_info.replicas.into_keys())
+                .any(|x| x == peer_id)
+            {
+                return true;
             }
         }
-        (false, false)
+        false
     }
 
     pub fn set_locks(&self, is_write_locked: bool, error_message: Option<String>) {
@@ -1072,11 +1071,6 @@ impl TableOfContent {
             });
         }
         Ok(())
-    }
-
-    fn peer_has_shards_sync(&self, peer_id: PeerId) -> (bool, bool) {
-        self.collection_management_runtime
-            .block_on(self.peer_has_shards(peer_id))
     }
 
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
@@ -1112,16 +1106,34 @@ impl CollectionContainer for TableOfContent {
         self.apply_collections_snapshot(data)
     }
 
-    fn peer_has_shards(&self, peer_id: PeerId) -> (bool, bool) {
-        self.peer_has_shards_sync(peer_id)
-    }
-
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.remove_shards_at_peer_sync(peer_id)?;
-        if self.this_peer_id == peer_id {
-            // We are detaching the current peer, so we need to remove all connections
-            // Remove all peers from the channel service
-            self.collection_management_runtime.block_on(async {
+        self.collection_management_runtime.block_on(async {
+            // Validation:
+            // 1. Check that we are not removing some unique shards
+
+            for collection_name in self.all_collections().await {
+                let collection = self.get_collection(&collection_name).await?;
+                let collection_state = collection.state().await;
+                for (shard_id, shard) in collection_state.shards.iter() {
+                    if shard.replicas.len() == 1 && shard.replicas.contains_key(&peer_id) {
+                        return Err(StorageError::bad_request(&format!(
+                            "Cannot remove peer {} because it is the only replica of shard {} of collection {}",
+                            peer_id,
+                            shard_id,
+                            collection_name
+                        )));
+                    }
+                }
+            }
+
+            // Validation passed
+
+            self.remove_shards_at_peer(peer_id).await?;
+
+            if self.this_peer_id == peer_id {
+                // We are detaching the current peer, so we need to remove all connections
+                // Remove all peers from the channel service
+
                 let ids_to_drop: Vec<_> = self
                     .channel_service
                     .id_to_address
@@ -1133,13 +1145,11 @@ impl CollectionContainer for TableOfContent {
                 for id in ids_to_drop {
                     self.channel_service.remove_peer(id).await;
                 }
-            });
-        } else {
-            // Remove link to some other peer
-            self.collection_management_runtime
-                .block_on(self.channel_service.remove_peer(peer_id));
-        }
-        Ok(())
+            } else {
+                self.channel_service.remove_peer(peer_id).await;
+            }
+            Ok(())
+        })
     }
 }
 
