@@ -233,7 +233,7 @@ impl VectorIndex for HNSWIndex {
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
 
-                let plain_search = || {
+                let plain_search = || -> Vec<Vec<ScoredPointOffset>> {
                     let mut filtered_iter = payload_index.query_points(query_filter);
                     return vectors
                         .iter()
@@ -251,8 +251,6 @@ impl VectorIndex for HNSWIndex {
                 let query_cardinality = payload_index.estimate_cardinality(query_filter);
 
                 // debug!("query_cardinality: {:#?}", query_cardinality);
-
-                let vector_storage = self.vector_storage.borrow();
 
                 if query_cardinality.max < self.config.indexing_threshold {
                     // if cardinality is small - use plain index
