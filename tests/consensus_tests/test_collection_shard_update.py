@@ -3,7 +3,8 @@ import pathlib
 from .utils import *
 
 N_PEERS = 3
-N_SHARDS = 5
+N_SHARDS = 4
+N_REPLICA = 2
 
 
 def test_collection_shard_update(tmp_path: pathlib.Path):
@@ -49,6 +50,7 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
                 }
             },
             "shard_number": N_SHARDS,
+            "replication_factor": N_REPLICA,
         })
     assert_http_ok(r)
 
@@ -95,6 +97,6 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
  
     assert r.status_code == 400
     error = r.json()["status"]["error"]
-    assert error.__contains__("Wrong input: 1 out of 3 shards failed to apply operation")
+    assert error.__contains__("Wrong input: 1 out of 2 shards failed to apply operation")
     assert error.__contains__("Wrong input: Missed vector name error: text")
 

@@ -613,7 +613,7 @@ impl TableOfContent {
         shard_id: ShardId,
     ) -> Result<(), StorageError> {
         log::info!(
-            "Initiating temporary shard {}:{}",
+            "Initiating receiving shard {}:{}",
             collection_name,
             shard_id
         );

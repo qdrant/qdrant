@@ -74,7 +74,7 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
     env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
-          f" http: http://localhost:{http_port}/cluster , p2p: {p2p_port}")
+          f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
     processes.append(
         Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
     return get_uri(http_port)
@@ -88,8 +88,8 @@ def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
     env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     bootstrap_uri = get_uri(p2p_port)
-    print(f"Starting first peer with uri {bootstrap_uri},"
-          f" http: http://localhost:{http_port}/cluster , p2p: {p2p_port}")
+    print(f"\nStarting first peer with uri {bootstrap_uri},"
+          f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
     processes.append(
         Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
     return get_uri(http_port), bootstrap_uri
