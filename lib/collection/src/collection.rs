@@ -570,6 +570,12 @@ impl Collection {
             let shards_holder = self.shards_holder.read().await;
             let shard_to_op = shards_holder.split_by_shard(operation);
 
+            if shard_to_op.is_empty() {
+                return Err(CollectionError::bad_request(
+                    "Empty update request".to_string(),
+                ));
+            }
+
             let shard_requests = shard_to_op
                 .into_iter()
                 .map(move |(shard, operation)| shard.update(operation, wait));
