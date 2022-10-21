@@ -1,11 +1,8 @@
 use std::sync::mpsc::Sender;
 
-use collection::shards::transfer::shard_transfer::ShardTransfer;
-use collection::shards::CollectionId;
 use parking_lot::Mutex;
 
-use crate::content_manager::collection_meta_ops::ShardTransferOperations;
-use crate::{CollectionMetaOperations, ConsensusOperations, StorageError};
+use crate::{ConsensusOperations, StorageError};
 
 /// Structure used to notify consensus about operation
 pub struct OperationSender(Mutex<Sender<ConsensusOperations>>);
@@ -18,24 +15,6 @@ impl OperationSender {
     pub fn send(&self, operation: ConsensusOperations) -> Result<(), StorageError> {
         self.0.lock().send(operation)?;
         Ok(())
-    }
-
-    pub fn cancel_transfer(
-        &self,
-        collection_id: CollectionId,
-        transfer: ShardTransfer,
-        reason: &str,
-    ) -> Result<(), StorageError> {
-        let operation =
-            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
-                collection_id,
-                ShardTransferOperations::Abort {
-                    transfer,
-                    reason: reason.to_string(),
-                },
-            )));
-
-        self.send(operation)
     }
 }
 

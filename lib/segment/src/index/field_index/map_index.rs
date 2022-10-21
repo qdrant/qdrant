@@ -106,12 +106,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     fn add_many_to_map(&mut self, idx: PointOffsetType, values: Vec<N>) -> OperationResult<()> {
-        if let Some(existing_vals) = self.get_values(idx) {
-            if !existing_vals.is_empty() {
-                self.remove_point(idx)?;
-            }
-        }
-
         if values.is_empty() {
             return Ok(());
         }

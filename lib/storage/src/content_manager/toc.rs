@@ -228,16 +228,6 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
-        if self.is_write_locked.load(Ordering::Relaxed) {
-            return Err(StorageError::Locked {
-                description: self
-                    .lock_error_message
-                    .lock()
-                    .clone()
-                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
-            });
-        }
-
         let CreateCollection {
             vectors,
             shard_number,
@@ -383,11 +373,9 @@ impl TableOfContent {
         }
         if let Some(diff) = params {
             collection.update_params_from_diff(diff).await?;
-            if let Some(changes) = replica_changes {
-                collection
-                    .handle_replica_changes(changes.into_iter().collect())
-                    .await?;
-            }
+        }
+        if let Some(changes) = replica_changes {
+            collection.handle_replica_changes(changes).await?;
         }
         Ok(true)
     }
@@ -499,6 +487,7 @@ impl TableOfContent {
             CollectionMetaOperations::SetShardReplicaState(operation) => {
                 self.set_shard_replica_state(operation).await.map(|()| true)
             }
+            CollectionMetaOperations::Nop { .. } => Ok(true),
         }
     }
 
@@ -624,7 +613,7 @@ impl TableOfContent {
         shard_id: ShardId,
     ) -> Result<(), StorageError> {
         log::info!(
-            "Initiating temporary shard {}:{}",
+            "Initiating receiving shard {}:{}",
             collection_name,
             shard_id
         );
@@ -834,16 +823,6 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
-        if operation.is_write_operation() && self.is_write_locked.load(Ordering::Relaxed) {
-            return Err(StorageError::Locked {
-                description: self
-                    .lock_error_message
-                    .lock()
-                    .clone()
-                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
-            });
-        }
-
         let collection = self.get_collection(collection_name).await?;
         let result = match shard_selection {
             Some(shard_selection) => {
@@ -851,7 +830,12 @@ impl TableOfContent {
                     .update_from_peer(operation, shard_selection, wait)
                     .await
             }
-            None => collection.update_from_client(operation, wait).await,
+            None => {
+                if operation.is_write_operation() {
+                    self.check_write_lock()?;
+                }
+                collection.update_from_client(operation, wait).await
+            }
         };
         result.map_err(|err| err.into())
     }
@@ -1049,12 +1033,12 @@ impl TableOfContent {
     pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         for collection in self.collections.read().await.values() {
             let state = collection.state().await;
-            let peers_with_shards: HashSet<_> = state
+            if state
                 .shards
                 .into_values()
-                .flat_map(|shard_info| shard_info.replicas.into_keys().collect::<Vec<_>>())
-                .collect();
-            if peers_with_shards.contains(&peer_id) {
+                .flat_map(|shard_info| shard_info.replicas.into_keys())
+                .any(|x| x == peer_id)
+            {
                 return true;
             }
         }
@@ -1075,9 +1059,31 @@ impl TableOfContent {
         self.lock_error_message.lock().clone()
     }
 
-    fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {
+    /// Returns an error if the write lock is set
+    pub fn check_write_lock(&self) -> Result<(), StorageError> {
+        if self.is_write_locked.load(Ordering::Relaxed) {
+            return Err(StorageError::Locked {
+                description: self
+                    .lock_error_message
+                    .lock()
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_WRITE_LOCK_ERROR_MESSAGE.to_string()),
+            });
+        }
+        Ok(())
+    }
+
+    pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        let collections = self.collections.read().await;
+        for collection in collections.values() {
+            collection.remove_shards_at_peer(peer_id).await?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_shards_at_peer_sync(&self, peer_id: PeerId) -> Result<(), StorageError> {
         self.collection_management_runtime
-            .block_on(self.peer_has_shards(peer_id))
+            .block_on(self.remove_shards_at_peer(peer_id))
     }
 }
 
@@ -1100,15 +1106,34 @@ impl CollectionContainer for TableOfContent {
         self.apply_collections_snapshot(data)
     }
 
-    fn peer_has_shards(&self, peer_id: PeerId) -> bool {
-        self.peer_has_shards_sync(peer_id)
-    }
+    fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        self.collection_management_runtime.block_on(async {
+            // Validation:
+            // 1. Check that we are not removing some unique shards
 
-    fn remove_peer(&self, peer_id: PeerId) {
-        if self.this_peer_id == peer_id {
-            // We are detaching the current peer, so we need to remove all connections
-            // Remove all peers from the channel service
-            self.collection_management_runtime.block_on(async {
+            for collection_name in self.all_collections().await {
+                let collection = self.get_collection(&collection_name).await?;
+                let collection_state = collection.state().await;
+                for (shard_id, shard) in collection_state.shards.iter() {
+                    if shard.replicas.len() == 1 && shard.replicas.contains_key(&peer_id) {
+                        return Err(StorageError::bad_request(&format!(
+                            "Cannot remove peer {} because it is the only replica of shard {} of collection {}",
+                            peer_id,
+                            shard_id,
+                            collection_name
+                        )));
+                    }
+                }
+            }
+
+            // Validation passed
+
+            self.remove_shards_at_peer(peer_id).await?;
+
+            if self.this_peer_id == peer_id {
+                // We are detaching the current peer, so we need to remove all connections
+                // Remove all peers from the channel service
+
                 let ids_to_drop: Vec<_> = self
                     .channel_service
                     .id_to_address
@@ -1120,12 +1145,11 @@ impl CollectionContainer for TableOfContent {
                 for id in ids_to_drop {
                     self.channel_service.remove_peer(id).await;
                 }
-            });
-        } else {
-            // Remove link to some other peer
-            self.collection_management_runtime
-                .block_on(self.channel_service.remove_peer(peer_id));
-        }
+            } else {
+                self.channel_service.remove_peer(peer_id).await;
+            }
+            Ok(())
+        })
     }
 }
 

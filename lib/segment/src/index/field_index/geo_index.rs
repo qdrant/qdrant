@@ -284,12 +284,6 @@ impl GeoMapIndex {
         idx: PointOffsetType,
         values: &[GeoPoint],
     ) -> OperationResult<()> {
-        if let Some(existing_vals) = self.get_values(idx) {
-            if !existing_vals.is_empty() {
-                self.remove_point(idx)?;
-            }
-        }
-
         if values.is_empty() {
             return Ok(());
         }

@@ -65,7 +65,6 @@ impl State {
         Ok(())
     }
 
-    #[allow(unreachable_code, clippy::diverging_sub_expression)]
     async fn apply_config(
         new_config: CollectionConfig,
         collection: &Collection,

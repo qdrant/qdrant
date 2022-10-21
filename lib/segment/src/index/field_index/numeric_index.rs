@@ -134,12 +134,6 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         idx: PointOffsetType,
         values: impl IntoIterator<Item = T>,
     ) -> OperationResult<()> {
-        if let Some(existing_vals) = self.get_values(idx) {
-            if !existing_vals.is_empty() {
-                self.remove_point(idx)?;
-            }
-        }
-
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }

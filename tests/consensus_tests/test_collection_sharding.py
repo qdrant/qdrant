@@ -3,7 +3,8 @@ import pathlib
 from .utils import *
 
 N_PEERS = 5
-N_SHARDS = 6
+N_SHARDS = 4
+N_REPLICA = 2
 
 
 def test_collection_sharding(tmp_path: pathlib.Path):
@@ -43,6 +44,7 @@ def test_collection_sharding(tmp_path: pathlib.Path):
                 "distance": "Dot"
             },
             "shard_number": N_SHARDS,
+            "replication_factor": N_REPLICA,
         })
     assert_http_ok(r)
 

@@ -131,7 +131,10 @@ message SearchParams {
    */
   optional uint64 hnsw_ef = 1;
 
-
+  /*
+  Search without approximation. If set to true, search may run long but with exact results.
+  */
+  optional bool exact = 2;
 }
 
 message SearchPoints {

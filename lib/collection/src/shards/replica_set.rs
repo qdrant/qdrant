@@ -31,7 +31,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
-use crate::shards::shard::Shard::{ForwardProxy, Local, Remote};
+use crate::shards::shard::Shard::{ForwardProxy, Local};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::{ShardOperation, ShardOperationSS};
@@ -104,7 +104,7 @@ impl ShardReplicaSet {
     }
 
     // return true if was activated
-    pub fn activate_replica(&mut self, peer_id: PeerId) -> CollectionResult<bool> {
+    pub fn activate_replica(&self, peer_id: PeerId) -> CollectionResult<bool> {
         Ok(self.replica_state.write(|state| {
             if let std::collections::hash_map::Entry::Occupied(mut e) = state.peers.entry(peer_id) {
                 e.insert(ReplicaState::Active);
@@ -221,16 +221,23 @@ impl ShardReplicaSet {
     }
 
     pub async fn add_remote(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
-        self.remotes.write().await.push(RemoteShard::new(
+        self.replica_state.write(|rs| {
+            rs.peers.insert(peer_id, state);
+        })?;
+
+        let mut remotes = self.remotes.write().await;
+
+        // check remote already exists
+        if remotes.iter().any(|remote| remote.peer_id == peer_id) {
+            return Ok(());
+        }
+
+        remotes.push(RemoteShard::new(
             self.shard_id,
             self.collection_id.clone(),
             peer_id,
             self.channel_service.clone(),
         ));
-
-        self.replica_state.write(|rs| {
-            rs.peers.insert(peer_id, state);
-        })?;
 
         Ok(())
     }
@@ -276,6 +283,33 @@ impl ShardReplicaSet {
             self.remove_local().await?;
         } else {
             self.remove_remote(peer_id).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn add_peer(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
+        if self.this_peer_id() == peer_id {
+            let mut local = self.local.write().await;
+            let new_local = if local.is_none() {
+                Some(Local(
+                    LocalShard::build(
+                        self.shard_id,
+                        self.collection_id.clone(),
+                        &self.shard_path,
+                        self.collection_config.clone(),
+                    )
+                    .await?,
+                ))
+            } else {
+                None
+            };
+
+            self.set_replica_state(&peer_id, state)?;
+            if new_local.is_some() {
+                *local = new_local;
+            }
+        } else {
+            self.add_remote(peer_id, state).await?;
         }
         Ok(())
     }
@@ -346,18 +380,12 @@ impl ShardReplicaSet {
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
     }
 
-    pub fn set_replica_state(
-        &self,
-        peer_id: &PeerId,
-        active: ReplicaState,
-    ) -> CollectionResult<()> {
-        self.replica_state.write_with_res(|rs| {
-            *rs.peers
-                .get_mut(peer_id)
-                .ok_or_else(|| CollectionError::NotFound {
-                    what: format!("Shard {} replica on peer {peer_id}", self.shard_id),
-                })? = active;
-            Ok::<(), CollectionError>(())
+    pub fn set_replica_state(&self, peer_id: &PeerId, state: ReplicaState) -> CollectionResult<()> {
+        self.replica_state.write(|rs| {
+            if rs.this_peer_id == *peer_id {
+                rs.is_local = true;
+            }
+            rs.peers.insert(*peer_id, state);
         })?;
         Ok(())
     }
@@ -378,28 +406,7 @@ impl ShardReplicaSet {
             .copied()
             .collect::<Vec<_>>();
         for peer_id in removed_peers {
-            if peer_id == self.this_peer_id() {
-                let mut local_write = self.local.write().await;
-                if let Some(mut shard) = local_write.take() {
-                    shard.before_drop().await;
-                    match shard {
-                        Local(local) => LocalShard::clear(&local.path).await?,
-                        ForwardProxy(forward) => {
-                            LocalShard::clear(&forward.wrapped_shard.path).await?
-                        }
-                        Remote(_) | Shard::Proxy(_) => {
-                            return Err(CollectionError::service_error(
-                                "Unexpected shard in replica set".to_string(),
-                            ))
-                        }
-                    }
-                } else {
-                    debug_assert!(false, "inconsistent `replica_set` map with actual shards")
-                }
-            } else {
-                let mut remotes = self.remotes.write().await;
-                remotes.retain(|rs| rs.peer_id != peer_id);
-            }
+            self.remove_peer(peer_id).await?;
         }
 
         for (peer_id, state) in replicas {
@@ -413,13 +420,13 @@ impl ShardReplicaSet {
 
             if peer_id == self.this_peer_id() {
                 // Consensus wants a local replica on this peer
-                let local_shard = LocalShard::load(
+                let local_shard = LocalShard::build(
                     self.shard_id,
                     self.collection_id.clone(),
                     &self.shard_path,
                     self.collection_config.clone(),
                 )
-                .await;
+                .await?;
                 match state {
                     ReplicaState::Active => {
                         // No way we can provide up-to-date replica right away at this point,
@@ -534,10 +541,10 @@ impl ShardReplicaSet {
         let mut captured_error = None;
         while let Some(result) = futures.next().await {
             match result {
-                Ok(res) => return Ok(res),
-                err @ Err(CollectionError::ServiceError { .. }) => return err,
-                err @ Err(CollectionError::Cancelled { .. }) => return err,
-                err @ Err(_) => captured_error = Some(err), // capture error for possible error reporting
+                Ok(res) => return Ok(res), // We only need one successful result
+                err @ Err(CollectionError::ServiceError { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(CollectionError::Cancelled { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(_) => return err, // Validation or user errors reported immediately
             }
         }
         debug_assert!(
@@ -555,10 +562,10 @@ impl ShardReplicaSet {
         // shortcut at first successful result
         while let Some(result) = futures.next().await {
             match result {
-                Ok(res) => return Ok(res),
-                err @ Err(CollectionError::ServiceError { .. }) => return err,
-                err @ Err(CollectionError::Cancelled { .. }) => return err,
-                err @ Err(_) => captured_error = Some(err), // capture error for possible error reporting
+                Ok(res) => return Ok(res), // We only need one successful result
+                err @ Err(CollectionError::ServiceError { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(CollectionError::Cancelled { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(_) => return err, // Validation or user errors reported immediately
             }
         }
         captured_error.expect("at this point `captured_error` must be defined by construction")
@@ -811,9 +818,15 @@ impl ShardOperation for ShardReplicaSet {
 
         let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
-        // report all failing peers to consensus
-        for (peer_id, _err) in &failures {
-            self.notify_peer_failure(*peer_id);
+        // Notify consensus about failures if:
+        // 1. There is at least one success, otherwise it might be a problem of sending node
+        // 2. ???
+
+        if !successes.is_empty() {
+            // report all failing peers to consensus
+            for (peer_id, _err) in &failures {
+                self.notify_peer_failure(*peer_id);
+            }
         }
 
         return if successes.is_empty() {

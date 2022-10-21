@@ -327,6 +327,7 @@ impl From<SearchParams> for segment::types::SearchParams {
     fn from(params: SearchParams) -> Self {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as usize),
+            exact: params.exact.unwrap_or(false),
         }
     }
 }
@@ -335,6 +336,7 @@ impl From<segment::types::SearchParams> for SearchParams {
     fn from(params: segment::types::SearchParams) -> Self {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as u64),
+            exact: Some(params.exact),
         }
     }
 }

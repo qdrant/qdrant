@@ -31,7 +31,7 @@ pub mod consensus_ops {
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
     pub enum ConsensusOperations {
         CollectionMeta(Box<CollectionMetaOperations>),
-        AddPeer(PeerId, String),
+        AddPeer { peer_id: PeerId, uri: String },
         RemovePeer(PeerId),
     }
 
@@ -52,7 +52,7 @@ pub mod consensus_ops {
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_id,
                 ShardTransferOperations::Abort {
-                    transfer,
+                    transfer: transfer.key(),
                     reason: reason.to_string(),
                 },
             )))
@@ -102,7 +102,5 @@ pub trait CollectionContainer {
 
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
-    fn peer_has_shards(&self, peer_id: PeerId) -> bool;
-
-    fn remove_peer(&self, peer_id: PeerId);
+    fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 }

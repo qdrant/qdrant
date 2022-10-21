@@ -271,6 +271,15 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "description": "If true - removes peer even if it has shards/replicas on it.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
@@ -3726,6 +3735,11 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "exact": {
+            "description": "Search without approximation. If set to true, search may run long but with exact results.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
@@ -4936,6 +4950,7 @@
         "required": [
           "from",
           "shard_id",
+          "sync",
           "to"
         ],
         "properties": {
@@ -4953,6 +4968,10 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "sync": {
+            "description": "If `true` transfer is a synchronization of a replicas If `false` transfer is a moving of a shard from one peer to another",
+            "type": "boolean"
           }
         }
       },

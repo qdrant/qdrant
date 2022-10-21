@@ -339,7 +339,7 @@ impl Consensus {
                         log::debug!("Proposing network configuration change: {:?}", change);
                         self.node.propose_conf_change(vec![], change)
                     }
-                    ConsensusOperations::AddPeer(peer_id, uri) => {
+                    ConsensusOperations::AddPeer { peer_id, uri } => {
                         let mut change = ConfChangeV2::default();
                         change.set_changes(vec![raft_proto::new_conf_change_single(
                             peer_id,
@@ -789,7 +789,7 @@ mod tests {
             .unwrap();
 
         // Then
-        assert_eq!(consensus_state.hard_state().commit, 2);
+        assert_eq!(consensus_state.hard_state().commit, 3); // Collection + Nop
         assert_eq!(toc_arc.all_collections_sync(), vec!["test"]);
     }
 }

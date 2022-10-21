@@ -13,6 +13,7 @@ use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
+use tokio::sync::oneshot::Receiver;
 use tonic::transport::Uri;
 
 use super::alias_mapping::AliasMapping;
@@ -27,6 +28,7 @@ use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, PeerAddressById, PeerInfo, RaftInfo,
 };
+use crate::CollectionMetaOperations;
 
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
@@ -163,6 +165,40 @@ impl<C: CollectionContainer> ConsensusState<C> {
         })
     }
 
+    /// Handle peer removal operation.
+    ///
+    /// 1. Try to remove peer
+    /// 2. Handle peer removal error
+    /// 3. Report to the listeners
+    ///
+    /// Return if consensus should be stopped.
+    pub fn on_peer_remove(&self, peer_id: PeerId) -> Result<bool, StorageError> {
+        let mut stop_consensus: bool = false;
+
+        let report = match self.remove_peer(peer_id) {
+            Ok(()) => {
+                if self.this_peer_id() == peer_id {
+                    stop_consensus = true;
+                }
+                Ok(true)
+            }
+            Err(err) => match err {
+                err @ StorageError::ServiceError { .. } => {
+                    return Err(err);
+                }
+                _ => Err(err),
+            },
+        };
+        let operation = ConsensusOperations::RemovePeer(peer_id);
+        let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+        if let Some(on_apply) = on_apply {
+            if on_apply.send(report).is_err() {
+                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+            }
+        }
+        Ok(stop_consensus)
+    }
+
     pub fn apply_conf_change_entry<T: Storage>(
         &self,
         entry: &RaftEntry,
@@ -189,17 +225,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 }
                 ConfChangeType::RemoveNode => {
                     log::debug!("Removing node {}", single_change.node_id);
-                    if self.this_peer_id() == single_change.node_id {
-                        stop_consensus = true;
-                    }
-                    self.remove_peer(single_change.node_id)?;
-                    let operation = ConsensusOperations::RemovePeer(single_change.node_id);
-                    let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-                    if let Some(on_apply) = on_apply {
-                        if on_apply.send(Ok(true)).is_err() {
-                            log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
-                        }
-                    }
+                    stop_consensus |= self.on_peer_remove(single_change.node_id)?;
                 }
                 ConfChangeType::AddLearnerNode => {
                     log::debug!("Adding learner node {}", single_change.node_id);
@@ -209,10 +235,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     {
                         let peer_uri: Uri = peer_uri;
                         self.add_peer(single_change.node_id, peer_uri.clone())?;
-                        let operation = ConsensusOperations::AddPeer(
-                            single_change.node_id,
-                            peer_uri.to_string(),
-                        );
+                        let operation = ConsensusOperations::AddPeer {
+                            peer_id: single_change.node_id,
+                            uri: peer_uri.to_string(),
+                        };
                         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
                         if let Some(on_apply) = on_apply {
                             if on_apply.send(Ok(true)).is_err() {
@@ -411,7 +437,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
         // The `id_to_address` is shared between `channel_pool` and `persistent`,
         // plus we need to make additional removing in the `channel_pool`.
         // So we handle `remove_peer` inside the `toc` and persist changes in the `persistent` after that.
-        self.toc.remove_peer(peer_id);
+        self.toc.remove_peer(peer_id)?;
         self.persistent.read().save()
     }
 
@@ -423,10 +449,28 @@ impl<C: CollectionContainer> ConsensusState<C> {
         self.propose_sender.send(operation)
     }
 
+    async fn await_receiver(
+        receiver: Receiver<Result<bool, StorageError>>,
+        wait_timeout: Duration,
+    ) -> Result<bool, StorageError> {
+        tokio::time::timeout(wait_timeout, receiver)
+            .await
+            .map_err(
+                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
+                    description: format!(
+                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
+                        wait_timeout.as_secs_f64()
+                    ),
+                },
+                // ??? - forwards 2 possible errors: sender dropped, operation failed
+            )??
+    }
+
     pub async fn propose_consensus_op_with_await(
         &self,
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
+        with_confirmation: bool,
     ) -> Result<bool, StorageError> {
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
 
@@ -446,17 +490,27 @@ impl<C: CollectionContainer> ConsensusState<C> {
             self.propose_sender.send(operation.clone())?;
             on_apply_lock.insert(operation, sender);
         }
-        tokio::time::timeout(wait_timeout, receiver)
-            .await
-            .map_err(
-                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
-                    description: format!(
-                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                        wait_timeout.as_secs_f64()
-                    ),
-                },
-                // ?? - forwards 2 possible errors: sender dropped, operation failed
-            )??
+        let res = Self::await_receiver(receiver, wait_timeout).await?;
+
+        // Send explicit empty operation to ensure that all previous operations are applied.
+        // Assume that peer can not accept new operations until it applies all previous ones.
+        if with_confirmation {
+            let random_token: usize = rand::random();
+            // Send empty operation to make sure that the majority of consensus applied the operation
+            let empty_operation =
+                ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop {
+                    token: random_token,
+                }));
+            let (sender, receiver) = oneshot::channel();
+            {
+                let mut on_apply_lock = self.on_consensus_op_apply.lock();
+                self.propose_sender.send(empty_operation.clone())?;
+                on_apply_lock.insert(empty_operation, sender);
+            }
+            Self::await_receiver(receiver, wait_timeout).await?;
+        }
+
+        Ok(res)
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
@@ -740,11 +794,12 @@ mod tests {
             Ok(())
         }
 
-        fn peer_has_shards(&self, _: u64) -> bool {
-            false
+        fn remove_peer(
+            &self,
+            _peer_id: PeerId,
+        ) -> Result<(), crate::content_manager::errors::StorageError> {
+            Ok(())
         }
-
-        fn remove_peer(&self, _peer_id: PeerId) {}
     }
 
     fn setup_storages(

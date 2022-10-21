@@ -107,6 +107,9 @@ pub struct ShardTransferInfo {
     pub shard_id: ShardId,
     pub from: PeerId,
     pub to: PeerId,
+    /// If `true` transfer is a synchronization of a replicas
+    /// If `false` transfer is a moving of a shard from one peer to another
+    pub sync: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

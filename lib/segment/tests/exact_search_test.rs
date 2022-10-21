@@ -20,7 +20,7 @@ mod tests {
     use tempfile::Builder;
 
     #[test]
-    fn test_filterable_hnsw() {
+    fn exact_search_test() {
         let stopped = AtomicBool::new(false);
 
         let dim = 8;
@@ -132,10 +132,28 @@ mod tests {
         hnsw_index.build_index(&stopped).unwrap();
 
         let top = 3;
-        let mut hits = 0;
-        let attempts = 100;
+        let attempts = 50;
         for _i in 0..attempts {
             let query = random_vector(&mut rnd, dim);
+
+            let index_result = hnsw_index.search(
+                &[&query],
+                None,
+                top,
+                Some(&SearchParams {
+                    hnsw_ef: Some(ef),
+                    exact: true,
+                }),
+            );
+            let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_index
+                .borrow()
+                .search(&[&query], None, top, None);
+
+            assert!(
+                index_result == plain_result,
+                "Exact search is not equal to plain search"
+            );
 
             let range_size = 40;
             let left_range = rnd.gen_range(0..400);
@@ -152,28 +170,24 @@ mod tests {
             )));
 
             let filter_query = Some(&filter);
-            // let filter_query = None;
-
-            let index_result = hnsw_index.search_with_graph(
-                &query,
+            let index_result = hnsw_index.search(
+                &[&query],
                 filter_query,
                 top,
                 Some(&SearchParams {
                     hnsw_ef: Some(ef),
-                    exact: false,
+                    exact: true,
                 }),
             );
-
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
                 .search(&[&query], filter_query, top, None);
 
-            if plain_result.get(0).unwrap() == &index_result {
-                hits += 1;
-            }
+            assert!(
+                index_result == plain_result,
+                "Exact search is not equal to plain search"
+            );
         }
-        assert!(attempts - hits < 5, "hits: {} of {}", hits, attempts); // Not more than 5% failures
-        eprintln!("hits = {:#?} out of {}", hits, attempts);
     }
 }
