@@ -250,6 +250,8 @@ impl VectorIndex for PlainIndex {
             filtered_large_cardinality_searches: OperationDurationStatistics::default(),
             filtered_positive_check_cardinality_searches: OperationDurationStatistics::default(),
             filtered_negative_check_cardinality_searches: OperationDurationStatistics::default(),
+            filtered_exact_searches: OperationDurationStatistics::default(),
+            unfiltered_exact_searches: OperationDurationStatistics::default(),
         }
     }
 }

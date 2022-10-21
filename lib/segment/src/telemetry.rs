@@ -67,6 +67,14 @@ pub struct VectorIndexSearchesTelemetry {
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     #[serde(default)]
     pub filtered_negative_check_cardinality_searches: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub filtered_exact_searches: OperationDurationStatistics,
+
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    #[serde(default)]
+    pub unfiltered_exact_searches: OperationDurationStatistics,
 }
 
 impl std::ops::Add for VectorIndexSearchesTelemetry {
@@ -89,6 +97,9 @@ impl std::ops::Add for VectorIndexSearchesTelemetry {
             filtered_negative_check_cardinality_searches: self
                 .filtered_negative_check_cardinality_searches
                 + other.filtered_negative_check_cardinality_searches,
+            filtered_exact_searches: self.filtered_exact_searches + other.filtered_exact_searches,
+            unfiltered_exact_searches: self.unfiltered_exact_searches
+                + other.unfiltered_exact_searches,
         }
     }
 }
@@ -158,6 +169,8 @@ impl Anonymize for VectorIndexSearchesTelemetry {
             filtered_negative_check_cardinality_searches: self
                 .filtered_negative_check_cardinality_searches
                 .anonymize(),
+            filtered_exact_searches: self.filtered_exact_searches.anonymize(),
+            unfiltered_exact_searches: self.filtered_exact_searches.anonymize(),
         }
     }
 }
