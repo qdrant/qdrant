@@ -72,7 +72,7 @@ pub fn init(
 
             App::new()
                 .wrap(Condition::new(settings.service.enable_cors, cors))
-                .wrap(Logger::default())
+                .wrap(Logger::default().exclude("/")) // Avoid logging healthcheck requests
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
                     actix_telemetry_collector.clone(),
                 ))
