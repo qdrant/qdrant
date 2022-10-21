@@ -59,7 +59,7 @@ def search(peer_url, city):
     return requests.post(f"{peer_url}/collections/test_collection/points/search", json=q).json()["result"]
 
 
-def test_recover_dead_node(tmp_path: pathlib.Path):
+def test_remove_node(tmp_path: pathlib.Path):
     assert_project_root()
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
@@ -94,7 +94,7 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
 
     assert len(dead_peer) > 1
 
-    # check new collection exists on a recovered node
+    # force remove dead peer
     res = requests.delete(f"{peer_api_uris[0]}/cluster/peer/{dead_peer[0]}?force=true")
     assert_http_ok(res)
 

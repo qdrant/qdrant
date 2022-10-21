@@ -106,6 +106,9 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
     search_result = search(peer_api_uris[0], "Berlin")
     assert len(search_result) > 0
 
+    # Assert the replication is consistent regardless of the entry point.
+    assert search(peer_api_uris[0], "Paris") == search(new_url, "Paris")
+
     # check new collection exists on a recovered node
     res = requests.get(f"{new_url}/collections")
     assert_http_ok(res)
