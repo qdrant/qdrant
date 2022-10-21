@@ -1299,22 +1299,12 @@ impl Collection {
         let mut telemetry = self.telemetry.clone();
         telemetry.shards = Some(Vec::new());
         telemetry.short_info = Default::default();
+
         let shard_holder = self.shards_holder.read().await;
         for shard in shard_holder.all_shards() {
             let telemetry_data = shard.get_telemetry_data().await;
-            // todo(ivan) update telemetry.short_info
-            /*
-            if let ShardTelemetry::Local(shard_telemetry) = telemetry_data {
-                //shard_telemetry.sho
-                let short_info = crate::telemetry::CollectionShortInfoTelemetry {
-                    status: info.status,
-                    optimizer_status: info.optimizer_status,
-                    vectors_count: info.vectors_count,
-                    indexed_vectors_count: info.indexed_vectors_count,
-                };
-                telemetry.short_info = telemetry.short_info + short_info;
-            }
-            */
+            telemetry.short_info =
+                telemetry.short_info + telemetry_data.get_short_info_from_locals();
             telemetry.shards.as_mut().unwrap().push(telemetry_data);
         }
         Some(telemetry)

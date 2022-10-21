@@ -588,13 +588,14 @@ impl ShardReplicaSet {
     }
 
     pub(crate) async fn get_telemetry_data(&self) -> ShardTelemetry {
+        let local_shard = self.local.read().await;
+        let local = if let Some(local_shard) = &*local_shard {
+            Some(Box::new(local_shard.get_telemetry_data().await))
+        } else {
+            None
+        };
         ShardTelemetry::ReplicaSet {
-            local: self
-                .local
-                .read()
-                .await
-                .as_ref()
-                .map(|local| Box::new(local.get_telemetry_data())),
+            local,
             remote: self
                 .remotes
                 .read()

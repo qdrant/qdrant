@@ -54,9 +54,9 @@ impl Shard {
         }
     }
 
-    pub fn get_telemetry_data(&self) -> ShardTelemetry {
+    pub async fn get_telemetry_data(&self) -> ShardTelemetry {
         match self {
-            Shard::Local(local_shard) => local_shard.get_telemetry_data(),
+            Shard::Local(local_shard) => local_shard.get_telemetry_data().await,
             Shard::Remote(remote_shard) => remote_shard.get_telemetry_data(),
             Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
             Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(),

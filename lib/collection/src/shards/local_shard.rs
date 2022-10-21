@@ -19,6 +19,7 @@ use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
+use super::shard_trait::ShardOperation;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
@@ -28,7 +29,7 @@ use crate::optimizers_builder::build_optimizers;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::CollectionId;
-use crate::telemetry::{LocalShardTelemetry, ShardTelemetry};
+use crate::telemetry::{CollectionShortInfoTelemetry, LocalShardTelemetry, ShardTelemetry};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
 
@@ -552,7 +553,7 @@ impl LocalShard {
         Ok(all_points)
     }
 
-    pub fn get_telemetry_data(&self) -> ShardTelemetry {
+    pub async fn get_telemetry_data(&self) -> ShardTelemetry {
         let segments = self
             .segments()
             .read()
@@ -564,7 +565,13 @@ impl LocalShard {
             .iter()
             .map(|optimizer| optimizer.get_telemetry_data())
             .fold(Default::default(), |acc, x| acc + x);
+        let short_info = if let Ok(info) = &self.info().await {
+            CollectionShortInfoTelemetry::from_collection_info(info)
+        } else {
+            Default::default()
+        };
         ShardTelemetry::Local(LocalShardTelemetry {
+            short_info,
             segments,
             optimizations,
         })

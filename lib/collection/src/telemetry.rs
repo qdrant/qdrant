@@ -5,7 +5,7 @@ use segment::telemetry::{SegmentTelemetry, VectorIndexSearchesTelemetry};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{CollectionConfig, CollectionParams};
-use crate::operations::types::{CollectionStatus, OptimizersStatus};
+use crate::operations::types::{CollectionInfo, CollectionStatus, OptimizersStatus};
 use crate::shards::shard::ShardId;
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -29,6 +29,7 @@ pub struct RemoteShardTelemetry {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct LocalShardTelemetry {
+    pub short_info: CollectionShortInfoTelemetry,
     pub segments: Vec<SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
 }
@@ -86,6 +87,17 @@ impl Default for CollectionShortInfoTelemetry {
     }
 }
 
+impl CollectionShortInfoTelemetry {
+    pub fn from_collection_info(collection_info: &CollectionInfo) -> Self {
+        Self {
+            status: collection_info.status,
+            optimizer_status: collection_info.optimizer_status.clone(),
+            vectors_count: collection_info.vectors_count,
+            indexed_vectors_count: collection_info.indexed_vectors_count,
+        }
+    }
+}
+
 impl CollectionTelemetry {
     pub fn new(id: String, config: CollectionConfig, init_time: std::time::Duration) -> Self {
         Self {
@@ -124,6 +136,22 @@ impl CollectionTelemetry {
             }
         }
         result
+    }
+}
+
+impl ShardTelemetry {
+    pub fn get_short_info_from_locals(&self) -> CollectionShortInfoTelemetry {
+        match self {
+            ShardTelemetry::Local(local_shard) => local_shard.short_info.clone(),
+            ShardTelemetry::ReplicaSet { local, .. } => {
+                if let Some(local) = local {
+                    local.get_short_info_from_locals()
+                } else {
+                    CollectionShortInfoTelemetry::default()
+                }
+            }
+            _ => CollectionShortInfoTelemetry::default(),
+        }
     }
 }
 
@@ -206,6 +234,7 @@ impl Anonymize for ShardTelemetry {
 impl Anonymize for LocalShardTelemetry {
     fn anonymize(&self) -> Self {
         LocalShardTelemetry {
+            short_info: self.short_info.anonymize(),
             segments: self.segments.anonymize(),
             optimizations: self.optimizations.anonymize(),
         }
