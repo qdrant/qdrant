@@ -71,7 +71,7 @@ pub fn atomic_save_json<N: DeserializeOwned + Serialize>(
     Ok(())
 }
 
-pub fn read_json<N: DeserializeOwned + Serialize>(path: &Path) -> FileOperationResult<N> {
+pub fn read_json<N: DeserializeOwned>(path: &Path) -> FileOperationResult<N> {
     let mut contents = String::new();
 
     let mut file = File::open(path)?;
@@ -88,7 +88,7 @@ pub fn read_json<N: DeserializeOwned + Serialize>(path: &Path) -> FileOperationR
     Ok(result)
 }
 
-pub fn read_bin<N: DeserializeOwned + Serialize>(path: &Path) -> FileOperationResult<N> {
+pub fn read_bin<N: DeserializeOwned>(path: &Path) -> FileOperationResult<N> {
     let mut file = File::open(path)?;
 
     let result: N = bincode::deserialize_from(&mut file).map_err(|err| {

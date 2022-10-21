@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::file_operations::{atomic_save_bin, read_bin};
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
+use crate::index::hnsw_index::compact_links_container::CompactLinksContainer;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
@@ -21,7 +22,7 @@ pub type LayersContainer = Vec<LinkContainer>;
 
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct GraphLayersBackwardCompatibility {
     pub(super) max_level: usize,
     pub(super) m: usize,
@@ -53,7 +54,8 @@ pub struct GraphLayers {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) links_layers: Vec<LayersContainer>,
+    pub(super) links_layer_0: CompactLinksContainer,
+    pub(super) links_layers: Vec<LayersContainer>, // point -> level (from 1) -> links
     pub(super) entry_points: EntryPoints,
 
     #[serde(skip)]
