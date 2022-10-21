@@ -492,25 +492,20 @@ impl TelemetryCollector {
 
 impl TelemetryData {
     pub fn aggregate(&mut self) {
-        let mut collections_short_info = CollectionShortInfoTelemetry::default();
-        for collection in self.collections.as_mut().unwrap().iter_mut() {
-            let optimizations = collection.calculate_optimizations_from_shards();
-            collection.optimizations = Some(optimizations.clone());
-            collections_short_info = collections_short_info + collection.short_info.clone();
+        let mut collections_short_info = Default::default();
+        let mut vector_index_searches: VectorIndexSearchesTelemetry = Default::default();
+        if let Some(collections) = &mut self.collections {
+            for collection in collections.iter_mut() {
+                let optimizations = collection.calculate_optimizations_from_shards();
+                collection.optimizations = Some(optimizations.clone());
+                collections_short_info = collections_short_info + collection.short_info.clone();
+
+                let searches = collection.calculate_vector_index_searches_from_shards();
+                collection.vector_index_searches = Some(vector_index_searches.clone());
+                vector_index_searches = vector_index_searches + searches;
+            }
         }
         self.collections_short_info = Some(collections_short_info);
-        let vector_index_searches = self
-            .collections
-            .as_mut()
-            .unwrap()
-            .iter_mut()
-            .map(|collection| {
-                let vector_index_searches =
-                    collection.calculate_vector_index_searches_from_shards();
-                collection.vector_index_searches = Some(vector_index_searches.clone());
-                vector_index_searches
-            })
-            .fold(VectorIndexSearchesTelemetry::default(), |a, b| a + b);
         self.vector_index_searches = Some(vector_index_searches);
         if let Some(ClusterStatus::Enabled(status)) = &self.cluster_status {
             self.peers_count = Some(status.peers.len());
