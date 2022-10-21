@@ -61,7 +61,7 @@ impl TonicTelemetryCollector {
     }
 }
 
-// Whole telemtry data
+// Whole telemetry data
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct TelemetryData {
     id: String,
