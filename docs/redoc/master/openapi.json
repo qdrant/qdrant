@@ -4611,7 +4611,7 @@
                 "$ref": "#/components/schemas/ConsensusThreadStatus"
               },
               "message_send_failures": {
-                "description": "Failures of message send operations in consensus by peer address",
+                "description": "Consequent failures of message send operations in consensus by peer address. On the first success to send to that peer - entry is removed from this hashmap.",
                 "type": "object",
                 "additionalProperties": {
                   "$ref": "#/components/schemas/MessageSendErrors"

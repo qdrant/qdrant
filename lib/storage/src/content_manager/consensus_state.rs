@@ -98,13 +98,23 @@ impl<C: CollectionContainer> ConsensusState<C> {
         }
     }
 
-    pub fn record_message_send_failure<E: Error>(&self, peer_address: Uri, error: E) {
+    pub fn record_message_send_failure<E: Error>(&self, peer_address: &Uri, error: E) {
         let mut message_send_failures = self.message_send_failures.write();
         let mut entry = message_send_failures
             .entry(peer_address.to_string())
             .or_insert_with(Default::default);
+        // Log only first error
+        if entry.count == 0 {
+            log::error!("Failed to send message to {peer_address} with error: {error}")
+        }
         entry.count += 1;
         entry.latest_error = Some(error.to_string());
+    }
+
+    pub fn record_message_send_success(&self, peer_address: &Uri) {
+        self.message_send_failures
+            .write()
+            .remove(&peer_address.to_string());
     }
 
     pub fn record_consensus_working(&self) {

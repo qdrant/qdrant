@@ -669,7 +669,9 @@ async fn send_message(
         })
         .await
     {
-        store.record_message_send_failure(address, err);
+        store.record_message_send_failure(&address, err);
+    } else {
+        store.record_message_send_success(&address)
     }
 }
 
