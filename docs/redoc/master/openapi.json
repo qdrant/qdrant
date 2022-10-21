@@ -5469,9 +5469,13 @@
         "type": "object",
         "required": [
           "optimizations",
-          "segments"
+          "segments",
+          "short_info"
         ],
         "properties": {
+          "short_info": {
+            "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
+          },
           "segments": {
             "type": "array",
             "items": {
@@ -5786,6 +5790,12 @@
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "filtered_negative_check_cardinality_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_exact_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "unfiltered_exact_searches": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           }
         }
