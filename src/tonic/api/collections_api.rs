@@ -7,6 +7,7 @@ use api::grpc::qdrant::{
     GetCollectionInfoRequest, GetCollectionInfoResponse, ListCollectionsRequest,
     ListCollectionsResponse, UpdateCollection,
 };
+use storage::content_manager::collection_meta_ops::CollectionMetaOperations;
 use storage::content_manager::conversions::error_to_status;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
@@ -37,9 +38,25 @@ impl CollectionsService {
         let operation = request.into_inner();
         let wait_timeout = operation.wait_timeout();
         let timing = Instant::now();
+        let operation: CollectionMetaOperations = operation.try_into()?;
+        let operation = match operation {
+            CollectionMetaOperations::CreateCollection(op) => {
+                CollectionMetaOperations::CreateCollection(
+                    op.with_suggested_distribution(&self.dispatcher).await,
+                )
+            }
+            CollectionMetaOperations::UpdateCollection(op) => {
+                CollectionMetaOperations::UpdateCollection(
+                    op.with_suggested_replica_changes(&self.dispatcher)
+                        .await
+                        .map_err(error_to_status)?,
+                )
+            }
+            op => op,
+        };
         let result = self
             .dispatcher
-            .submit_collection_meta_op(operation.try_into()?, wait_timeout)
+            .submit_collection_meta_op(operation, wait_timeout)
             .await
             .map_err(error_to_status)?;
 

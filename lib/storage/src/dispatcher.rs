@@ -1,4 +1,3 @@
-use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,38 +45,10 @@ impl Dispatcher {
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
             let op = match operation {
-                CollectionMetaOperations::CreateCollection(mut op) => {
+                CollectionMetaOperations::CreateCollection(op) => {
+                    // TODO: move this check also?
                     self.toc.check_write_lock()?;
-                    debug_assert!(
-                        op.take_distribution().is_none(),
-                        "Distribution should be only set in this method."
-                    );
-                    let number_of_peers = state.0.peer_count();
-                    let shard_distribution = self
-                        .toc
-                        .suggest_shard_distribution(
-                            &op,
-                            NonZeroU32::new(number_of_peers as u32)
-                                .expect("Peer count should be always >= 1"),
-                        )
-                        .await;
-                    op.set_distribution(shard_distribution);
                     CollectionMetaOperations::CreateCollection(op)
-                }
-                CollectionMetaOperations::UpdateCollection(mut op) => {
-                    if let Some(repl_factor) = op
-                        .update_collection
-                        .params
-                        .as_ref()
-                        .and_then(|params| params.replication_factor)
-                    {
-                        let changes = self
-                            .toc
-                            .suggest_shard_replica_changes(&op.collection_name, repl_factor)
-                            .await?;
-                        op.set_shard_replica_changes(changes.into_iter().collect());
-                    }
-                    CollectionMetaOperations::UpdateCollection(op)
                 }
                 op => op,
             };

@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use collection::config::VectorsConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
@@ -9,7 +11,9 @@ use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::dispatcher::Dispatcher;
 
 // *Operation wrapper structure is only required for better OpenAPI generation
 
@@ -134,12 +138,31 @@ impl CreateCollectionOperation {
         }
     }
 
-    pub fn take_distribution(&mut self) -> Option<ShardDistributionProposal> {
-        self.distribution.take()
+    pub async fn with_suggested_distribution(self, dispatcher: &Dispatcher) -> Self {
+        let distribution = match dispatcher.consensus_state() {
+            Some(state) => {
+                let number_of_peers = state.0.peer_count();
+                Some(
+                    dispatcher
+                        .toc()
+                        .suggest_shard_distribution(
+                            &self,
+                            NonZeroU32::new(number_of_peers as u32)
+                                .expect("Peer count should be always >= 1"),
+                        )
+                        .await,
+                )
+            }
+            None => None,
+        };
+        Self {
+            distribution,
+            ..self
+        }
     }
 
-    pub fn set_distribution(&mut self, distribution: ShardDistributionProposal) {
-        self.distribution = Some(distribution);
+    pub fn take_distribution(&mut self) -> Option<ShardDistributionProposal> {
+        self.distribution.take()
     }
 }
 
@@ -185,6 +208,24 @@ impl UpdateCollectionOperation {
 
     pub fn take_shard_replica_changes(&mut self) -> Option<Vec<replica_set::Change>> {
         self.shard_replica_changes.take()
+    }
+
+    pub async fn with_suggested_replica_changes(
+        mut self,
+        dispatcher: &Dispatcher,
+    ) -> Result<Self, StorageError> {
+        if let Some(repl_factor) = self
+            .update_collection
+            .params
+            .as_ref()
+            .and_then(|params| params.replication_factor)
+        {
+            let changes = dispatcher
+                .suggest_shard_replica_changes(&self.collection_name, repl_factor)
+                .await?;
+            self.set_shard_replica_changes(changes.into_iter().collect());
+        }
+        Ok(self)
     }
 
     pub fn set_shard_replica_changes(&mut self, changes: Vec<replica_set::Change>) {

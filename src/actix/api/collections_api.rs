@@ -51,10 +51,11 @@ async fn create_collection(
     let name = path.into_inner();
     let response = dispatcher
         .submit_collection_meta_op(
-            CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
-                name,
-                operation.into_inner(),
-            )),
+            CollectionMetaOperations::CreateCollection(
+                CreateCollectionOperation::new(name, operation.into_inner())
+                    .with_suggested_distribution(&dispatcher)
+                    .await,
+            ),
             query.timeout(),
         )
         .await;
@@ -70,12 +71,16 @@ async fn update_collection(
 ) -> impl Responder {
     let timing = Instant::now();
     let name = path.into_inner();
+    let operation = match UpdateCollectionOperation::new(name, operation.into_inner())
+        .with_suggested_replica_changes(&dispatcher)
+        .await
+    {
+        Ok(operation) => operation,
+        Err(err) => return process_response(Err(err), timing),
+    };
     let response = dispatcher
         .submit_collection_meta_op(
-            CollectionMetaOperations::UpdateCollection(UpdateCollectionOperation::new(
-                name,
-                operation.into_inner(),
-            )),
+            CollectionMetaOperations::UpdateCollection(operation),
             query.timeout(),
         )
         .await;
