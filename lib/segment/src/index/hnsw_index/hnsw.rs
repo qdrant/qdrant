@@ -258,7 +258,8 @@ impl VectorIndex for HNSWIndex {
 
                 if query_cardinality.max < self.config.indexing_threshold {
                     // if cardinality is small - use plain index
-                    let _timer = ScopeDurationMeasurer::new(&self.small_cardinality_searches_telemetry);
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.small_cardinality_searches_telemetry);
                     return plain_search();
                 }
 
