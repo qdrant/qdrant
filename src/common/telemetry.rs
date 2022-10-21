@@ -385,7 +385,7 @@ impl TelemetryCollector {
             vector_index_searches: None,
             peers_count: None,
         };
-        result.agregate();
+        result.aggregate();
         result
     }
 
@@ -491,7 +491,7 @@ impl TelemetryCollector {
 }
 
 impl TelemetryData {
-    pub fn agregate(&mut self) {
+    pub fn aggregate(&mut self) {
         let mut collections_short_info = CollectionShortInfoTelemetry::default();
         for collection in self.collections.as_mut().unwrap().iter_mut() {
             let optimizations = collection.calculate_optimizations_from_shards();
