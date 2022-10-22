@@ -67,16 +67,19 @@ def get_qdrant_exec() -> str:
 
 
 # Starts a peer and returns its api_uri
-def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
-    p2p_port = get_port()
-    grpc_port = get_port()
-    http_port = get_port()
+def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None) -> str:
+    p2p_port = get_port() if port is None else port + 0
+    grpc_port = get_port() if port is None else port + 1
+    http_port = get_port() if port is None else port + 2
     env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
+
+    this_peer_consensus_uri = get_uri(p2p_port)
     processes.append(
-        Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
+        Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri], env=env,
+              cwd=peer_dir, stderr=log_file))
     return get_uri(http_port)
 
 
@@ -93,6 +96,30 @@ def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
     processes.append(
         Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
     return get_uri(http_port), bootstrap_uri
+
+
+def start_cluster(tmp_path, num_peers):
+    assert_project_root()
+    peer_dirs = make_peer_folders(tmp_path, num_peers)
+
+    # Gathers REST API uris
+    peer_api_uris = []
+
+    # Start bootstrap
+    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log")
+    peer_api_uris.append(bootstrap_api_uri)
+
+    # Wait for leader
+    leader = wait_peer_added(bootstrap_api_uri)
+
+    # Start other peers
+    for i in range(1, len(peer_dirs)):
+        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
+
+    # Wait for cluster
+    wait_for_uniform_cluster_status(peer_api_uris, leader)
+
+    return peer_api_uris, peer_dirs, bootstrap_uri
 
 
 def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
@@ -215,6 +242,21 @@ def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: s
     return local_shard_count == expected_shard_transfers_count
 
 
+def check_all_replicas_active(peer_api_uri: str, collection_name: str) -> bool:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
+    for shard in collection_cluster_info["local_shards"]:
+        if shard['state'] != 'Active':
+            return False
+    for shard in collection_cluster_info["remote_shards"]:
+        if shard['state'] != 'Active':
+            return False
+    return True
+
+
+def check_some_replicas_not_active(peer_api_uri: str, collection_name: str) -> bool:
+    return not check_all_replicas_active(peer_api_uri, collection_name)
+
+
 WAIT_TIME_SEC = 60
 RETRY_INTERVAL_SEC = 0.5
 
@@ -223,6 +265,22 @@ def wait_peer_added(peer_api_uri: str, expected_size: int = 1) -> str:
     wait_for(check_cluster_size, peer_api_uri, expected_size)
     wait_for(leader_is_defined, peer_api_uri)
     return get_leader(peer_api_uri)
+
+
+def wait_for_some_replicas_not_active(peer_api_uri: str, collection_name: str):
+    try:
+        wait_for(check_some_replicas_not_active, peer_api_uri, collection_name)
+    except Exception as e:
+        print_clusters_info([peer_api_uri])
+        raise e
+
+
+def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str):
+    try:
+        wait_for(check_all_replicas_active, peer_api_uri, collection_name)
+    except Exception as e:
+        print_clusters_info([peer_api_uri])
+        raise e
 
 
 def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
