@@ -3,14 +3,15 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint,
-    WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
+
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
+    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
+    SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;

@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
-use segment::common::operation_time_statistics::{OperationDurationsAggregator, OperationDurationStatistics, ScopeDurationMeasurer};
+use segment::common::operation_time_statistics::{
+    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;

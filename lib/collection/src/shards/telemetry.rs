@@ -34,7 +34,6 @@ pub struct LocalShardTelemetry {
 pub struct OptimizerTelemetry {
     pub status: OptimizersStatus,
     pub optimizations: OperationDurationStatistics,
-
 }
 
 impl std::ops::Add for OptimizerTelemetry {

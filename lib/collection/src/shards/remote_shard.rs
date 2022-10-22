@@ -38,8 +38,8 @@ use crate::shards::conversions::{
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
-use crate::shards::CollectionId;
 use crate::shards::telemetry::RemoteShardTelemetry;
+use crate::shards::CollectionId;
 
 /// RemoteShard
 ///

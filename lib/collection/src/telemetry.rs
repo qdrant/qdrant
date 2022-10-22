@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
+
 use crate::config::CollectionConfig;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 

@@ -5,7 +5,9 @@ use futures_util::future::BoxFuture;
 use tower::Service;
 use tower_layer::Layer;
 
-use crate::common::telemetry_ops::requests_telemetry::{TonicTelemetryCollector, TonicWorkerTelemetryCollector};
+use crate::common::telemetry_ops::requests_telemetry::{
+    TonicTelemetryCollector, TonicWorkerTelemetryCollector,
+};
 
 #[derive(Clone)]
 pub struct TonicTelemetryService<T> {

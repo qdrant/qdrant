@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use segment::common::operation_time_statistics::{OperationDurationsAggregator, OperationDurationStatistics};
+use segment::common::operation_time_statistics::{
+    OperationDurationStatistics, OperationDurationsAggregator,
+};
 use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{

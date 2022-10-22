@@ -5,7 +5,10 @@ use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
 use parking_lot::Mutex;
-use crate::common::telemetry_ops::requests_telemetry::{ActixTelemetryCollector, ActixWorkerTelemetryCollector};
+
+use crate::common::telemetry_ops::requests_telemetry::{
+    ActixTelemetryCollector, ActixWorkerTelemetryCollector,
+};
 
 pub struct ActixTelemetryService<S> {
     service: S,
