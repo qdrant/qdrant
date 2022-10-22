@@ -23,7 +23,7 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
-use crate::telemetry::ShardTelemetry;
+use crate::shards::telemetry::LocalShardTelemetry;
 use crate::update_handler::UpdateSignal;
 
 type ChangedPointsSet = Arc<RwLock<HashSet<PointIdType>>>;
@@ -114,8 +114,8 @@ impl ProxyShard {
         self.wrapped_shard.before_drop().await
     }
 
-    pub fn get_telemetry_data(&self) -> ShardTelemetry {
-        ShardTelemetry::Proxy {}
+    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
+        self.wrapped_shard.get_telemetry_data().await
     }
 }
 

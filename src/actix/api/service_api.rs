@@ -26,13 +26,12 @@ async fn telemetry(
     let anonymize = params.anonymize.unwrap_or(false);
     let details_level = params.details_level.unwrap_or(0);
     let telemetry_collector = telemetry_collector.lock().await;
-    let telemetry_data = telemetry_collector.prepare_data().await;
-    let mut telemetry_data = if anonymize {
+    let telemetry_data = telemetry_collector.prepare_data(details_level).await;
+    let telemetry_data = if anonymize {
         telemetry_data.anonymize()
     } else {
         telemetry_data
     };
-    telemetry_data.cut_by_detail_level(details_level);
     process_response(Ok(telemetry_data), timing)
 }
 

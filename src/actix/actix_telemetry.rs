@@ -5,8 +5,7 @@ use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
 use parking_lot::Mutex;
-
-use crate::common::telemetry::{ActixTelemetryCollector, ActixWorkerTelemetryCollector};
+use crate::common::telemetry_ops::requests_telemetry::{ActixTelemetryCollector, ActixWorkerTelemetryCollector};
 
 pub struct ActixTelemetryService<S> {
     service: S,
@@ -72,8 +71,8 @@ where
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type InitError = ();
     type Transform = ActixTelemetryService<S>;
+    type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {

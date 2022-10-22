@@ -1,5 +1,5 @@
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
 pub trait Anonymize {
@@ -25,6 +25,14 @@ impl<T: Anonymize> Anonymize for Box<T> {
 }
 
 impl<K: Anonymize + Hash + Eq, V: Anonymize> Anonymize for HashMap<K, V> {
+    fn anonymize(&self) -> Self {
+        self.iter()
+            .map(|(k, v)| (k.anonymize(), v.anonymize()))
+            .collect()
+    }
+}
+
+impl<K: Anonymize + Eq + Ord, V: Anonymize> Anonymize for BTreeMap<K, V> {
     fn anonymize(&self) -> Self {
         self.iter()
             .map(|(k, v)| (k.anonymize(), v.anonymize()))

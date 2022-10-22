@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
-use segment::common::operation_time_statistics::OperationDurationsAggregator;
+use segment::common::operation_time_statistics::{OperationDurationsAggregator, OperationDurationStatistics};
 use segment::types::{HnswConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -14,7 +14,6 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
-use crate::telemetry::OptimizerTelemetry;
 
 /// Optimizer which looks for segments with hig amount of soft-deleted points.
 /// Used to free up space.
@@ -118,12 +117,8 @@ impl SegmentOptimizer for VacuumOptimizer {
         }
     }
 
-    fn get_telemetry_data(&self) -> OptimizerTelemetry {
-        OptimizerTelemetry {
-            vacuum: self.get_telemetry_counter().lock().get_statistics(),
-            merge: Default::default(),
-            indexing: Default::default(),
-        }
+    fn get_telemetry_data(&self) -> OperationDurationStatistics {
+        self.get_telemetry_counter().lock().get_statistics()
     }
 
     fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>> {

@@ -46,8 +46,6 @@ struct SearchesTelemetry {
     unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
     small_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     large_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
-    positive_check_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
-    negative_check_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     exact_filtered: Arc<Mutex<OperationDurationsAggregator>>,
     exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -103,8 +101,6 @@ impl HNSWIndex {
                 unfiltered: OperationDurationsAggregator::new(),
                 small_cardinality: OperationDurationsAggregator::new(),
                 large_cardinality: OperationDurationsAggregator::new(),
-                positive_check_cardinality: OperationDurationsAggregator::new(),
-                negative_check_cardinality: OperationDurationsAggregator::new(),
                 exact_filtered: OperationDurationsAggregator::new(),
                 exact_unfiltered: OperationDurationsAggregator::new(),
             },
@@ -293,15 +289,13 @@ impl VectorIndex for HNSWIndex {
                     vector_storage.vector_count(),
                 ) {
                     // if cardinality is high enough - use HNSW index
-                    let _timer = ScopeDurationMeasurer::new(
-                        &self.searches_telemetry.positive_check_cardinality,
-                    );
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
                     self.search_vectors_with_graph(vectors, filter, top, params)
                 } else {
                     // if cardinality is small - use plain index
-                    let _timer = ScopeDurationMeasurer::new(
-                        &self.searches_telemetry.negative_check_cardinality,
-                    );
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
                     plain_search()
                 }
             }
@@ -407,40 +401,17 @@ impl VectorIndex for HNSWIndex {
     }
 
     fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
+        let tm = &self.searches_telemetry;
+
         VectorIndexSearchesTelemetry {
-            unfiltered_plain_searches: Default::default(),
-            filtered_plain_searches: Default::default(),
-            unfiltered_hnsw_searches: self.searches_telemetry.unfiltered.lock().get_statistics(),
-            filtered_small_cardinality_searches: self
-                .searches_telemetry
-                .small_cardinality
-                .lock()
-                .get_statistics(),
-            filtered_large_cardinality_searches: self
-                .searches_telemetry
-                .large_cardinality
-                .lock()
-                .get_statistics(),
-            filtered_positive_check_cardinality_searches: self
-                .searches_telemetry
-                .positive_check_cardinality
-                .lock()
-                .get_statistics(),
-            filtered_negative_check_cardinality_searches: self
-                .searches_telemetry
-                .negative_check_cardinality
-                .lock()
-                .get_statistics(),
-            filtered_exact_searches: self
-                .searches_telemetry
-                .exact_filtered
-                .lock()
-                .get_statistics(),
-            unfiltered_exact_searches: self
-                .searches_telemetry
-                .exact_unfiltered
-                .lock()
-                .get_statistics(),
+            index_name: None,
+            unfiltered_plain: Default::default(),
+            filtered_plain: Default::default(),
+            unfiltered_hnsw: tm.unfiltered.lock().get_statistics(),
+            filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(),
+            filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
+            filtered_exact: tm.exact_filtered.lock().get_statistics(),
+            unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(),
         }
     }
 }

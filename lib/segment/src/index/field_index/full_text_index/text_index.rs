@@ -69,6 +69,7 @@ impl FullTextIndex {
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
+            field_name: None,
             points_values_count: self.inverted_index.points_count,
             points_count: self.inverted_index.points_count,
             histogram_bucket_size: None,

@@ -5,9 +5,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
-use segment::common::operation_time_statistics::{
-    OperationDurationsAggregator, ScopeDurationMeasurer,
-};
+use segment::common::operation_time_statistics::{OperationDurationsAggregator, OperationDurationStatistics, ScopeDurationMeasurer};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
@@ -23,7 +21,6 @@ use crate::collection_manager::holders::segment_holder::{
 };
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::telemetry::OptimizerTelemetry;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -65,7 +62,7 @@ pub trait SegmentOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
 
-    fn get_telemetry_data(&self) -> OptimizerTelemetry;
+    fn get_telemetry_data(&self) -> OperationDurationStatistics;
 
     fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>>;
 

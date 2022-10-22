@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use segment::common::operation_time_statistics::OperationDurationsAggregator;
+use segment::common::operation_time_statistics::{OperationDurationsAggregator, OperationDurationStatistics};
 use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -13,7 +13,6 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
-use crate::telemetry::OptimizerTelemetry;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -235,12 +234,8 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.worst_segment(segments, excluded_ids)
     }
 
-    fn get_telemetry_data(&self) -> OptimizerTelemetry {
-        OptimizerTelemetry {
-            indexing: self.get_telemetry_counter().lock().get_statistics(),
-            merge: Default::default(),
-            vacuum: Default::default(),
-        }
+    fn get_telemetry_data(&self) -> OperationDurationStatistics {
+        self.get_telemetry_counter().lock().get_statistics()
     }
 
     fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>> {

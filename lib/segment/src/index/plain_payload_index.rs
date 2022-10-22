@@ -243,15 +243,14 @@ impl VectorIndex for PlainIndex {
 
     fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
         VectorIndexSearchesTelemetry {
-            unfiltered_plain_searches: self.unfiltered_searches_telemetry.lock().get_statistics(),
-            filtered_plain_searches: self.filtered_searches_telemetry.lock().get_statistics(),
-            unfiltered_hnsw_searches: OperationDurationStatistics::default(),
-            filtered_small_cardinality_searches: OperationDurationStatistics::default(),
-            filtered_large_cardinality_searches: OperationDurationStatistics::default(),
-            filtered_positive_check_cardinality_searches: OperationDurationStatistics::default(),
-            filtered_negative_check_cardinality_searches: OperationDurationStatistics::default(),
-            filtered_exact_searches: OperationDurationStatistics::default(),
-            unfiltered_exact_searches: OperationDurationStatistics::default(),
+            index_name: None,
+            unfiltered_plain: self.unfiltered_searches_telemetry.lock().get_statistics(),
+            filtered_plain: self.filtered_searches_telemetry.lock().get_statistics(),
+            unfiltered_hnsw: OperationDurationStatistics::default(),
+            filtered_small_cardinality: OperationDurationStatistics::default(),
+            filtered_large_cardinality: OperationDurationStatistics::default(),
+            filtered_exact: OperationDurationStatistics::default(),
+            unfiltered_exact: OperationDurationStatistics::default(),
         }
     }
 }

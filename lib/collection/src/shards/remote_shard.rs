@@ -39,7 +39,7 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::CollectionId;
-use crate::telemetry::{RemoteShardTelemetry, ShardTelemetry};
+use crate::shards::telemetry::RemoteShardTelemetry;
 
 /// RemoteShard
 ///
@@ -140,12 +140,12 @@ impl RemoteShard {
             .map_err(|err| err.into())
     }
 
-    pub fn get_telemetry_data(&self) -> ShardTelemetry {
-        ShardTelemetry::Remote(RemoteShardTelemetry {
+    pub fn get_telemetry_data(&self) -> RemoteShardTelemetry {
+        RemoteShardTelemetry {
             shard_id: self.id,
             searches: self.telemetry_search_durations.lock().get_statistics(),
             updates: self.telemetry_update_durations.lock().get_statistics(),
-        })
+        }
     }
 
     pub async fn initiate_transfer(&self) -> CollectionResult<CollectionOperationResponse> {

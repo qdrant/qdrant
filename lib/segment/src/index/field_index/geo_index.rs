@@ -212,6 +212,7 @@ impl GeoMapIndex {
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
+            field_name: None,
             points_count: self.points_count,
             points_values_count: self.values_count,
             histogram_bucket_size: None,

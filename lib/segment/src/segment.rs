@@ -24,7 +24,7 @@ use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::spaces::tools::peek_top_smallest_iterable;
-use crate::telemetry::{SegmentTelemetry, VectorIndexSearchesTelemetry};
+use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
@@ -1063,26 +1063,21 @@ impl SegmentEntry for Segment {
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
-        let vector_index_searches_with_names: HashMap<_, _> = self
+        let vector_index_searches: Vec<_> = self
             .vector_data
             .iter()
-            .map(|(k, v)| (k.to_owned(), v.vector_index.borrow().get_telemetry_data()))
+            .map(|(k, v)| {
+                let mut telemetry = v.vector_index.borrow().get_telemetry_data();
+                telemetry.index_name = Some(k.clone());
+                telemetry
+            })
             .collect();
-        let vector_index_searches = vector_index_searches_with_names
-            .values()
-            .fold(VectorIndexSearchesTelemetry::default(), |a, b| {
-                a + b.clone()
-            });
+
         SegmentTelemetry {
             info: self.info(),
-            config: Some(self.config()),
-            vector_index_searches: Some(vector_index_searches),
-            vector_index_searches_with_names: if vector_index_searches_with_names.len() > 1 {
-                Some(vector_index_searches_with_names)
-            } else {
-                None
-            },
-            payload_field_indices: Some(self.payload_index.borrow().get_telemetry_data()),
+            config: self.config(),
+            vector_index_searches,
+            payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
         }
     }
 }
