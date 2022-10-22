@@ -4578,6 +4578,7 @@
             "type": "object",
             "required": [
               "consensus_thread_status",
+              "message_send_failures",
               "peer_id",
               "peers",
               "raft_info",
@@ -4608,6 +4609,13 @@
               },
               "consensus_thread_status": {
                 "$ref": "#/components/schemas/ConsensusThreadStatus"
+              },
+              "message_send_failures": {
+                "description": "Consequent failures of message send operations in consensus by peer address. On the first success to send to that peer - entry is removed from this hashmap.",
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/MessageSendErrors"
+                }
               }
             }
           }
@@ -4764,6 +4772,24 @@
             }
           }
         ]
+      },
+      "MessageSendErrors": {
+        "description": "Message send failures for a particular peer",
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "latest_error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "SnapshotDescription": {
         "type": "object",

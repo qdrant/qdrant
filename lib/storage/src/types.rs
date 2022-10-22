@@ -90,6 +90,13 @@ impl From<raft::StateRole> for StateRole {
     }
 }
 
+/// Message send failures for a particular peer
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default)]
+pub struct MessageSendErrors {
+    pub count: usize,
+    pub latest_error: Option<String>,
+}
+
 /// Description of enabled cluster
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct ClusterInfo {
@@ -101,6 +108,9 @@ pub struct ClusterInfo {
     pub raft_info: RaftInfo,
     /// Status of the thread that executes raft consensus
     pub consensus_thread_status: ConsensusThreadStatus,
+    /// Consequent failures of message send operations in consensus by peer address.
+    /// On the first success to send to that peer - entry is removed from this hashmap.
+    pub message_send_failures: HashMap<String, MessageSendErrors>,
 }
 
 /// Information about current cluster status and structure
@@ -154,6 +164,7 @@ impl Anonymize for ClusterInfo {
                 .collect(),
             raft_info: self.raft_info.anonymize(),
             consensus_thread_status: self.consensus_thread_status.clone(),
+            message_send_failures: self.message_send_failures.clone(),
         }
     }
 }

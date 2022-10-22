@@ -577,6 +577,7 @@ impl Consensus {
         let bootstrap_uri = self.bootstrap_uri.clone();
         let consensus_config_arc = Arc::new(self.config.clone());
         let pool = self.channel_service.channel_pool.clone();
+        let store = self.store();
         let future = async move {
             let mut send_futures = Vec::new();
             for (message, address) in messages_with_address {
@@ -599,13 +600,9 @@ impl Consensus {
                         }
                     },
                 };
-                send_futures.push(send_message(address, message, pool.clone()));
+                send_futures.push(send_message(address, message, pool.clone(), store.clone()));
             }
-            for result in futures::future::join_all(send_futures).await {
-                if let Err(err) = result {
-                    log::warn!("Failed to send message: {err:#}")
-                }
-            }
+            futures::future::join_all(send_futures).await;
         };
         // Raft does not need the responses and should not wait for timeouts
         // so sending messages in parallel should be ok
@@ -657,21 +654,25 @@ async fn send_message(
     address: Uri,
     message: RaftMessage,
     transport_channel_pool: Arc<TransportChannelPool>,
-) -> anyhow::Result<()> {
+    store: ConsensusStateRef,
+) {
     let mut bytes = Vec::new();
-    <RaftMessage as prost::Message>::encode(&message, &mut bytes)
-        .context("Failed to serialize Raft message")?;
+    if let Err(err) = <RaftMessage as prost::Message>::encode(&message, &mut bytes) {
+        format!("Failed to serialize Raft message: {err}");
+    }
     let message = &GrpcRaftMessage { message: bytes };
 
-    let _response = transport_channel_pool
+    if let Err(err) = transport_channel_pool
         .with_channel(&address, |channel| async move {
             let mut client = RaftClient::new(channel);
             client.send(tonic::Request::new(message.clone())).await
         })
         .await
-        .context("Failed to send message")?;
-
-    Ok(())
+    {
+        store.record_message_send_failure(&address, err);
+    } else {
+        store.record_message_send_success(&address)
+    }
 }
 
 #[cfg(test)]
