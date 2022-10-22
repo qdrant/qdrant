@@ -24,7 +24,7 @@ use storage::types::PeerAddressById;
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
 
-use crate::common::telemetry::TonicTelemetryCollector;
+use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::ConsensusConfig;
 use crate::tonic::init_internal;
 

@@ -275,10 +275,10 @@ impl StructPayloadIndex {
     pub fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
         self.field_indexes
             .iter()
-            .flat_map(|(_, field)| -> Vec<PayloadIndexTelemetry> {
+            .flat_map(|(name, field)| -> Vec<PayloadIndexTelemetry> {
                 field
                     .iter()
-                    .map(|field| field.get_telemetry_data())
+                    .map(|field| field.get_telemetry_data().set_name(name.to_string()))
                     .collect()
             })
             .collect()

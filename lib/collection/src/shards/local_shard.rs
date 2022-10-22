@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::remove_file;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -10,25 +10,31 @@ use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
+use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
-use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
+use segment::types::{
+    Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType, SegmentConfig,
+    SegmentType,
+};
 use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::config::CollectionConfig;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
+};
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
+use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 use crate::shards::CollectionId;
-use crate::telemetry::{LocalShardTelemetry, ShardTelemetry};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
 
@@ -552,22 +558,33 @@ impl LocalShard {
         Ok(all_points)
     }
 
-    pub fn get_telemetry_data(&self) -> ShardTelemetry {
-        let segments = self
+    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
+        let segments: Vec<_> = self
             .segments()
             .read()
             .iter()
             .map(|(_id, segment)| segment.get().read().get_telemetry_data())
             .collect();
-        let optimizers = self
+
+        let optimizer_status = match &self.segments().read().optimizer_errors {
+            None => OptimizersStatus::Ok,
+            Some(error) => OptimizersStatus::Error(error.to_string()),
+        };
+
+        let optimizations = self
             .optimizers
             .iter()
             .map(|optimizer| optimizer.get_telemetry_data())
-            .collect();
-        ShardTelemetry::Local(LocalShardTelemetry {
+            .fold(Default::default(), |acc, x| acc + x);
+
+        LocalShardTelemetry {
+            variant_name: None,
             segments,
-            optimizers,
-        })
+            optimizations: OptimizerTelemetry {
+                status: optimizer_status,
+                optimizations,
+            },
+        }
     }
 
     fn assert_before_drop_called(&self) {
@@ -579,6 +596,68 @@ impl LocalShard {
             } else {
                 log::error!("Collection `before_drop` was not called.")
             }
+        }
+    }
+
+    pub async fn local_shard_info(&self) -> CollectionInfo {
+        let collection_config = self.config.read().await.clone();
+        let segments = self.segments().read();
+        let mut vectors_count = 0;
+        let mut indexed_vectors_count = 0;
+        let mut points_count = 0;
+        let mut segments_count = 0;
+        let mut status = CollectionStatus::Green;
+        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
+        for (_idx, segment) in segments.iter() {
+            segments_count += 1;
+
+            let segment_info = match segment {
+                LockedSegment::Original(original_segment) => {
+                    let info = original_segment.read().info();
+                    if info.segment_type == SegmentType::Indexed {
+                        indexed_vectors_count += info.num_vectors;
+                    }
+                    info
+                }
+                LockedSegment::Proxy(proxy_segment) => {
+                    let proxy_segment_lock = proxy_segment.read();
+                    let proxy_segment_info = proxy_segment_lock.info();
+
+                    let wrapped_info = proxy_segment_lock.wrapped_segment.get().read().info();
+                    if wrapped_info.segment_type == SegmentType::Indexed {
+                        indexed_vectors_count += wrapped_info.num_vectors;
+                    }
+                    proxy_segment_info
+                }
+            };
+
+            if segment_info.segment_type == SegmentType::Special {
+                status = CollectionStatus::Yellow;
+            }
+            vectors_count += segment_info.num_vectors;
+            points_count += segment_info.num_points;
+            for (key, val) in segment_info.index_schema {
+                schema.insert(key, val);
+            }
+        }
+        if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+            status = CollectionStatus::Red;
+        }
+
+        let optimizer_status = match &segments.optimizer_errors {
+            None => OptimizersStatus::Ok,
+            Some(error) => OptimizersStatus::Error(error.to_string()),
+        };
+
+        CollectionInfo {
+            status,
+            optimizer_status,
+            vectors_count,
+            indexed_vectors_count,
+            points_count,
+            segments_count,
+            config: collection_config,
+            payload_schema: schema,
         }
     }
 }

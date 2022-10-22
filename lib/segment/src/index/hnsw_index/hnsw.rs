@@ -11,6 +11,9 @@ use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
+use crate::common::operation_time_statistics::{
+    OperationDurationsAggregator, ScopeDurationMeasurer,
+};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
@@ -22,9 +25,7 @@ use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::VisitedList;
 use crate::index::{PayloadIndex, VectorIndex};
-use crate::telemetry::{
-    TelemetryOperationAggregator, TelemetryOperationTimer, VectorIndexTelemetry,
-};
+use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
@@ -38,10 +39,15 @@ pub struct HNSWIndex {
     config: HnswGraphConfig,
     path: PathBuf,
     graph: GraphLayers,
-    small_cardinality_search_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
-    large_cardinality_search_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
-    positive_check_cardinality_search_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
-    negative_check_cardinality_search_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
+    searches_telemetry: SearchesTelemetry,
+}
+
+struct SearchesTelemetry {
+    unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
+    small_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
+    large_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
+    exact_filtered: Arc<Mutex<OperationDurationsAggregator>>,
+    exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl HNSWIndex {
@@ -91,10 +97,13 @@ impl HNSWIndex {
             config,
             path: path.to_owned(),
             graph,
-            small_cardinality_search_telemetry: TelemetryOperationAggregator::new(),
-            large_cardinality_search_telemetry: TelemetryOperationAggregator::new(),
-            positive_check_cardinality_search_telemetry: TelemetryOperationAggregator::new(),
-            negative_check_cardinality_search_telemetry: TelemetryOperationAggregator::new(),
+            searches_telemetry: SearchesTelemetry {
+                unfiltered: OperationDurationsAggregator::new(),
+                small_cardinality: OperationDurationsAggregator::new(),
+                large_cardinality: OperationDurationsAggregator::new(),
+                exact_filtered: OperationDurationsAggregator::new(),
+                exact_unfiltered: OperationDurationsAggregator::new(),
+            },
         })
     }
 
@@ -216,12 +225,15 @@ impl VectorIndex for HNSWIndex {
         match filter {
             None => {
                 if exact {
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.exact_unfiltered);
                     let vector_storage = self.vector_storage.borrow();
                     vectors
                         .iter()
                         .map(|vector| vector_storage.score_all(vector, top))
                         .collect()
                 } else {
+                    let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered);
                     self.search_vectors_with_graph(vectors, None, top, params)
                 }
             }
@@ -255,14 +267,14 @@ impl VectorIndex for HNSWIndex {
                 if query_cardinality.max < self.config.indexing_threshold {
                     // if cardinality is small - use plain index
                     let _timer =
-                        TelemetryOperationTimer::new(&self.small_cardinality_search_telemetry);
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
                     return plain_search();
                 }
 
                 if query_cardinality.min > self.config.indexing_threshold {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
-                        TelemetryOperationTimer::new(&self.large_cardinality_search_telemetry);
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
                     return self.search_vectors_with_graph(vectors, filter, top, params);
                 }
 
@@ -277,15 +289,13 @@ impl VectorIndex for HNSWIndex {
                     vector_storage.vector_count(),
                 ) {
                     // if cardinality is high enough - use HNSW index
-                    let _timer = TelemetryOperationTimer::new(
-                        &self.positive_check_cardinality_search_telemetry,
-                    );
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
                     self.search_vectors_with_graph(vectors, filter, top, params)
                 } else {
                     // if cardinality is small - use plain index
-                    let _timer = TelemetryOperationTimer::new(
-                        &self.negative_check_cardinality_search_telemetry,
-                    );
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
                     plain_search()
                 }
             }
@@ -390,24 +400,18 @@ impl VectorIndex for HNSWIndex {
         self.save()
     }
 
-    fn get_telemetry_data(&self) -> VectorIndexTelemetry {
-        VectorIndexTelemetry {
-            small_cardinality_searches: self
-                .small_cardinality_search_telemetry
-                .lock()
-                .get_statistics(),
-            large_cardinality_searches: self
-                .large_cardinality_search_telemetry
-                .lock()
-                .get_statistics(),
-            positive_check_cardinality_searches: self
-                .positive_check_cardinality_search_telemetry
-                .lock()
-                .get_statistics(),
-            negative_check_cardinality_searches: self
-                .negative_check_cardinality_search_telemetry
-                .lock()
-                .get_statistics(),
+    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
+        let tm = &self.searches_telemetry;
+
+        VectorIndexSearchesTelemetry {
+            index_name: None,
+            unfiltered_plain: Default::default(),
+            filtered_plain: Default::default(),
+            unfiltered_hnsw: tm.unfiltered.lock().get_statistics(),
+            filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(),
+            filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
+            filtered_exact: tm.exact_filtered.lock().get_statistics(),
+            unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(),
         }
     }
 }

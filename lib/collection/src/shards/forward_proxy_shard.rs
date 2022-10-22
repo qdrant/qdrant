@@ -18,7 +18,7 @@ use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOpera
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard_trait::ShardOperation;
-use crate::telemetry::ShardTelemetry;
+use crate::shards::telemetry::LocalShardTelemetry;
 
 /// ForwardProxyShard
 ///
@@ -128,8 +128,8 @@ impl ForwardProxyShard {
         self.wrapped_shard.on_optimizer_config_update().await
     }
 
-    pub fn get_telemetry_data(&self) -> ShardTelemetry {
-        ShardTelemetry::ForwardProxy {}
+    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
+        self.wrapped_shard.get_telemetry_data().await
     }
 
     /// Forward `before_drop` to `wrapped_shard`

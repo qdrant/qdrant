@@ -1,21 +1,17 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use itertools::Itertools;
-use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
-    ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, ScoredPoint, SegmentType,
-    WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
-use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CollectionStatus, CountRequest, CountResult,
-    OptimizersStatus, PointRequest, Record, SearchRequestBatch, UpdateResult, UpdateStatus,
+    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
+    SearchRequestBatch, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LocalShard;
@@ -100,65 +96,7 @@ impl ShardOperation for LocalShard {
 
     /// Collect overview information about the shard
     async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let collection_config = self.config.read().await.clone();
-        let segments = self.segments().read();
-        let mut vectors_count = 0;
-        let mut indexed_vectors_count = 0;
-        let mut points_count = 0;
-        let mut segments_count = 0;
-        let mut status = CollectionStatus::Green;
-        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
-        for (_idx, segment) in segments.iter() {
-            segments_count += 1;
-
-            let segment_info = match segment {
-                LockedSegment::Original(original_segment) => {
-                    let info = original_segment.read().info();
-                    if info.segment_type == SegmentType::Indexed {
-                        indexed_vectors_count += info.num_vectors;
-                    }
-                    info
-                }
-                LockedSegment::Proxy(proxy_segment) => {
-                    let proxy_segment_lock = proxy_segment.read();
-                    let proxy_segment_info = proxy_segment_lock.info();
-
-                    let wrapped_info = proxy_segment_lock.wrapped_segment.get().read().info();
-                    if wrapped_info.segment_type == SegmentType::Indexed {
-                        indexed_vectors_count += wrapped_info.num_vectors;
-                    }
-                    proxy_segment_info
-                }
-            };
-
-            if segment_info.segment_type == SegmentType::Special {
-                status = CollectionStatus::Yellow;
-            }
-            vectors_count += segment_info.num_vectors;
-            points_count += segment_info.num_points;
-            for (key, val) in segment_info.index_schema {
-                schema.insert(key, val);
-            }
-        }
-        if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-            status = CollectionStatus::Red;
-        }
-
-        let optimizer_status = match &segments.optimizer_errors {
-            None => OptimizersStatus::Ok,
-            Some(error) => OptimizersStatus::Error(error.to_string()),
-        };
-
-        Ok(CollectionInfo {
-            status,
-            optimizer_status,
-            vectors_count,
-            indexed_vectors_count,
-            points_count,
-            segments_count,
-            config: collection_config,
-            payload_schema: schema,
-        })
+        Ok(self.local_shard_info().await)
     }
 
     async fn search(

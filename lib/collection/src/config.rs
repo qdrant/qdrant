@@ -8,6 +8,7 @@ use std::path::Path;
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{Distance, HnswConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
@@ -92,6 +93,32 @@ pub struct VectorParams {
 pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
+}
+
+impl Anonymize for VectorParams {
+    fn anonymize(&self) -> Self {
+        self.clone()
+    }
+}
+
+impl Anonymize for VectorsConfig {
+    fn anonymize(&self) -> Self {
+        match self {
+            VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
+            VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
+        }
+    }
+}
+
+impl Anonymize for CollectionParams {
+    fn anonymize(&self) -> Self {
+        CollectionParams {
+            vectors: self.vectors.anonymize(),
+            shard_number: self.shard_number,
+            replication_factor: self.replication_factor,
+            on_disk_payload: self.on_disk_payload,
+        }
+    }
 }
 
 impl From<VectorParams> for VectorsConfig {

@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use segment::telemetry::TelemetryOperationAggregator;
+use segment::common::operation_time_statistics::{
+    OperationDurationStatistics, OperationDurationsAggregator,
+};
 use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -13,7 +15,6 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
-use crate::telemetry::OptimizerTelemetry;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -27,7 +28,7 @@ pub struct IndexingOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
-    optimizations_telemetry_counter: Arc<Mutex<TelemetryOperationAggregator>>,
+    telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl IndexingOptimizer {
@@ -44,7 +45,7 @@ impl IndexingOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
-            optimizations_telemetry_counter: TelemetryOperationAggregator::new(),
+            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
 
@@ -235,14 +236,12 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.worst_segment(segments, excluded_ids)
     }
 
-    fn get_telemetry_data(&self) -> OptimizerTelemetry {
-        OptimizerTelemetry::Indexing {
-            optimizations: self.get_telemetry_counter().lock().get_statistics(),
-        }
+    fn get_telemetry_data(&self) -> OperationDurationStatistics {
+        self.get_telemetry_counter().lock().get_statistics()
     }
 
-    fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>> {
-        self.optimizations_telemetry_counter.clone()
+    fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>> {
+        self.telemetry_durations_aggregator.clone()
     }
 }
 

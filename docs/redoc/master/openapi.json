@@ -5004,42 +5004,104 @@
       "TelemetryData": {
         "type": "object",
         "required": [
-          "app",
-          "cluster_status",
-          "collections",
-          "configs",
-          "grpc_calls_statistics",
-          "id",
-          "system",
-          "web"
+          "id"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
           "app": {
-            "$ref": "#/components/schemas/AppBuildTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppBuildTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "system": {
-            "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "configs": {
-            "$ref": "#/components/schemas/ConfigsTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigsTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "collections_short_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "collections": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CollectionTelemetry"
-            }
+            },
+            "nullable": true
           },
           "web": {
-            "$ref": "#/components/schemas/WebApiTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebApiTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "grpc_calls_statistics": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrpcTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "cluster_status": {
-            "$ref": "#/components/schemas/ClusterStatus"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClusterStatus"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "vector_index_searches": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "peers_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -5212,48 +5274,98 @@
           }
         }
       },
+      "CollectionShortInfoTelemetry": {
+        "type": "object",
+        "required": [
+          "indexed_vectors_count",
+          "optimizer_status",
+          "status",
+          "vectors_count"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/CollectionStatus"
+          },
+          "optimizer_status": {
+            "$ref": "#/components/schemas/OptimizersStatus"
+          },
+          "vectors_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "indexed_vectors_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
       "CollectionTelemetry": {
         "type": "object",
         "required": [
-          "config",
           "id",
-          "init_time",
-          "shards"
+          "init_time_micros",
+          "short_info"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
-          "config": {
-            "$ref": "#/components/schemas/CollectionConfig"
+          "init_time_micros": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
           },
-          "init_time": {
-            "$ref": "#/components/schemas/Duration"
+          "short_info": {
+            "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "shards": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShardTelemetry"
-            }
-          }
-        }
-      },
-      "Duration": {
-        "type": "object",
-        "required": [
-          "nanos",
-          "secs"
-        ],
-        "properties": {
-          "secs": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
+            },
+            "nullable": true
           },
-          "nanos": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
+          "vector_index_searches": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "optimizations": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptimizerTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -5339,22 +5451,20 @@
             "minimum": 0
           },
           "searches": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "updates": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           }
         }
       },
-      "TelemetryOperationStatistics": {
+      "OperationDurationStatistics": {
         "type": "object",
         "required": [
-          "fail_count",
-          "ok_avg_time",
-          "ok_count"
+          "count"
         ],
         "properties": {
-          "ok_count": {
+          "count": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -5364,58 +5474,87 @@
             "format": "uint",
             "minimum": 0
           },
-          "ok_avg_time": {
-            "$ref": "#/components/schemas/Duration"
+          "avg_duration_micros": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "min_duration_micros": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "max_duration_micros": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
           }
         }
       },
       "LocalShardTelemetry": {
         "type": "object",
         "required": [
-          "optimizers",
-          "segments"
+          "optimizations",
+          "segments",
+          "short_info"
         ],
         "properties": {
+          "short_info": {
+            "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
+          },
           "segments": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SegmentTelemetry"
             }
           },
-          "optimizers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OptimizerTelemetry"
-            }
+          "optimizations": {
+            "$ref": "#/components/schemas/OptimizerTelemetry"
           }
         }
       },
       "SegmentTelemetry": {
         "type": "object",
         "required": [
-          "config",
-          "info",
-          "payload_field_indices",
-          "vector_index"
+          "info"
         ],
         "properties": {
           "info": {
             "$ref": "#/components/schemas/SegmentInfo"
           },
           "config": {
-            "$ref": "#/components/schemas/SegmentConfig"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SegmentConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
-          "vector_index": {
+          "vector_index_searches": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "vector_index_searches_with_names": {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/components/schemas/VectorIndexTelemetry"
-            }
+              "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
+            },
+            "nullable": true
           },
           "payload_field_indices": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PayloadIndexTelemetry"
-            }
+            },
+            "nullable": true
           }
         }
       },
@@ -5655,26 +5794,35 @@
           }
         ]
       },
-      "VectorIndexTelemetry": {
+      "VectorIndexSearchesTelemetry": {
         "type": "object",
-        "required": [
-          "large_cardinality_searches",
-          "negative_check_cardinality_searches",
-          "positive_check_cardinality_searches",
-          "small_cardinality_searches"
-        ],
         "properties": {
-          "small_cardinality_searches": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          "unfiltered_plain_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "large_cardinality_searches": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          "unfiltered_hnsw_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "positive_check_cardinality_searches": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          "filtered_plain_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "negative_check_cardinality_searches": {
-            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          "filtered_small_cardinality_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_large_cardinality_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_positive_check_cardinality_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_negative_check_cardinality_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_exact_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "unfiltered_exact_searches": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           }
         }
       },
@@ -5704,68 +5852,23 @@
         }
       },
       "OptimizerTelemetry": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "Indexing"
-            ],
-            "properties": {
-              "Indexing": {
-                "type": "object",
-                "required": [
-                  "optimizations"
-                ],
-                "properties": {
-                  "optimizations": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+        "type": "object",
+        "required": [
+          "indexing",
+          "merge",
+          "vacuum"
+        ],
+        "properties": {
+          "indexing": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          {
-            "type": "object",
-            "required": [
-              "Merge"
-            ],
-            "properties": {
-              "Merge": {
-                "type": "object",
-                "required": [
-                  "optimizations"
-                ],
-                "properties": {
-                  "optimizations": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+          "merge": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          {
-            "type": "object",
-            "required": [
-              "Vacuum"
-            ],
-            "properties": {
-              "Vacuum": {
-                "type": "object",
-                "required": [
-                  "optimizations"
-                ],
-                "properties": {
-                  "optimizations": {
-                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+          "vacuum": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
           }
-        ]
+        }
       },
       "WebApiTelemetry": {
         "type": "object",
@@ -5776,9 +5879,24 @@
           "responses": {
             "type": "object",
             "additionalProperties": {
-              "type": "integer",
-              "format": "uint",
-              "minimum": 0
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              }
+            }
+          }
+        }
+      },
+      "GrpcTelemetry": {
+        "type": "object",
+        "required": [
+          "responses"
+        ],
+        "properties": {
+          "responses": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OperationDurationStatistics"
             }
           }
         }

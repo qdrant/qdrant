@@ -5,6 +5,7 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::future::{join_all, try_join_all};
 use itertools::Itertools;
@@ -76,12 +77,12 @@ pub struct Collection {
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
-    telemetry: CollectionTelemetry,
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
     #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: OnPeerFailure,
+    init_time: Duration,
 }
 
 impl Collection {
@@ -147,11 +148,11 @@ impl Collection {
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
-            telemetry: CollectionTelemetry::new(name, config.clone(), start_time.elapsed()),
             channel_service,
             transfer_tasks: Default::default(),
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure.clone(),
+            init_time: start_time.elapsed(),
         })
     }
 
@@ -246,11 +247,11 @@ impl Collection {
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
-            telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::default()),
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure,
+            init_time: start_time.elapsed(),
         }
     }
 
@@ -1295,14 +1296,22 @@ impl Collection {
         state.apply(this_peer_id, self, abort_transfer).await
     }
 
-    pub async fn get_telemetry_data(&self) -> Option<CollectionTelemetry> {
-        let mut telemetry = self.telemetry.clone();
-        telemetry.shards.clear();
-        let shard_holder = self.shards_holder.read().await;
-        for shard in shard_holder.all_shards() {
-            telemetry.shards.push(shard.get_telemetry_data().await);
+    pub async fn get_telemetry_data(&self) -> CollectionTelemetry {
+        let shards_telemetry = {
+            let mut shards_telemetry = Vec::new();
+            let shards_holder = self.shards_holder.read().await;
+            for shard in shards_holder.all_shards() {
+                shards_telemetry.push(shard.get_telemetry_data().await)
+            }
+            shards_telemetry
+        };
+
+        CollectionTelemetry {
+            id: self.name(),
+            init_time_ms: self.init_time.as_millis() as u64,
+            config: self.config.read().await.clone(),
+            shards: shards_telemetry,
         }
-        Some(telemetry)
     }
 
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
