@@ -130,7 +130,7 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {
-        return 0; // No points are indexed in the plain index
+        0 // No points are indexed in the plain index
     }
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
