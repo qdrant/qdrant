@@ -22,10 +22,22 @@ assert r.status_code == 200, r.text
 # Wait
 time.sleep(5)
 
+MAX_WAIT = 30
 # Check that it exists on all peers
-for port in args.ports:
-    r = requests.get(f"http://127.0.0.1:{port}/collections")
-    assert r.status_code == 200
-    collections = r.json()["result"]["collections"]
-    assert any(collection["name"] ==
-               args.collection_name for collection in collections)
+while True:
+    exists = True
+    for port in args.ports:
+        r = requests.get(f"http://127.0.0.1:{port}/collections")
+        assert r.status_code == 200
+        collections = r.json()["result"]["collections"]
+        exists &= any(collection["name"] == args.collection_name for collection in collections)
+    if exists:
+        break
+    else:
+        # Wait until collection is created on all peers
+        # Consensus guarantees that collection will appear on majority of peers, but not on all of them
+        # So we need to wait a bit extra time
+        time.sleep(1)
+        MAX_WAIT -= 1
+    if MAX_WAIT <= 0:
+        raise Exception("Collection was not created on all peers in time")

@@ -220,6 +220,7 @@ message PayloadIndexParams {
 message PayloadSchemaInfo {
   PayloadSchemaType data_type = 1; // Field data type
   optional PayloadIndexParams params = 2; // Field index parameters
+  optional uint64 points = 3; // Number of points indexed within this field indexed
 }
 
 message CollectionInfo {

@@ -55,6 +55,9 @@ pub trait PayloadIndex {
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
+    /// Return number of points, indexed by this field
+    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
+
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`

@@ -26,9 +26,9 @@ use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
+    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
+    SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
@@ -788,12 +788,14 @@ impl SegmentEntry for Segment {
     }
 
     fn info(&self) -> SegmentInfo {
-        let schema = self
-            .payload_index
-            .borrow()
+        let payload_index = self.payload_index.borrow();
+        let schema = payload_index
             .indexed_fields()
             .into_iter()
-            .map(|(key, index_schema)| (key, index_schema.into()))
+            .map(|(key, index_schema)| {
+                let points_count = payload_index.indexed_points(&key);
+                (key, PayloadIndexInfo::new(index_schema, points_count))
+            })
             .collect();
 
         SegmentInfo {

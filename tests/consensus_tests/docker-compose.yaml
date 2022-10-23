@@ -11,6 +11,10 @@ services:
       - "6333:6333"
       - "6334:6334"
     command: ./qdrant --uri 'http://qdrant_node_1:6335'
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: '0.07'
 
 
   qdrant_node_follower:
@@ -25,6 +29,10 @@ services:
       - "6433:6333"
       - "6434:6334"
     command: bash -c "sleep 5 && ./qdrant --bootstrap 'http://qdrant_node_1:6335' --uri 'http://qdrant_node_follower:6335'"
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: '0.05'
 
 
   qdrant_node_follower_2:
@@ -39,3 +47,7 @@ services:
       - "6533:6333"
       - "6534:6334"
     command: bash -c "sleep 6 && ./qdrant --bootstrap 'http://qdrant_node_1:6335' --uri 'http://qdrant_node_follower_2:6335'"
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: '0.03'
