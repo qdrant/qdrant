@@ -316,7 +316,7 @@ impl GraphLayers {
                 layers
             })
             .collect();
-        
+
         self.links_layer_0 = links_layer_0;
         self.links_layers = links_layers;
     }
