@@ -56,7 +56,11 @@ def search(peer_url, city):
             ]
         }
     }
-    return requests.post(f"{peer_url}/collections/test_collection/points/search", json=q).json()["result"]
+
+    result = requests.post(f"{peer_url}/collections/test_collection/points/search", json=q).json()
+    assert "result" in result, result
+    assert result["result"] is not None, result
+    return result["result"]
 
 
 def test_remove_node(tmp_path: pathlib.Path):
@@ -65,6 +69,8 @@ def test_remove_node(tmp_path: pathlib.Path):
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0])
+    wait_collection_on_all_peers("test_collection", peer_api_uris)
+
     upsert_points(peer_api_uris[0], "Paris")
 
     search_result = search(peer_api_uris[0], "Paris")

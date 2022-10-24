@@ -48,7 +48,6 @@ use crate::shards::replica_set::{
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
-use crate::shards::shard_trait::ShardOperation;
 use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
     change_remote_shard_route, finalize_partial_shard, handle_transferred_shard_proxy,
@@ -269,6 +268,29 @@ impl Collection {
                 .ok_or_else(|| CollectionError::NotFound {
                     what: format!("Shard {shard_id}"),
                 })?;
+
+        // Validation:
+        // 1. Do not deactivate the last active replica
+
+        if state != ReplicaState::Active {
+            let active_replicas: HashSet<_> = replica_set
+                .peers()
+                .into_iter()
+                .filter_map(|(peer, state)| {
+                    if state == ReplicaState::Active {
+                        Some(peer)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if active_replicas.len() == 1 && active_replicas.contains(&peer_id) {
+                return Err(CollectionError::bad_input(format!(
+                    "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
+                )));
+            }
+        }
+
         replica_set.set_replica_state(&peer_id, state)?;
 
         // Try to request shard transfer if replicas on the current peer are dead
@@ -580,7 +602,7 @@ impl Collection {
 
             let shard_requests = shard_to_op
                 .into_iter()
-                .map(move |(shard, operation)| shard.update(operation, wait));
+                .map(move |(replica_set, operation)| replica_set.update(operation, wait));
             join_all(shard_requests).await
         };
 

@@ -34,7 +34,7 @@ use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::shard::Shard::{ForwardProxy, Local};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_trait::{ShardOperation, ShardOperationSS};
+use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
 pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
@@ -113,10 +113,6 @@ impl ShardReplicaSet {
                 false
             }
         })?)
-    }
-
-    pub fn as_shard_operations(&self) -> &ShardOperationSS {
-        self
     }
 
     pub fn this_peer_id(&self) -> PeerId {
@@ -756,11 +752,8 @@ impl ShardReplicaSet {
             )))
         }
     }
-}
 
-#[async_trait::async_trait]
-impl ShardOperation for ShardReplicaSet {
-    async fn update(
+    pub async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
@@ -818,6 +811,8 @@ impl ShardOperation for ShardReplicaSet {
             }
         };
 
+        let total_results = all_res.len();
+
         let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
         // Notify consensus about failures if:
@@ -826,27 +821,42 @@ impl ShardOperation for ShardReplicaSet {
 
         if !successes.is_empty() {
             // report all failing peers to consensus
-            for (peer_id, _err) in &failures {
+            for (peer_id, err) in &failures {
+                log::warn!(
+                    "Failed to update shard {} on peer {}, error: {:?}",
+                    self.shard_id,
+                    peer_id,
+                    err
+                );
                 self.notify_peer_failure(*peer_id);
             }
         }
 
-        return if successes.is_empty() {
-            // completely failed - report error to user
-            let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
-            Err(err)
-        } else {
-            // at least one replica succeeded
-            let res = successes
-                .into_iter()
-                .next()
-                .expect("successes is not empty");
-            Ok(res)
-        };
+        if !failures.is_empty() {
+            let concern_factor = self
+                .collection_config
+                .read()
+                .await
+                .params
+                .concern_factor
+                .get() as usize;
+            let minimal_success_count = concern_factor.min(total_results);
+            if successes.len() < minimal_success_count {
+                // completely failed - report error to user
+                let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
+                return Err(err);
+            }
+        }
+        // there are enough successes, return the first one
+        let res = successes
+            .into_iter()
+            .next()
+            .expect("successes is not empty");
+        Ok(res)
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn scroll_by(
+    pub async fn scroll_by(
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
@@ -865,7 +875,7 @@ impl ShardOperation for ShardReplicaSet {
         .await
     }
 
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
+    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
@@ -873,7 +883,7 @@ impl ShardOperation for ShardReplicaSet {
             .await
     }
 
-    async fn search(
+    pub async fn search(
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
@@ -889,7 +899,7 @@ impl ShardOperation for ShardReplicaSet {
         .await
     }
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    pub async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
@@ -897,7 +907,7 @@ impl ShardOperation for ShardReplicaSet {
             .await
     }
 
-    async fn retrieve(
+    pub async fn retrieve(
         &self,
         request: Arc<PointRequest>,
         with_payload: &WithPayload,
