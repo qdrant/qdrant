@@ -1,6 +1,8 @@
+pub mod anonymize;
 pub mod arc_atomic_ref_cell_iterator;
 pub mod error_logging;
 pub mod file_operations;
+pub mod operation_time_statistics;
 pub mod rocksdb_wrapper;
 pub mod utils;
 pub mod version;

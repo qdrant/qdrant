@@ -1022,9 +1022,7 @@ impl TableOfContent {
         let all_collections = self.all_collections().await;
         for collection_name in &all_collections {
             if let Ok(collection) = self.get_collection(collection_name).await {
-                if let Some(collection) = collection.get_telemetry_data().await {
-                    result.push(collection);
-                }
+                result.push(collection.get_telemetry_data().await);
             }
         }
         result

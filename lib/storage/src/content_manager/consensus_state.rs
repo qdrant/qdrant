@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::fmt::Display;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -26,7 +27,8 @@ use crate::content_manager::consensus::is_ready::IsReady;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{
-    ClusterInfo, ClusterStatus, ConsensusThreadStatus, PeerAddressById, PeerInfo, RaftInfo,
+    ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
+    PeerInfo, RaftInfo,
 };
 use crate::CollectionMetaOperations;
 
@@ -70,6 +72,7 @@ pub struct ConsensusState<C: CollectionContainer> {
     propose_sender: OperationSender,
     first_voter: RwLock<Option<PeerId>>,
     consensus_thread_status: RwLock<ConsensusThreadStatus>,
+    message_send_failures: RwLock<HashMap<String, MessageSendErrors>>,
 }
 
 impl<C: CollectionContainer> ConsensusState<C> {
@@ -91,7 +94,27 @@ impl<C: CollectionContainer> ConsensusState<C> {
             consensus_thread_status: RwLock::new(ConsensusThreadStatus::Working {
                 last_update: Utc::now(),
             }),
+            message_send_failures: Default::default(),
         }
+    }
+
+    pub fn record_message_send_failure<E: Error>(&self, peer_address: &Uri, error: E) {
+        let mut message_send_failures = self.message_send_failures.write();
+        let mut entry = message_send_failures
+            .entry(peer_address.to_string())
+            .or_insert_with(Default::default);
+        // Log only first error
+        if entry.count == 0 {
+            log::error!("Failed to send message to {peer_address} with error: {error}")
+        }
+        entry.count += 1;
+        entry.latest_error = Some(error.to_string());
+    }
+
+    pub fn record_message_send_success(&self, peer_address: &Uri) {
+        self.message_send_failures
+            .write()
+            .remove(&peer_address.to_string());
     }
 
     pub fn record_consensus_working(&self) {
@@ -162,6 +185,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 is_voter,
             },
             consensus_thread_status: self.consensus_thread_status.read().clone(),
+            message_send_failures: self.message_send_failures.read().clone(),
         })
     }
 
@@ -280,7 +304,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
         if let Err(err) = self.persistent.write().save_if_dirty() {
             log::error!("Failed to save new state of applied entries queue: {err}");
-            return false;
+            return true;
         }
 
         loop {
@@ -297,9 +321,9 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     break;
                 }
             };
-            let do_increase_applied_index: bool = if entry.data.is_empty() {
+            let stop_consensus: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
-                true
+                false
             } else {
                 match entry.get_entry_type() {
                     EntryType::EntryNormal => {
@@ -309,17 +333,17 @@ impl<C: CollectionContainer> ConsensusState<C> {
                                 log::debug!(
                                     "Successfully applied consensus operation entry. Index: {}. Result: {result}",
                                     entry.index);
-                                true
+                                false
                             }
                             Err(err @ StorageError::ServiceError { .. }) => {
                                 log::error!("Failed to apply collection meta operation entry with service error: {err}");
-                                // This is a service error, so we can try to reapply it later.
-                                false
+                                // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
+                                true
                             }
                             Err(err) => {
                                 log::warn!("Failed to apply collection meta operation entry with user error: {err}");
                                 // This is a user error so we can safely consider it applied but with error as it was incorrect.
-                                true
+                                false
                             }
                         }
                     }
@@ -330,33 +354,28 @@ impl<C: CollectionContainer> ConsensusState<C> {
                                     "Successfully applied configuration change entry. Index: {}.",
                                     entry.index
                                 );
-                                if stop_consensus {
-                                    return true;
-                                }
-                                true
+                                stop_consensus
                             }
                             Err(err) => {
                                 log::error!(
                                     "Failed to apply configuration change entry with error: {err}"
                                 );
-                                false
+                                true
                             }
                         }
                     }
                     ty => {
                         log::error!("Failed to apply entry: unsupported entry type {ty:?}");
-                        false
+                        true
                     }
                 }
             };
-
-            if do_increase_applied_index {
-                if let Err(err) = self.persistent.write().entry_applied() {
-                    log::error!("Failed to save new state of applied entries queue: {err}");
-                    break;
-                }
-            } else {
-                break;
+            if stop_consensus {
+                return stop_consensus;
+            }
+            if let Err(err) = self.persistent.write().entry_applied() {
+                log::error!("Failed to save new state of applied entries queue: {err}");
+                return true;
             }
         }
         false // do not stop consensus

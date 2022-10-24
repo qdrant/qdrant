@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{mpsc, Arc};
@@ -8,9 +9,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use api::grpc::qdrant::raft_client::RaftClient;
-use api::grpc::qdrant::{PeerId, RaftMessage as GrpcRaftMessage};
+use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection::shards::channel_service::ChannelService;
+use collection::shards::shard::PeerId;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole};
@@ -22,7 +24,7 @@ use storage::types::PeerAddressById;
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
 
-use crate::common::telemetry::TonicTelemetryCollector;
+use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::ConsensusConfig;
 use crate::tonic::init_internal;
 
@@ -167,6 +169,10 @@ impl Consensus {
             )
             .context("Failed to initialize Consensus for new Raft state")?;
         } else {
+            runtime
+                .block_on(Self::recover(&state_ref, uri.clone(), p2p_port, &config))
+                .context("Failed to recover Consensus from existing Raft state")?;
+
             if bootstrap_peer.is_some() || uri.is_some() {
                 log::debug!("Local raft state found - bootstrap and uri cli arguments were ignored")
             }
@@ -225,6 +231,84 @@ impl Consensus {
         }
     }
 
+    async fn add_peer_to_known_for(
+        this_peer_id: PeerId,
+        cluster_uri: Uri,
+        current_uri: Option<String>,
+        p2p_port: u16,
+        config: &ConsensusConfig,
+    ) -> anyhow::Result<AllPeers> {
+        // Use dedicated transport channel for bootstrapping because of specific timeout
+        let channel = TransportChannelPool::make_channel(
+            Duration::from_secs(config.bootstrap_timeout_sec),
+            Duration::from_secs(config.bootstrap_timeout_sec),
+            cluster_uri,
+        )
+        .await
+        .context("Failed to create timeout channel")?;
+        let mut client = RaftClient::new(channel);
+        let all_peers = client
+            .add_peer_to_known(tonic::Request::new(
+                api::grpc::qdrant::AddPeerToKnownMessage {
+                    uri: current_uri,
+                    port: Some(p2p_port as u32),
+                    id: this_peer_id,
+                },
+            ))
+            .await
+            .context("Failed to add peer to known")?
+            .into_inner();
+        Ok(all_peers)
+    }
+
+    // Re-attach peer to the consensus:
+    // Notifies the cluster(any node) that this node changed its address
+    async fn recover(
+        state_ref: &ConsensusStateRef,
+        uri: Option<String>,
+        p2p_port: u16,
+        config: &ConsensusConfig,
+    ) -> anyhow::Result<()> {
+        let this_peer_id = state_ref.this_peer_id();
+        let mut peer_to_uri = state_ref
+            .persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .clone();
+        let this_peer_url = peer_to_uri.remove(&this_peer_id);
+        // Recover url if a different one is provided
+        let do_recover = match (&this_peer_url, &uri) {
+            (Some(this_peer_url), Some(uri)) => this_peer_url != &Uri::from_str(uri)?,
+            _ => false,
+        };
+
+        if do_recover {
+            for (peer_id, peer_uri) in peer_to_uri {
+                let res = Self::add_peer_to_known_for(
+                    this_peer_id,
+                    peer_uri.clone(),
+                    uri.clone(),
+                    p2p_port,
+                    config,
+                )
+                .await;
+                if res.is_err() {
+                    log::warn!(
+                        "Failed to recover from peer with id {} at {} with error {:?}, trying others",
+                        peer_id,
+                        peer_uri,
+                        res
+                    );
+                } else {
+                    return Ok(());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn bootstrap(
         state_ref: &ConsensusStateRef,
         bootstrap_peer: Uri,
@@ -232,27 +316,16 @@ impl Consensus {
         p2p_port: u16,
         config: &ConsensusConfig,
     ) -> anyhow::Result<()> {
-        // Use dedicated transport channel for bootstrapping because of specific timeout
-        let channel = TransportChannelPool::make_channel(
-            Duration::from_secs(config.bootstrap_timeout_sec),
-            Duration::from_secs(config.bootstrap_timeout_sec),
+        let this_peer_id = state_ref.this_peer_id();
+        let all_peers = Self::add_peer_to_known_for(
+            this_peer_id,
             bootstrap_peer,
+            uri.clone(),
+            p2p_port,
+            config,
         )
-        .await
-        .context("Failed to create timeout channel")?;
-        let mut client = RaftClient::new(channel);
-        let id = state_ref.this_peer_id();
-        let all_peers = client
-            .add_peer_to_known(tonic::Request::new(
-                api::grpc::qdrant::AddPeerToKnownMessage {
-                    uri,
-                    port: Some(p2p_port as u32),
-                    id,
-                },
-            ))
-            .await
-            .context("Failed to add peer to known")?
-            .into_inner();
+        .await?;
+
         // Although peer addresses are synchronized with consensus, addresses need to be pre-fetched in the case of a new peer
         // or it will not know how to answer the Raft leader
         for peer in all_peers.all_peers {
@@ -577,6 +650,7 @@ impl Consensus {
         let bootstrap_uri = self.bootstrap_uri.clone();
         let consensus_config_arc = Arc::new(self.config.clone());
         let pool = self.channel_service.channel_pool.clone();
+        let store = self.store();
         let future = async move {
             let mut send_futures = Vec::new();
             for (message, address) in messages_with_address {
@@ -599,13 +673,9 @@ impl Consensus {
                         }
                     },
                 };
-                send_futures.push(send_message(address, message, pool.clone()));
+                send_futures.push(send_message(address, message, pool.clone(), store.clone()));
             }
-            for result in futures::future::join_all(send_futures).await {
-                if let Err(err) = result {
-                    log::warn!("Failed to send message: {err:#}")
-                }
-            }
+            futures::future::join_all(send_futures).await;
         };
         // Raft does not need the responses and should not wait for timeouts
         // so sending messages in parallel should be ok
@@ -646,7 +716,7 @@ async fn who_is(
             .context("Failed to create timeout channel")?;
     let mut client = RaftClient::new(channel);
     Ok(client
-        .who_is(tonic::Request::new(PeerId { id: peer_id }))
+        .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
         .await?
         .into_inner()
         .uri
@@ -657,21 +727,25 @@ async fn send_message(
     address: Uri,
     message: RaftMessage,
     transport_channel_pool: Arc<TransportChannelPool>,
-) -> anyhow::Result<()> {
+    store: ConsensusStateRef,
+) {
     let mut bytes = Vec::new();
-    <RaftMessage as prost::Message>::encode(&message, &mut bytes)
-        .context("Failed to serialize Raft message")?;
+    if let Err(err) = <RaftMessage as prost::Message>::encode(&message, &mut bytes) {
+        format!("Failed to serialize Raft message: {err}");
+    }
     let message = &GrpcRaftMessage { message: bytes };
 
-    let _response = transport_channel_pool
+    if let Err(err) = transport_channel_pool
         .with_channel(&address, |channel| async move {
             let mut client = RaftClient::new(channel);
             client.send(tonic::Request::new(message.clone())).await
         })
         .await
-        .context("Failed to send message")?;
-
-    Ok(())
+    {
+        store.record_message_send_failure(&address, err);
+    } else {
+        store.record_message_send_success(&address)
+    }
 }
 
 #[cfg(test)]

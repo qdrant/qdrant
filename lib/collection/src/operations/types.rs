@@ -45,10 +45,13 @@ pub enum CollectionStatus {
 }
 
 /// Current state of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum OptimizersStatus {
     /// Optimizers are reporting as expected
+    #[default]
     Ok,
     /// Something wrong happened with optimizers
     Error(String),

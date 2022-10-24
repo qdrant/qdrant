@@ -20,7 +20,7 @@ use tokio::{runtime, signal};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use crate::common::telemetry::TonicTelemetryCollector;
+use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;

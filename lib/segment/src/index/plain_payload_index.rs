@@ -5,9 +5,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
+use crate::common::operation_time_statistics::{
+    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
+};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
@@ -17,7 +21,7 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
-use crate::telemetry::{TelemetryOperationStatistics, VectorIndexTelemetry};
+use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
@@ -180,6 +184,8 @@ impl PayloadIndex for PlainPayloadIndex {
 pub struct PlainIndex {
     vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
+    unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl PlainIndex {
@@ -190,6 +196,8 @@ impl PlainIndex {
         PlainIndex {
             vector_storage,
             payload_index,
+            filtered_searches_telemetry: OperationDurationsAggregator::new(),
+            unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
         }
     }
 }
@@ -204,6 +212,7 @@ impl VectorIndex for PlainIndex {
     ) -> Vec<Vec<ScoredPointOffset>> {
         match filter {
             Some(filter) => {
+                let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
                 let borrowed_payload_index = self.payload_index.borrow();
                 let filtered_ids_vec: Vec<_> =
                     borrowed_payload_index.query_points(filter).collect();
@@ -218,10 +227,13 @@ impl VectorIndex for PlainIndex {
                     })
                     .collect()
             }
-            None => vectors
-                .iter()
-                .map(|vector| self.vector_storage.borrow().score_all(vector, top))
-                .collect(),
+            None => {
+                let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
+                vectors
+                    .iter()
+                    .map(|vector| self.vector_storage.borrow().score_all(vector, top))
+                    .collect()
+            }
         }
     }
 
@@ -229,12 +241,16 @@ impl VectorIndex for PlainIndex {
         Ok(())
     }
 
-    fn get_telemetry_data(&self) -> VectorIndexTelemetry {
-        VectorIndexTelemetry {
-            small_cardinality_searches: TelemetryOperationStatistics::default(),
-            large_cardinality_searches: TelemetryOperationStatistics::default(),
-            positive_check_cardinality_searches: TelemetryOperationStatistics::default(),
-            negative_check_cardinality_searches: TelemetryOperationStatistics::default(),
+    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
+        VectorIndexSearchesTelemetry {
+            index_name: None,
+            unfiltered_plain: self.unfiltered_searches_telemetry.lock().get_statistics(),
+            filtered_plain: self.filtered_searches_telemetry.lock().get_statistics(),
+            unfiltered_hnsw: OperationDurationStatistics::default(),
+            filtered_small_cardinality: OperationDurationStatistics::default(),
+            filtered_large_cardinality: OperationDurationStatistics::default(),
+            filtered_exact: OperationDurationStatistics::default(),
+            unfiltered_exact: OperationDurationStatistics::default(),
         }
     }
 }

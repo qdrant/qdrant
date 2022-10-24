@@ -1063,14 +1063,20 @@ impl SegmentEntry for Segment {
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
+        let vector_index_searches: Vec<_> = self
+            .vector_data
+            .iter()
+            .map(|(k, v)| {
+                let mut telemetry = v.vector_index.borrow().get_telemetry_data();
+                telemetry.index_name = Some(k.clone());
+                telemetry
+            })
+            .collect();
+
         SegmentTelemetry {
             info: self.info(),
             config: self.config(),
-            vector_index: self
-                .vector_data
-                .iter()
-                .map(|(k, v)| (k.to_owned(), v.vector_index.borrow().get_telemetry_data()))
-                .collect(),
+            vector_index_searches,
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
         }
     }

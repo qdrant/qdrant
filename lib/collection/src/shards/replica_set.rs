@@ -35,7 +35,7 @@ use crate::shards::shard::Shard::{ForwardProxy, Local};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::{ShardOperation, ShardOperationSS};
-use crate::telemetry::ShardTelemetry;
+use crate::shards::telemetry::ReplicaSetTelemetry;
 
 pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
@@ -587,14 +587,16 @@ impl ShardReplicaSet {
         }
     }
 
-    pub(crate) async fn get_telemetry_data(&self) -> ShardTelemetry {
-        ShardTelemetry::ReplicaSet {
-            local: self
-                .local
-                .read()
-                .await
-                .as_ref()
-                .map(|local| Box::new(local.get_telemetry_data())),
+    pub(crate) async fn get_telemetry_data(&self) -> ReplicaSetTelemetry {
+        let local_shard = self.local.read().await;
+        let local = if let Some(local_shard) = &*local_shard {
+            Some(local_shard.get_telemetry_data().await)
+        } else {
+            None
+        };
+        ReplicaSetTelemetry {
+            id: self.shard_id,
+            local,
             remote: self
                 .remotes
                 .read()
