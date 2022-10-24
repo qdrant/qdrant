@@ -6,6 +6,7 @@ use parking_lot::{Mutex, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
 
+use super::compact_links_container::CompactLinksContainer;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -70,13 +71,24 @@ impl GraphLayersBuilder {
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
             .collect();
+        let links_layer_0 = CompactLinksContainer::build(&unlocker_links_layers);
+        let links_layers = unlocker_links_layers
+            .into_iter()
+            .map(|mut layers| {
+                if !layers.is_empty() {
+                    layers.remove(0);
+                }
+                layers
+            })
+            .collect();
 
         GraphLayers {
             max_level: self.max_level.load(std::sync::atomic::Ordering::Relaxed),
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,
-            links_layers: unlocker_links_layers,
+            links_layer_0,
+            links_layers,
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         }
@@ -566,13 +578,13 @@ mod tests {
             create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng2);
 
         // check is graph_layers_builder links are equeal to graph_layers_orig
-        let orig_len = graph_layers_orig.links_layers[0].len();
+        let orig_len = graph_layers_orig.point_level(0) + 1;
         let builder_len = graph_layers_builder.links_layers[0].len();
 
         assert_eq!(orig_len, builder_len);
 
         for idx in 0..builder_len {
-            let links_orig = &graph_layers_orig.links_layers[0][idx];
+            let links_orig = &graph_layers_orig.get_links(0, idx);
             let links_builder = graph_layers_builder.links_layers[0][idx].read();
             let link_container_from_builder = links_builder.iter().copied().collect::<Vec<_>>();
             assert_eq!(links_orig, &link_container_from_builder);
