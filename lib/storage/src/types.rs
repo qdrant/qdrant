@@ -67,15 +67,16 @@ pub struct RaftInfo {
     pub is_voter: bool,
 }
 
+/// Role of the peer in the consensus
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema, Deserialize)]
 pub enum StateRole {
-    /// The node is a follower of the leader.
+    // The node is a follower of the leader.
     Follower,
-    /// The node could become a leader.
+    // The node could become a leader.
     Candidate,
-    /// The node is a leader.
+    // The node is a leader.
     Leader,
-    /// The node could become a candidate, if `prevote` is enabled.
+    // The node could become a candidate, if `prevote` is enabled.
     PreCandidate,
 }
 

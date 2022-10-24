@@ -87,11 +87,11 @@ pub type PointIdType = ExtendedPointId;
 )]
 /// Distance function types used to compare vectors
 pub enum Distance {
-    /// <https://en.wikipedia.org/wiki/Cosine_similarity>
+    // <https://en.wikipedia.org/wiki/Cosine_similarity>
     Cosine,
-    /// <https://en.wikipedia.org/wiki/Euclidean_distance>
+    // <https://en.wikipedia.org/wiki/Euclidean_distance>
     Euclid,
-    /// <https://en.wikipedia.org/wiki/Dot_product>
+    // <https://en.wikipedia.org/wiki/Dot_product>
     Dot,
 }
 
@@ -175,11 +175,11 @@ impl PartialEq for ScoredPoint {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
-    /// There are no index built for the segment, all operations are available
+    // There are no index built for the segment, all operations are available
     Plain,
-    /// Segment with some sort of index built. Optimized for search, appending new points will require reindexing
+    // Segment with some sort of index built. Optimized for search, appending new points will require reindexing
     Indexed,
-    /// Some index which you better don't touch
+    // Some index which you better don't touch
     Special,
 }
 
@@ -305,9 +305,9 @@ impl Default for Indexes {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadIndexType {
-    /// Do not index anything, just keep of what should be indexed later
+    // Do not index anything, just keep of what should be indexed later
     Plain,
-    /// Build payload index. Index is saved on disc, but index itself is in RAM
+    // Build payload index. Index is saved on disc, but index itself is in RAM
     Struct,
 }
 
@@ -322,9 +322,9 @@ impl Default for PayloadIndexType {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum StorageType {
-    /// Store vectors in memory and use persistence storage only if vectors are changed
+    // Store vectors in memory and use persistence storage only if vectors are changed
     InMemory,
-    /// Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
+    // Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
     Mmap,
 }
 
@@ -339,9 +339,9 @@ impl Default for StorageType {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadStorageType {
-    /// Store payload in memory and use persistence storage only if vectors are changed
+    // Store payload in memory and use persistence storage only if vectors are changed
     InMemory,
-    /// Store payload on disk only, read each time it is requested
+    // Store payload on disk only, read each time it is requested
     OnDisk,
 }
 
