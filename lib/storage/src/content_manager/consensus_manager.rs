@@ -5,8 +5,8 @@ use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use anyhow::{anyhow, Context};
 
+use anyhow::{anyhow, Context};
 use chrono::Utc;
 use collection::collection_state;
 use collection::shards::shard::PeerId;

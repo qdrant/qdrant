@@ -19,7 +19,6 @@ use crate::StorageError;
 
 const STATE_FILE_NAME: &str = "raft_state";
 
-
 /// State of the Raft consensus, which should be saved between restarts.
 /// State of the collections, aliases and transfers are stored as regular storage.
 #[derive(Debug, Serialize, Deserialize, Default)]
