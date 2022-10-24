@@ -273,12 +273,17 @@ impl GraphLayers {
     }
 
     pub fn merge_from_other(&mut self, other: GraphLayers) {
+        self.max_level = std::cmp::max(self.max_level, other.max_level);
+
+        let mut self_links_layers = self.to_obsolete_links();
+        let other_links_layers = other.to_obsolete_links();
+
         let mut visited_list = self.visited_pool.get(self.num_points());
-        if other.links_layers.len() > self.links_layers.len() {
-            self.links_layers.resize(other.links_layers.len(), vec![]);
+        if other_links_layers.len() > self_links_layers.len() {
+            self_links_layers.resize(other_links_layers.len(), vec![]);
         }
-        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
-            let current_layers = &mut self.links_layers[point_id];
+        for (point_id, layers) in other_links_layers.into_iter().enumerate() {
+            let current_layers = &mut self_links_layers[point_id];
             for (level, other_links) in layers.into_iter().enumerate() {
                 if current_layers.len() <= level {
                     current_layers.push(other_links);
@@ -300,6 +305,35 @@ impl GraphLayers {
         self.entry_points.merge_from_other(other.entry_points);
 
         self.visited_pool.return_back(visited_list);
+
+        let links_layer_0 = CompactLinksContainer::build(&self_links_layers);
+        let links_layers = self_links_layers
+            .into_iter()
+            .map(|mut layers| {
+                if !layers.is_empty() {
+                    layers.remove(0);
+                }
+                layers
+            })
+            .collect();
+        
+        self.links_layer_0 = links_layer_0;
+        self.links_layers = links_layers;
+    }
+
+    fn to_obsolete_links(&self) -> Vec<Vec<Vec<PointOffsetType>>> {
+        let mut result = Vec::new();
+        let num_points = self.num_points();
+        for i in 0..num_points {
+            let mut layers = Vec::new();
+            let num_levels = self.point_level(i as PointOffsetType) + 1;
+            for level in 0..num_levels {
+                let links = self.get_links(i as PointOffsetType, level).to_vec();
+                layers.push(links);
+            }
+            result.push(layers);
+        }
+        result
     }
 
     pub fn search(
