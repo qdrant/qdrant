@@ -7,7 +7,7 @@ use raft::eraftpb::Entry as RaftEntry;
 use raft::util::limit_size;
 use wal::Wal;
 
-use crate::content_manager::consensus_state;
+use crate::content_manager::consensus_manager;
 use crate::{ConsensusOperations, StorageError};
 
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
@@ -33,7 +33,7 @@ impl ConsensusOpWal {
         }
         let first_entry = self
             .first_entry()
-            .map_err(consensus_state::raft_error_other)?
+            .map_err(consensus_manager::raft_error_other)?
             .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?;
         if id < first_entry.index {
             return Err(raft::Error::Store(raft::StorageError::Compacted));
@@ -46,7 +46,7 @@ impl ConsensusOpWal {
                 .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?
                 .as_ref(),
         )
-        .map_err(consensus_state::raft_error_other)
+        .map_err(consensus_manager::raft_error_other)
     }
 
     pub fn entries(

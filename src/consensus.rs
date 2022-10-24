@@ -17,7 +17,7 @@ use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole};
 use storage::content_manager::consensus_ops::ConsensusOperations;
-use storage::content_manager::consensus_state::ConsensusStateRef;
+use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::PeerAddressById;
@@ -134,7 +134,7 @@ impl Consensus {
             ..Default::default()
         };
         raft_config.validate()?;
-        let op_wait = storage::content_manager::consensus_state::DEFAULT_META_OP_WAIT;
+        let op_wait = storage::content_manager::consensus_manager::DEFAULT_META_OP_WAIT;
         // Commit might take up to 4 ticks as:
         // 1 tick - send proposal to leader
         // 2 tick - leader sends append entries to peers
@@ -181,7 +181,7 @@ impl Consensus {
         let mut node = Node::new(&raft_config, state_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
-        let _stop_consensus = state_ref.apply_entries(&mut node);
+        let _stop_consensus = state_ref.apply_entries(&mut node)?;
 
         let consensus = Self {
             node,
@@ -365,7 +365,7 @@ impl Consensus {
                 self.node.tick();
                 // Try to reapply entries if some were not applied due to errors.
                 let store = self.node.store().clone();
-                let stop_consensus = store.apply_entries(&mut self.node);
+                let stop_consensus = store.apply_entries(&mut self.node)?;
                 if stop_consensus {
                     return Ok(());
                 }
@@ -690,11 +690,11 @@ fn handle_committed_entries(
     entries: Vec<Entry>,
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
-) -> raft::Result<bool> {
+) -> anyhow::Result<bool> {
     let mut stop_consensus = false;
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
-        stop_consensus = state.apply_entries(raw_node);
+        stop_consensus = state.apply_entries(raw_node)?;
     }
     Ok(stop_consensus)
 }
@@ -762,7 +762,7 @@ mod tests {
     };
     use storage::content_manager::consensus::operation_sender::OperationSender;
     use storage::content_manager::consensus::persistent::Persistent;
-    use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
+    use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
     use tempfile::Builder;
@@ -793,7 +793,7 @@ mod tests {
         );
         let toc_arc = Arc::new(toc);
         let storage_path = toc_arc.storage_path();
-        let consensus_state: ConsensusStateRef = ConsensusState::new(
+        let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_state,
             toc_arc.clone(),
             operation_sender,

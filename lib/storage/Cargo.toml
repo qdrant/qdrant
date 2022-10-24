@@ -37,3 +37,4 @@ segment = {path = "../segment"}
 collection = {path = "../collection"}
 api = {path = "../api"}
 futures = "0.3.25"
+anyhow = "1.0.66"
