@@ -2741,29 +2741,12 @@
         }
       },
       "CollectionStatus": {
-        "description": "Current state of the collection",
-        "oneOf": [
-          {
-            "description": "Collection if completely ready for requests",
-            "type": "string",
-            "enum": [
-              "green"
-            ]
-          },
-          {
-            "description": "Collection is available, but some segments might be under optimization",
-            "type": "string",
-            "enum": [
-              "yellow"
-            ]
-          },
-          {
-            "description": "Something is not OK: - some operations failed and was not recovered",
-            "type": "string",
-            "enum": [
-              "red"
-            ]
-          }
+        "description": "Current state of the collection. `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered",
+        "type": "string",
+        "enum": [
+          "green",
+          "yellow",
+          "red"
         ]
       },
       "OptimizersStatus": {
@@ -2879,28 +2862,11 @@
       },
       "Distance": {
         "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
-        "oneOf": [
-          {
-            "description": "<https://en.wikipedia.org/wiki/Cosine_similarity>",
-            "type": "string",
-            "enum": [
-              "Cosine"
-            ]
-          },
-          {
-            "description": "<https://en.wikipedia.org/wiki/Euclidean_distance>",
-            "type": "string",
-            "enum": [
-              "Euclid"
-            ]
-          },
-          {
-            "description": "<https://en.wikipedia.org/wiki/Dot_product>",
-            "type": "string",
-            "enum": [
-              "Dot"
-            ]
-          }
+        "type": "string",
+        "enum": [
+          "Cosine",
+          "Euclid",
+          "Dot"
         ]
       },
       "HnswConfig": {
@@ -3816,21 +3782,11 @@
         }
       },
       "UpdateStatus": {
-        "oneOf": [
-          {
-            "description": "Request is saved to WAL and will be process in a queue",
-            "type": "string",
-            "enum": [
-              "acknowledged"
-            ]
-          },
-          {
-            "description": "Request is completed, changes are actual",
-            "type": "string",
-            "enum": [
-              "completed"
-            ]
-          }
+        "description": "`Acknowledged` - Request is saved to WAL and will be process in a queue. `Completed` - Request is completed, changes are actual.",
+        "type": "string",
+        "enum": [
+          "acknowledged",
+          "completed"
         ]
       },
       "RecommendRequest": {
@@ -4693,35 +4649,13 @@
         }
       },
       "StateRole": {
-        "oneOf": [
-          {
-            "description": "The node is a follower of the leader.",
-            "type": "string",
-            "enum": [
-              "Follower"
-            ]
-          },
-          {
-            "description": "The node could become a leader.",
-            "type": "string",
-            "enum": [
-              "Candidate"
-            ]
-          },
-          {
-            "description": "The node is a leader.",
-            "type": "string",
-            "enum": [
-              "Leader"
-            ]
-          },
-          {
-            "description": "The node could become a candidate, if `prevote` is enabled.",
-            "type": "string",
-            "enum": [
-              "PreCandidate"
-            ]
-          }
+        "description": "Role of the peer in the consensus",
+        "type": "string",
+        "enum": [
+          "Follower",
+          "Candidate",
+          "Leader",
+          "PreCandidate"
         ]
       },
       "ConsensusThreadStatus": {
@@ -4928,29 +4862,12 @@
         }
       },
       "ReplicaState": {
-        "description": "State of the single shard within replica set",
-        "oneOf": [
-          {
-            "description": "Active and sound",
-            "type": "string",
-            "enum": [
-              "Active"
-            ]
-          },
-          {
-            "description": "Failed for some reason",
-            "type": "string",
-            "enum": [
-              "Dead"
-            ]
-          },
-          {
-            "description": "The shard is partially loaded and is currently receiving data from other shards",
-            "type": "string",
-            "enum": [
-              "Partial"
-            ]
-          }
+        "description": "State of the single shard within a replica set.",
+        "type": "string",
+        "enum": [
+          "Active",
+          "Dead",
+          "Partial"
         ]
       },
       "RemoteShardInfo": {
@@ -5011,16 +4928,43 @@
       "TelemetryData": {
         "type": "object",
         "required": [
-          "id"
+          "app",
+          "cluster",
+          "collections",
+          "id",
+          "requests"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
           "app": {
+            "$ref": "#/components/schemas/AppBuildTelemetry"
+          },
+          "collections": {
+            "$ref": "#/components/schemas/CollectionsTelemetry"
+          },
+          "cluster": {
+            "$ref": "#/components/schemas/ClusterTelemetry"
+          },
+          "requests": {
+            "$ref": "#/components/schemas/RequestsTelemetry"
+          }
+        }
+      },
+      "AppBuildTelemetry": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "features": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AppBuildTelemetry"
+                "$ref": "#/components/schemas/AppFeaturesTelemetry"
               },
               {
                 "nullable": true
@@ -5036,94 +4980,17 @@
                 "nullable": true
               }
             ]
-          },
-          "configs": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConfigsTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "collections_short_info": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "collections": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CollectionTelemetry"
-            },
-            "nullable": true
-          },
-          "web": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WebApiTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "grpc_calls_statistics": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GrpcTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "cluster_status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ClusterStatus"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "vector_index_searches": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "peers_count": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
           }
         }
       },
-      "AppBuildTelemetry": {
+      "AppFeaturesTelemetry": {
         "type": "object",
         "required": [
           "debug",
           "service_debug_feature",
-          "version",
           "web_feature"
         ],
         "properties": {
-          "version": {
-            "type": "string"
-          },
           "debug": {
             "type": "boolean"
           },
@@ -5176,325 +5043,91 @@
           }
         }
       },
-      "ConfigsTelemetry": {
+      "CollectionsTelemetry": {
         "type": "object",
         "required": [
-          "cluster_config",
-          "service_config"
+          "number_of_collections"
         ],
         "properties": {
-          "service_config": {
-            "$ref": "#/components/schemas/ServiceConfigTelemetry"
-          },
-          "cluster_config": {
-            "$ref": "#/components/schemas/ClusterConfigTelemetry"
-          }
-        }
-      },
-      "ServiceConfigTelemetry": {
-        "type": "object",
-        "required": [
-          "enable_cors",
-          "grpc_enable",
-          "max_request_size_mb"
-        ],
-        "properties": {
-          "grpc_enable": {
-            "type": "boolean"
-          },
-          "max_request_size_mb": {
+          "number_of_collections": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
-          "max_workers": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
+          "collections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectionTelemetryEnum"
+            },
             "nullable": true
-          },
-          "enable_cors": {
-            "type": "boolean"
           }
         }
       },
-      "ClusterConfigTelemetry": {
-        "type": "object",
-        "required": [
-          "consensus",
-          "enabled",
-          "grpc_timeout_ms",
-          "p2p"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean"
+      "CollectionTelemetryEnum": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/CollectionTelemetry"
           },
-          "grpc_timeout_ms": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "p2p": {
-            "$ref": "#/components/schemas/P2pConfigTelemetry"
-          },
-          "consensus": {
-            "$ref": "#/components/schemas/ConsensusConfigTelemetry"
+          {
+            "$ref": "#/components/schemas/CollectionsAggregatedTelemetry"
           }
-        }
-      },
-      "P2pConfigTelemetry": {
-        "type": "object",
-        "required": [
-          "connection_pool_size"
-        ],
-        "properties": {
-          "connection_pool_size": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          }
-        }
-      },
-      "ConsensusConfigTelemetry": {
-        "type": "object",
-        "required": [
-          "bootstrap_timeout_sec",
-          "max_message_queue_size",
-          "tick_period_ms"
-        ],
-        "properties": {
-          "max_message_queue_size": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "tick_period_ms": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "bootstrap_timeout_sec": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          }
-        }
-      },
-      "CollectionShortInfoTelemetry": {
-        "type": "object",
-        "required": [
-          "indexed_vectors_count",
-          "optimizer_status",
-          "status",
-          "vectors_count"
-        ],
-        "properties": {
-          "status": {
-            "$ref": "#/components/schemas/CollectionStatus"
-          },
-          "optimizer_status": {
-            "$ref": "#/components/schemas/OptimizersStatus"
-          },
-          "vectors_count": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "indexed_vectors_count": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          }
-        }
+        ]
       },
       "CollectionTelemetry": {
         "type": "object",
         "required": [
+          "config",
           "id",
-          "init_time_micros",
-          "short_info"
+          "init_time_ms",
+          "shards"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
-          "init_time_micros": {
+          "init_time_ms": {
             "type": "integer",
-            "format": "uint32",
+            "format": "uint64",
             "minimum": 0
           },
-          "short_info": {
-            "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
-          },
-          "params": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
           "config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/CollectionConfig"
           },
           "shards": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ShardTelemetry"
-            },
-            "nullable": true
-          },
-          "vector_index_searches": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "optimizations": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizerTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+              "$ref": "#/components/schemas/ReplicaSetTelemetry"
+            }
           }
         }
       },
-      "ShardTelemetry": {
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "Proxy",
-              "ForwardProxy"
-            ]
-          },
-          {
-            "type": "object",
-            "required": [
-              "Remote"
-            ],
-            "properties": {
-              "Remote": {
-                "$ref": "#/components/schemas/RemoteShardTelemetry"
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "required": [
-              "Local"
-            ],
-            "properties": {
-              "Local": {
-                "$ref": "#/components/schemas/LocalShardTelemetry"
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "required": [
-              "ReplicaSet"
-            ],
-            "properties": {
-              "ReplicaSet": {
-                "type": "object",
-                "required": [
-                  "remote"
-                ],
-                "properties": {
-                  "local": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/ShardTelemetry"
-                      },
-                      {
-                        "nullable": true
-                      }
-                    ]
-                  },
-                  "remote": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/ShardTelemetry"
-                    }
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
-      },
-      "RemoteShardTelemetry": {
+      "ReplicaSetTelemetry": {
         "type": "object",
         "required": [
-          "searches",
-          "shard_id",
-          "updates"
+          "id",
+          "remote"
         ],
         "properties": {
-          "shard_id": {
+          "id": {
             "type": "integer",
             "format": "uint32",
             "minimum": 0
           },
-          "searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          "local": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalShardTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
-          "updates": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
-          }
-        }
-      },
-      "OperationDurationStatistics": {
-        "type": "object",
-        "required": [
-          "count"
-        ],
-        "properties": {
-          "count": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "fail_count": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "avg_duration_micros": {
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "min_duration_micros": {
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "max_duration_micros": {
-            "type": "number",
-            "format": "float",
-            "nullable": true
+          "remote": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoteShardTelemetry"
+            }
           }
         }
       },
@@ -5502,12 +5135,12 @@
         "type": "object",
         "required": [
           "optimizations",
-          "segments",
-          "short_info"
+          "segments"
         ],
         "properties": {
-          "short_info": {
-            "$ref": "#/components/schemas/CollectionShortInfoTelemetry"
+          "variant_name": {
+            "type": "string",
+            "nullable": true
           },
           "segments": {
             "type": "array",
@@ -5523,45 +5156,29 @@
       "SegmentTelemetry": {
         "type": "object",
         "required": [
-          "info"
+          "config",
+          "info",
+          "payload_field_indices",
+          "vector_index_searches"
         ],
         "properties": {
           "info": {
             "$ref": "#/components/schemas/SegmentInfo"
           },
           "config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SegmentConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SegmentConfig"
           },
           "vector_index_searches": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "vector_index_searches_with_names": {
-            "type": "object",
-            "additionalProperties": {
+            "type": "array",
+            "items": {
               "$ref": "#/components/schemas/VectorIndexSearchesTelemetry"
-            },
-            "nullable": true
+            }
           },
           "payload_field_indices": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PayloadIndexTelemetry"
-            },
-            "nullable": true
+            }
           }
         }
       },
@@ -5620,28 +5237,11 @@
       },
       "SegmentType": {
         "description": "Type of segment",
-        "oneOf": [
-          {
-            "description": "There are no index built for the segment, all operations are available",
-            "type": "string",
-            "enum": [
-              "plain"
-            ]
-          },
-          {
-            "description": "Segment with some sort of index built. Optimized for search, appending new points will require reindexing",
-            "type": "string",
-            "enum": [
-              "indexed"
-            ]
-          },
-          {
-            "description": "Some index which you better don't touch",
-            "type": "string",
-            "enum": [
-              "special"
-            ]
-          }
+        "type": "string",
+        "enum": [
+          "plain",
+          "indexed",
+          "special"
         ]
       },
       "SegmentConfig": {
@@ -5735,7 +5335,6 @@
         "description": "Type of vector storage",
         "oneOf": [
           {
-            "description": "Store vectors in memory and use persistence storage only if vectors are changed",
             "type": "object",
             "required": [
               "type"
@@ -5750,7 +5349,6 @@
             }
           },
           {
-            "description": "Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM",
             "type": "object",
             "required": [
               "type"
@@ -5770,7 +5368,6 @@
         "description": "Type of payload storage",
         "oneOf": [
           {
-            "description": "Store payload in memory and use persistence storage only if vectors are changed",
             "type": "object",
             "required": [
               "type"
@@ -5785,7 +5382,6 @@
             }
           },
           {
-            "description": "Store payload on disk only, read each time it is requested",
             "type": "object",
             "required": [
               "type"
@@ -5803,33 +5399,73 @@
       },
       "VectorIndexSearchesTelemetry": {
         "type": "object",
+        "required": [
+          "filtered_exact",
+          "filtered_large_cardinality",
+          "filtered_plain",
+          "filtered_small_cardinality",
+          "unfiltered_exact",
+          "unfiltered_hnsw",
+          "unfiltered_plain"
+        ],
         "properties": {
-          "unfiltered_plain_searches": {
+          "index_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "unfiltered_plain": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "unfiltered_hnsw_searches": {
+          "unfiltered_hnsw": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "filtered_plain_searches": {
+          "filtered_plain": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "filtered_small_cardinality_searches": {
+          "filtered_small_cardinality": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "filtered_large_cardinality_searches": {
+          "filtered_large_cardinality": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "filtered_positive_check_cardinality_searches": {
+          "filtered_exact": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "filtered_negative_check_cardinality_searches": {
+          "unfiltered_exact": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
+          }
+        }
+      },
+      "OperationDurationStatistics": {
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           },
-          "filtered_exact_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          "fail_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           },
-          "unfiltered_exact_searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          "avg_duration_micros": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "min_duration_micros": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "max_duration_micros": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
           }
         }
       },
@@ -5840,6 +5476,10 @@
           "points_values_count"
         ],
         "properties": {
+          "field_name": {
+            "type": "string",
+            "nullable": true
+          },
           "points_values_count": {
             "type": "integer",
             "format": "uint",
@@ -5861,19 +5501,207 @@
       "OptimizerTelemetry": {
         "type": "object",
         "required": [
-          "indexing",
-          "merge",
-          "vacuum"
+          "optimizations",
+          "status"
         ],
         "properties": {
-          "indexing": {
+          "status": {
+            "$ref": "#/components/schemas/OptimizersStatus"
+          },
+          "optimizations": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          }
+        }
+      },
+      "RemoteShardTelemetry": {
+        "type": "object",
+        "required": [
+          "searches",
+          "shard_id",
+          "updates"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "searches": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
-          "merge": {
+          "updates": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
+          }
+        }
+      },
+      "CollectionsAggregatedTelemetry": {
+        "type": "object",
+        "required": [
+          "optimizers_status",
+          "params",
+          "vectors"
+        ],
+        "properties": {
+          "vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           },
-          "vacuum": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+          "optimizers_status": {
+            "$ref": "#/components/schemas/OptimizersStatus"
+          },
+          "params": {
+            "$ref": "#/components/schemas/CollectionParams"
+          }
+        }
+      },
+      "ClusterTelemetry": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClusterStatusTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClusterConfigTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "ClusterStatusTelemetry": {
+        "type": "object",
+        "required": [
+          "commit",
+          "is_voter",
+          "number_of_peers",
+          "pending_operations",
+          "term"
+        ],
+        "properties": {
+          "number_of_peers": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "term": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "commit": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "pending_operations": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StateRole"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "is_voter": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ClusterConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "consensus",
+          "grpc_timeout_ms",
+          "p2p"
+        ],
+        "properties": {
+          "grpc_timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "p2p": {
+            "$ref": "#/components/schemas/P2pConfigTelemetry"
+          },
+          "consensus": {
+            "$ref": "#/components/schemas/ConsensusConfigTelemetry"
+          }
+        }
+      },
+      "P2pConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "connection_pool_size"
+        ],
+        "properties": {
+          "connection_pool_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "ConsensusConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "bootstrap_timeout_sec",
+          "max_message_queue_size",
+          "tick_period_ms"
+        ],
+        "properties": {
+          "max_message_queue_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "tick_period_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "bootstrap_timeout_sec": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
+      },
+      "RequestsTelemetry": {
+        "type": "object",
+        "required": [
+          "grpc",
+          "rest"
+        ],
+        "properties": {
+          "rest": {
+            "$ref": "#/components/schemas/WebApiTelemetry"
+          },
+          "grpc": {
+            "$ref": "#/components/schemas/GrpcTelemetry"
           }
         }
       },

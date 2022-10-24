@@ -43,15 +43,15 @@ const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
-/// State of the single shard within replica set
+/// State of the single shard within a replica set.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum ReplicaState {
-    /// Active and sound
+    // Active and sound
     #[default]
     Active,
-    /// Failed for some reason
+    // Failed for some reason
     Dead,
-    /// The shard is partially loaded and is currently receiving data from other shards
+    // The shard is partially loaded and is currently receiving data from other shards
     Partial,
 }
 
