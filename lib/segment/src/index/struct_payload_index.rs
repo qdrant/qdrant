@@ -385,6 +385,19 @@ impl PayloadIndex for StructPayloadIndex {
         };
     }
 
+    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {
+        self.field_indexes.get(field).map_or(0, |indexes| {
+            // Assume that multiple field indexes are applied to the same data type,
+            // so the points indexed with those indexes are the same.
+            // We will return minimal number as a worst case, to highlight possible errors in the index early.
+            indexes
+                .iter()
+                .map(|index| index.count_indexed_points())
+                .min()
+                .unwrap_or(0)
+        })
+    }
+
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
         Box::new(self.struct_filtered_context(filter))
     }

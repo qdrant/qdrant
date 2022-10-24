@@ -2705,25 +2705,25 @@
             "$ref": "#/components/schemas/OptimizersStatus"
           },
           "vectors_count": {
-            "description": "Number of vectors in collection",
+            "description": "Number of vectors in collection All vectors in collection are available for querying Calculated as `points_count x vectors_per_point` Where `vectors_per_point` is a number of named vectors in schema",
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
           "indexed_vectors_count": {
-            "description": "Number of indexed vectors in the collection",
+            "description": "Number of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in vector index (HNSW)",
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
           "points_count": {
-            "description": "Number of points in collection",
+            "description": "Number of points (vectors + payloads) in collection Each point could be accessed by unique id",
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
           "segments_count": {
-            "description": "Number of segments in collection",
+            "description": "Number of segments in collection. Each segment has independent vector as payload indexes",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -3028,7 +3028,8 @@
         "description": "Display payload field type & index information",
         "type": "object",
         "required": [
-          "data_type"
+          "data_type",
+          "points"
         ],
         "properties": {
           "data_type": {
@@ -3043,6 +3044,12 @@
                 "nullable": true
               }
             ]
+          },
+          "points": {
+            "description": "Number of points indexed with this index",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       },

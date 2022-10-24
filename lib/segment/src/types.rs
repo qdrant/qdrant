@@ -191,6 +191,27 @@ pub struct PayloadIndexInfo {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<PayloadSchemaParams>,
+    /// Number of points indexed with this index
+    pub points: usize,
+}
+
+impl PayloadIndexInfo {
+    pub fn new(field_type: PayloadFieldSchema, points_count: usize) -> Self {
+        match field_type {
+            PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
+                data_type,
+                params: None,
+                points: points_count,
+            },
+            PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
+                PayloadSchemaParams::Text(_) => PayloadIndexInfo {
+                    data_type: PayloadSchemaType::Text,
+                    params: Some(schema_params),
+                    points: points_count,
+                },
+            },
+        }
+    }
 }
 
 /// Aggregated information about segment
@@ -612,23 +633,6 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
                 data_type
             )),
             (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
-        }
-    }
-}
-
-impl From<PayloadFieldSchema> for PayloadIndexInfo {
-    fn from(field_type: PayloadFieldSchema) -> Self {
-        match field_type {
-            PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
-                data_type,
-                params: None,
-            },
-            PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
-                PayloadSchemaParams::Text(_) => PayloadIndexInfo {
-                    data_type: PayloadSchemaType::Text,
-                    params: Some(schema_params),
-                },
-            },
         }
     }
 }

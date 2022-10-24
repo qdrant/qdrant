@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::num::NonZeroU32;
@@ -1182,7 +1183,7 @@ impl Collection {
 
         all_shard_collection_results
             .into_iter()
-            .for_each(|mut shard_info| {
+            .for_each(|shard_info| {
                 info.status = max(info.status, shard_info.status);
                 info.optimizer_status =
                     max(info.optimizer_status.clone(), shard_info.optimizer_status);
@@ -1190,8 +1191,16 @@ impl Collection {
                 info.indexed_vectors_count += shard_info.indexed_vectors_count;
                 info.points_count += shard_info.points_count;
                 info.segments_count += shard_info.segments_count;
-                info.payload_schema
-                    .extend(shard_info.payload_schema.drain());
+                for (key, schema) in shard_info.payload_schema {
+                    match info.payload_schema.entry(key) {
+                        Entry::Occupied(o) => {
+                            o.into_mut().points += schema.points;
+                        }
+                        Entry::Vacant(v) => {
+                            v.insert(schema);
+                        }
+                    };
+                }
             });
         Ok(info)
     }

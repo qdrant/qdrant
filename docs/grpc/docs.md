@@ -510,6 +510,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | data_type | [PayloadSchemaType](#qdrant-PayloadSchemaType) |  | Field data type |
 | params | [PayloadIndexParams](#qdrant-PayloadIndexParams) | optional | Field index parameters |
+| points | [uint64](#uint64) | optional | Number of points indexed within this field indexed |
 
 
 
@@ -1593,6 +1594,7 @@ The JSON representation for `Value` is JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | hnsw_ef | [uint64](#uint64) | optional | Params relevant to HNSW index. Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search. |
+| exact | [bool](#bool) | optional | Search without approximation. If set to true, search may run long but with exact results. |
 
 
 

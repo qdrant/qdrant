@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::fs::remove_file;
 use std::ops::Deref;
@@ -637,7 +638,14 @@ impl LocalShard {
             vectors_count += segment_info.num_vectors;
             points_count += segment_info.num_points;
             for (key, val) in segment_info.index_schema {
-                schema.insert(key, val);
+                match schema.entry(key) {
+                    Entry::Occupied(o) => {
+                        o.into_mut().points += val.points;
+                    }
+                    Entry::Vacant(v) => {
+                        v.insert(val);
+                    }
+                }
             }
         }
         if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {

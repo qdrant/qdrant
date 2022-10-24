@@ -285,6 +285,9 @@ pub struct PayloadSchemaInfo {
     /// Field index parameters
     #[prost(message, optional, tag="2")]
     pub params: ::core::option::Option<PayloadIndexParams>,
+    /// Number of points indexed within this field indexed
+    #[prost(uint64, optional, tag="3")]
+    pub points: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
