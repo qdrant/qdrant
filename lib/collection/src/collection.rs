@@ -446,11 +446,6 @@ impl Collection {
     ///
     /// Returns true if state was changed, false otherwise.
     pub async fn finish_shard_transfer(&self, transfer: ShardTransfer) -> CollectionResult<()> {
-        let finish_was_registered = self
-            .shards_holder
-            .read()
-            .await
-            .register_finish_transfer(&transfer.key())?;
         let transfer_finished = self
             .transfer_tasks
             .lock()
@@ -458,7 +453,6 @@ impl Collection {
             .stop_if_exists(&transfer.key())
             .await
             .is_finished();
-        log::debug!("finish_was_registered: {}", finish_was_registered);
         log::debug!("transfer_finished: {}", transfer_finished);
 
         let shards_holder_guard = self.shards_holder.read().await;
@@ -503,6 +497,9 @@ impl Collection {
             .await?;
             log::debug!("remote_shard_rerouted: {}", remote_shard_rerouted);
         }
+        let finish_was_registered =
+            shards_holder_guard.register_finish_transfer(&transfer.key())?;
+        log::debug!("finish_was_registered: {}", finish_was_registered);
         Ok(())
     }
 
@@ -516,11 +513,6 @@ impl Collection {
         &self,
         transfer_key: ShardTransferKey,
     ) -> CollectionResult<()> {
-        let _finish_was_registered = self
-            .shards_holder
-            .read()
-            .await
-            .register_finish_transfer(&transfer_key)?;
         let _transfer_finished = self
             .transfer_tasks
             .lock()
@@ -546,6 +538,8 @@ impl Collection {
         if self.this_peer_id == transfer_key.from {
             revert_proxy_shard_to_local(&shard_holder_guard, transfer_key.shard_id).await?;
         }
+
+        let _finish_was_registered = shard_holder_guard.register_finish_transfer(&transfer_key)?;
 
         Ok(())
     }
