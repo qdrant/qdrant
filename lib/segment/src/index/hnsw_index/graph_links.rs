@@ -22,8 +22,8 @@ impl GraphLinks {
                 .iter()
                 .map(|layer| {
                     std::mem::size_of::<LayerData>()
-                        + layer.links.len() * std::mem::size_of::<PointOffsetType>()
-                        + layer.offsets.len() * std::mem::size_of::<usize>()
+                        + layer.links.capacity() * std::mem::size_of::<PointOffsetType>()
+                        + layer.offsets.capacity() * std::mem::size_of::<usize>()
                 })
                 .sum::<usize>()
             + self.reindex.len() * std::mem::size_of::<PointOffsetType>()
@@ -65,6 +65,15 @@ impl GraphLinks {
                 }
             }
         }
+
+        layers.iter_mut().for_each(
+            |layer| {
+                layer.links.shrink_to_fit();
+                layer.offsets.shrink_to_fit();
+            },
+        );
+        layers.shrink_to_fit();
+        reindex.shrink_to_fit();
 
         GraphLinks {
             layers,
