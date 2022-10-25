@@ -346,3 +346,10 @@ def wait_collection_on_all_peers(collection_name: str, peer_api_uris: [str], max
             max_wait -= 1
         if max_wait <= 0:
             raise Exception("Collection was not created on all peers in time")
+
+
+def wait_collection_exists_and_active_on_all_peers(collection_name: str, peer_api_uris: [str], max_wait=30):
+    wait_collection_on_all_peers(collection_name, peer_api_uris, max_wait)
+    for peer_uri in peer_api_uris:
+        # Collection is active on all peers
+        wait_for_all_replicas_active(collection_name=collection_name, peer_api_uri=peer_uri)
