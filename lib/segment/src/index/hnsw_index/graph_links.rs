@@ -66,12 +66,10 @@ impl GraphLinks {
             }
         }
 
-        layers.iter_mut().for_each(
-            |layer| {
-                layer.links.shrink_to_fit();
-                layer.offsets.shrink_to_fit();
-            },
-        );
+        layers.iter_mut().for_each(|layer| {
+            layer.links.shrink_to_fit();
+            layer.offsets.shrink_to_fit();
+        });
         layers.shrink_to_fit();
         reindex.shrink_to_fit();
 
