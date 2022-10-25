@@ -65,10 +65,7 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0])
-    wait_collection_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
-    for peer_uri in peer_api_uris:
-        # Collection is active on all peers
-        wait_for_all_replicas_active(collection_name="test_collection", peer_api_uri=peer_uri)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
     upsert_points(peer_api_uris[0], "Paris")
 
     search_result = search(peer_api_uris[0], "Paris")
@@ -95,7 +92,7 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
 
     # Apply cluster update operation to leaving part of the cluster
     # 2 nodes majority should be enough for applying the status
-    create_collection(peer_api_uris[0], "test_collection2", timeout=1)
+    create_collection(peer_api_uris[0], "test_collection2", timeout=5)
 
     new_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_uri)
 
