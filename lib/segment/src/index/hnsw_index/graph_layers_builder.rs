@@ -14,6 +14,8 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::ScoredPointOffset;
 
+use super::graph_links::GraphLinks;
+
 pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 
@@ -76,7 +78,7 @@ impl GraphLayersBuilder {
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,
-            links_layers: unlocker_links_layers,
+            links: GraphLinks::from_vec(&unlocker_links_layers),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         }
@@ -549,6 +551,7 @@ mod tests {
         assert_eq!(reference_top.into_vec(), graph_search);
     }
 
+    /*
     #[test]
     fn test_add_points() {
         let num_vectors = 1000;
@@ -767,4 +770,5 @@ mod tests {
         graph_layers_builder.links_map(0, 0, |link| result.push(link));
         assert_eq!(&result, &vec![1, 2, 3, 4, 5, 6]);
     }
+    */
 }

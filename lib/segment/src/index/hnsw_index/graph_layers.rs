@@ -15,6 +15,8 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::PointOffsetType;
 use crate::vector_storage::ScoredPointOffset;
 
+use super::graph_links::GraphLinks;
+
 pub type LinkContainer = Vec<PointOffsetType>;
 pub type LinkContainerRef<'a> = &'a [PointOffsetType];
 pub type LayersContainer = Vec<LinkContainer>;
@@ -40,7 +42,7 @@ impl From<GraphLayersBackwardCompatibility> for GraphLayers {
             m: gl.m,
             m0: gl.m0,
             ef_construct: gl.ef_construct,
-            links_layers: gl.links_layers,
+            links: GraphLinks::from_vec(&gl.links_layers),
             entry_points: gl.entry_points,
             visited_pool: VisitedPool::new(),
         }
@@ -53,7 +55,7 @@ pub struct GraphLayers {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) links_layers: Vec<LayersContainer>,
+    pub(super) links: GraphLinks,
     pub(super) entry_points: EntryPoints,
 
     #[serde(skip)]
@@ -183,7 +185,7 @@ impl GraphLayersBase for GraphLayers {
     where
         F: FnMut(PointOffsetType),
     {
-        for link in &self.links_layers[point_id as usize][level] {
+        for link in self.links.links(point_id, level) {
             f(*link);
         }
     }
@@ -224,7 +226,7 @@ impl GraphLayers {
             m,
             m0,
             ef_construct,
-            links_layers,
+            links: Default::default(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
         }
@@ -241,20 +243,24 @@ impl GraphLayers {
     }
 
     fn num_points(&self) -> usize {
-        self.links_layers.len()
+        self.links.num_points()
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
-        self.links_layers[point_id as usize].len() - 1
+        self.links.point_level(point_id)
     }
 
     pub fn merge_from_other(&mut self, other: GraphLayers) {
+        self.max_level = std::cmp::max(self.max_level, other.max_level);
+        let mut self_links_layers = self.links.to_vec();
+        let other_links_layers = other.links.to_vec();
+
         let mut visited_list = self.visited_pool.get(self.num_points());
-        if other.links_layers.len() > self.links_layers.len() {
-            self.links_layers.resize(other.links_layers.len(), vec![]);
+        if other_links_layers.len() > self_links_layers.len() {
+            self_links_layers.resize(other_links_layers.len(), vec![]);
         }
-        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
-            let current_layers = &mut self.links_layers[point_id];
+        for (point_id, layers) in other_links_layers.into_iter().enumerate() {
+            let current_layers = &mut self_links_layers[point_id];
             for (level, other_links) in layers.into_iter().enumerate() {
                 if current_layers.len() <= level {
                     current_layers.push(other_links);
@@ -276,6 +282,8 @@ impl GraphLayers {
         self.entry_points.merge_from_other(other.entry_points);
 
         self.visited_pool.return_back(visited_list);
+
+        self.links = GraphLinks::from_vec(&self_links_layers);
     }
 
     pub fn search(
@@ -366,6 +374,7 @@ mod tests {
 
     const M: usize = 8;
 
+    /*
     #[test]
     fn test_search_on_level() {
         let dim = 8;
@@ -524,4 +533,5 @@ mod tests {
         )
         .unwrap();
     }
+    */
 }
