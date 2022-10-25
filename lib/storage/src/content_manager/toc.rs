@@ -8,7 +8,8 @@ use std::sync::Arc;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::collection_state;
 use collection::config::{
-    default_concern_factor, default_replication_factor, CollectionConfig, CollectionParams,
+    default_replication_factor, default_write_consistency_factor, CollectionConfig,
+    CollectionParams,
 };
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -238,7 +239,7 @@ impl TableOfContent {
             wal_config: wal_config_diff,
             optimizers_config: optimizers_config_diff,
             replication_factor,
-            concern_factor,
+            write_consistency_factor,
         } = operation;
 
         self.collections
@@ -260,7 +261,8 @@ impl TableOfContent {
         let replication_factor =
             replication_factor.unwrap_or_else(|| default_replication_factor().get());
 
-        let concern_factor = concern_factor.unwrap_or_else(|| default_concern_factor().get());
+        let write_consistency_factor =
+            write_consistency_factor.unwrap_or_else(|| default_write_consistency_factor().get());
 
         let collection_params = CollectionParams {
             vectors,
@@ -274,9 +276,11 @@ impl TableOfContent {
                     description: "`replication_factor` cannot be 0".to_string(),
                 },
             )?,
-            concern_factor: NonZeroU32::new(concern_factor).ok_or(StorageError::BadInput {
-                description: "`concern_factor` cannot be 0".to_string(),
-            })?,
+            write_consistency_factor: NonZeroU32::new(write_consistency_factor).ok_or(
+                StorageError::BadInput {
+                    description: "`write_consistency_factor` cannot be 0".to_string(),
+                },
+            )?,
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),

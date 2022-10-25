@@ -2820,7 +2820,7 @@
             "format": "uint32",
             "minimum": 1
           },
-          "concern_factor": {
+          "write_consistency_factor": {
             "description": "Defines how many replicas should apply the operation for us to consider it successful. Increasing this number will make the collection more resilient to inconsistencies, but will also make it fail if not enough replicas are available. Does not have any performance impact.",
             "default": 1,
             "type": "integer",
@@ -4006,7 +4006,7 @@
             "minimum": 0,
             "nullable": true
           },
-          "concern_factor": {
+          "write_consistency_factor": {
             "description": "Defines how many replicas should apply the operation for us to consider it successful. Increasing this number will make the collection more resilient to inconsistencies, but will also make it fail if not enough replicas are available. Does not have any performance impact.",
             "default": null,
             "type": "integer",
@@ -4198,7 +4198,7 @@
             "minimum": 1,
             "nullable": true
           },
-          "concern_factor": {
+          "write_consistency_factor": {
             "description": "Minimal number successful responses from replicas to consider operation successful",
             "type": "integer",
             "format": "uint32",

@@ -180,7 +180,7 @@ pub struct CreateCollection {
     pub replication_factor: ::core::option::Option<u32>,
     /// How many replicas should apply the operation for us to consider it successful, default = 1
     #[prost(uint32, optional, tag="12")]
-    pub concern_factor: ::core::option::Option<u32>,
+    pub write_consistency_factor: ::core::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
@@ -231,7 +231,7 @@ pub struct CollectionParams {
     pub replication_factor: u32,
     /// How many replicas should apply the operation for us to consider it successful
     #[prost(uint32, tag="7")]
-    pub concern_factor: u32,
+    pub write_consistency_factor: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParamsDiff {
@@ -240,7 +240,7 @@ pub struct CollectionParamsDiff {
     pub replication_factor: ::core::option::Option<u32>,
     /// How many replicas should apply the operation for us to consider it successful
     #[prost(uint32, optional, tag="2")]
-    pub concern_factor: ::core::option::Option<u32>,
+    pub write_consistency_factor: ::core::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {

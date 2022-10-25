@@ -833,14 +833,14 @@ impl ShardReplicaSet {
         }
 
         if !failures.is_empty() {
-            let concern_factor = self
+            let write_consistency_factor = self
                 .collection_config
                 .read()
                 .await
                 .params
-                .concern_factor
+                .write_consistency_factor
                 .get() as usize;
-            let minimal_success_count = concern_factor.min(total_results);
+            let minimal_success_count = write_consistency_factor.min(total_results);
             if successes.len() < minimal_success_count {
                 // completely failed - report error to user
                 let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");

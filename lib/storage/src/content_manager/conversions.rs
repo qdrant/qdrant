@@ -55,7 +55,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 shard_number: value.shard_number,
                 on_disk_payload: value.on_disk_payload,
                 replication_factor: value.replication_factor,
-                concern_factor: value.concern_factor,
+                write_consistency_factor: value.write_consistency_factor,
             },
         )))
     }

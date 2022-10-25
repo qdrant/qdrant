@@ -855,7 +855,7 @@ mod tests {
                             shard_number: Some(2),
                             on_disk_payload: None,
                             replication_factor: None,
-                            concern_factor: None,
+                            write_consistency_factor: None,
                         },
                     )),
                     None,

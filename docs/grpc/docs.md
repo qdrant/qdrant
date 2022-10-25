@@ -275,7 +275,7 @@
 | on_disk_payload | [bool](#bool) |  | If true - point&#39;s payload will not be stored in memory |
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
 | replication_factor | [uint32](#uint32) |  | Number of replicas of each shard that network tries to maintain |
-| concern_factor | [uint32](#uint32) |  | How many replicas should apply the operation for us to consider it successful |
+| write_consistency_factor | [uint32](#uint32) |  | How many replicas should apply the operation for us to consider it successful |
 
 
 
@@ -291,7 +291,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain |
-| concern_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
+| write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 
 
 
@@ -331,7 +331,7 @@
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain, default = 1 |
-| concern_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
+| write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
 
 
 

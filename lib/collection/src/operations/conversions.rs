@@ -52,11 +52,12 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
                         .ok_or_else(|| Status::invalid_argument("`replication_factor` cannot be 0"))
                 })
                 .transpose()?,
-            concern_factor: value
-                .concern_factor
+            write_consistency_factor: value
+                .write_consistency_factor
                 .map(|factor| {
-                    NonZeroU32::new(factor)
-                        .ok_or_else(|| Status::invalid_argument("`concern_factor` cannot be 0"))
+                    NonZeroU32::new(factor).ok_or_else(|| {
+                        Status::invalid_argument("`write_consistency_factor` cannot be 0")
+                    })
                 })
                 .transpose()?,
         })
@@ -138,7 +139,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     shard_number: config.params.shard_number.get(),
                     replication_factor: config.params.replication_factor.get(),
                     on_disk_payload: config.params.on_disk_payload,
-                    concern_factor: config.params.concern_factor.get(),
+                    write_consistency_factor: config.params.write_consistency_factor.get(),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(config.hnsw_config.m as u64),
@@ -299,9 +300,10 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     replication_factor: NonZeroU32::new(params.replication_factor).ok_or_else(
                         || Status::invalid_argument("`replication_factor` cannot be zero"),
                     )?,
-                    concern_factor: NonZeroU32::new(params.concern_factor).ok_or_else(|| {
-                        Status::invalid_argument("`concern_factor` cannot be zero")
-                    })?,
+                    write_consistency_factor: NonZeroU32::new(params.write_consistency_factor)
+                        .ok_or_else(|| {
+                            Status::invalid_argument("`write_consistency_factor` cannot be zero")
+                        })?,
                 },
             },
             hnsw_config: match config.hnsw_config {

@@ -107,7 +107,7 @@ pub struct CreateCollection {
     /// also make it fail if not enough replicas are available.
     /// Does not have any performance impact.
     #[serde(default)]
-    pub concern_factor: Option<u32>,
+    pub write_consistency_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
