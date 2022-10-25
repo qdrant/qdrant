@@ -38,6 +38,8 @@ impl PayloadIndexTelemetry {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
 pub struct VectorIndexSearchesTelemetry {
+    pub links_mem: usize,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index_name: Option<String>,
 

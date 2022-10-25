@@ -404,6 +404,7 @@ impl VectorIndex for HNSWIndex {
         let tm = &self.searches_telemetry;
 
         VectorIndexSearchesTelemetry {
+            links_mem: self.graph.get_links_memsize(),
             index_name: None,
             unfiltered_plain: Default::default(),
             filtered_plain: Default::default(),
