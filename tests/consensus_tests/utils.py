@@ -257,7 +257,7 @@ def check_some_replicas_not_active(peer_api_uri: str, collection_name: str) -> b
     return not check_all_replicas_active(peer_api_uri, collection_name)
 
 
-WAIT_TIME_SEC = 60
+WAIT_TIME_SEC = 15
 RETRY_INTERVAL_SEC = 0.5
 
 

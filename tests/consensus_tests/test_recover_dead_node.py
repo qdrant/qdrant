@@ -65,7 +65,10 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0])
-    wait_collection_on_all_peers("test_collection", peer_api_uris)
+    wait_collection_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    for peer_uri in peer_api_uris:
+        # Collection is active on all peers
+        wait_for_all_replicas_active(collection_name="test_collection", peer_api_uri=peer_uri)
     upsert_points(peer_api_uris[0], "Paris")
 
     search_result = search(peer_api_uris[0], "Paris")
