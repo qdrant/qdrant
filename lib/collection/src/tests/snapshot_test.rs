@@ -45,6 +45,7 @@ async fn test_snapshot_collection() {
         }),
         shard_number: NonZeroU32::new(4).unwrap(),
         replication_factor: NonZeroU32::new(3).unwrap(),
+        write_consistency_factor: NonZeroU32::new(2).unwrap(),
         on_disk_payload: false,
     };
 

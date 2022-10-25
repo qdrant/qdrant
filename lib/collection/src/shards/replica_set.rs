@@ -34,10 +34,11 @@ use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::shard::Shard::{ForwardProxy, Local};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_trait::{ShardOperation, ShardOperationSS};
+use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
 pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
 const READ_REMOTE_REPLICAS: u32 = 2;
 
@@ -115,10 +116,6 @@ impl ShardReplicaSet {
         })?)
     }
 
-    pub fn as_shard_operations(&self) -> &ShardOperationSS {
-        self
-    }
-
     pub fn this_peer_id(&self) -> PeerId {
         self.replica_state.read().this_peer_id
     }
@@ -176,10 +173,10 @@ impl ShardReplicaSet {
             rs.this_peer_id = this_peer_id;
             if local.is_some() {
                 rs.is_local = true;
-                rs.peers.insert(this_peer_id, ReplicaState::Active);
+                rs.peers.insert(this_peer_id, ReplicaState::Partial);
             }
             for peer in remotes {
-                rs.peers.insert(peer, ReplicaState::Active);
+                rs.peers.insert(peer, ReplicaState::Dead);
             }
         })?;
 
@@ -470,7 +467,7 @@ impl ShardReplicaSet {
         self.replica_state.read().peers.get(peer_id).copied()
     }
 
-    /// Execute read operation on replica set:
+    /// Execute read op. on replica set:
     /// 1 - Prefer local replica
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
     /// 3 - Fallbacks to all remaining shards if the optimisations fails.
@@ -493,9 +490,11 @@ impl ShardReplicaSet {
                 match read_operation_res {
                     Ok(_) => return read_operation_res,
                     res @ Err(CollectionError::ServiceError { .. }) => {
+                        log::debug!("Local read op. failed: {:?}", res.as_ref().err());
                         local_result = Some(res);
                     }
                     res @ Err(CollectionError::Cancelled { .. }) => {
+                        log::debug!("Local read op. cancelled: {:?}", res.as_ref().err());
                         local_result = Some(res);
                     }
                     res @ Err(_) => {
@@ -542,8 +541,14 @@ impl ShardReplicaSet {
         while let Some(result) = futures.next().await {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
-                err @ Err(CollectionError::ServiceError { .. }) => captured_error = Some(err), // capture error for possible error reporting
-                err @ Err(CollectionError::Cancelled { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(CollectionError::ServiceError { .. }) => {
+                    log::debug!("Remote read op. failed: {:?}", err.as_ref().err());
+                    captured_error = Some(err)
+                } // capture error for possible error reporting
+                err @ Err(CollectionError::Cancelled { .. }) => {
+                    log::debug!("Remote read op. cancelled: {:?}", err.as_ref().err());
+                    captured_error = Some(err)
+                } // capture error for possible error reporting
                 err @ Err(_) => return err, // Validation or user errors reported immediately
             }
         }
@@ -563,8 +568,17 @@ impl ShardReplicaSet {
         while let Some(result) = futures.next().await {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
-                err @ Err(CollectionError::ServiceError { .. }) => captured_error = Some(err), // capture error for possible error reporting
-                err @ Err(CollectionError::Cancelled { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(CollectionError::ServiceError { .. }) => {
+                    log::debug!("Remote fallback read op. failed: {:?}", err.as_ref().err());
+                    captured_error = Some(err)
+                } // capture error for possible error reporting
+                err @ Err(CollectionError::Cancelled { .. }) => {
+                    log::debug!(
+                        "Remote fallback read op. cancelled: {:?}",
+                        err.as_ref().err()
+                    );
+                    captured_error = Some(err)
+                } // capture error for possible error reporting
                 err @ Err(_) => return err, // Validation or user errors reported immediately
             }
         }
@@ -756,11 +770,8 @@ impl ShardReplicaSet {
             )))
         }
     }
-}
 
-#[async_trait::async_trait]
-impl ShardOperation for ShardReplicaSet {
-    async fn update(
+    pub async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
@@ -818,6 +829,8 @@ impl ShardOperation for ShardReplicaSet {
             }
         };
 
+        let total_results = all_res.len();
+
         let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
         // Notify consensus about failures if:
@@ -826,27 +839,42 @@ impl ShardOperation for ShardReplicaSet {
 
         if !successes.is_empty() {
             // report all failing peers to consensus
-            for (peer_id, _err) in &failures {
+            for (peer_id, err) in &failures {
+                log::warn!(
+                    "Failed to update shard {} on peer {}, error: {:?}",
+                    self.shard_id,
+                    peer_id,
+                    err
+                );
                 self.notify_peer_failure(*peer_id);
             }
         }
 
-        return if successes.is_empty() {
-            // completely failed - report error to user
-            let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
-            Err(err)
-        } else {
-            // at least one replica succeeded
-            let res = successes
-                .into_iter()
-                .next()
-                .expect("successes is not empty");
-            Ok(res)
-        };
+        if !failures.is_empty() {
+            let write_consistency_factor = self
+                .collection_config
+                .read()
+                .await
+                .params
+                .write_consistency_factor
+                .get() as usize;
+            let minimal_success_count = write_consistency_factor.min(total_results);
+            if successes.len() < minimal_success_count {
+                // completely failed - report error to user
+                let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
+                return Err(err);
+            }
+        }
+        // there are enough successes, return the first one
+        let res = successes
+            .into_iter()
+            .next()
+            .expect("successes is not empty");
+        Ok(res)
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn scroll_by(
+    pub async fn scroll_by(
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
@@ -865,7 +893,7 @@ impl ShardOperation for ShardReplicaSet {
         .await
     }
 
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
+    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
@@ -873,7 +901,7 @@ impl ShardOperation for ShardReplicaSet {
             .await
     }
 
-    async fn search(
+    pub async fn search(
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
@@ -889,7 +917,18 @@ impl ShardOperation for ShardReplicaSet {
         .await
     }
 
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    pub async fn count_local(
+        &self,
+        request: Arc<CountRequest>,
+    ) -> CollectionResult<Option<CountResult>> {
+        let local = self.local.read().await;
+        match &*local {
+            None => Ok(None),
+            Some(shard) => Ok(Some(shard.get().count(request).await?)),
+        }
+    }
+
+    pub async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
@@ -897,7 +936,7 @@ impl ShardOperation for ShardReplicaSet {
             .await
     }
 
-    async fn retrieve(
+    pub async fn retrieve(
         &self,
         request: Arc<PointRequest>,
         with_payload: &WithPayload,

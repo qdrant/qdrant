@@ -102,6 +102,12 @@ pub struct CreateCollection {
     /// Minimum is 1
     #[serde(default)]
     pub replication_factor: Option<u32>,
+    /// Defines how many replicas should apply the operation for us to consider it successful.
+    /// Increasing this number will make the collection more resilient to inconsistencies, but will
+    /// also make it fail if not enough replicas are available.
+    /// Does not have any performance impact.
+    #[serde(default)]
+    pub write_consistency_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.

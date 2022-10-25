@@ -3274,6 +3274,7 @@ dependencies = [
  "atomicwrites",
  "chrono",
  "collection",
+ "futures",
  "http",
  "itertools",
  "log 0.4.17",

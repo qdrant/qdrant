@@ -60,7 +60,7 @@ mod tests {
             runtime,
             Default::default(),
             0,
-            propose_operation_sender,
+            Some(propose_operation_sender),
         ));
         let dispatcher = Dispatcher::new(toc);
 
@@ -81,6 +81,7 @@ mod tests {
                             shard_number: Some(1),
                             on_disk_payload: None,
                             replication_factor: None,
+                            write_consistency_factor: None,
                         },
                     )),
                     None,

@@ -10,7 +10,7 @@ use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::OnPeerFailure;
+use collection::shards::replica_set::{OnPeerFailure, ReplicaState};
 use collection::shards::CollectionId;
 use segment::types::Distance;
 
@@ -47,6 +47,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         .into(),
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
         replication_factor: NonZeroU32::new(1).unwrap(),
+        write_consistency_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,
     };
 
@@ -86,7 +87,7 @@ pub async fn new_local_collection(
     snapshots_path: &Path,
     config: &CollectionConfig,
 ) -> Result<Collection, CollectionError> {
-    Collection::new(
+    let collection = Collection::new(
         id,
         0,
         path,
@@ -97,7 +98,17 @@ pub async fn new_local_collection(
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
     )
-    .await
+    .await;
+
+    let collection = collection?;
+
+    let local_shards = collection.get_local_shards().await;
+    for shard_id in local_shards {
+        collection
+            .set_shard_replica_state(shard_id, 0, ReplicaState::Active)
+            .await?;
+    }
+    Ok(collection)
 }
 
 /// Default to a collection with all the shards local

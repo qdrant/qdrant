@@ -7,16 +7,21 @@ use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::collection_state;
-use collection::config::{default_replication_factor, CollectionConfig, CollectionParams};
+use collection::config::{
+    default_replication_factor, default_write_consistency_factor, CollectionConfig,
+    CollectionParams,
+};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
-    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
+    CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
+    RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
+    UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::validate_transfer;
 use collection::shards::{replica_set, CollectionId};
@@ -60,8 +65,8 @@ pub struct TableOfContent {
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
-    /// Backlink to the consensus
-    consensus_proposal_sender: OperationSender,
+    /// Backlink to the consensus, if none - single node mode
+    consensus_proposal_sender: Option<OperationSender>,
     is_write_locked: AtomicBool,
     lock_error_message: parking_lot::Mutex<Option<String>>,
 }
@@ -73,7 +78,7 @@ impl TableOfContent {
         search_runtime: Runtime,
         channel_service: ChannelService,
         this_peer_id: PeerId,
-        consensus_proposal_sender: OperationSender,
+        consensus_proposal_sender: Option<OperationSender>,
     ) -> Self {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
@@ -236,6 +241,7 @@ impl TableOfContent {
             wal_config: wal_config_diff,
             optimizers_config: optimizers_config_diff,
             replication_factor,
+            write_consistency_factor,
         } = operation;
 
         self.collections
@@ -257,6 +263,9 @@ impl TableOfContent {
         let replication_factor =
             replication_factor.unwrap_or_else(|| default_replication_factor().get());
 
+        let write_consistency_factor =
+            write_consistency_factor.unwrap_or_else(|| default_write_consistency_factor().get());
+
         let collection_params = CollectionParams {
             vectors,
             shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
@@ -267,6 +276,11 @@ impl TableOfContent {
             replication_factor: NonZeroU32::new(replication_factor).ok_or(
                 StorageError::BadInput {
                     description: "`replication_factor` cannot be 0".to_string(),
+                },
+            )?,
+            write_consistency_factor: NonZeroU32::new(write_consistency_factor).ok_or(
+                StorageError::BadInput {
+                    description: "`write_consistency_factor` cannot be 0".to_string(),
                 },
             )?,
         };
@@ -310,21 +324,33 @@ impl TableOfContent {
         )
         .await?;
 
-        let mut write_collections = self.collections.write().await;
-        write_collections
-            .validate_collection_not_exists(collection_name)
-            .await?;
-        write_collections.insert(collection_name.to_string(), collection);
+        let local_shards = collection.get_local_shards().await;
+
+        {
+            let mut write_collections = self.collections.write().await;
+            write_collections
+                .validate_collection_not_exists(collection_name)
+                .await?;
+            write_collections.insert(collection_name.to_string(), collection);
+        }
+
+        // Notify the collection is created and ready to use
+        for shard_id in local_shards {
+            self.on_peer_created(collection_name.to_string(), self.this_peer_id, shard_id)
+                .await?;
+        }
         Ok(true)
     }
 
-    fn on_peer_failure_callback(
-        proposal_sender: OperationSender,
+    async fn on_peer_created(
+        &self,
         collection_name: String,
-    ) -> replica_set::OnPeerFailure {
-        Arc::new(move |peer_id, shard_id| {
+        peer_id: PeerId,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        if let Some(proposal_sender) = &self.consensus_proposal_sender {
             let operation =
-                ConsensusOperations::deactivate_replica(collection_name.clone(), shard_id, peer_id);
+                ConsensusOperations::activate_replica(collection_name.clone(), shard_id, peer_id);
             if let Err(send_error) = proposal_sender.send(operation) {
                 log::error!(
                         "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
@@ -334,26 +360,64 @@ impl TableOfContent {
                         send_error
                     );
             }
+        } else {
+            // Just activate the shard
+            let collections = self.collections.read().await;
+            if let Some(collection) = collections.get(&collection_name) {
+                collection
+                    .set_shard_replica_state(shard_id, peer_id, ReplicaState::Active)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn on_peer_failure_callback(
+        proposal_sender: Option<OperationSender>,
+        collection_name: String,
+    ) -> replica_set::OnPeerFailure {
+        Arc::new(move |peer_id, shard_id| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let operation = ConsensusOperations::deactivate_replica(
+                    collection_name.clone(),
+                    shard_id,
+                    peer_id,
+                );
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
+                        peer_id,
+                        shard_id,
+                        collection_name,
+                        send_error
+                    );
+                }
+            } else {
+                log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");
+            }
         })
     }
 
     fn request_shard_transfer_callback(
-        consensus_proposal_sender: OperationSender,
+        proposal_sender: Option<OperationSender>,
         collection_name: String,
     ) -> RequestShardTransfer {
         Arc::new(move |shard_transfer| {
-            let proposal_sender = consensus_proposal_sender.clone();
-            let collection_name = collection_name.clone();
-            let to_peer = shard_transfer.to;
-            let operation =
-                ConsensusOperations::start_transfer(collection_name.clone(), shard_transfer);
-            if let Err(send_error) = proposal_sender.send(operation) {
-                log::error!(
+            if let Some(proposal_sender) = &proposal_sender {
+                let collection_name = collection_name.clone();
+                let to_peer = shard_transfer.to;
+                let operation =
+                    ConsensusOperations::start_transfer(collection_name.clone(), shard_transfer);
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
                         "Can't send proposal to request shard transfer to peer {} of collection {}. Error: {}",
                         to_peer,
                         collection_name,
                         send_error
                     );
+                }
+            } else {
+                log::error!("Can't send proposal to request shard transfer. Error: this is a single node deployment");
             }
         })
     }
@@ -457,6 +521,7 @@ impl TableOfContent {
     ) -> Result<bool, StorageError> {
         match operation {
             CollectionMetaOperations::CreateCollection(mut operation) => {
+                log::debug!("Creating collection {}", operation.collection_name);
                 let distribution = match operation.take_distribution() {
                     None => CollectionShardDistribution::all_local(
                         operation.create_collection.shard_number,
@@ -472,19 +537,26 @@ impl TableOfContent {
                 .await
             }
             CollectionMetaOperations::UpdateCollection(operation) => {
+                log::debug!("Updating collection {}", operation.collection_name);
                 self.update_collection(operation).await
             }
             CollectionMetaOperations::DeleteCollection(operation) => {
+                log::debug!("Deleting collection {}", operation.0);
                 self.delete_collection(&operation.0).await
             }
             CollectionMetaOperations::ChangeAliases(operation) => {
+                log::debug!("Changing aliases");
                 self.update_aliases(operation).await
             }
-            CollectionMetaOperations::TransferShard(collection, operation) => self
-                .handle_transfer(collection, operation)
-                .await
-                .map(|()| true),
+            CollectionMetaOperations::TransferShard(collection, operation) => {
+                log::debug!("Transfer shard {:?} of {}", operation, collection);
+
+                self.handle_transfer(collection, operation)
+                    .await
+                    .map(|()| true)
+            }
             CollectionMetaOperations::SetShardReplicaState(operation) => {
+                log::debug!("Set shard replica state {:?}", operation);
                 self.set_shard_replica_state(operation).await.map(|()| true)
             }
             CollectionMetaOperations::Nop { .. } => Ok(true),
@@ -505,13 +577,16 @@ impl TableOfContent {
     /// Cancels all transfers where the source peer is the current peer.
     pub async fn cancel_outgoing_all_transfers(&self, reason: &str) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
-        let proposal_sender = self.consensus_proposal_sender.clone();
-        for collection in collections.values() {
-            for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
-                let cancel_transfer =
-                    ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
-                proposal_sender.send(cancel_transfer)?;
+        if let Some(proposal_sender) = &self.consensus_proposal_sender {
+            for collection in collections.values() {
+                for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
+                    let cancel_transfer =
+                        ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
+                    proposal_sender.send(cancel_transfer)?;
+                }
             }
+        } else {
+            log::error!("Can't cancel outgoing transfers, this is a single node deployment");
         }
         Ok(())
     }
@@ -522,6 +597,15 @@ impl TableOfContent {
         transfer_operation: ShardTransferOperations,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection(&collection_id).await?;
+        let proposal_sender = if let Some(proposal_sender) = self.consensus_proposal_sender.clone()
+        {
+            proposal_sender
+        } else {
+            return Err(StorageError::ServiceError {
+                description: "Can't handle transfer, this is a single node deployment".to_string(),
+            });
+        };
+
         match transfer_operation {
             ShardTransferOperations::Start(transfer) => {
                 let collection_state::State {
@@ -550,20 +634,19 @@ impl TableOfContent {
 
                 validate_transfer(&transfer, &all_peers, shard_state, &transfers)?;
 
-                let proposal_sender = self.consensus_proposal_sender.clone();
                 let collection_id_clone = collection_id.clone();
                 let transfer_clone = transfer.clone();
 
+                let on_finish_sender = proposal_sender.clone();
                 let on_finish = async move {
                     let operation =
                         ConsensusOperations::finish_transfer(collection_id_clone, transfer_clone);
 
-                    if let Err(error) = proposal_sender.send(operation) {
+                    if let Err(error) = on_finish_sender.send(operation) {
                         log::error!("Can't report transfer progress to consensus: {}", error)
                     };
                 };
 
-                let proposal_sender = self.consensus_proposal_sender.clone();
                 let collection_id_clone = collection_id.clone();
                 let transfer_clone = transfer.clone();
 
@@ -876,25 +959,28 @@ impl TableOfContent {
                     // Update state if collection present locally
                     Some(collection) => {
                         if &collection.state().await != state {
-                            let proposal_sender = self.consensus_proposal_sender.clone();
-                            // In some cases on state application it might be needed to abort the transfer
-                            let abort_transfer = |transfer| {
-                                if let Err(error) =
-                                    proposal_sender.send(ConsensusOperations::abort_transfer(
-                                        id.clone(),
-                                        transfer,
-                                        "sender was not up to date",
-                                    ))
-                                {
-                                    log::error!(
-                                        "Can't report transfer progress to consensus: {}",
-                                        error
-                                    )
+                            if let Some(proposal_sender) = self.consensus_proposal_sender.clone() {
+                                // In some cases on state application it might be needed to abort the transfer
+                                let abort_transfer = |transfer| {
+                                    if let Err(error) =
+                                        proposal_sender.send(ConsensusOperations::abort_transfer(
+                                            id.clone(),
+                                            transfer,
+                                            "sender was not up to date",
+                                        ))
+                                    {
+                                        log::error!(
+                                            "Can't report transfer progress to consensus: {}",
+                                            error
+                                        )
+                                    };
                                 };
-                            };
-                            collection
-                                .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
-                                .await?;
+                                collection
+                                    .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
+                                    .await?;
+                            } else {
+                                log::error!("Can't apply state: single node mode");
+                            }
                         }
                     }
                     // Create collection if not present locally
