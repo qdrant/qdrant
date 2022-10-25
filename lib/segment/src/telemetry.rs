@@ -114,6 +114,7 @@ impl Anonymize for VectorDataConfig {
 impl Anonymize for VectorIndexSearchesTelemetry {
     fn anonymize(&self) -> Self {
         VectorIndexSearchesTelemetry {
+            links_mem: self.links_mem,
             index_name: None,
             unfiltered_plain: self.unfiltered_plain.anonymize(),
             unfiltered_hnsw: self.unfiltered_hnsw.anonymize(),
