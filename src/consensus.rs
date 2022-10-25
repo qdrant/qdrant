@@ -533,6 +533,8 @@ impl Consensus {
 
     /// Tries to process raft's ready state.
     ///
+    /// The order of operations in this functions is critical, changing it might lead to bugs.
+    ///
     /// Returns with err on failure to apply the state.
     /// If it receives message to stop the consensus - returns None instead of LightReady.
     fn process_ready(
@@ -556,14 +558,6 @@ impl Consensus {
                 .apply_snapshot(&ready.snapshot().clone())
                 .context("Failed to apply snapshot")?
         }
-        let stop_consensus =
-            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
-                .context("Failed to apply committed entries")?;
-
-        if stop_consensus {
-            return Ok((None, None));
-        }
-
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
             log::debug!("Appending {} entries to raft log", ready.entries().len());
@@ -594,6 +588,13 @@ impl Consensus {
                 log::error!("Failed to send persisted messages: {err}")
             }
         }
+        // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
+        let stop_consensus =
+            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
+                .context("Failed to apply committed entries")?;
+        if stop_consensus {
+            return Ok((None, None));
+        }
 
         // Advance the Raft.
         let light_rd = self.node.advance(ready);
@@ -601,6 +602,8 @@ impl Consensus {
     }
 
     /// Tries to process raft's light ready state.
+    ///
+    /// The order of operations in this functions is critical, changing it might lead to bugs.
     ///
     /// Returns with err on failure to apply the state.
     /// If it receives message to stop the consensus - returns `true`, otherwise `false`.
