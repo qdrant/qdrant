@@ -6,6 +6,7 @@ use parking_lot::{Mutex, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
 
+use super::graph_links::GraphLinks;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -13,8 +14,6 @@ use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::ScoredPointOffset;
-
-use super::graph_links::GraphLinks;
 
 pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;

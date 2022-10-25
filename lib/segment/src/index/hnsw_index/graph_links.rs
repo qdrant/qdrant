@@ -16,13 +16,17 @@ pub struct GraphLinks {
 
 impl GraphLinks {
     pub fn get_memsize(&self) -> usize {
-        std::mem::size_of::<Self>() + 
-            self.layers.iter().map(|layer| {
-                std::mem::size_of::<LayerData>() + 
-                    layer.links.len() * std::mem::size_of::<PointOffsetType>() +
-                    layer.offsets.len() * std::mem::size_of::<usize>()
-            }).sum::<usize>() +
-            self.reindex.len() * std::mem::size_of::<PointOffsetType>()
+        std::mem::size_of::<Self>()
+            + self
+                .layers
+                .iter()
+                .map(|layer| {
+                    std::mem::size_of::<LayerData>()
+                        + layer.links.len() * std::mem::size_of::<PointOffsetType>()
+                        + layer.offsets.len() * std::mem::size_of::<usize>()
+                })
+                .sum::<usize>()
+            + self.reindex.len() * std::mem::size_of::<PointOffsetType>()
     }
 
     pub fn from_vec(edges: &Vec<Vec<Vec<PointOffsetType>>>) -> Self {
@@ -35,10 +39,13 @@ impl GraphLinks {
         }
 
         let max_layers = edges.iter().map(|e| e.len()).max().unwrap_or(0);
-        let mut layers = vec![LayerData{
-            links: Vec::new(),
-            offsets: vec![0],
-        }; max_layers];
+        let mut layers = vec![
+            LayerData {
+                links: Vec::new(),
+                offsets: vec![0],
+            };
+            max_layers
+        ];
 
         for i in 0..edges.len() {
             // layer 0
@@ -59,7 +66,10 @@ impl GraphLinks {
             }
         }
 
-        GraphLinks { layers, reindex: back_index }
+        GraphLinks {
+            layers,
+            reindex: back_index,
+        }
     }
 
     pub fn to_vec(&self) -> Vec<Vec<Vec<PointOffsetType>>> {

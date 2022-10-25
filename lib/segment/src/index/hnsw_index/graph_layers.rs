@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+use super::graph_links::GraphLinks;
 use crate::common::file_operations::{atomic_save_bin, read_bin};
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
@@ -14,8 +15,6 @@ use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::PointOffsetType;
 use crate::vector_storage::ScoredPointOffset;
-
-use super::graph_links::GraphLinks;
 
 pub type LinkContainer = Vec<PointOffsetType>;
 pub type LinkContainerRef<'a> = &'a [PointOffsetType];
