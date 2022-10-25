@@ -184,8 +184,8 @@ message CollectionParams {
   uint32 shard_number = 3; // Number of shards in collection
   bool on_disk_payload = 4; // If true - point's payload will not be stored in memory
   optional VectorsConfig vectors_config = 5; // Configuration for vectors
-  uint32 replication_factor = 6; // Number of replicas of each shard that network tries to maintain
-  uint32 write_consistency_factor = 7; // How many replicas should apply the operation for us to consider it successful
+  optional uint32 replication_factor = 6; // Number of replicas of each shard that network tries to maintain
+  optional uint32 write_consistency_factor = 7; // How many replicas should apply the operation for us to consider it successful
 }
 
 message CollectionParamsDiff {

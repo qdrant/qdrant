@@ -8,7 +8,10 @@ use segment::types::Distance;
 use tonic::Status;
 
 use super::config_diff::CollectionParamsDiff;
-use crate::config::{CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig};
+use crate::config::{
+    default_replication_factor, default_write_consistency_factor, CollectionConfig,
+    CollectionParams, VectorParams, VectorsConfig, WalConfig,
+};
 use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
@@ -137,9 +140,9 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         Some(api::grpc::qdrant::VectorsConfig { config })
                     },
                     shard_number: config.params.shard_number.get(),
-                    replication_factor: config.params.replication_factor.get(),
+                    replication_factor: Some(config.params.replication_factor.get()),
                     on_disk_payload: config.params.on_disk_payload,
-                    write_consistency_factor: config.params.write_consistency_factor.get(),
+                    write_consistency_factor: Some(config.params.write_consistency_factor.get()),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(config.hnsw_config.m as u64),
@@ -297,13 +300,22 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     shard_number: NonZeroU32::new(params.shard_number)
                         .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
                     on_disk_payload: params.on_disk_payload,
-                    replication_factor: NonZeroU32::new(params.replication_factor).ok_or_else(
-                        || Status::invalid_argument("`replication_factor` cannot be zero"),
-                    )?,
-                    write_consistency_factor: NonZeroU32::new(params.write_consistency_factor)
-                        .ok_or_else(|| {
-                            Status::invalid_argument("`write_consistency_factor` cannot be zero")
-                        })?,
+                    replication_factor: NonZeroU32::new(
+                        params
+                            .replication_factor
+                            .unwrap_or_else(|| default_replication_factor().get()),
+                    )
+                    .ok_or_else(|| {
+                        Status::invalid_argument("`replication_factor` cannot be zero")
+                    })?,
+                    write_consistency_factor: NonZeroU32::new(
+                        params
+                            .write_consistency_factor
+                            .unwrap_or_else(|| default_write_consistency_factor().get()),
+                    )
+                    .ok_or_else(|| {
+                        Status::invalid_argument("`write_consistency_factor` cannot be zero")
+                    })?,
                 },
             },
             hnsw_config: match config.hnsw_config {
