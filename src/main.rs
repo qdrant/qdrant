@@ -113,8 +113,13 @@ fn main() -> anyhow::Result<()> {
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
 
-    // High-level channel which could be used to send User-space consensus operations
-    let propose_operation_sender = OperationSender::new(propose_sender);
+    let propose_operation_sender = if settings.cluster.enabled {
+        // High-level channel which could be used to send User-space consensus operations
+        Some(OperationSender::new(propose_sender))
+    } else {
+        // We don't need sender for the single-node mode
+        None
+    };
 
     // Saved state of the consensus.
     let persistent_consensus_state =
@@ -163,24 +168,23 @@ fn main() -> anyhow::Result<()> {
     // Router for external queries.
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
-    let consensus_state: ConsensusStateRef = ConsensusState::new(
-        persistent_consensus_state,
-        toc_arc.clone(),
-        propose_operation_sender,
-        storage_path,
-    )
-    .into();
 
-    if settings.cluster.enabled {
+    let (telemetry_collector, dispatcher_arc) = if settings.cluster.enabled {
+        let consensus_state: ConsensusStateRef = ConsensusState::new(
+            persistent_consensus_state,
+            toc_arc.clone(),
+            propose_operation_sender.unwrap(),
+            storage_path,
+        )
+        .into();
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
-    }
-    let dispatcher_arc = Arc::new(dispatcher);
 
-    // Monitoring and telemetry.
-    let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
-    let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+        let dispatcher_arc = Arc::new(dispatcher);
 
-    if settings.cluster.enabled {
+        // Monitoring and telemetry.
+        let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+        let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
         // logs from it to `log` crate
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
@@ -199,7 +203,7 @@ fn main() -> anyhow::Result<()> {
             settings.cluster.consensus.clone(),
             channel_service,
             propose_receiver,
-            tonic_telemetry_collector.clone(),
+            tonic_telemetry_collector,
             toc_arc.clone(),
         )
         .expect("Can't initialize consensus");
@@ -221,9 +225,17 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         });
+        (telemetry_collector, dispatcher_arc)
     } else {
         log::info!("Distributed mode disabled");
-    }
+        let dispatcher_arc = Arc::new(dispatcher);
+
+        // Monitoring and telemetry.
+        let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+        (telemetry_collector, dispatcher_arc)
+    };
+
+    let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
     #[cfg(feature = "web")]
     {

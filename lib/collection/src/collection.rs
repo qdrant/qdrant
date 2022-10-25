@@ -48,7 +48,6 @@ use crate::shards::replica_set::{
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
-use crate::shards::shard_trait::ShardOperation;
 use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
     change_remote_shard_route, finalize_partial_shard, handle_transferred_shard_proxy,
@@ -256,6 +255,32 @@ impl Collection {
         }
     }
 
+    /// Return a list of local shards, present on this peer
+    pub async fn get_local_shards(&self) -> Vec<ShardId> {
+        let shards_holder = self.shards_holder.read().await;
+        let mut res = vec![];
+        for (shard_id, replica_set) in shards_holder.get_shards() {
+            if replica_set.has_local_shard().await {
+                res.push(*shard_id);
+            }
+        }
+        res
+    }
+
+    pub async fn is_all_active(&self) -> bool {
+        let shards_holder = self.shards_holder.read().await;
+        for (_, replica_set) in shards_holder.get_shards() {
+            if !replica_set
+                .peers()
+                .into_iter()
+                .all(|(_, state)| state == ReplicaState::Active)
+            {
+                return false;
+            }
+        }
+        true
+    }
+
     pub async fn set_shard_replica_state(
         &self,
         shard_id: ShardId,
@@ -269,6 +294,29 @@ impl Collection {
                 .ok_or_else(|| CollectionError::NotFound {
                     what: format!("Shard {shard_id}"),
                 })?;
+
+        // Validation:
+        // 1. Do not deactivate the last active replica
+
+        if state != ReplicaState::Active {
+            let active_replicas: HashSet<_> = replica_set
+                .peers()
+                .into_iter()
+                .filter_map(|(peer, state)| {
+                    if state == ReplicaState::Active {
+                        Some(peer)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if active_replicas.len() == 1 && active_replicas.contains(&peer_id) {
+                return Err(CollectionError::bad_input(format!(
+                    "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
+                )));
+            }
+        }
+
         replica_set.set_replica_state(&peer_id, state)?;
 
         // Try to request shard transfer if replicas on the current peer are dead
@@ -434,7 +482,12 @@ impl Collection {
         if self.this_peer_id == transfer.to {
             let shard_promoted =
                 finalize_partial_shard(&shards_holder_guard, transfer.shard_id).await?;
-            log::debug!("shard_promoted: {}", shard_promoted);
+            log::debug!(
+                "shard_promoted: {}, shard_id: {}, peer_id: {}",
+                shard_promoted,
+                transfer.shard_id,
+                self.this_peer_id
+            );
         }
 
         // Should happen on a third-party side
@@ -580,7 +633,7 @@ impl Collection {
 
             let shard_requests = shard_to_op
                 .into_iter()
-                .map(move |(shard, operation)| shard.update(operation, wait));
+                .map(move |(replica_set, operation)| replica_set.update(operation, wait));
             join_all(shard_requests).await
         };
 
@@ -1239,8 +1292,8 @@ impl Collection {
                     .get(&replica_set.this_peer_id())
                     .copied()
                     .unwrap_or(ReplicaState::Dead);
-                let count_result = replica_set.count(count_request.clone()).await?;
-                let points_count = count_result.count;
+                let count_result = replica_set.count_local(count_request.clone()).await?;
+                let points_count = count_result.map(|x| x.count).unwrap_or(0);
                 local_shards.push(LocalShardInfo {
                     shard_id,
                     points_count,

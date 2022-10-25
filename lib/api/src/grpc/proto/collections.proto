@@ -158,6 +158,7 @@ message CreateCollection {
   optional uint64 timeout = 9; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
   optional VectorsConfig vectors_config = 10; // Configuration for vectors
   optional uint32 replication_factor = 11; // Number of replicas of each shard that network tries to maintain, default = 1
+  optional uint32 write_consistency_factor = 12; // How many replicas should apply the operation for us to consider it successful, default = 1
 }
 
 message UpdateCollection {
@@ -184,10 +185,12 @@ message CollectionParams {
   bool on_disk_payload = 4; // If true - point's payload will not be stored in memory
   optional VectorsConfig vectors_config = 5; // Configuration for vectors
   uint32 replication_factor = 6; // Number of replicas of each shard that network tries to maintain
+  uint32 write_consistency_factor = 7; // How many replicas should apply the operation for us to consider it successful
 }
 
 message CollectionParamsDiff {
   optional uint32 replication_factor = 1; // Number of replicas of each shard that network tries to maintain
+  optional uint32 write_consistency_factor = 2; // How many replicas should apply the operation for us to consider it successful
 }
 
 message CollectionConfig {

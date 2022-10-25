@@ -257,7 +257,7 @@ def check_some_replicas_not_active(peer_api_uri: str, collection_name: str) -> b
     return not check_all_replicas_active(peer_api_uri, collection_name)
 
 
-WAIT_TIME_SEC = 60
+WAIT_TIME_SEC = 15
 RETRY_INTERVAL_SEC = 0.5
 
 
@@ -325,3 +325,24 @@ def wait_for(condition: Callable[..., bool], *args):
                 f"Timeout waiting for condition {condition.__name__} to be satisfied in {WAIT_TIME_SEC} seconds")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
+
+
+def wait_collection_on_all_peers(collection_name: str, peer_api_uris: [str], max_wait=30):
+    # Check that it exists on all peers
+    while True:
+        exists = True
+        for url in peer_api_uris:
+            r = requests.get(f"{url}/collections")
+            assert r.status_code == 200
+            collections = r.json()["result"]["collections"]
+            exists &= any(collection["name"] == collection_name for collection in collections)
+        if exists:
+            break
+        else:
+            # Wait until collection is created on all peers
+            # Consensus guarantees that collection will appear on majority of peers, but not on all of them
+            # So we need to wait a bit extra time
+            time.sleep(1)
+            max_wait -= 1
+        if max_wait <= 0:
+            raise Exception("Collection was not created on all peers in time")

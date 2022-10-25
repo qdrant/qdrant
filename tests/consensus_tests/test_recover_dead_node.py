@@ -27,10 +27,10 @@ def upsert_points(peer_url, city):
     assert_http_ok(r_batch)
 
 
-def create_collection(peer_url, collection="test_collection"):
+def create_collection(peer_url, collection="test_collection", timeout=10):
     # Create collection in first peer
     r_batch = requests.put(
-        f"{peer_url}/collections/{collection}", json={
+        f"{peer_url}/collections/{collection}?timeout={timeout}", json={
             "vectors": {
                 "size": 4,
                 "distance": "Dot"
@@ -65,6 +65,10 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0])
+    wait_collection_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    for peer_uri in peer_api_uris:
+        # Collection is active on all peers
+        wait_for_all_replicas_active(collection_name="test_collection", peer_api_uri=peer_uri)
     upsert_points(peer_api_uris[0], "Paris")
 
     search_result = search(peer_api_uris[0], "Paris")
@@ -91,7 +95,7 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
 
     # Apply cluster update operation to leaving part of the cluster
     # 2 nodes majority should be enough for applying the status
-    create_collection(peer_api_uris[0], "test_collection2")
+    create_collection(peer_api_uris[0], "test_collection2", timeout=1)
 
     new_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_uri)
 
@@ -109,8 +113,4 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
     # Assert the replication is consistent regardless of the entry point.
     assert search(peer_api_uris[0], "Paris") == search(new_url, "Paris")
 
-    # check new collection exists on a recovered node
-    res = requests.get(f"{new_url}/collections")
-    assert_http_ok(res)
-
-    assert len(res.json()["result"]["collections"]) == 2
+    wait_collection_on_all_peers("test_collection2", peer_api_uris[:-2] + [new_url])

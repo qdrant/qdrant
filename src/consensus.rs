@@ -385,13 +385,9 @@ impl Consensus {
                 if message.get_msg_type() == MessageType::MsgHeartbeat
                     || message.get_msg_type() == MessageType::MsgHeartbeatResponse
                 {
-                    log::trace!(
-                        "Received a message from peer with progress: {:?}. Message: {:?}",
-                        self.node.raft.prs().get(message.from),
-                        message
-                    );
+                    // Do not log heartbeat messages
                 } else {
-                    log::debug!(
+                    log::trace!(
                         "Received a message from peer with progress: {:?}. Message: {:?}",
                         self.node.raft.prs().get(message.from),
                         message
@@ -429,7 +425,7 @@ impl Consensus {
                                 return Ok(());
                             }
                         };
-                        log::debug!("Proposing entry from client with length: {}", message.len());
+                        log::trace!("Proposing entry from client with length: {}", message.len());
                         self.node.propose(vec![], message)
                     }
                 };
@@ -533,6 +529,8 @@ impl Consensus {
 
     /// Tries to process raft's ready state.
     ///
+    /// The order of operations in this functions is critical, changing it might lead to bugs.
+    ///
     /// Returns with err on failure to apply the state.
     /// If it receives message to stop the consensus - returns None instead of LightReady.
     fn process_ready(
@@ -546,7 +544,7 @@ impl Consensus {
             log::trace!("Handling {} messages", ready.messages().len());
             if let Err(err) = self.send_messages(ready.take_messages(), peer_address_by_id.clone())
             {
-                log::error!("Failed to send messages: {err}")
+                log::warn!("Failed to send messages: {err}")
             }
         }
         if !ready.snapshot().is_empty() {
@@ -556,14 +554,6 @@ impl Consensus {
                 .apply_snapshot(&ready.snapshot().clone())
                 .context("Failed to apply snapshot")?
         }
-        let stop_consensus =
-            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
-                .context("Failed to apply committed entries")?;
-
-        if stop_consensus {
-            return Ok((None, None));
-        }
-
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
             log::debug!("Appending {} entries to raft log", ready.entries().len());
@@ -594,6 +584,13 @@ impl Consensus {
                 log::error!("Failed to send persisted messages: {err}")
             }
         }
+        // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
+        let stop_consensus =
+            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
+                .context("Failed to apply committed entries")?;
+        if stop_consensus {
+            return Ok((None, None));
+        }
 
         // Advance the Raft.
         let light_rd = self.node.advance(ready);
@@ -601,6 +598,8 @@ impl Consensus {
     }
 
     /// Tries to process raft's light ready state.
+    ///
+    /// The order of operations in this functions is critical, changing it might lead to bugs.
     ///
     /// Returns with err on failure to apply the state.
     /// If it receives message to stop the consensus - returns `true`, otherwise `false`.
@@ -615,7 +614,7 @@ impl Consensus {
                 .context("Failed to set commit index")?;
         }
         if let Err(err) = self.send_messages(light_rd.take_messages(), peer_address_by_id) {
-            log::error!("Failed to send messages: {err}")
+            log::warn!("Failed to send messages: {err}")
         }
         // Apply all committed entries.
         let stop_consensus =
@@ -790,7 +789,7 @@ mod tests {
             runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
-            operation_sender.clone(),
+            Some(operation_sender.clone()),
         );
         let toc_arc = Arc::new(toc);
         let storage_path = toc_arc.storage_path();
@@ -855,6 +854,7 @@ mod tests {
                             shard_number: Some(2),
                             on_disk_payload: None,
                             replication_factor: None,
+                            write_consistency_factor: None,
                         },
                     )),
                     None,
@@ -863,7 +863,7 @@ mod tests {
             .unwrap();
 
         // Then
-        assert_eq!(consensus_state.hard_state().commit, 3); // Collection + Nop
+        assert_eq!(consensus_state.hard_state().commit, 5); // Collection + Nop + 2 of shard activations
         assert_eq!(toc_arc.all_collections_sync(), vec!["test"]);
     }
 }
