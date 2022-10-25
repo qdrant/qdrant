@@ -1,7 +1,6 @@
 import pathlib
 
 from .utils import *
-from .assertions import assert_http_ok
 
 N_PEERS = 3
 N_SHARDS = 4
@@ -57,9 +56,7 @@ def search(peer_url, city):
             ]
         }
     }
-    r_search = requests.post(f"{peer_url}/collections/test_collection/points/search", json=q)
-    assert_http_ok(r_search)
-    return r_search.json()["result"]
+    return requests.post(f"{peer_url}/collections/test_collection/points/search", json=q).json()["result"]
 
 
 def test_recover_dead_node(tmp_path: pathlib.Path):
@@ -68,7 +65,10 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0])
-    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    wait_collection_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    for peer_uri in peer_api_uris:
+        # Collection is active on all peers
+        wait_for_all_replicas_active(collection_name="test_collection", peer_api_uri=peer_uri)
     upsert_points(peer_api_uris[0], "Paris")
 
     search_result = search(peer_api_uris[0], "Paris")
@@ -95,7 +95,7 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
 
     # Apply cluster update operation to leaving part of the cluster
     # 2 nodes majority should be enough for applying the status
-    create_collection(peer_api_uris[0], "test_collection2", timeout=5)
+    create_collection(peer_api_uris[0], "test_collection2", timeout=1)
 
     new_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_uri)
 

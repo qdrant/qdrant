@@ -1,7 +1,6 @@
 import pathlib
 
 from .utils import *
-from .assertions import assert_http_ok
 
 N_PEERS = 3
 N_SHARDS = 4
@@ -70,7 +69,7 @@ def test_remove_node(tmp_path: pathlib.Path):
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0])
-    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    wait_collection_on_all_peers("test_collection", peer_api_uris)
 
     upsert_points(peer_api_uris[0], "Paris")
 
