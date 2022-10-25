@@ -140,7 +140,7 @@ impl ConsensusOpWal {
             if let Some(operation) = operation_opt {
                 let term = entry.term;
                 log::debug!(
-                    "Appending operation: term: {term}, index: {index} {operation:?}, entry: "
+                    "Appending operation: term: {term}, index: {index} entry: {operation:?}"
                 );
             } else {
                 log::debug!("Appending entry: {entry:?}");

@@ -38,6 +38,7 @@ use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
 pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
 const READ_REMOTE_REPLICAS: u32 = 2;
 
@@ -172,10 +173,10 @@ impl ShardReplicaSet {
             rs.this_peer_id = this_peer_id;
             if local.is_some() {
                 rs.is_local = true;
-                rs.peers.insert(this_peer_id, ReplicaState::Active);
+                rs.peers.insert(this_peer_id, ReplicaState::Partial);
             }
             for peer in remotes {
-                rs.peers.insert(peer, ReplicaState::Active);
+                rs.peers.insert(peer, ReplicaState::Dead);
             }
         })?;
 
@@ -466,7 +467,7 @@ impl ShardReplicaSet {
         self.replica_state.read().peers.get(peer_id).copied()
     }
 
-    /// Execute read operation on replica set:
+    /// Execute read op. on replica set:
     /// 1 - Prefer local replica
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
     /// 3 - Fallbacks to all remaining shards if the optimisations fails.
@@ -489,9 +490,11 @@ impl ShardReplicaSet {
                 match read_operation_res {
                     Ok(_) => return read_operation_res,
                     res @ Err(CollectionError::ServiceError { .. }) => {
+                        log::debug!("Local read op. failed: {:?}", res.as_ref().err());
                         local_result = Some(res);
                     }
                     res @ Err(CollectionError::Cancelled { .. }) => {
+                        log::debug!("Local read op. cancelled: {:?}", res.as_ref().err());
                         local_result = Some(res);
                     }
                     res @ Err(_) => {
@@ -538,8 +541,14 @@ impl ShardReplicaSet {
         while let Some(result) = futures.next().await {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
-                err @ Err(CollectionError::ServiceError { .. }) => captured_error = Some(err), // capture error for possible error reporting
-                err @ Err(CollectionError::Cancelled { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(CollectionError::ServiceError { .. }) => {
+                    log::debug!("Remote read op. failed: {:?}", err.as_ref().err());
+                    captured_error = Some(err)
+                } // capture error for possible error reporting
+                err @ Err(CollectionError::Cancelled { .. }) => {
+                    log::debug!("Remote read op. cancelled: {:?}", err.as_ref().err());
+                    captured_error = Some(err)
+                } // capture error for possible error reporting
                 err @ Err(_) => return err, // Validation or user errors reported immediately
             }
         }
@@ -559,8 +568,17 @@ impl ShardReplicaSet {
         while let Some(result) = futures.next().await {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
-                err @ Err(CollectionError::ServiceError { .. }) => captured_error = Some(err), // capture error for possible error reporting
-                err @ Err(CollectionError::Cancelled { .. }) => captured_error = Some(err), // capture error for possible error reporting
+                err @ Err(CollectionError::ServiceError { .. }) => {
+                    log::debug!("Remote fallback read op. failed: {:?}", err.as_ref().err());
+                    captured_error = Some(err)
+                } // capture error for possible error reporting
+                err @ Err(CollectionError::Cancelled { .. }) => {
+                    log::debug!(
+                        "Remote fallback read op. cancelled: {:?}",
+                        err.as_ref().err()
+                    );
+                    captured_error = Some(err)
+                } // capture error for possible error reporting
                 err @ Err(_) => return err, // Validation or user errors reported immediately
             }
         }

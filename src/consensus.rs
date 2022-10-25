@@ -385,13 +385,9 @@ impl Consensus {
                 if message.get_msg_type() == MessageType::MsgHeartbeat
                     || message.get_msg_type() == MessageType::MsgHeartbeatResponse
                 {
-                    log::trace!(
-                        "Received a message from peer with progress: {:?}. Message: {:?}",
-                        self.node.raft.prs().get(message.from),
-                        message
-                    );
+                    // Do not log heartbeat messages
                 } else {
-                    log::debug!(
+                    log::trace!(
                         "Received a message from peer with progress: {:?}. Message: {:?}",
                         self.node.raft.prs().get(message.from),
                         message
@@ -429,7 +425,7 @@ impl Consensus {
                                 return Ok(());
                             }
                         };
-                        log::debug!("Proposing entry from client with length: {}", message.len());
+                        log::trace!("Proposing entry from client with length: {}", message.len());
                         self.node.propose(vec![], message)
                     }
                 };
@@ -548,7 +544,7 @@ impl Consensus {
             log::trace!("Handling {} messages", ready.messages().len());
             if let Err(err) = self.send_messages(ready.take_messages(), peer_address_by_id.clone())
             {
-                log::error!("Failed to send messages: {err}")
+                log::warn!("Failed to send messages: {err}")
             }
         }
         if !ready.snapshot().is_empty() {
@@ -618,7 +614,7 @@ impl Consensus {
                 .context("Failed to set commit index")?;
         }
         if let Err(err) = self.send_messages(light_rd.take_messages(), peer_address_by_id) {
-            log::error!("Failed to send messages: {err}")
+            log::warn!("Failed to send messages: {err}")
         }
         // Apply all committed entries.
         let stop_consensus =
@@ -793,7 +789,7 @@ mod tests {
             runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
-            operation_sender.clone(),
+            Some(operation_sender.clone()),
         );
         let toc_arc = Arc::new(toc);
         let storage_path = toc_arc.storage_path();

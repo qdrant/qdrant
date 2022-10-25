@@ -60,7 +60,7 @@ mod tests {
             runtime,
             Default::default(),
             0,
-            propose_operation_sender,
+            Some(propose_operation_sender),
         ));
         let dispatcher = Dispatcher::new(toc);
 

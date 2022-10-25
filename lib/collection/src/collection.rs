@@ -255,6 +255,28 @@ impl Collection {
         }
     }
 
+    /// Return a list of local shards, present on this peer
+    pub async fn get_local_shards(&self) -> Vec<ShardId> {
+        let shards_holder = self.shards_holder.read().await;
+        let mut res = vec![];
+        for (shard_id, replica_set) in shards_holder.get_shards() {
+            if replica_set.has_local_shard().await {
+                res.push(*shard_id);
+            }
+        }
+        res
+    }
+
+    pub async fn is_all_active(&self) -> bool {
+        let shards_holder = self.shards_holder.read().await;
+        for (_, replica_set) in shards_holder.get_shards() {
+            if !replica_set.peers().into_iter().all(|(_, state)| state == ReplicaState::Active) {
+                return false;
+            }
+        }
+        true
+    }
+
     pub async fn set_shard_replica_state(
         &self,
         shard_id: ShardId,
@@ -456,7 +478,12 @@ impl Collection {
         if self.this_peer_id == transfer.to {
             let shard_promoted =
                 finalize_partial_shard(&shards_holder_guard, transfer.shard_id).await?;
-            log::debug!("shard_promoted: {}", shard_promoted);
+            log::debug!(
+                "shard_promoted: {}, shard_id: {}, peer_id: {}",
+                shard_promoted,
+                transfer.shard_id,
+                self.this_peer_id
+            );
         }
 
         // Should happen on a third-party side

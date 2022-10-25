@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
+use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,12 +10,14 @@ use chrono::Utc;
 use collection::collection_state;
 use collection::shards::shard::PeerId;
 use collection::shards::CollectionId;
+use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::Receiver;
+use tokio::time::error::Elapsed;
 use tonic::transport::Uri;
 
 use super::alias_mapping::AliasMapping;
@@ -105,7 +108,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
             .or_insert_with(Default::default);
         // Log only first error
         if entry.count == 0 {
-            log::error!("Failed to send message to {peer_address} with error: {error}")
+            log::warn!("Failed to send message to {peer_address} with error: {error}")
         }
         entry.count += 1;
         entry.latest_error = Some(error.to_string());
@@ -350,7 +353,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     EntryType::EntryConfChangeV2 => {
                         match self.apply_conf_change_entry(&entry, raw_node) {
                             Ok(stop_consensus) => {
-                                log::debug!(
+                                log::trace!(
                                     "Successfully applied configuration change entry. Index: {}.",
                                     entry.index
                                 );
@@ -483,6 +486,36 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 },
                 // ??? - forwards 2 possible errors: sender dropped, operation failed
             )??
+    }
+
+    pub fn await_for_multiple_operations(
+        &self,
+        operations: Vec<ConsensusOperations>,
+        wait_timeout: Option<Duration>,
+    ) -> impl Future<Output = Result<Result<(), StorageError>, Elapsed>> {
+        let mut receivers = vec![];
+        for operation in operations {
+            let (sender, receiver) = oneshot::channel();
+            self.on_consensus_op_apply.lock().insert(operation, sender);
+            receivers.push(receiver);
+        }
+
+        async move {
+            let await_for_all = join_all(receivers);
+            let results =
+                tokio::time::timeout(wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT), await_for_all)
+                    .await?;
+            for result in results {
+                match result {
+                    Ok(response_res) => match response_res {
+                        Ok(_) => {}
+                        Err(err) => return Ok(Err(err)),
+                    },
+                    Err(recv_error) => return Ok(Err(recv_error.into())),
+                }
+            }
+            Ok(Ok(()))
+        }
     }
 
     pub async fn propose_consensus_op_with_await(
