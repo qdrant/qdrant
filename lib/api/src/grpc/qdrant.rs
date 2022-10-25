@@ -227,11 +227,11 @@ pub struct CollectionParams {
     #[prost(message, optional, tag="5")]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
     /// Number of replicas of each shard that network tries to maintain
-    #[prost(uint32, tag="6")]
-    pub replication_factor: u32,
+    #[prost(uint32, optional, tag="6")]
+    pub replication_factor: ::core::option::Option<u32>,
     /// How many replicas should apply the operation for us to consider it successful
-    #[prost(uint32, tag="7")]
-    pub write_consistency_factor: u32,
+    #[prost(uint32, optional, tag="7")]
+    pub write_consistency_factor: ::core::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParamsDiff {
