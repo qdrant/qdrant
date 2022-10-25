@@ -77,7 +77,7 @@ pub mod consensus_ops {
                     peer_id,
                     state: ReplicaState::Active,
                 })
-                    .into(),
+                .into(),
             )
         }
 

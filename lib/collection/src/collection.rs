@@ -270,7 +270,11 @@ impl Collection {
     pub async fn is_all_active(&self) -> bool {
         let shards_holder = self.shards_holder.read().await;
         for (_, replica_set) in shards_holder.get_shards() {
-            if !replica_set.peers().into_iter().all(|(_, state)| state == ReplicaState::Active) {
+            if !replica_set
+                .peers()
+                .into_iter()
+                .all(|(_, state)| state == ReplicaState::Active)
+            {
                 return false;
             }
         }
