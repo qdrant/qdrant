@@ -53,8 +53,10 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
 
 pub struct SimpleIdTracker {
     internal_to_external: HashMap<PointOffsetType, PointIdType>,
-    external_to_internal: BTreeMap<PointIdType, PointOffsetType>,
-    external_to_version: HashMap<PointIdType, SeqNumberType>,
+    external_to_internal_num: BTreeMap<u64, PointOffsetType>,
+    external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
+    external_to_version_num: HashMap<u64, SeqNumberType>,
+    external_to_version_uuid: HashMap<Uuid, SeqNumberType>,
     max_internal_id: PointOffsetType,
     mapping_db_wrapper: DatabaseColumnWrapper,
     versions_db_wrapper: DatabaseColumnWrapper,
@@ -63,8 +65,10 @@ pub struct SimpleIdTracker {
 impl SimpleIdTracker {
     pub fn open(store: Arc<RwLock<DB>>) -> OperationResult<Self> {
         let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
-        let mut external_to_internal: BTreeMap<PointIdType, PointOffsetType> = Default::default();
-        let mut external_to_version: HashMap<PointIdType, SeqNumberType> = Default::default();
+        let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
+        let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
+        let mut external_to_version_num: HashMap<u64, SeqNumberType> = Default::default();
+        let mut external_to_version_uuid: HashMap<Uuid, SeqNumberType> = Default::default();
         let mut max_internal_id = 0;
 
         let mapping_db_wrapper = DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF);
@@ -81,9 +85,23 @@ impl SimpleIdTracker {
                     external_id,
                     replaced_id
                 );
-                external_to_internal.remove(&replaced_id);
+                match external_id {
+                    PointIdType::NumId(idx) => {
+                        external_to_internal_num.remove(&idx);
+                    }
+                    PointIdType::Uuid(uuid) => {
+                        external_to_internal_uuid.remove(&uuid);
+                    }
+                }
             }
-            external_to_internal.insert(external_id, internal_id);
+            match external_id {
+                PointIdType::NumId(idx) => {
+                    external_to_internal_num.insert(idx, internal_id);
+                }
+                PointIdType::Uuid(uuid) => {
+                    external_to_internal_uuid.insert(uuid, internal_id);
+                }
+            }
             max_internal_id = max_internal_id.max(internal_id);
         }
 
@@ -91,13 +109,22 @@ impl SimpleIdTracker {
         for (key, val) in versions_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let version: SeqNumberType = bincode::deserialize(&val).unwrap();
-            external_to_version.insert(external_id, version);
+            match external_id {
+                PointIdType::NumId(idx) => {
+                    external_to_version_num.insert(idx, version);
+                }
+                PointIdType::Uuid(uuid) => {
+                    external_to_version_uuid.insert(uuid, version);
+                }
+            }
         }
 
         Ok(SimpleIdTracker {
             internal_to_external,
-            external_to_internal,
-            external_to_version,
+            external_to_internal_num,
+            external_to_internal_uuid,
+            external_to_version_num,
+            external_to_version_uuid,
             max_internal_id,
             mapping_db_wrapper,
             versions_db_wrapper,
@@ -116,7 +143,10 @@ impl SimpleIdTracker {
 
 impl IdTracker for SimpleIdTracker {
     fn version(&self, external_id: PointIdType) -> Option<SeqNumberType> {
-        self.external_to_version.get(&external_id).copied()
+        match external_id {
+            PointIdType::NumId(idx) => self.external_to_version_num.get(&idx).copied(),
+            PointIdType::Uuid(uuid) => self.external_to_version_uuid.get(&uuid).copied(),
+        }
     }
 
     fn set_version(
@@ -124,7 +154,14 @@ impl IdTracker for SimpleIdTracker {
         external_id: PointIdType,
         version: SeqNumberType,
     ) -> OperationResult<()> {
-        self.external_to_version.insert(external_id, version);
+        match external_id {
+            PointIdType::NumId(idx) => {
+                self.external_to_version_num.insert(idx, version);
+            }
+            PointIdType::Uuid(uuid) => {
+                self.external_to_version_uuid.insert(uuid, version);
+            }
+        }
         self.versions_db_wrapper.put(
             &Self::store_key(&external_id),
             &bincode::serialize(&version).unwrap(),
@@ -133,7 +170,10 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        self.external_to_internal.get(&external_id).copied()
+        match external_id {
+            PointIdType::NumId(idx) => self.external_to_internal_num.get(&idx).copied(),
+            PointIdType::Uuid(uuid) => self.external_to_internal_uuid.get(&uuid).copied(),
+        }
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
@@ -145,7 +185,14 @@ impl IdTracker for SimpleIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
-        self.external_to_internal.insert(external_id, internal_id);
+        match external_id {
+            PointIdType::NumId(idx) => {
+                self.external_to_internal_num.insert(idx, internal_id);
+            }
+            PointIdType::Uuid(uuid) => {
+                self.external_to_internal_uuid.insert(uuid, internal_id);
+            }
+        }
         self.internal_to_external.insert(internal_id, external_id);
         self.max_internal_id = self.max_internal_id.max(internal_id);
 
@@ -157,9 +204,18 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        self.external_to_version.remove(&external_id);
-
-        let internal_id = self.external_to_internal.remove(&external_id);
+        match &external_id {
+            PointIdType::NumId(idx) => {
+                self.external_to_version_num.remove(idx);
+            }
+            PointIdType::Uuid(uuid) => {
+                self.external_to_version_uuid.remove(uuid);
+            }
+        }
+        let internal_id = match &external_id {
+            PointIdType::NumId(idx) => self.external_to_internal_num.remove(idx),
+            PointIdType::Uuid(uuid) => self.external_to_internal_uuid.remove(uuid),
+        };
         match internal_id {
             Some(x) => self.internal_to_external.remove(&x),
             None => None,
@@ -172,7 +228,18 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        Box::new(self.external_to_internal.keys().copied())
+        let iter_num = self
+            .external_to_internal_num
+            .keys()
+            .copied()
+            .map(|k| PointIdType::NumId(k));
+        let iter_uuid = self
+            .external_to_internal_uuid
+            .keys()
+            .copied()
+            .map(|k| PointIdType::Uuid(k));
+        // order is important here, we want to iterate over the u64 ids first
+        Box::new(iter_num.chain(iter_uuid))
     }
 
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -183,12 +250,48 @@ impl IdTracker for SimpleIdTracker {
         &self,
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let range = match external_id {
-            None => self.external_to_internal.range(..),
-            Some(offset) => self.external_to_internal.range(offset..),
+        let full_num_iter = || {
+            self.external_to_internal_num
+                .iter()
+                .map(|(k, v)| (PointIdType::NumId(*k), *v))
+        };
+        let offset_num_iter = |offset: u64| {
+            self.external_to_internal_num
+                .range(offset..)
+                .map(|(k, v)| (PointIdType::NumId(*k), *v))
+        };
+        let full_uuid_iter = || {
+            self.external_to_internal_uuid
+                .iter()
+                .map(|(k, v)| (PointIdType::Uuid(*k), *v))
+        };
+        let offset_uuid_iter = |offset: Uuid| {
+            self.external_to_internal_uuid
+                .range(offset..)
+                .map(|(k, v)| (PointIdType::Uuid(*k), *v))
         };
 
-        Box::new(range.map(|(key, value)| (*key, *value)))
+        match external_id {
+            None => {
+                let iter_num = full_num_iter();
+                let iter_uuid = full_uuid_iter();
+                // order is important here, we want to iterate over the u64 ids first
+                Box::new(iter_num.chain(iter_uuid))
+            }
+            Some(offset) => match offset {
+                PointIdType::NumId(idx) => {
+                    // Because u64 keys are less that uuid key, we can just use the full iterator for uuid
+                    let iter_num = offset_num_iter(idx);
+                    let iter_uuid = full_uuid_iter();
+                    // order is important here, we want to iterate over the u64 ids first
+                    Box::new(iter_num.chain(iter_uuid))
+                }
+                PointIdType::Uuid(uuid) => {
+                    // if offset is a uuid, we can only iterate over uuids
+                    Box::new(offset_uuid_iter(uuid))
+                }
+            },
+        }
     }
 
     fn points_count(&self) -> usize {
