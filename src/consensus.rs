@@ -35,10 +35,17 @@ pub enum Message {
     FromPeer(Box<RaftMessage>),
 }
 
+/// Aka Consensus Thread
+/// Manages proposed changes to consensus state, ensures that everything is ordered properly
 pub struct Consensus {
+    /// Raft structure which handles raft-related state
     node: Node,
+    /// Receives proposals from peers and client for applying in consensus
     receiver: Receiver<Message>,
+    /// Runtime for async message sending
     runtime: Runtime,
+    /// Uri to some other known peer, used to join the consensus
+    /// ToDo: Make if many
     bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
     channel_service: ChannelService,
@@ -309,6 +316,12 @@ impl Consensus {
         Ok(())
     }
 
+    /// Add node sequence:
+    ///
+    /// 1. Add current node as a learner
+    /// 2. Start applying entries from consensus
+    /// 3. Eventually leader submits the promotion proposal
+    /// 4. Learners become voters once they read about the promotion from consensus log
     async fn bootstrap(
         state_ref: &ConsensusStateRef,
         bootstrap_peer: Uri,
@@ -340,6 +353,7 @@ impl Consensus {
         }
         // Only first peer has itself as a voter in the initial conf state.
         // This needs to be propagated manually to other peers as it is not contained in any log entry.
+        // So we skip the learner phase for the first peer.
         state_ref.set_first_voter(all_peers.first_peer_id);
         state_ref.set_conf_state(ConfState::from((vec![all_peers.first_peer_id], vec![])))?;
         Ok(())
@@ -379,6 +393,7 @@ impl Consensus {
         }
     }
 
+    /// Listens for the next proposal and sends it to the Raft node.
     fn propose_updates(&mut self, timeout: Duration) -> anyhow::Result<()> {
         match self.receiver.recv_timeout(timeout) {
             Ok(Message::FromPeer(message)) => {
@@ -449,6 +464,10 @@ impl Consensus {
     }
 
     /// Returns `true` if learner promotion was proposed, `false` otherwise.
+    /// Learner node does not vote on elections, cause it might not have a big picture yet.
+    /// So consensus should guarantee that learners are promoted one-by-one.
+    /// Promotions are done by leader and only after it has no pending entries,
+    /// that guarantees that learner will start voting only after it applies all the changes in the log
     fn try_promote_learner(&mut self) -> anyhow::Result<bool> {
         let learner = if let Some(learner) = self.find_learner_to_promote() {
             learner
@@ -527,7 +546,7 @@ impl Consensus {
         }
     }
 
-    /// Tries to process raft's ready state.
+    /// Tries to process raft's ready state. Happens on each tick.
     ///
     /// The order of operations in this functions is critical, changing it might lead to bugs.
     ///

@@ -303,7 +303,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     for handle in handles.into_iter() {
-        handle.join().expect("Couldn't join on the thread")?;
+        handle.join().expect("thread is not panicking")?;
     }
     drop(toc_arc);
     drop(settings);
