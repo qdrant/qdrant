@@ -56,6 +56,12 @@ pub struct CollectionParams {
     /// Number of replicas for each shard
     #[serde(default = "default_replication_factor")]
     pub replication_factor: NonZeroU32,
+    /// Defines how many replicas should apply the operation for us to consider it successful.
+    /// Increasing this number will make the collection more resilient to inconsistencies, but will
+    /// also make it fail if not enough replicas are available.
+    /// Does not have any performance impact.
+    #[serde(default = "default_write_consistency_factor")]
+    pub write_consistency_factor: NonZeroU32,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -116,6 +122,7 @@ impl Anonymize for CollectionParams {
             vectors: self.vectors.anonymize(),
             shard_number: self.shard_number,
             replication_factor: self.replication_factor,
+            write_consistency_factor: self.write_consistency_factor,
             on_disk_payload: self.on_disk_payload,
         }
     }
@@ -147,6 +154,10 @@ fn default_shard_number() -> NonZeroU32 {
 }
 
 pub fn default_replication_factor() -> NonZeroU32 {
+    NonZeroU32::new(1).unwrap()
+}
+
+pub fn default_write_consistency_factor() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
 
