@@ -232,12 +232,12 @@ impl IdTracker for SimpleIdTracker {
             .external_to_internal_num
             .keys()
             .copied()
-            .map(|k| PointIdType::NumId(k));
+            .map(PointIdType::NumId);
         let iter_uuid = self
             .external_to_internal_uuid
             .keys()
             .copied()
-            .map(|k| PointIdType::Uuid(k));
+            .map(PointIdType::Uuid);
         // order is important here, we want to iterate over the u64 ids first
         Box::new(iter_num.chain(iter_uuid))
     }
