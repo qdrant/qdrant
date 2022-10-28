@@ -10,7 +10,11 @@ use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
 pub trait IdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
 
-    fn set_internal_version(&mut self, internal_id: PointOffsetType, version: SeqNumberType) -> OperationResult<()>;
+    fn set_internal_version(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()>;
 
     /// Returns internal ID of the point, which is used inside this segment
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;

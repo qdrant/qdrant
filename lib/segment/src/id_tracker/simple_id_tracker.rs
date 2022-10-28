@@ -134,7 +134,8 @@ impl SimpleIdTracker {
             } else {
                 log::warn!(
                     "Found version without internal id, external id: {}",
-                    external_id);
+                    external_id
+                );
             }
         }
 
@@ -165,7 +166,11 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_version.get(internal_id as usize).copied()
     }
 
-    fn set_internal_version(&mut self, internal_id: PointOffsetType, version: SeqNumberType) -> OperationResult<()> {
+    fn set_internal_version(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.external_id(internal_id) {
             if internal_id as usize >= self.internal_to_version.len() {
                 self.internal_to_version.resize(internal_id as usize + 1, 0);

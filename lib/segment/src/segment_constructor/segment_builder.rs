@@ -141,7 +141,8 @@ impl SegmentBuilder {
                         Some(existing_internal_id) => {
                             // Point exists in both: newly constructed and old segments, so we need to merge them
                             // Based on version
-                            let existing_version = id_tracker.internal_version(existing_internal_id).unwrap();
+                            let existing_version =
+                                id_tracker.internal_version(existing_internal_id).unwrap();
                             let remove_id = if existing_version < other_version {
                                 // Other version is the newest, remove the existing one and replace
                                 id_tracker.drop(external_id)?;
