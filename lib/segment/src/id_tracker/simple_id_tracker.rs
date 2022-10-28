@@ -55,10 +55,11 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
 pub struct SimpleIdTracker {
     deleted: BitVec,
     internal_to_external: Vec<PointIdType>,
+    internal_to_version: Vec<SeqNumberType>,
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
-    external_to_version_num: HashMap<u64, SeqNumberType>,
-    external_to_version_uuid: HashMap<Uuid, SeqNumberType>,
+    only_external_to_version_num: HashMap<u64, SeqNumberType>,
+    only_external_to_version_uuid: HashMap<Uuid, SeqNumberType>,
     points_count: usize,
     mapping_db_wrapper: DatabaseColumnWrapper,
     versions_db_wrapper: DatabaseColumnWrapper,
@@ -70,8 +71,6 @@ impl SimpleIdTracker {
         let mut internal_to_external: Vec<PointIdType> = Default::default();
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
-        let mut external_to_version_num: HashMap<u64, SeqNumberType> = Default::default();
-        let mut external_to_version_uuid: HashMap<Uuid, SeqNumberType> = Default::default();
         let mut points_count = 0;
 
         let mapping_db_wrapper = DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF);
@@ -120,16 +119,31 @@ impl SimpleIdTracker {
             }
         }
 
+        let mut internal_to_version: Vec<SeqNumberType> = Default::default();
+        let mut only_external_to_version_num: HashMap<u64, SeqNumberType> = Default::default();
+        let mut only_external_to_version_uuid: HashMap<Uuid, SeqNumberType> = Default::default();
+
         let versions_db_wrapper = DatabaseColumnWrapper::new(store, DB_VERSIONS_CF);
         for (key, val) in versions_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let version: SeqNumberType = bincode::deserialize(&val).unwrap();
-            match external_id {
-                PointIdType::NumId(idx) => {
-                    external_to_version_num.insert(idx, version);
+            let internal_id = match external_id {
+                PointIdType::NumId(idx) => external_to_internal_num.get(&idx).copied(),
+                PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
+            };
+            if let Some(internal_id) = internal_id {
+                if internal_id as usize >= internal_to_version.len() {
+                    internal_to_version.resize(internal_id as usize + 1, 0);
                 }
-                PointIdType::Uuid(uuid) => {
-                    external_to_version_uuid.insert(uuid, version);
+                internal_to_version[internal_id as usize] = version;
+            } else {
+                match external_id {
+                    PointIdType::NumId(idx) => {
+                        only_external_to_version_num.insert(idx, version);
+                    }
+                    PointIdType::Uuid(uuid) => {
+                        only_external_to_version_uuid.insert(uuid, version);
+                    }
                 }
             }
         }
@@ -137,10 +151,11 @@ impl SimpleIdTracker {
         Ok(SimpleIdTracker {
             deleted,
             internal_to_external,
+            internal_to_version,
             external_to_internal_num,
             external_to_internal_uuid,
-            external_to_version_num,
-            external_to_version_uuid,
+            only_external_to_version_num,
+            only_external_to_version_uuid,
             points_count,
             mapping_db_wrapper,
             versions_db_wrapper,
@@ -159,9 +174,13 @@ impl SimpleIdTracker {
 
 impl IdTracker for SimpleIdTracker {
     fn version(&self, external_id: PointIdType) -> Option<SeqNumberType> {
-        match external_id {
-            PointIdType::NumId(idx) => self.external_to_version_num.get(&idx).copied(),
-            PointIdType::Uuid(uuid) => self.external_to_version_uuid.get(&uuid).copied(),
+        if let Some(internal_id) = self.internal_id(external_id) {
+            self.internal_to_version.get(internal_id as usize).copied()
+        } else {
+            match external_id {
+                PointIdType::NumId(idx) => self.only_external_to_version_num.get(&idx).copied(),
+                PointIdType::Uuid(uuid) => self.only_external_to_version_uuid.get(&uuid).copied(),
+            }
         }
     }
 
@@ -170,12 +189,19 @@ impl IdTracker for SimpleIdTracker {
         external_id: PointIdType,
         version: SeqNumberType,
     ) -> OperationResult<()> {
-        match external_id {
-            PointIdType::NumId(idx) => {
-                self.external_to_version_num.insert(idx, version);
+        if let Some(internal_id) = self.internal_id(external_id) {
+            if internal_id as usize >= self.internal_to_version.len() {
+                self.internal_to_version.resize(internal_id as usize + 1, 0);
             }
-            PointIdType::Uuid(uuid) => {
-                self.external_to_version_uuid.insert(uuid, version);
+            self.internal_to_version[internal_id as usize] = version;
+        } else {
+            match external_id {
+                PointIdType::NumId(idx) => {
+                    self.only_external_to_version_num.insert(idx, version);
+                }
+                PointIdType::Uuid(uuid) => {
+                    self.only_external_to_version_uuid.insert(uuid, version);
+                }
             }
         }
         self.versions_db_wrapper.put(
@@ -239,10 +265,10 @@ impl IdTracker for SimpleIdTracker {
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         match &external_id {
             PointIdType::NumId(idx) => {
-                self.external_to_version_num.remove(idx);
+                self.only_external_to_version_num.remove(idx);
             }
             PointIdType::Uuid(uuid) => {
-                self.external_to_version_uuid.remove(uuid);
+                self.only_external_to_version_uuid.remove(uuid);
             }
         }
         let internal_id = match &external_id {
