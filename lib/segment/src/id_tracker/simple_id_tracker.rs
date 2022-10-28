@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use bincode;
+use bitvec::vec::BitVec;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -52,31 +53,42 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
 }
 
 pub struct SimpleIdTracker {
-    internal_to_external: HashMap<PointOffsetType, PointIdType>,
+    deleted: BitVec,
+    internal_to_external: Vec<PointIdType>,
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
     external_to_version_num: HashMap<u64, SeqNumberType>,
     external_to_version_uuid: HashMap<Uuid, SeqNumberType>,
-    max_internal_id: PointOffsetType,
+    points_count: usize,
     mapping_db_wrapper: DatabaseColumnWrapper,
     versions_db_wrapper: DatabaseColumnWrapper,
 }
 
 impl SimpleIdTracker {
     pub fn open(store: Arc<RwLock<DB>>) -> OperationResult<Self> {
-        let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
+        let mut deleted = BitVec::new();
+        let mut internal_to_external: Vec<PointIdType> = Default::default();
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
         let mut external_to_version_num: HashMap<u64, SeqNumberType> = Default::default();
         let mut external_to_version_uuid: HashMap<Uuid, SeqNumberType> = Default::default();
-        let mut max_internal_id = 0;
+        let mut points_count = 0;
 
         let mapping_db_wrapper = DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF);
         for (key, val) in mapping_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
-            let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
-            let replaced = internal_to_external.insert(internal_id, external_id);
-            if let Some(replaced_id) = replaced {
+            let internal_id: PointOffsetType =
+                bincode::deserialize::<PointOffsetType>(&val).unwrap();
+            if internal_id as usize >= internal_to_external.len() {
+                internal_to_external.resize(internal_id as usize + 1, PointIdType::NumId(u64::MAX));
+            }
+            if internal_id as usize >= deleted.len() {
+                deleted.resize(internal_id as usize + 1, true);
+            }
+
+            let replaced_id = internal_to_external[internal_id as usize];
+            internal_to_external[internal_id as usize] = external_id;
+            if !deleted[internal_id as usize] {
                 // Fixing corrupted mapping - this id should be recovered from WAL
                 // This should not happen in normal operation, but it can happen if
                 // the database is corrupted.
@@ -93,7 +105,11 @@ impl SimpleIdTracker {
                         external_to_internal_uuid.remove(&uuid);
                     }
                 }
+            } else {
+                points_count += 1;
             }
+            deleted.set(internal_id as usize, false);
+
             match external_id {
                 PointIdType::NumId(idx) => {
                     external_to_internal_num.insert(idx, internal_id);
@@ -102,7 +118,6 @@ impl SimpleIdTracker {
                     external_to_internal_uuid.insert(uuid, internal_id);
                 }
             }
-            max_internal_id = max_internal_id.max(internal_id);
         }
 
         let versions_db_wrapper = DatabaseColumnWrapper::new(store, DB_VERSIONS_CF);
@@ -120,12 +135,13 @@ impl SimpleIdTracker {
         }
 
         Ok(SimpleIdTracker {
+            deleted,
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
             external_to_version_num,
             external_to_version_uuid,
-            max_internal_id,
+            points_count,
             mapping_db_wrapper,
             versions_db_wrapper,
         })
@@ -177,7 +193,12 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        self.internal_to_external.get(&internal_id).copied()
+        if let Some(deleted) = self.deleted.get(internal_id as usize) {
+            if !deleted {
+                return self.internal_to_external.get(internal_id as usize).copied();
+            }
+        }
+        None
     }
 
     fn set_link(
@@ -193,8 +214,20 @@ impl IdTracker for SimpleIdTracker {
                 self.external_to_internal_uuid.insert(uuid, internal_id);
             }
         }
-        self.internal_to_external.insert(internal_id, external_id);
-        self.max_internal_id = self.max_internal_id.max(internal_id);
+
+        let internal_id = internal_id as usize;
+        if internal_id >= self.internal_to_external.len() {
+            self.internal_to_external
+                .resize(internal_id + 1, PointIdType::NumId(u64::MAX));
+        }
+        if internal_id >= self.deleted.len() {
+            self.deleted.resize(internal_id + 1, true);
+        }
+        self.internal_to_external[internal_id] = external_id;
+        if self.deleted[internal_id as usize] {
+            self.points_count += 1;
+        }
+        self.deleted.set(internal_id, false);
 
         self.mapping_db_wrapper.put(
             &Self::store_key(&external_id),
@@ -216,10 +249,13 @@ impl IdTracker for SimpleIdTracker {
             PointIdType::NumId(idx) => self.external_to_internal_num.remove(idx),
             PointIdType::Uuid(uuid) => self.external_to_internal_uuid.remove(uuid),
         };
-        match internal_id {
-            Some(x) => self.internal_to_external.remove(&x),
-            None => None,
-        };
+        if let Some(internal_id) = internal_id {
+            if !self.deleted[internal_id as usize] {
+                self.points_count -= 1;
+            }
+            self.deleted.set(internal_id as usize, true);
+            self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
+        }
         self.mapping_db_wrapper
             .remove(&Self::store_key(&external_id))?;
         self.versions_db_wrapper
@@ -243,7 +279,10 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.internal_to_external.keys().copied())
+        Box::new(
+            (0..self.internal_to_external.len() as PointOffsetType)
+                .filter(move |i| !self.deleted[*i as usize]),
+        )
     }
 
     fn iter_from(
@@ -295,7 +334,7 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn points_count(&self) -> usize {
-        self.internal_to_external.len()
+        self.points_count
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -303,7 +342,7 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn max_id(&self) -> PointOffsetType {
-        self.max_internal_id
+        std::cmp::max(1, self.internal_to_external.len() as PointOffsetType) - 1
     }
 
     fn mapping_flusher(&self) -> Flusher {
