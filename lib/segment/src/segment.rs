@@ -104,7 +104,7 @@ impl Segment {
         operation: F,
     ) -> OperationResult<bool>
     where
-        F: FnOnce(&mut Segment) -> OperationResult<bool>,
+        F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
     {
         if let Some(SegmentFailedState {
             version: failed_version,
@@ -170,7 +170,7 @@ impl Segment {
         operation: F,
     ) -> OperationResult<bool>
     where
-        F: FnOnce(&mut Segment) -> OperationResult<bool>,
+        F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
     {
         match op_point_offset {
             None => {
@@ -196,13 +196,13 @@ impl Segment {
 
         if res.is_ok() {
             self.version = op_num;
-            if let Some(point_id) = op_point_offset {
+            if let Ok((_, Some(point_id))) = res {
                 self.id_tracker
                     .borrow_mut()
                     .set_internal_version(point_id, op_num)?;
             }
         }
-        res
+        res.map(|(res, _)| res)
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
@@ -571,9 +571,9 @@ impl SegmentEntry for Segment {
                 }
             }
 
-            let was_replaced = if let Some(existing_internal_id) = stored_internal_point {
+            if let Some(existing_internal_id) = stored_internal_point {
                 segment.update_vector(existing_internal_id, processed_vectors)?;
-                true
+                Ok((true, Some(existing_internal_id)))
             } else {
                 let mut new_index = 0;
                 for vector_data in segment.vector_data.values() {
@@ -593,10 +593,8 @@ impl SegmentEntry for Segment {
                     .id_tracker
                     .borrow_mut()
                     .set_link(point_id, new_index)?;
-                false
-            };
-
-            Ok(was_replaced)
+                Ok((false, Some(new_index)))
+            }
         })
     }
 
@@ -618,7 +616,7 @@ impl SegmentEntry for Segment {
                     }
                     segment.payload_index.borrow_mut().drop(internal_id)?;
                     segment.id_tracker.borrow_mut().drop(point_id)?;
-                    Ok(true)
+                    Ok((true, Some(internal_id)))
                 })
             }
         }
@@ -636,7 +634,7 @@ impl SegmentEntry for Segment {
                 .payload_index
                 .borrow_mut()
                 .assign_all(internal_id, full_payload)?;
-            Ok(true)
+            Ok((true, Some(internal_id)))
         })
     }
 
@@ -652,7 +650,7 @@ impl SegmentEntry for Segment {
                 .payload_index
                 .borrow_mut()
                 .assign(internal_id, payload)?;
-            Ok(true)
+            Ok((true, Some(internal_id)))
         })
     }
 
@@ -668,7 +666,7 @@ impl SegmentEntry for Segment {
                 .payload_index
                 .borrow_mut()
                 .delete(internal_id, key)?;
-            Ok(true)
+            Ok((true, Some(internal_id)))
         })
     }
 
@@ -680,7 +678,7 @@ impl SegmentEntry for Segment {
         let internal_id = self.lookup_internal_id(point_id)?;
         self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
             segment.payload_index.borrow_mut().drop(internal_id)?;
-            Ok(true)
+            Ok((true, Some(internal_id)))
         })
     }
 
@@ -947,7 +945,7 @@ impl SegmentEntry for Segment {
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, None, |segment| {
             segment.payload_index.borrow_mut().drop_index(key)?;
-            Ok(true)
+            Ok((true, None))
         })
     }
 
@@ -963,7 +961,7 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .set_indexed(key, schema.clone())?;
-                Ok(true)
+                Ok((true, None))
             }
             None => match segment.infer_from_payload_data(key)? {
                 None => Err(TypeInferenceError {
@@ -974,7 +972,7 @@ impl SegmentEntry for Segment {
                         .payload_index
                         .borrow_mut()
                         .set_indexed(key, schema_type.into())?;
-                    Ok(true)
+                    Ok((true, None))
                 }
             },
         })
