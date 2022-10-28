@@ -8,15 +8,9 @@ use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
 /// as well as for keeping track on point version
 /// Internal ids are useful for contiguous-ness
 pub trait IdTracker {
-    /// Returns version of the stored point
-    fn version(&self, external_id: PointIdType) -> Option<SeqNumberType>;
+    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
 
-    /// Update version of the point
-    fn set_version(
-        &mut self,
-        external_id: PointIdType,
-        version: SeqNumberType,
-    ) -> OperationResult<()>;
+    fn set_internal_version(&mut self, internal_id: PointOffsetType, version: SeqNumberType) -> OperationResult<()>;
 
     /// Returns internal ID of the point, which is used inside this segment
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;
