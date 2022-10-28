@@ -433,4 +433,37 @@ mod tests {
         let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
         assert_eq!(last.len(), 7);
     }
+
+    #[test]
+    fn test_mixed_types_iterator() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+
+        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
+
+        let mut values: Vec<PointIdType> = vec![
+            100.into(),
+            PointIdType::Uuid(Uuid::from_u128(123_u128)),
+            PointIdType::Uuid(Uuid::from_u128(156_u128)),
+            150.into(),
+            120.into(),
+            PointIdType::Uuid(Uuid::from_u128(12_u128)),
+            180.into(),
+            110.into(),
+            115.into(),
+            PointIdType::Uuid(Uuid::from_u128(673_u128)),
+            190.into(),
+            177.into(),
+            PointIdType::Uuid(Uuid::from_u128(971_u128)),
+        ];
+
+        for (id, value) in values.iter().enumerate() {
+            id_tracker.set_link(*value, id as PointOffsetType).unwrap();
+        }
+
+        let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
+        values.sort();
+
+        assert_eq!(sorted_from_tracker, values);
+    }
 }
