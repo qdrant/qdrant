@@ -212,6 +212,7 @@ impl GeoMapIndex {
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
+            field_name: None,
             points_count: self.points_count,
             points_values_count: self.values_count,
             histogram_bucket_size: None,
@@ -284,12 +285,6 @@ impl GeoMapIndex {
         idx: PointOffsetType,
         values: &[GeoPoint],
     ) -> OperationResult<()> {
-        if let Some(existing_vals) = self.get_values(idx) {
-            if !existing_vals.is_empty() {
-                self.remove_point(idx)?;
-            }
-        }
-
         if values.is_empty() {
             return Ok(());
         }

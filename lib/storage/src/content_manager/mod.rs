@@ -1,4 +1,4 @@
-use collection::shard::PeerId;
+use collection::shards::shard::PeerId;
 
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_state::CollectionsSnapshot;
@@ -16,19 +16,22 @@ pub mod snapshots;
 pub mod toc;
 
 pub mod consensus_ops {
-    use collection::shard::{CollectionId, PeerId, ShardTransfer};
+    use collection::shards::replica_set::ReplicaState;
+    use collection::shards::shard::PeerId;
+    use collection::shards::transfer::shard_transfer::ShardTransfer;
+    use collection::shards::CollectionId;
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
 
     use crate::content_manager::collection_meta_ops::{
-        CollectionMetaOperations, ShardTransferOperations,
+        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations,
     };
 
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
     pub enum ConsensusOperations {
         CollectionMeta(Box<CollectionMetaOperations>),
-        AddPeer(PeerId, String),
+        AddPeer { peer_id: PeerId, uri: String },
         RemovePeer(PeerId),
     }
 
@@ -49,7 +52,7 @@ pub mod consensus_ops {
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_id,
                 ShardTransferOperations::Abort {
-                    transfer,
+                    transfer: transfer.key(),
                     reason: reason.to_string(),
                 },
             )))
@@ -59,6 +62,45 @@ pub mod consensus_ops {
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_id,
                 ShardTransferOperations::Finish(transfer),
+            )))
+        }
+
+        pub fn activate_replica(
+            collection_name: CollectionId,
+            shard_id: u32,
+            peer_id: PeerId,
+        ) -> Self {
+            ConsensusOperations::CollectionMeta(
+                CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
+                    collection_name,
+                    shard_id,
+                    peer_id,
+                    state: ReplicaState::Active,
+                })
+                .into(),
+            )
+        }
+
+        pub fn deactivate_replica(
+            collection_name: CollectionId,
+            shard_id: u32,
+            peer_id: PeerId,
+        ) -> Self {
+            ConsensusOperations::CollectionMeta(
+                CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
+                    collection_name,
+                    shard_id,
+                    peer_id,
+                    state: ReplicaState::Dead,
+                })
+                .into(),
+            )
+        }
+
+        pub fn start_transfer(collection_id: CollectionId, transfer: ShardTransfer) -> Self {
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection_id,
+                ShardTransferOperations::Start(transfer),
             )))
         }
     }
@@ -76,7 +118,5 @@ pub trait CollectionContainer {
 
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
-    fn peer_has_shards(&self, peer_id: PeerId) -> bool;
-
-    fn remove_peer(&self, peer_id: PeerId);
+    fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 }

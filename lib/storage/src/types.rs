@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::shard::PeerId;
+use collection::shards::shard::PeerId;
 use schemars::JsonSchema;
-use segment::telemetry::{telemetry_hash, Anonymize};
+use segment::common::anonymize::Anonymize;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
@@ -67,15 +67,16 @@ pub struct RaftInfo {
     pub is_voter: bool,
 }
 
+/// Role of the peer in the consensus
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema, Deserialize)]
 pub enum StateRole {
-    /// The node is a follower of the leader.
+    // The node is a follower of the leader.
     Follower,
-    /// The node could become a leader.
+    // The node could become a leader.
     Candidate,
-    /// The node is a leader.
+    // The node is a leader.
     Leader,
-    /// The node could become a candidate, if `prevote` is enabled.
+    // The node could become a candidate, if `prevote` is enabled.
     PreCandidate,
 }
 
@@ -90,6 +91,13 @@ impl From<raft::StateRole> for StateRole {
     }
 }
 
+/// Message send failures for a particular peer
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default)]
+pub struct MessageSendErrors {
+    pub count: usize,
+    pub latest_error: Option<String>,
+}
+
 /// Description of enabled cluster
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct ClusterInfo {
@@ -101,6 +109,9 @@ pub struct ClusterInfo {
     pub raft_info: RaftInfo,
     /// Status of the thread that executes raft consensus
     pub consensus_thread_status: ConsensusThreadStatus,
+    /// Consequent failures of message send operations in consensus by peer address.
+    /// On the first success to send to that peer - entry is removed from this hashmap.
+    pub message_send_failures: HashMap<String, MessageSendErrors>,
 }
 
 /// Information about current cluster status and structure
@@ -125,7 +136,7 @@ pub enum ConsensusThreadStatus {
 impl Anonymize for PeerInfo {
     fn anonymize(&self) -> Self {
         PeerInfo {
-            uri: telemetry_hash(&self.uri),
+            uri: self.uri.anonymize(),
         }
     }
 }
@@ -154,6 +165,7 @@ impl Anonymize for ClusterInfo {
                 .collect(),
             raft_info: self.raft_info.anonymize(),
             consensus_thread_status: self.consensus_thread_status.clone(),
+            message_send_failures: self.message_send_failures.clone(),
         }
     }
 }

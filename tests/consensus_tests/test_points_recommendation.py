@@ -4,7 +4,8 @@ import time
 from .utils import *
 
 N_PEERS = 5
-N_SHARDS = 6
+N_SHARDS = 4
+N_REPLICA = 2
 
 
 def test_points_recommendation(tmp_path: pathlib.Path):
@@ -44,11 +45,12 @@ def test_points_recommendation(tmp_path: pathlib.Path):
                 "distance": "Dot"
             },
             "shard_number": N_SHARDS,
+            "replication_factor": N_REPLICA,
         })
     assert_http_ok(r_batch)
 
     # Check that it exists on all peers
-    wait_for_uniform_collection_existence("test_collection", peer_api_uris)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
 
     # Check collection's cluster info
     collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], "test_collection")

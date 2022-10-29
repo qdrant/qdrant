@@ -158,12 +158,12 @@ fn upsert_with_payload(
 ) -> OperationResult<bool> {
     let mut res = segment.upsert_vector(op_num, point_id, vectors)?;
     if let Some(full_payload) = payload {
-        res &= segment.set_payload(op_num, point_id, full_payload)?;
+        res &= segment.set_full_payload(op_num, point_id, full_payload)?;
     }
     Ok(res)
 }
 
-/// Sync points within a given range
+/// Sync points within a given [from_id; to_id) range
 ///
 /// 1. Retrieve existing points for a range
 /// 2. Remove points, which are not present in the sync operation

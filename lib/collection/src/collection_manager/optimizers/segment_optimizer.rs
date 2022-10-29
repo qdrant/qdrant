@@ -5,11 +5,13 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use segment::common::operation_time_statistics::{
+    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use segment::types::{
     HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
     SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
@@ -21,7 +23,6 @@ use crate::collection_manager::holders::segment_holder::{
 };
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::telemetry::OptimizerTelemetry;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -63,9 +64,9 @@ pub trait SegmentOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
 
-    fn get_telemetry_data(&self) -> OptimizerTelemetry;
+    fn get_telemetry_data(&self) -> OperationDurationStatistics;
 
-    fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>>;
+    fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>>;
 
     /// Build temp segment
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
@@ -320,7 +321,7 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
-        let mut timer = TelemetryOperationTimer::new(&self.get_telemetry_counter());
+        let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());
         timer.set_success(false);
 
         // On the one hand - we want to check consistently if all provided segments are

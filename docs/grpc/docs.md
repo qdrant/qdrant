@@ -12,6 +12,7 @@
     - [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry)
     - [CollectionOperationResponse](#qdrant-CollectionOperationResponse)
     - [CollectionParams](#qdrant-CollectionParams)
+    - [CollectionParamsDiff](#qdrant-CollectionParamsDiff)
     - [CreateAlias](#qdrant-CreateAlias)
     - [CreateCollection](#qdrant-CreateCollection)
     - [DeleteAlias](#qdrant-DeleteAlias)
@@ -273,6 +274,24 @@
 | shard_number | [uint32](#uint32) |  | Number of shards in collection |
 | on_disk_payload | [bool](#bool) |  | If true - point&#39;s payload will not be stored in memory |
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
+| replication_factor | [uint32](#uint32) |  | Number of replicas of each shard that network tries to maintain |
+| write_consistency_factor | [uint32](#uint32) |  | How many replicas should apply the operation for us to consider it successful |
+
+
+
+
+
+
+<a name="qdrant-CollectionParamsDiff"></a>
+
+### CollectionParamsDiff
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain |
+| write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 
 
 
@@ -311,6 +330,8 @@
 | on_disk_payload | [bool](#bool) | optional | If true - point&#39;s payload will not be stored in memory |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
+| replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain, default = 1 |
+| write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
 
 
 
@@ -492,6 +513,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | data_type | [PayloadSchemaType](#qdrant-PayloadSchemaType) |  | Field data type |
 | params | [PayloadIndexParams](#qdrant-PayloadIndexParams) | optional | Field index parameters |
+| points | [uint64](#uint64) | optional | Number of points indexed within this field indexed |
 
 
 
@@ -543,6 +565,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | collection_name | [string](#string) |  | Name of the collection |
 | optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | New configuration parameters for the collection |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+| params | [CollectionParamsDiff](#qdrant-CollectionParamsDiff) | optional | New configuration parameters for the collection |
 
 
 
@@ -1574,6 +1597,7 @@ The JSON representation for `Value` is JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | hnsw_ef | [uint64](#uint64) | optional | Params relevant to HNSW index. Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search. |
+| exact | [bool](#bool) | optional | Search without approximation. If set to true, search may run long but with exact results. |
 
 
 

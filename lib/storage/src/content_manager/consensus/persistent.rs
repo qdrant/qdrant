@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use collection::shard::PeerId;
+use collection::shards::shard::PeerId;
 use http::Uri;
 use parking_lot::RwLock;
 use raft::eraftpb::{ConfState, HardState, SnapshotMetadata};
@@ -188,7 +188,7 @@ impl Persistent {
             let writer = BufWriter::new(file);
             serde_cbor::to_writer(writer, self)
         });
-        log::debug!("Saved state: {:?}", self);
+        log::trace!("Saved state: {:?}", self);
         self.dirty.store(result.is_err(), Ordering::Relaxed);
         Ok(result?)
     }

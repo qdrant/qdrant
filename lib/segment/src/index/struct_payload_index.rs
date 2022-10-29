@@ -275,10 +275,10 @@ impl StructPayloadIndex {
     pub fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
         self.field_indexes
             .iter()
-            .flat_map(|(_, field)| -> Vec<PayloadIndexTelemetry> {
+            .flat_map(|(name, field)| -> Vec<PayloadIndexTelemetry> {
                 field
                     .iter()
-                    .map(|field| field.get_telemetry_data())
+                    .map(|field| field.get_telemetry_data().set_name(name.to_string()))
                     .collect()
             })
             .collect()
@@ -383,6 +383,19 @@ impl PayloadIndex for StructPayloadIndex {
             let matched_points_iter = preselected.into_iter();
             Box::new(matched_points_iter)
         };
+    }
+
+    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {
+        self.field_indexes.get(field).map_or(0, |indexes| {
+            // Assume that multiple field indexes are applied to the same data type,
+            // so the points indexed with those indexes are the same.
+            // We will return minimal number as a worst case, to highlight possible errors in the index early.
+            indexes
+                .iter()
+                .map(|index| index.count_indexed_points())
+                .min()
+                .unwrap_or(0)
+        })
     }
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {

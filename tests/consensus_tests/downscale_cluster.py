@@ -49,7 +49,7 @@ to_peer = collection_cluster_status["result"]["remote_shards"][0]["peer_id"]
 
 for local_shards in collection_cluster_status["result"]["local_shards"]:
     shard_id = local_shards["shard_id"]
-    r = requests.post(f"http://127.0.0.1:{args.ports[0]}/collections/{args.collection_name}/cluster", json={
+    r = requests.post(f"http://127.0.0.1:{args.ports[0]}/collections/{args.collection_name}/cluster?timeout=60", json={
         "move_shard": {
             "from_peer_id": from_peer,
             "shard_id": shard_id,
@@ -73,6 +73,6 @@ while max_wait > 0:
 
 
 # Disconnect peer from the cluster
-r = requests.delete(f"http://127.0.0.1:{args.ports[0]}/cluster/peer/{from_peer}")
+r = requests.delete(f"http://127.0.0.1:{args.ports[0]}/cluster/peer/{from_peer}?timeout=60")
 assert r.status_code == 200, r.text
 

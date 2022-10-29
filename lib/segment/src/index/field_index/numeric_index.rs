@@ -134,12 +134,6 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         idx: PointOffsetType,
         values: impl IntoIterator<Item = T>,
     ) -> OperationResult<()> {
-        if let Some(existing_vals) = self.get_values(idx) {
-            if !existing_vals.is_empty() {
-                self.remove_point(idx)?;
-            }
-        }
-
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
@@ -332,6 +326,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
+            field_name: None,
             points_count: self.points_count,
             points_values_count: self.histogram.get_total_count(),
             histogram_bucket_size: Some(self.histogram.current_bucket_size()),

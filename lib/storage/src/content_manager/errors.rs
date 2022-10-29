@@ -15,11 +15,19 @@ pub enum StorageError {
     ServiceError { description: String },
     #[error("Bad request: {description}")]
     BadRequest { description: String },
+    #[error("Storage locked: {description}")]
+    Locked { description: String },
 }
 
 impl StorageError {
     pub fn service_error(description: &str) -> StorageError {
         StorageError::ServiceError {
+            description: description.to_string(),
+        }
+    }
+
+    pub fn bad_request(description: &str) -> StorageError {
+        StorageError::BadRequest {
             description: description.to_string(),
         }
     }

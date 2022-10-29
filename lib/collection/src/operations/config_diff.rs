@@ -52,6 +52,8 @@ pub struct WalConfigDiff {
 pub struct CollectionParamsDiff {
     /// Number of replicas for each shard
     pub replication_factor: Option<NonZeroU32>,
+    /// Minimal number successful responses from replicas to consider operation successful
+    pub write_consistency_factor: Option<NonZeroU32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge)]

@@ -99,6 +99,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
+            field_name: None,
             points_count: self.indexed_points,
             points_values_count: self.values_count,
             histogram_bucket_size: None,
@@ -106,12 +107,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     fn add_many_to_map(&mut self, idx: PointOffsetType, values: Vec<N>) -> OperationResult<()> {
-        if let Some(existing_vals) = self.get_values(idx) {
-            if !existing_vals.is_empty() {
-                self.remove_point(idx)?;
-            }
-        }
-
         if values.is_empty() {
             return Ok(());
         }

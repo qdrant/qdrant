@@ -11,7 +11,9 @@ use api::grpc::qdrant::{
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
+use segment::common::operation_time_statistics::{
+    OperationDurationsAggregator, ScopeDurationMeasurer,
+};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -26,15 +28,18 @@ use crate::operations::types::{
     Record, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
-use crate::shard::conversions::{
+use crate::shards::channel_service::ChannelService;
+use crate::shards::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
     internal_delete_index, internal_delete_payload, internal_delete_points,
     internal_delete_points_by_filter, internal_set_payload, internal_sync_points,
     internal_upsert_points,
 };
-use crate::shard::shard_config::ShardConfig;
-use crate::shard::{ChannelService, CollectionId, PeerId, ShardId, ShardOperation};
-use crate::telemetry::ShardTelemetry;
+use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_trait::ShardOperation;
+use crate::shards::telemetry::RemoteShardTelemetry;
+use crate::shards::CollectionId;
 
 /// RemoteShard
 ///
@@ -43,9 +48,9 @@ pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
-    channel_service: ChannelService,
-    searches_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
-    updates_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
+    pub channel_service: ChannelService,
+    telemetry_search_durations: Arc<Mutex<OperationDurationsAggregator>>,
+    telemetry_update_durations: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl RemoteShard {
@@ -61,8 +66,8 @@ impl RemoteShard {
             collection_id,
             peer_id,
             channel_service,
-            searches_telemetry: TelemetryOperationAggregator::new(),
-            updates_telemetry: TelemetryOperationAggregator::new(),
+            telemetry_search_durations: OperationDurationsAggregator::new(),
+            telemetry_update_durations: OperationDurationsAggregator::new(),
         }
     }
 
@@ -135,11 +140,11 @@ impl RemoteShard {
             .map_err(|err| err.into())
     }
 
-    pub fn get_telemetry_data(&self) -> ShardTelemetry {
-        ShardTelemetry::Remote {
+    pub fn get_telemetry_data(&self) -> RemoteShardTelemetry {
+        RemoteShardTelemetry {
             shard_id: self.id,
-            searches: self.searches_telemetry.lock().get_statistics(),
-            updates: self.updates_telemetry.lock().get_statistics(),
+            searches: self.telemetry_search_durations.lock().get_statistics(),
+            updates: self.telemetry_update_durations.lock().get_statistics(),
         }
     }
 
@@ -170,7 +175,7 @@ impl ShardOperation for RemoteShard {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let mut timer = TelemetryOperationTimer::new(&self.updates_telemetry);
+        let mut timer = ScopeDurationMeasurer::new(&self.telemetry_update_durations);
         timer.set_success(false);
 
         let point_operation_response = match operation {
@@ -343,7 +348,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let mut timer = TelemetryOperationTimer::new(&self.searches_telemetry);
+        let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
 
         let search_points = request

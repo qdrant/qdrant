@@ -28,4 +28,4 @@ r = requests.put(
            {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]}
        ]
    })
-assert r.status_code == 200
+assert r.status_code == 200, r.text

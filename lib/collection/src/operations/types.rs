@@ -25,29 +25,34 @@ use tonic::codegen::http::uri::InvalidUri;
 
 use crate::config::CollectionConfig;
 use crate::save_on_disk;
-use crate::shard::{PeerId, ShardId};
+use crate::shards::replica_set::ReplicaState;
+use crate::shards::shard::{PeerId, ShardId};
 use crate::wal::WalError;
 
-/// Current state of the collection
+/// Current state of the collection.
+/// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
-    /// Collection if completely ready for requests
+    // Collection if completely ready for requests
     Green,
-    /// Collection is available, but some segments might be under optimization
+    // Collection is available, but some segments might be under optimization
     Yellow,
-    /// Something is not OK:
-    /// - some operations failed and was not recovered
+    // Something is not OK:
+    // - some operations failed and was not recovered
     Red,
 }
 
 /// Current state of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum OptimizersStatus {
     /// Optimizers are reporting as expected
+    #[default]
     Ok,
     /// Something wrong happened with optimizers
     Error(String),
@@ -73,12 +78,19 @@ pub struct CollectionInfo {
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
     /// Number of vectors in collection
+    /// All vectors in collection are available for querying
+    /// Calculated as `points_count x vectors_per_point`
+    /// Where `vectors_per_point` is a number of named vectors in schema
     pub vectors_count: usize,
-    /// Number of indexed vectors in the collection
+    /// Number of indexed vectors in the collection.
+    /// Indexed vectors in large segments are faster to query,
+    /// as it is stored in vector index (HNSW)
     pub indexed_vectors_count: usize,
-    /// Number of points in collection
+    /// Number of points (vectors + payloads) in collection
+    /// Each point could be accessed by unique id
     pub points_count: usize,
-    /// Number of segments in collection
+    /// Number of segments in collection.
+    /// Each segment has independent vector as payload indexes
     pub segments_count: usize,
     /// Collection settings
     pub config: CollectionConfig,
@@ -106,6 +118,9 @@ pub struct ShardTransferInfo {
     pub shard_id: ShardId,
     pub from: PeerId,
     pub to: PeerId,
+    /// If `true` transfer is a synchronization of a replicas
+    /// If `false` transfer is a moving of a shard from one peer to another
+    pub sync: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -115,6 +130,8 @@ pub struct LocalShardInfo {
     pub shard_id: ShardId,
     /// Number of points in the shard
     pub points_count: usize,
+    /// Is replica active
+    pub state: ReplicaState,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -124,14 +141,16 @@ pub struct RemoteShardInfo {
     pub shard_id: ShardId,
     /// Remote peer id
     pub peer_id: PeerId,
+    /// Is replica active
+    pub state: ReplicaState,
 }
 
+/// `Acknowledged` - Request is saved to WAL and will be process in a queue.
+/// `Completed` - Request is completed, changes are actual.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
-    /// Request is saved to WAL and will be process in a queue
     Acknowledged,
-    /// Request is completed, changes are actual
     Completed,
 }
 
@@ -348,6 +367,14 @@ pub enum CollectionError {
 impl CollectionError {
     pub fn service_error(error: String) -> CollectionError {
         CollectionError::ServiceError { error }
+    }
+
+    pub fn bad_input(description: String) -> CollectionError {
+        CollectionError::BadInput { description }
+    }
+
+    pub fn bad_request(description: String) -> CollectionError {
+        CollectionError::BadRequest { description }
     }
 
     pub fn bad_shard_selection(description: String) -> CollectionError {

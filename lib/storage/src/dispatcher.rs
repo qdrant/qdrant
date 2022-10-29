@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,24 +45,92 @@ impl Dispatcher {
     ) -> Result<bool, StorageError> {
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
+            // List of operations to await for collection to be operational
+            let mut expect_operations: Vec<ConsensusOperations> = vec![];
+
             let op = match operation {
-                CollectionMetaOperations::CreateCollection(op) => {
+                CollectionMetaOperations::CreateCollection(mut op) => {
+                    self.toc.check_write_lock()?;
+                    debug_assert!(
+                        op.take_distribution().is_none(),
+                        "Distribution should be only set in this method."
+                    );
                     let number_of_peers = state.0.peer_count();
                     let shard_distribution = self
                         .toc
-                        .suggest_shard_distribution(&op, number_of_peers as u32)
+                        .suggest_shard_distribution(
+                            &op,
+                            NonZeroU32::new(number_of_peers as u32)
+                                .expect("Peer count should be always >= 1"),
+                        )
                         .await;
-                    CollectionMetaOperations::CreateCollectionDistributed(op, shard_distribution)
+
+                    // Expect all replicas to become active eventually
+                    for (shard_id, peer_ids) in &shard_distribution.distribution {
+                        for peer_id in peer_ids {
+                            expect_operations.push(ConsensusOperations::activate_replica(
+                                op.collection_name.clone(),
+                                *shard_id,
+                                *peer_id,
+                            ));
+                        }
+                    }
+
+                    op.set_distribution(shard_distribution);
+                    CollectionMetaOperations::CreateCollection(op)
+                }
+                CollectionMetaOperations::UpdateCollection(mut op) => {
+                    if let Some(repl_factor) = op
+                        .update_collection
+                        .params
+                        .as_ref()
+                        .and_then(|params| params.replication_factor)
+                    {
+                        let changes = self
+                            .toc
+                            .suggest_shard_replica_changes(&op.collection_name, repl_factor)
+                            .await?;
+                        op.set_shard_replica_changes(changes.into_iter().collect());
+                    }
+                    CollectionMetaOperations::UpdateCollection(op)
                 }
                 op => op,
             };
-            state
+
+            let operation_awaiter =
+                // If explicit timeout is set - then we need to wait for all expected operations.
+                // E.g. in case of `CreateCollection` we will explicitly wait for all replicas to be activated.
+                // We need to register receivers(by calling the function) before submitting the operation.
+                if !expect_operations.is_empty() {
+                    Some(state.await_for_multiple_operations(expect_operations, wait_timeout))
+                } else {
+                    None
+                };
+
+            let res = state
                 .propose_consensus_op_with_await(
                     ConsensusOperations::CollectionMeta(Box::new(op)),
                     wait_timeout,
+                    true,
                 )
-                .await
+                .await?;
+
+            if let Some(operation_awaiter) = operation_awaiter {
+                // Actually await for expected operations to complete on the consensus
+                match operation_awaiter.await {
+                    Ok(Ok(())) => {} // all good
+                    Ok(Err(err)) => {
+                        log::warn!("Not all expected operations were completed: {}", err)
+                    }
+                    Err(err) => log::warn!("Awaiting for expected operations timed out: {}", err),
+                }
+            }
+
+            Ok(res)
         } else {
+            if let CollectionMetaOperations::CreateCollection(_) = &operation {
+                self.toc.check_write_lock()?;
+            }
             self.toc.perform_collection_meta_op(operation).await
         }
     }

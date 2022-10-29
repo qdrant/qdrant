@@ -43,4 +43,4 @@ def test_collection_after_peers_added(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Check that it exists on all peers
-    wait_for_uniform_collection_existence("test_collection", peer_api_uris)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)

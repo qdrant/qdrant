@@ -171,6 +171,7 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
                     text_index_params.into()
                 }
             }),
+            points: Some(schema.points as u64),
         }
     }
 }
@@ -259,7 +260,11 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
             }) => Some(index_params.try_into()?),
         };
 
-        Ok(segment::types::PayloadIndexInfo { data_type, params })
+        Ok(segment::types::PayloadIndexInfo {
+            data_type,
+            params,
+            points: schema.points.unwrap_or(0) as usize,
+        })
     }
 }
 
@@ -327,6 +332,7 @@ impl From<SearchParams> for segment::types::SearchParams {
     fn from(params: SearchParams) -> Self {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as usize),
+            exact: params.exact.unwrap_or(false),
         }
     }
 }
@@ -335,6 +341,7 @@ impl From<segment::types::SearchParams> for SearchParams {
     fn from(params: segment::types::SearchParams) -> Self {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as u64),
+            exact: Some(params.exact),
         }
     }
 }

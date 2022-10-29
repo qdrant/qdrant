@@ -8,6 +8,7 @@ use std::path::Path;
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{Distance, HnswConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
@@ -53,10 +54,14 @@ pub struct CollectionParams {
     #[serde(default = "default_shard_number")]
     pub shard_number: NonZeroU32,
     /// Number of replicas for each shard
-    // TODO: do not skip in v1.0 (when replication ships)
-    #[serde(skip)]
     #[serde(default = "default_replication_factor")]
     pub replication_factor: NonZeroU32,
+    /// Defines how many replicas should apply the operation for us to consider it successful.
+    /// Increasing this number will make the collection more resilient to inconsistencies, but will
+    /// also make it fail if not enough replicas are available.
+    /// Does not have any performance impact.
+    #[serde(default = "default_write_consistency_factor")]
+    pub write_consistency_factor: NonZeroU32,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -96,6 +101,33 @@ pub enum VectorsConfig {
     Multi(BTreeMap<String, VectorParams>),
 }
 
+impl Anonymize for VectorParams {
+    fn anonymize(&self) -> Self {
+        self.clone()
+    }
+}
+
+impl Anonymize for VectorsConfig {
+    fn anonymize(&self) -> Self {
+        match self {
+            VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
+            VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
+        }
+    }
+}
+
+impl Anonymize for CollectionParams {
+    fn anonymize(&self) -> Self {
+        CollectionParams {
+            vectors: self.vectors.anonymize(),
+            shard_number: self.shard_number,
+            replication_factor: self.replication_factor,
+            write_consistency_factor: self.write_consistency_factor,
+            on_disk_payload: self.on_disk_payload,
+        }
+    }
+}
+
 impl From<VectorParams> for VectorsConfig {
     fn from(params: VectorParams) -> Self {
         VectorsConfig::Single(params)
@@ -122,6 +154,10 @@ fn default_shard_number() -> NonZeroU32 {
 }
 
 pub fn default_replication_factor() -> NonZeroU32 {
+    NonZeroU32::new(1).unwrap()
+}
+
+pub fn default_write_consistency_factor() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
 

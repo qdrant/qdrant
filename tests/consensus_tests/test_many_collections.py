@@ -45,10 +45,10 @@ def test_many_collections(tmp_path: pathlib.Path):
                     "size": 4,
                     "distance": "Dot"
                 },
-                "shard_number": 1 # single shard
+                "shard_number": 1  # single shard
             })
         assert_http_ok(r)
 
     # Check that all collections exist on all peers
     for i in range(1, N_COLLECTIONS + 1):
-        wait_for_uniform_collection_existence(f"test_collection_{i}", peer_api_uris)
+        wait_collection_exists_and_active_on_all_peers(collection_name=f"test_collection_{i}", peer_api_uris=peer_api_uris)

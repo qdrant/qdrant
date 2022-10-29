@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shard::shard_config::{ShardConfig, ShardType};
-use crate::shard::{ShardId, ShardVersion};
+use crate::shards::shard::ShardId;
+use crate::shards::shard_config::{ShardConfig, ShardType};
+use crate::shards::ShardVersion;
 
 async fn shards_versions(
     collection_path: &Path,
@@ -110,6 +111,10 @@ pub async fn latest_shard_paths(
                         res.push((path, version, shard_config.r#type));
                         seen_temp_shard = true;
                     }
+                }
+                ShardType::ReplicaSet => {
+                    res.push((path, version, shard_config.r#type));
+                    break; // We don't need older replica set shards.
                 }
             }
         } else {

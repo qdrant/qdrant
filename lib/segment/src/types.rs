@@ -87,11 +87,11 @@ pub type PointIdType = ExtendedPointId;
 )]
 /// Distance function types used to compare vectors
 pub enum Distance {
-    /// <https://en.wikipedia.org/wiki/Cosine_similarity>
+    // <https://en.wikipedia.org/wiki/Cosine_similarity>
     Cosine,
-    /// <https://en.wikipedia.org/wiki/Euclidean_distance>
+    // <https://en.wikipedia.org/wiki/Euclidean_distance>
     Euclid,
-    /// <https://en.wikipedia.org/wiki/Dot_product>
+    // <https://en.wikipedia.org/wiki/Dot_product>
     Dot,
 }
 
@@ -175,11 +175,11 @@ impl PartialEq for ScoredPoint {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
-    /// There are no index built for the segment, all operations are available
+    // There are no index built for the segment, all operations are available
     Plain,
-    /// Segment with some sort of index built. Optimized for search, appending new points will require reindexing
+    // Segment with some sort of index built. Optimized for search, appending new points will require reindexing
     Indexed,
-    /// Some index which you better don't touch
+    // Some index which you better don't touch
     Special,
 }
 
@@ -191,6 +191,27 @@ pub struct PayloadIndexInfo {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<PayloadSchemaParams>,
+    /// Number of points indexed with this index
+    pub points: usize,
+}
+
+impl PayloadIndexInfo {
+    pub fn new(field_type: PayloadFieldSchema, points_count: usize) -> Self {
+        match field_type {
+            PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
+                data_type,
+                params: None,
+                points: points_count,
+            },
+            PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
+                PayloadSchemaParams::Text(_) => PayloadIndexInfo {
+                    data_type: PayloadSchemaType::Text,
+                    params: Some(schema_params),
+                    points: points_count,
+                },
+            },
+        }
+    }
 }
 
 /// Aggregated information about segment
@@ -214,6 +235,10 @@ pub struct SearchParams {
     /// Params relevant to HNSW index
     /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
     pub hnsw_ef: Option<usize>,
+
+    /// Search without approximation. If set to true, search may run long but with exact results.
+    #[serde(default)]
+    pub exact: bool,
 }
 
 /// Vector index configuration of the segment
@@ -280,9 +305,9 @@ impl Default for Indexes {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadIndexType {
-    /// Do not index anything, just keep of what should be indexed later
+    // Do not index anything, just keep of what should be indexed later
     Plain,
-    /// Build payload index. Index is saved on disc, but index itself is in RAM
+    // Build payload index. Index is saved on disc, but index itself is in RAM
     Struct,
 }
 
@@ -297,9 +322,9 @@ impl Default for PayloadIndexType {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum StorageType {
-    /// Store vectors in memory and use persistence storage only if vectors are changed
+    // Store vectors in memory and use persistence storage only if vectors are changed
     InMemory,
-    /// Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
+    // Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
     Mmap,
 }
 
@@ -314,9 +339,9 @@ impl Default for StorageType {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadStorageType {
-    /// Store payload in memory and use persistence storage only if vectors are changed
+    // Store payload in memory and use persistence storage only if vectors are changed
     InMemory,
-    /// Store payload on disk only, read each time it is requested
+    // Store payload on disk only, read each time it is requested
     OnDisk,
 }
 
@@ -353,7 +378,7 @@ pub struct VectorDataConfig {
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 
 /// Persistable state of segment configuration
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentState {
     pub version: SeqNumberType,
@@ -608,23 +633,6 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
                 data_type
             )),
             (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
-        }
-    }
-}
-
-impl From<PayloadFieldSchema> for PayloadIndexInfo {
-    fn from(field_type: PayloadFieldSchema) -> Self {
-        match field_type {
-            PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
-                data_type,
-                params: None,
-            },
-            PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
-                PayloadSchemaParams::Text(_) => PayloadIndexInfo {
-                    data_type: PayloadSchemaType::Text,
-                    params: Some(schema_params),
-                },
-            },
         }
     }
 }

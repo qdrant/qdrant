@@ -60,16 +60,16 @@ mod tests {
             runtime,
             Default::default(),
             0,
-            propose_operation_sender,
+            Some(propose_operation_sender),
         ));
         let dispatcher = Dispatcher::new(toc);
 
         handle
             .block_on(
                 dispatcher.submit_collection_meta_op(
-                    CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
-                        collection_name: "test".to_string(),
-                        create_collection: CreateCollection {
+                    CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
+                        "test".to_string(),
+                        CreateCollection {
                             vectors: VectorParams {
                                 size: NonZeroU64::new(10).unwrap(),
                                 distance: Distance::Cosine,
@@ -80,8 +80,10 @@ mod tests {
                             optimizers_config: None,
                             shard_number: Some(1),
                             on_disk_payload: None,
+                            replication_factor: None,
+                            write_consistency_factor: None,
                         },
-                    }),
+                    )),
                     None,
                 ),
             )

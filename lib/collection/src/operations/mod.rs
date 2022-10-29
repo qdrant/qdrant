@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use self::types::CollectionResult;
 use crate::hash_ring::HashRing;
-use crate::shard::ShardId;
+use crate::shards::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -66,6 +66,15 @@ impl<O> OperationToShard<O> {
                     .collect(),
             ),
             OperationToShard::ToAll(to_all) => OperationToShard::ToAll(f(to_all)),
+        }
+    }
+}
+
+impl FieldIndexOperations {
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            FieldIndexOperations::CreateIndex(_) => true,
+            FieldIndexOperations::DeleteIndex(_) => false,
         }
     }
 }
@@ -131,6 +140,20 @@ impl SplitByShard for CollectionUpdateOperations {
                 .map(CollectionUpdateOperations::PayloadOperation),
             operation @ CollectionUpdateOperations::FieldIndexOperation(_) => {
                 OperationToShard::to_all(operation)
+            }
+        }
+    }
+}
+
+impl CollectionUpdateOperations {
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            CollectionUpdateOperations::PointOperation(operation) => operation.is_write_operation(),
+            CollectionUpdateOperations::PayloadOperation(operation) => {
+                operation.is_write_operation()
+            }
+            CollectionUpdateOperations::FieldIndexOperation(operation) => {
+                operation.is_write_operation()
             }
         }
     }

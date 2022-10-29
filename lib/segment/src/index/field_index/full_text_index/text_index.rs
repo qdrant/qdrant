@@ -69,6 +69,7 @@ impl FullTextIndex {
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
+            field_name: None,
             points_values_count: self.inverted_index.points_count,
             points_count: self.inverted_index.points_count,
             histogram_bucket_size: None,
@@ -92,10 +93,6 @@ impl FullTextIndex {
 
 impl ValueIndexer<String> for FullTextIndex {
     fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
-        if self.get_doc(idx).is_some() {
-            self.remove_point(idx)?;
-        }
-
         if values.is_empty() {
             return Ok(());
         }

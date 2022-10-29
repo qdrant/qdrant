@@ -1,17 +1,23 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::fmt::Display;
+use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
 use collection::collection_state;
-use collection::shard::{CollectionId, PeerId};
+use collection::shards::shard::PeerId;
+use collection::shards::CollectionId;
+use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
+use tokio::sync::oneshot::Receiver;
+use tokio::time::error::Elapsed;
 use tonic::transport::Uri;
 
 use super::alias_mapping::AliasMapping;
@@ -24,8 +30,10 @@ use crate::content_manager::consensus::is_ready::IsReady;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{
-    ClusterInfo, ClusterStatus, ConsensusThreadStatus, PeerAddressById, PeerInfo, RaftInfo,
+    ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
+    PeerInfo, RaftInfo,
 };
+use crate::CollectionMetaOperations;
 
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
@@ -67,6 +75,7 @@ pub struct ConsensusState<C: CollectionContainer> {
     propose_sender: OperationSender,
     first_voter: RwLock<Option<PeerId>>,
     consensus_thread_status: RwLock<ConsensusThreadStatus>,
+    message_send_failures: RwLock<HashMap<String, MessageSendErrors>>,
 }
 
 impl<C: CollectionContainer> ConsensusState<C> {
@@ -88,7 +97,27 @@ impl<C: CollectionContainer> ConsensusState<C> {
             consensus_thread_status: RwLock::new(ConsensusThreadStatus::Working {
                 last_update: Utc::now(),
             }),
+            message_send_failures: Default::default(),
         }
+    }
+
+    pub fn record_message_send_failure<E: Error>(&self, peer_address: &Uri, error: E) {
+        let mut message_send_failures = self.message_send_failures.write();
+        let mut entry = message_send_failures
+            .entry(peer_address.to_string())
+            .or_insert_with(Default::default);
+        // Log only first error
+        if entry.count == 0 {
+            log::warn!("Failed to send message to {peer_address} with error: {error}")
+        }
+        entry.count += 1;
+        entry.latest_error = Some(error.to_string());
+    }
+
+    pub fn record_message_send_success(&self, peer_address: &Uri) {
+        self.message_send_failures
+            .write()
+            .remove(&peer_address.to_string());
     }
 
     pub fn record_consensus_working(&self) {
@@ -159,7 +188,42 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 is_voter,
             },
             consensus_thread_status: self.consensus_thread_status.read().clone(),
+            message_send_failures: self.message_send_failures.read().clone(),
         })
+    }
+
+    /// Handle peer removal operation.
+    ///
+    /// 1. Try to remove peer
+    /// 2. Handle peer removal error
+    /// 3. Report to the listeners
+    ///
+    /// Return if consensus should be stopped.
+    pub fn on_peer_remove(&self, peer_id: PeerId) -> Result<bool, StorageError> {
+        let mut stop_consensus: bool = false;
+
+        let report = match self.remove_peer(peer_id) {
+            Ok(()) => {
+                if self.this_peer_id() == peer_id {
+                    stop_consensus = true;
+                }
+                Ok(true)
+            }
+            Err(err) => match err {
+                err @ StorageError::ServiceError { .. } => {
+                    return Err(err);
+                }
+                _ => Err(err),
+            },
+        };
+        let operation = ConsensusOperations::RemovePeer(peer_id);
+        let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+        if let Some(on_apply) = on_apply {
+            if on_apply.send(report).is_err() {
+                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+            }
+        }
+        Ok(stop_consensus)
     }
 
     pub fn apply_conf_change_entry<T: Storage>(
@@ -188,17 +252,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 }
                 ConfChangeType::RemoveNode => {
                     log::debug!("Removing node {}", single_change.node_id);
-                    if self.this_peer_id() == single_change.node_id {
-                        stop_consensus = true;
-                    }
-                    self.remove_peer(single_change.node_id)?;
-                    let operation = ConsensusOperations::RemovePeer(single_change.node_id);
-                    let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-                    if let Some(on_apply) = on_apply {
-                        if on_apply.send(Ok(true)).is_err() {
-                            log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
-                        }
-                    }
+                    stop_consensus |= self.on_peer_remove(single_change.node_id)?;
                 }
                 ConfChangeType::AddLearnerNode => {
                     log::debug!("Adding learner node {}", single_change.node_id);
@@ -208,10 +262,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     {
                         let peer_uri: Uri = peer_uri;
                         self.add_peer(single_change.node_id, peer_uri.clone())?;
-                        let operation = ConsensusOperations::AddPeer(
-                            single_change.node_id,
-                            peer_uri.to_string(),
-                        );
+                        let operation = ConsensusOperations::AddPeer {
+                            peer_id: single_change.node_id,
+                            uri: peer_uri.to_string(),
+                        };
                         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
                         if let Some(on_apply) = on_apply {
                             if on_apply.send(Ok(true)).is_err() {
@@ -220,7 +274,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
                         }
                     } else if entry.get_context().is_empty() {
                         // Allow empty context for compatibility
-                        // TODO: remove in the next version after 0.10
+                        log::warn!(
+                            "Outdated peer addition entry found with index: {}",
+                            entry.get_index()
+                        )
                     } else {
                         // Should not be reachable as it is checked in API
                         return Err(StorageError::ServiceError {
@@ -250,7 +307,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
         if let Err(err) = self.persistent.write().save_if_dirty() {
             log::error!("Failed to save new state of applied entries queue: {err}");
-            return false;
+            return true;
         }
 
         loop {
@@ -267,9 +324,9 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     break;
                 }
             };
-            let do_increase_applied_index: bool = if entry.data.is_empty() {
+            let stop_consensus: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
-                true
+                false
             } else {
                 match entry.get_entry_type() {
                     EntryType::EntryNormal => {
@@ -279,54 +336,49 @@ impl<C: CollectionContainer> ConsensusState<C> {
                                 log::debug!(
                                     "Successfully applied consensus operation entry. Index: {}. Result: {result}",
                                     entry.index);
-                                true
+                                false
                             }
                             Err(err @ StorageError::ServiceError { .. }) => {
                                 log::error!("Failed to apply collection meta operation entry with service error: {err}");
-                                // This is a service error, so we can try to reapply it later.
-                                false
+                                // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
+                                true
                             }
                             Err(err) => {
                                 log::warn!("Failed to apply collection meta operation entry with user error: {err}");
                                 // This is a user error so we can safely consider it applied but with error as it was incorrect.
-                                true
+                                false
                             }
                         }
                     }
                     EntryType::EntryConfChangeV2 => {
                         match self.apply_conf_change_entry(&entry, raw_node) {
                             Ok(stop_consensus) => {
-                                log::debug!(
+                                log::trace!(
                                     "Successfully applied configuration change entry. Index: {}.",
                                     entry.index
                                 );
-                                if stop_consensus {
-                                    return true;
-                                }
-                                true
+                                stop_consensus
                             }
                             Err(err) => {
                                 log::error!(
                                     "Failed to apply configuration change entry with error: {err}"
                                 );
-                                false
+                                true
                             }
                         }
                     }
                     ty => {
                         log::error!("Failed to apply entry: unsupported entry type {ty:?}");
-                        false
+                        true
                     }
                 }
             };
-
-            if do_increase_applied_index {
-                if let Err(err) = self.persistent.write().entry_applied() {
-                    log::error!("Failed to save new state of applied entries queue: {err}");
-                    break;
-                }
-            } else {
-                break;
+            if stop_consensus {
+                return stop_consensus;
+            }
+            if let Err(err) = self.persistent.write().entry_applied() {
+                log::error!("Failed to save new state of applied entries queue: {err}");
+                return true;
             }
         }
         false // do not stop consensus
@@ -403,7 +455,11 @@ impl<C: CollectionContainer> ConsensusState<C> {
     }
 
     pub fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.toc.remove_peer(peer_id);
+        // We sincerely apologize for this piece of code.
+        // The `id_to_address` is shared between `channel_pool` and `persistent`,
+        // plus we need to make additional removing in the `channel_pool`.
+        // So we handle `remove_peer` inside the `toc` and persist changes in the `persistent` after that.
+        self.toc.remove_peer(peer_id)?;
         self.persistent.read().save()
     }
 
@@ -415,10 +471,58 @@ impl<C: CollectionContainer> ConsensusState<C> {
         self.propose_sender.send(operation)
     }
 
+    async fn await_receiver(
+        receiver: Receiver<Result<bool, StorageError>>,
+        wait_timeout: Duration,
+    ) -> Result<bool, StorageError> {
+        tokio::time::timeout(wait_timeout, receiver)
+            .await
+            .map_err(
+                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
+                    description: format!(
+                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
+                        wait_timeout.as_secs_f64()
+                    ),
+                },
+                // ??? - forwards 2 possible errors: sender dropped, operation failed
+            )??
+    }
+
+    pub fn await_for_multiple_operations(
+        &self,
+        operations: Vec<ConsensusOperations>,
+        wait_timeout: Option<Duration>,
+    ) -> impl Future<Output = Result<Result<(), StorageError>, Elapsed>> {
+        let mut receivers = vec![];
+        for operation in operations {
+            let (sender, receiver) = oneshot::channel();
+            self.on_consensus_op_apply.lock().insert(operation, sender);
+            receivers.push(receiver);
+        }
+
+        async move {
+            let await_for_all = join_all(receivers);
+            let results =
+                tokio::time::timeout(wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT), await_for_all)
+                    .await?;
+            for result in results {
+                match result {
+                    Ok(response_res) => match response_res {
+                        Ok(_) => {}
+                        Err(err) => return Ok(Err(err)),
+                    },
+                    Err(recv_error) => return Ok(Err(recv_error.into())),
+                }
+            }
+            Ok(Ok(()))
+        }
+    }
+
     pub async fn propose_consensus_op_with_await(
         &self,
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
+        with_confirmation: bool,
     ) -> Result<bool, StorageError> {
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
 
@@ -438,17 +542,27 @@ impl<C: CollectionContainer> ConsensusState<C> {
             self.propose_sender.send(operation.clone())?;
             on_apply_lock.insert(operation, sender);
         }
-        tokio::time::timeout(wait_timeout, receiver)
-            .await
-            .map_err(
-                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
-                    description: format!(
-                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                        wait_timeout.as_secs_f64()
-                    ),
-                },
-                // ?? - forwards 2 possible errors: sender dropped, operation failed
-            )??
+        let res = Self::await_receiver(receiver, wait_timeout).await?;
+
+        // Send explicit empty operation to ensure that all previous operations are applied.
+        // Assume that peer can not accept new operations until it applies all previous ones.
+        if with_confirmation {
+            let random_token: usize = rand::random();
+            // Send empty operation to make sure that the majority of consensus applied the operation
+            let empty_operation =
+                ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop {
+                    token: random_token,
+                }));
+            let (sender, receiver) = oneshot::channel();
+            {
+                let mut on_apply_lock = self.on_consensus_op_apply.lock();
+                self.propose_sender.send(empty_operation.clone())?;
+                on_apply_lock.insert(empty_operation, sender);
+            }
+            Self::await_receiver(receiver, wait_timeout).await?;
+        }
+
+        Ok(res)
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
@@ -606,7 +720,7 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 mod tests {
     use std::sync::{mpsc, Arc};
 
-    use collection::shard::PeerId;
+    use collection::shards::shard::PeerId;
     use proptest::prelude::*;
     use raft::eraftpb::Entry;
     use raft::storage::{MemStorage, Storage};
@@ -732,11 +846,12 @@ mod tests {
             Ok(())
         }
 
-        fn peer_has_shards(&self, _: u64) -> bool {
-            false
+        fn remove_peer(
+            &self,
+            _peer_id: PeerId,
+        ) -> Result<(), crate::content_manager::errors::StorageError> {
+            Ok(())
         }
-
-        fn remove_peer(&self, _peer_id: PeerId) {}
     }
 
     fn setup_storages(

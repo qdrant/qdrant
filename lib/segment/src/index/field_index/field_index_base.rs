@@ -58,10 +58,12 @@ pub trait ValueIndexer<T> {
     fn add_point(&mut self, id: PointOffsetType, payload: &Value) -> OperationResult<()> {
         match payload {
             Value::Array(values) => {
+                self.remove_point(id)?;
                 self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())
             }
             _ => {
                 if let Some(x) = self.get_value(payload) {
+                    self.remove_point(id)?;
                     self.add_many(id, vec![x])
                 } else {
                     Ok(())

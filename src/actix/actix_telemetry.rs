@@ -6,11 +6,13 @@ use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
 use parking_lot::Mutex;
 
-use crate::common::telemetry::{ActixTelemetryCollector, WebApiTelemetry};
+use crate::common::telemetry_ops::requests_telemetry::{
+    ActixTelemetryCollector, ActixWorkerTelemetryCollector,
+};
 
 pub struct ActixTelemetryService<S> {
     service: S,
-    telemetry_data: Arc<Mutex<WebApiTelemetry>>,
+    telemetry_data: Arc<Mutex<ActixWorkerTelemetryCollector>>,
 }
 
 pub struct ActixTelemetryTransform {
@@ -34,12 +36,19 @@ where
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
+        let match_pattern = request
+            .match_pattern()
+            .unwrap_or_else(|| "unknown".to_owned());
+        let request_key = format!("{} {}", request.method(), match_pattern);
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
+            let instant = std::time::Instant::now();
             let response = future.await?;
             let status = response.response().status().as_u16();
-            telemetry_data.lock().add_response(status);
+            telemetry_data
+                .lock()
+                .add_response(request_key, status, instant);
             Ok(response)
         })
     }
@@ -65,8 +74,8 @@ where
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type InitError = ();
     type Transform = ActixTelemetryService<S>;
+    type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {

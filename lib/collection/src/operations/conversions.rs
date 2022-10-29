@@ -7,9 +7,10 @@ use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAM
 use segment::types::Distance;
 use tonic::Status;
 
+use super::config_diff::CollectionParamsDiff;
 use crate::config::{
-    default_replication_factor, CollectionConfig, CollectionParams, VectorParams, VectorsConfig,
-    WalConfig,
+    default_replication_factor, default_write_consistency_factor, CollectionConfig,
+    CollectionParams, VectorParams, VectorsConfig, WalConfig,
 };
 use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
@@ -21,7 +22,7 @@ use crate::operations::types::{
     SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shard::remote_shard::CollectionSearchRequest;
+use crate::shards::remote_shard::CollectionSearchRequest;
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {
@@ -39,6 +40,30 @@ impl From<api::grpc::qdrant::WalConfigDiff> for WalConfigDiff {
             wal_capacity_mb: value.wal_capacity_mb.map(|v| v as usize),
             wal_segments_ahead: value.wal_segments_ahead.map(|v| v as usize),
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::CollectionParamsDiff) -> Result<Self, Self::Error> {
+        Ok(Self {
+            replication_factor: value
+                .replication_factor
+                .map(|factor| {
+                    NonZeroU32::new(factor)
+                        .ok_or_else(|| Status::invalid_argument("`replication_factor` cannot be 0"))
+                })
+                .transpose()?,
+            write_consistency_factor: value
+                .write_consistency_factor
+                .map(|factor| {
+                    NonZeroU32::new(factor).ok_or_else(|| {
+                        Status::invalid_argument("`write_consistency_factor` cannot be 0")
+                    })
+                })
+                .transpose()?,
+        })
     }
 }
 
@@ -115,7 +140,9 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         Some(api::grpc::qdrant::VectorsConfig { config })
                     },
                     shard_number: config.params.shard_number.get(),
+                    replication_factor: Some(config.params.replication_factor.get()),
                     on_disk_payload: config.params.on_disk_payload,
+                    write_consistency_factor: Some(config.params.write_consistency_factor.get()),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(config.hnsw_config.m as u64),
@@ -243,43 +270,53 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
         Ok(Self {
             params: match config.params {
                 None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
-                Some(params) => {
-                    CollectionParams {
-                        vectors: match params.vectors_config {
+                Some(params) => CollectionParams {
+                    vectors: match params.vectors_config {
+                        None => {
+                            return Err(Status::invalid_argument(
+                                "Expected `vectors` - configuration for vector storage",
+                            ))
+                        }
+                        Some(vector_config) => match vector_config.config {
                             None => {
                                 return Err(Status::invalid_argument(
                                     "Expected `vectors` - configuration for vector storage",
                                 ))
                             }
-                            Some(vector_config) => match vector_config.config {
-                                None => {
-                                    return Err(Status::invalid_argument(
-                                        "Expected `vectors` - configuration for vector storage",
-                                    ))
-                                }
-                                Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
-                                    VectorsConfig::Single(params.try_into()?)
-                                }
-                                Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
-                                    params_map,
-                                )) => VectorsConfig::Multi(
-                                    params_map
-                                        .map
-                                        .into_iter()
-                                        .map(|(k, v)| Ok((k, v.try_into()?)))
-                                        .collect::<Result<BTreeMap<String, VectorParams>, Status>>(
-                                        )?,
-                                ),
-                            },
+                            Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
+                                VectorsConfig::Single(params.try_into()?)
+                            }
+                            Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
+                                params_map,
+                            )) => VectorsConfig::Multi(
+                                params_map
+                                    .map
+                                    .into_iter()
+                                    .map(|(k, v)| Ok((k, v.try_into()?)))
+                                    .collect::<Result<BTreeMap<String, VectorParams>, Status>>()?,
+                            ),
                         },
-                        shard_number: NonZeroU32::new(params.shard_number).ok_or_else(|| {
-                            Status::invalid_argument("`shard_number` cannot be zero")
-                        })?,
-                        on_disk_payload: params.on_disk_payload,
-                        // TODO: use `repliction_factor` from `config`
-                        replication_factor: default_replication_factor(),
-                    }
-                }
+                    },
+                    shard_number: NonZeroU32::new(params.shard_number)
+                        .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
+                    on_disk_payload: params.on_disk_payload,
+                    replication_factor: NonZeroU32::new(
+                        params
+                            .replication_factor
+                            .unwrap_or_else(|| default_replication_factor().get()),
+                    )
+                    .ok_or_else(|| {
+                        Status::invalid_argument("`replication_factor` cannot be zero")
+                    })?,
+                    write_consistency_factor: NonZeroU32::new(
+                        params
+                            .write_consistency_factor
+                            .unwrap_or_else(|| default_write_consistency_factor().get()),
+                    )
+                    .ok_or_else(|| {
+                        Status::invalid_argument("`write_consistency_factor` cannot be zero")
+                    })?,
+                },
             },
             hnsw_config: match config.hnsw_config {
                 None => return Err(Status::invalid_argument("Malformed HnswConfig type")),

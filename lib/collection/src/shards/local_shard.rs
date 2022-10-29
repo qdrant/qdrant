@@ -1,4 +1,5 @@
-use std::collections::BTreeSet;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::remove_file;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -10,24 +11,31 @@ use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
+use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
-use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
+use segment::types::{
+    Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType, SegmentConfig,
+    SegmentType,
+};
 use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::config::CollectionConfig;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
+};
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
-use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
-use crate::shard::{CollectionId, ShardId};
-use crate::telemetry::ShardTelemetry;
+use crate::shards::shard::ShardId;
+use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
+use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
+use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
 
@@ -50,6 +58,24 @@ pub struct LocalShard {
 
 /// Shard holds information about segments and WAL.
 impl LocalShard {
+    /// Clear local shard related data.
+    ///
+    /// Do NOT remove config file.
+    pub async fn clear(shard_path: &Path) -> CollectionResult<()> {
+        // Delete WAL
+        let wal_path = Self::wal_path(shard_path);
+        if wal_path.exists() {
+            remove_dir_all(wal_path).await?;
+        }
+        // Delete segments
+        let segments_path = Self::segments_path(shard_path);
+        if segments_path.exists() {
+            remove_dir_all(segments_path).await?;
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         id: ShardId,
@@ -114,6 +140,10 @@ impl LocalShard {
         self.segments.deref()
     }
 
+    /// Recovers shard from disk.
+    ///
+    /// WARN: This method intended to be used only on the initial start of the node.
+    /// It does not implement any logic to recover from a failure. Will panic if there is a failure.
     pub async fn load(
         id: ShardId,
         collection_id: CollectionId,
@@ -153,7 +183,12 @@ impl LocalShard {
                 });
                 continue;
             }
-            load_handlers.push(thread::spawn(move || load_segment(&segments_path)));
+            load_handlers.push(
+                thread::Builder::new()
+                    .name("shard-load".to_string())
+                    .spawn(move || load_segment(&segments_path))
+                    .unwrap(),
+            );
         }
 
         for handler in load_handlers {
@@ -216,17 +251,12 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize temporary shard config file
         let temp_shard_config = ShardConfig::new_temp();
-        Self::_build(
-            id,
-            collection_id,
-            shard_path,
-            shared_config,
-            temp_shard_config,
-        )
-        .await
+        let shard = Self::build(id, collection_id, shard_path, shared_config).await?;
+        temp_shard_config.save(shard_path)?;
+        Ok(shard)
     }
 
-    pub async fn build(
+    pub async fn build_local(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
@@ -234,26 +264,18 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_local();
-        Self::_build(
-            id,
-            collection_id,
-            shard_path,
-            shared_config,
-            local_shard_config,
-        )
-        .await
+        let shard = Self::build(id, collection_id, shard_path, shared_config).await?;
+        local_shard_config.save(shard_path)?;
+        Ok(shard)
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
-    async fn _build(
+    pub async fn build(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        config: ShardConfig,
     ) -> CollectionResult<LocalShard> {
-        config.save(shard_path)?;
-
         let config = shared_config.read().await;
 
         let wal_path = shard_path.join("wal");
@@ -289,7 +311,10 @@ impl LocalShard {
                     false => PayloadStorageType::InMemory,
                 },
             };
-            let segment = thread::spawn(move || build_segment(&path_clone, &segment_config));
+            let segment = thread::Builder::new()
+                .name("shard-build".to_string())
+                .spawn(move || build_segment(&path_clone, &segment_config))
+                .unwrap();
             build_handlers.push(segment);
         }
 
@@ -534,21 +559,32 @@ impl LocalShard {
         Ok(all_points)
     }
 
-    pub fn get_telemetry_data(&self) -> ShardTelemetry {
-        let segments = self
+    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
+        let segments: Vec<_> = self
             .segments()
             .read()
             .iter()
             .map(|(_id, segment)| segment.get().read().get_telemetry_data())
             .collect();
-        let optimizers = self
+
+        let optimizer_status = match &self.segments().read().optimizer_errors {
+            None => OptimizersStatus::Ok,
+            Some(error) => OptimizersStatus::Error(error.to_string()),
+        };
+
+        let optimizations = self
             .optimizers
             .iter()
             .map(|optimizer| optimizer.get_telemetry_data())
-            .collect();
-        ShardTelemetry::Local {
+            .fold(Default::default(), |acc, x| acc + x);
+
+        LocalShardTelemetry {
+            variant_name: None,
             segments,
-            optimizers,
+            optimizations: OptimizerTelemetry {
+                status: optimizer_status,
+                optimizations,
+            },
         }
     }
 
@@ -561,6 +597,75 @@ impl LocalShard {
             } else {
                 log::error!("Collection `before_drop` was not called.")
             }
+        }
+    }
+
+    pub async fn local_shard_info(&self) -> CollectionInfo {
+        let collection_config = self.config.read().await.clone();
+        let segments = self.segments().read();
+        let mut vectors_count = 0;
+        let mut indexed_vectors_count = 0;
+        let mut points_count = 0;
+        let mut segments_count = 0;
+        let mut status = CollectionStatus::Green;
+        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
+        for (_idx, segment) in segments.iter() {
+            segments_count += 1;
+
+            let segment_info = match segment {
+                LockedSegment::Original(original_segment) => {
+                    let info = original_segment.read().info();
+                    if info.segment_type == SegmentType::Indexed {
+                        indexed_vectors_count += info.num_vectors;
+                    }
+                    info
+                }
+                LockedSegment::Proxy(proxy_segment) => {
+                    let proxy_segment_lock = proxy_segment.read();
+                    let proxy_segment_info = proxy_segment_lock.info();
+
+                    let wrapped_info = proxy_segment_lock.wrapped_segment.get().read().info();
+                    if wrapped_info.segment_type == SegmentType::Indexed {
+                        indexed_vectors_count += wrapped_info.num_vectors;
+                    }
+                    proxy_segment_info
+                }
+            };
+
+            if segment_info.segment_type == SegmentType::Special {
+                status = CollectionStatus::Yellow;
+            }
+            vectors_count += segment_info.num_vectors;
+            points_count += segment_info.num_points;
+            for (key, val) in segment_info.index_schema {
+                match schema.entry(key) {
+                    Entry::Occupied(o) => {
+                        o.into_mut().points += val.points;
+                    }
+                    Entry::Vacant(v) => {
+                        v.insert(val);
+                    }
+                }
+            }
+        }
+        if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+            status = CollectionStatus::Red;
+        }
+
+        let optimizer_status = match &segments.optimizer_errors {
+            None => OptimizersStatus::Ok,
+            Some(error) => OptimizersStatus::Error(error.to_string()),
+        };
+
+        CollectionInfo {
+            status,
+            optimizer_status,
+            vectors_count,
+            indexed_vectors_count,
+            points_count,
+            segments_count,
+            config: collection_config,
+            payload_schema: schema,
         }
     }
 }

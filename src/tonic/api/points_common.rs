@@ -18,7 +18,7 @@ use collection::operations::types::{
     SearchRequestBatch,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::shard::ShardId;
+use collection::shards::shard::ShardId;
 use segment::data_types::vectors::NamedVector;
 use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
 use storage::content_manager::conversions::error_to_status;

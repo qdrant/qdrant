@@ -1,9 +1,8 @@
 [package]
 name = "qdrant"
-version = "0.10.5"
+version = "0.11.0"
 authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
 edition = "2021"
-doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -30,14 +29,14 @@ colored = "2"
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
 chrono = { version = "~0.4", features = ["serde"] }
-schemars = { version = "0.8.10", features = ["uuid1", "preserve_order", "chrono"] }
+schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono"] }
 itertools = "0.10"
-anyhow = "1.0.65"
-futures = "0.3.24"
+anyhow = "1.0.66"
+futures = "0.3.25"
 futures-util = "0.3.24"
-clap = { version = "4.0.4", features = ["derive"] }
+clap = { version = "4.0.18", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
-uuid = { version = "1.1", features = ["v4", "serde"] }
+uuid = { version = "1.2", features = ["v4", "serde"] }
 sys-info = "0.9.1"
 
 config = "~0.13.2"
@@ -49,7 +48,7 @@ actix-cors = "0.6.3"
 actix-files = "0.6.2"
 tonic = "0.7.2"
 tower = "0.4.13"
-tower-layer = "0.3.1"
+tower-layer = "0.3.2"
 num-traits = "0.2.15"
 tar = "0.4.38"
 

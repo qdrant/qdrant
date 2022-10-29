@@ -14,7 +14,7 @@ use super::types::{CollectionError, CollectionResult};
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard, Validate};
 use crate::hash_ring::HashRing;
 use crate::operations::types::Record;
-use crate::shard::ShardId;
+use crate::shards::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -192,6 +192,17 @@ pub enum PointOperations {
     DeletePointsByFilter(Filter),
     /// Points Sync
     SyncPoints(PointSyncOperation),
+}
+
+impl PointOperations {
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            PointOperations::UpsertPoints(_) => true,
+            PointOperations::DeletePoints { .. } => false,
+            PointOperations::DeletePointsByFilter(_) => false,
+            PointOperations::SyncPoints(_) => true,
+        }
+    }
 }
 
 impl Validate for PointOperations {

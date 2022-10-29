@@ -8,5 +8,5 @@
 /openapi-merged.json
 /openapi-points.yaml
 /openapi-cluster.yaml
-/openapi-telemetry.yaml
+/openapi-service.yaml
 __pycache__/

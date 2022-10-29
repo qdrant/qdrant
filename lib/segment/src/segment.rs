@@ -27,9 +27,9 @@ use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
+    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
+    SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
@@ -769,7 +769,7 @@ impl SegmentEntry for Segment {
         let iterator = id_tracker.iter_from(from).map(|x| x.0);
         match to {
             None => iterator.collect(),
-            Some(to_id) => iterator.take_while(|x| *x <= to_id).collect(),
+            Some(to_id) => iterator.take_while(|x| *x < to_id).collect(),
         }
     }
 
@@ -813,12 +813,14 @@ impl SegmentEntry for Segment {
     }
 
     fn info(&self) -> SegmentInfo {
-        let schema = self
-            .payload_index
-            .borrow()
+        let payload_index = self.payload_index.borrow();
+        let schema = payload_index
             .indexed_fields()
             .into_iter()
-            .map(|(key, index_schema)| (key, index_schema.into()))
+            .map(|(key, index_schema)| {
+                let points_count = payload_index.indexed_points(&key);
+                (key, PayloadIndexInfo::new(index_schema, points_count))
+            })
             .collect();
 
         SegmentInfo {
@@ -1088,14 +1090,20 @@ impl SegmentEntry for Segment {
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
+        let vector_index_searches: Vec<_> = self
+            .vector_data
+            .iter()
+            .map(|(k, v)| {
+                let mut telemetry = v.vector_index.borrow().get_telemetry_data();
+                telemetry.index_name = Some(k.clone());
+                telemetry
+            })
+            .collect();
+
         SegmentTelemetry {
             info: self.info(),
             config: self.config(),
-            vector_index: self
-                .vector_data
-                .iter()
-                .map(|(k, v)| (k.to_owned(), v.vector_index.borrow().get_telemetry_data()))
-                .collect(),
+            vector_index_searches,
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
         }
     }

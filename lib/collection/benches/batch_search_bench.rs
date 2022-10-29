@@ -10,8 +10,8 @@ use collection::operations::point_ops::{PointInsertOperations, PointOperations, 
 use collection::operations::types::{SearchRequest, SearchRequestBatch};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::shard::local_shard::LocalShard;
-use collection::shard::ShardOperation;
+use collection::shards::local_shard::LocalShard;
+use collection::shards::shard_trait::ShardOperation;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
 use segment::data_types::vectors::only_default_vector;
@@ -65,6 +65,7 @@ fn batch_search_bench(c: &mut Criterion) {
         .into(),
         shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
         replication_factor: NonZeroU32::new(1).unwrap(),
+        write_consistency_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,
     };
 
@@ -87,7 +88,7 @@ fn batch_search_bench(c: &mut Criterion) {
     let shared_config = Arc::new(RwLock::new(collection_config));
 
     let shard = handle
-        .block_on(LocalShard::build(
+        .block_on(LocalShard::build_local(
             0,
             "test_collection".to_string(),
             storage_dir.path(),
