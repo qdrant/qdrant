@@ -1956,16 +1956,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "memmap"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6585fd95e7bb50d6cc31e20d4cf9afb4e2ba16c5846fc76793f11218da9c475b"
-dependencies = [
- "libc",
- "winapi 0.3.9",
-]
-
-[[package]]
 name = "memmap2"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3043,7 +3033,7 @@ dependencies = [
  "itertools",
  "json-patch",
  "log 0.4.17",
- "memmap 0.7.0",
+ "memmap2",
  "num-derive",
  "num-traits",
  "num_cpus",
@@ -3889,7 +3879,7 @@ dependencies = [
  "eventual",
  "fs2",
  "log 0.4.17",
- "memmap 0.5.2",
+ "memmap",
  "rand",
  "rand_distr",
  "serde",
