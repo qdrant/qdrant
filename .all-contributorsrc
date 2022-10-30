@@ -202,6 +202,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "erare-humanum",
+      "name": "erare-humanum",
+      "avatar_url": "https://avatars.githubusercontent.com/u/116254494?v=4",
+      "profile": "https://github.com/erare-humanum",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
@@ -209,5 +218,6 @@
   "projectOwner": "qdrant",
   "repoType": "github",
   "repoHost": "https://github.com",
-  "skipCi": true
+  "skipCi": true,
+  "commitConvention": "angular"
 }
