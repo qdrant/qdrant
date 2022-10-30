@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use bincode;
@@ -58,8 +58,6 @@ pub struct SimpleIdTracker {
     internal_to_version: Vec<SeqNumberType>,
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
-    only_external_to_version_num: HashMap<u64, SeqNumberType>,
-    only_external_to_version_uuid: HashMap<Uuid, SeqNumberType>,
     points_count: usize,
     mapping_db_wrapper: DatabaseColumnWrapper,
     versions_db_wrapper: DatabaseColumnWrapper,
@@ -120,9 +118,6 @@ impl SimpleIdTracker {
         }
 
         let mut internal_to_version: Vec<SeqNumberType> = Default::default();
-        let mut only_external_to_version_num: HashMap<u64, SeqNumberType> = Default::default();
-        let mut only_external_to_version_uuid: HashMap<Uuid, SeqNumberType> = Default::default();
-
         let versions_db_wrapper = DatabaseColumnWrapper::new(store, DB_VERSIONS_CF);
         for (key, val) in versions_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
@@ -137,14 +132,10 @@ impl SimpleIdTracker {
                 }
                 internal_to_version[internal_id as usize] = version;
             } else {
-                match external_id {
-                    PointIdType::NumId(idx) => {
-                        only_external_to_version_num.insert(idx, version);
-                    }
-                    PointIdType::Uuid(uuid) => {
-                        only_external_to_version_uuid.insert(uuid, version);
-                    }
-                }
+                log::warn!(
+                    "Found version without internal id, external id: {}",
+                    external_id
+                );
             }
         }
 
@@ -154,8 +145,6 @@ impl SimpleIdTracker {
             internal_to_version,
             external_to_internal_num,
             external_to_internal_uuid,
-            only_external_to_version_num,
-            only_external_to_version_uuid,
             points_count,
             mapping_db_wrapper,
             versions_db_wrapper,
@@ -173,41 +162,25 @@ impl SimpleIdTracker {
 }
 
 impl IdTracker for SimpleIdTracker {
-    fn version(&self, external_id: PointIdType) -> Option<SeqNumberType> {
-        if let Some(internal_id) = self.internal_id(external_id) {
-            self.internal_to_version.get(internal_id as usize).copied()
-        } else {
-            match external_id {
-                PointIdType::NumId(idx) => self.only_external_to_version_num.get(&idx).copied(),
-                PointIdType::Uuid(uuid) => self.only_external_to_version_uuid.get(&uuid).copied(),
-            }
-        }
+    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+        self.internal_to_version.get(internal_id as usize).copied()
     }
 
-    fn set_version(
+    fn set_internal_version(
         &mut self,
-        external_id: PointIdType,
+        internal_id: PointOffsetType,
         version: SeqNumberType,
     ) -> OperationResult<()> {
-        if let Some(internal_id) = self.internal_id(external_id) {
+        if let Some(external_id) = self.external_id(internal_id) {
             if internal_id as usize >= self.internal_to_version.len() {
                 self.internal_to_version.resize(internal_id as usize + 1, 0);
             }
             self.internal_to_version[internal_id as usize] = version;
-        } else {
-            match external_id {
-                PointIdType::NumId(idx) => {
-                    self.only_external_to_version_num.insert(idx, version);
-                }
-                PointIdType::Uuid(uuid) => {
-                    self.only_external_to_version_uuid.insert(uuid, version);
-                }
-            }
+            self.versions_db_wrapper.put(
+                &Self::store_key(&external_id),
+                &bincode::serialize(&version).unwrap(),
+            )?;
         }
-        self.versions_db_wrapper.put(
-            &Self::store_key(&external_id),
-            &bincode::serialize(&version).unwrap(),
-        )?;
         Ok(())
     }
 
@@ -263,14 +236,6 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        match &external_id {
-            PointIdType::NumId(idx) => {
-                self.only_external_to_version_num.remove(idx);
-            }
-            PointIdType::Uuid(uuid) => {
-                self.only_external_to_version_uuid.remove(uuid);
-            }
-        }
         let internal_id = match &external_id {
             PointIdType::NumId(idx) => self.external_to_internal_num.remove(idx),
             PointIdType::Uuid(uuid) => self.external_to_internal_uuid.remove(uuid),
@@ -401,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serializaton() {
+    fn test_serialization() {
         check_bincode_serialization(StoredPointId::NumId(123));
         check_bincode_serialization(StoredPointId::Uuid(Uuid::from_u128(123_u128)));
         check_bincode_serialization(StoredPointId::String("hello".to_string()));
