@@ -34,7 +34,7 @@ use super::collection_meta_ops::{
     CreateCollectionOperation, SetShardReplicaState, ShardTransferOperations,
     UpdateCollectionOperation,
 };
-use super::{consensus_state, CollectionContainer};
+use super::{consensus_manager, CollectionContainer};
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
@@ -931,17 +931,17 @@ impl TableOfContent {
         self.channel_service.id_to_address.read().clone()
     }
 
-    pub fn collections_snapshot_sync(&self) -> consensus_state::CollectionsSnapshot {
+    pub fn collections_snapshot_sync(&self) -> consensus_manager::CollectionsSnapshot {
         self.collection_management_runtime
             .block_on(self.collections_snapshot())
     }
 
-    pub async fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
+    pub async fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
         let mut collections: HashMap<CollectionId, collection_state::State> = HashMap::new();
         for (id, collection) in self.collections.read().await.iter() {
             collections.insert(id.clone(), collection.state().await);
         }
-        consensus_state::CollectionsSnapshot {
+        consensus_manager::CollectionsSnapshot {
             collections,
             aliases: self.alias_persistence.read().await.state().clone(),
         }
@@ -949,7 +949,7 @@ impl TableOfContent {
 
     pub fn apply_collections_snapshot(
         &self,
-        data: consensus_state::CollectionsSnapshot,
+        data: consensus_manager::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
@@ -1179,13 +1179,13 @@ impl CollectionContainer for TableOfContent {
         self.perform_collection_meta_op_sync(operation)
     }
 
-    fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
+    fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
         self.collections_snapshot_sync()
     }
 
     fn apply_collections_snapshot(
         &self,
-        data: consensus_state::CollectionsSnapshot,
+        data: consensus_manager::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
         self.apply_collections_snapshot(data)
     }
