@@ -222,36 +222,39 @@ Thanks to the people who contributed to Qdrant:
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
 <table>
-  <tr>
-    <td align="center"><a href="https://t.me/neural_network_engineering"><img src="https://avatars.githubusercontent.com/u/1935623?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Andrey Vasnetsov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=generall" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/azayarni"><img src="https://avatars.githubusercontent.com/u/926368?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Andre Zayarni</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=azayarni" title="Documentation">📖</a></td>
-    <td align="center"><a href="http://www.linkedin.com/in/joanfontanalsmartinez/"><img src="https://avatars.githubusercontent.com/u/19825685?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Joan Fontanals</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=JoanFM" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/trean"><img src="https://avatars.githubusercontent.com/u/7085263?v=4?s=50" width="50px;" alt=""/><br /><sub><b>trean</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=trean" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/kgrech"><img src="https://avatars.githubusercontent.com/u/9020133?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Konstantin</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kgrech" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/kekonen"><img src="https://avatars.githubusercontent.com/u/11177808?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Daniil Naumetc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kekonen" title="Code">💻</a></td>
-    <td align="center"><a href="https://dev.to/vearutop"><img src="https://avatars.githubusercontent.com/u/1381436?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Viacheslav Poturaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=vearutop" title="Documentation">📖</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://github.com/galibey"><img src="https://avatars.githubusercontent.com/u/48586936?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Alexander Galibey</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=galibey" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/HaiCheViet"><img src="https://avatars.githubusercontent.com/u/37202591?v=4?s=50" width="50px;" alt=""/><br /><sub><b>HaiCheViet</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=HaiCheViet" title="Code">💻</a></td>
-    <td align="center"><a href="https://tranzystorek-io.github.io/"><img src="https://avatars.githubusercontent.com/u/5671049?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Marcin Puc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=tranzystorek-io" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/anveq"><img src="https://avatars.githubusercontent.com/u/94402218?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Anton V.</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=anveq" title="Code">💻</a></td>
-    <td align="center"><a href="http://agourlay.github.io"><img src="https://avatars.githubusercontent.com/u/606963?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Arnaud Gourlay</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=agourlay" title="Code">💻</a></td>
-    <td align="center"><a href="https://t.me/type_driven_thoughts"><img src="https://avatars.githubusercontent.com/u/17401538?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Egor Ivkov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=eadventurous" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/IvanPleshkov"><img src="https://avatars.githubusercontent.com/u/20946825?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Ivan Pleshkov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=IvanPleshkov" title="Code">💻</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://github.com/daniilsunyaev"><img src="https://avatars.githubusercontent.com/u/3955599?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Daniil</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=daniilsunyaev" title="Code">💻</a></td>
-    <td align="center"><a href="http://homeonrails.com"><img src="https://avatars.githubusercontent.com/u/1282182?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Anton Kaliaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=melekes" title="Code">💻</a></td>
-    <td align="center"><a href="https://soundcloud.com/norom"><img src="https://avatars.githubusercontent.com/u/7762532?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Andre Julius</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=NotNorom" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/prok20"><img src="https://avatars.githubusercontent.com/u/20628026?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Prokudin Alexander</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=prok20" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/elbart"><img src="https://avatars.githubusercontent.com/u/48974?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Tim Eggert</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=elbart" title="Code">💻</a></td>
-    <td align="center"><a href="https://github.com/gvelo"><img src="https://avatars.githubusercontent.com/u/943360?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Gabriel Velo</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=gvelo" title="Code">💻</a></td>
-    <td align="center"><a href="http://burtonqin.github.io"><img src="https://avatars.githubusercontent.com/u/11943383?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Boqin Qin(秦 伯钦)</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/issues?q=author%3ABurtonQin" title="Bug reports">🐛</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://forloop.co.uk/blog"><img src="https://avatars.githubusercontent.com/u/208231?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Russ Cam</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=russcam" title="Code">💻</a></td>
-  </tr>
+  <tbody>
+    <tr>
+      <td align="center"><a href="https://t.me/neural_network_engineering"><img src="https://avatars.githubusercontent.com/u/1935623?v=4?s=50" width="50px;" alt="Andrey Vasnetsov"/><br /><sub><b>Andrey Vasnetsov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=generall" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/azayarni"><img src="https://avatars.githubusercontent.com/u/926368?v=4?s=50" width="50px;" alt="Andre Zayarni"/><br /><sub><b>Andre Zayarni</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=azayarni" title="Documentation">📖</a></td>
+      <td align="center"><a href="http://www.linkedin.com/in/joanfontanalsmartinez/"><img src="https://avatars.githubusercontent.com/u/19825685?v=4?s=50" width="50px;" alt="Joan Fontanals"/><br /><sub><b>Joan Fontanals</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=JoanFM" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/trean"><img src="https://avatars.githubusercontent.com/u/7085263?v=4?s=50" width="50px;" alt="trean"/><br /><sub><b>trean</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=trean" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/kgrech"><img src="https://avatars.githubusercontent.com/u/9020133?v=4?s=50" width="50px;" alt="Konstantin"/><br /><sub><b>Konstantin</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kgrech" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/kekonen"><img src="https://avatars.githubusercontent.com/u/11177808?v=4?s=50" width="50px;" alt="Daniil Naumetc"/><br /><sub><b>Daniil Naumetc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kekonen" title="Code">💻</a></td>
+      <td align="center"><a href="https://dev.to/vearutop"><img src="https://avatars.githubusercontent.com/u/1381436?v=4?s=50" width="50px;" alt="Viacheslav Poturaev"/><br /><sub><b>Viacheslav Poturaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=vearutop" title="Documentation">📖</a></td>
+    </tr>
+    <tr>
+      <td align="center"><a href="https://github.com/galibey"><img src="https://avatars.githubusercontent.com/u/48586936?v=4?s=50" width="50px;" alt="Alexander Galibey"/><br /><sub><b>Alexander Galibey</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=galibey" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/HaiCheViet"><img src="https://avatars.githubusercontent.com/u/37202591?v=4?s=50" width="50px;" alt="HaiCheViet"/><br /><sub><b>HaiCheViet</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=HaiCheViet" title="Code">💻</a></td>
+      <td align="center"><a href="https://tranzystorek-io.github.io/"><img src="https://avatars.githubusercontent.com/u/5671049?v=4?s=50" width="50px;" alt="Marcin Puc"/><br /><sub><b>Marcin Puc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=tranzystorek-io" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/anveq"><img src="https://avatars.githubusercontent.com/u/94402218?v=4?s=50" width="50px;" alt="Anton V."/><br /><sub><b>Anton V.</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=anveq" title="Code">💻</a></td>
+      <td align="center"><a href="http://agourlay.github.io"><img src="https://avatars.githubusercontent.com/u/606963?v=4?s=50" width="50px;" alt="Arnaud Gourlay"/><br /><sub><b>Arnaud Gourlay</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=agourlay" title="Code">💻</a></td>
+      <td align="center"><a href="https://t.me/type_driven_thoughts"><img src="https://avatars.githubusercontent.com/u/17401538?v=4?s=50" width="50px;" alt="Egor Ivkov"/><br /><sub><b>Egor Ivkov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=eadventurous" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/IvanPleshkov"><img src="https://avatars.githubusercontent.com/u/20946825?v=4?s=50" width="50px;" alt="Ivan Pleshkov"/><br /><sub><b>Ivan Pleshkov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=IvanPleshkov" title="Code">💻</a></td>
+    </tr>
+    <tr>
+      <td align="center"><a href="https://github.com/daniilsunyaev"><img src="https://avatars.githubusercontent.com/u/3955599?v=4?s=50" width="50px;" alt="Daniil"/><br /><sub><b>Daniil</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=daniilsunyaev" title="Code">💻</a></td>
+      <td align="center"><a href="http://homeonrails.com"><img src="https://avatars.githubusercontent.com/u/1282182?v=4?s=50" width="50px;" alt="Anton Kaliaev"/><br /><sub><b>Anton Kaliaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=melekes" title="Code">💻</a></td>
+      <td align="center"><a href="https://soundcloud.com/norom"><img src="https://avatars.githubusercontent.com/u/7762532?v=4?s=50" width="50px;" alt="Andre Julius"/><br /><sub><b>Andre Julius</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=NotNorom" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/prok20"><img src="https://avatars.githubusercontent.com/u/20628026?v=4?s=50" width="50px;" alt="Prokudin Alexander"/><br /><sub><b>Prokudin Alexander</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=prok20" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/elbart"><img src="https://avatars.githubusercontent.com/u/48974?v=4?s=50" width="50px;" alt="Tim Eggert"/><br /><sub><b>Tim Eggert</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=elbart" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/gvelo"><img src="https://avatars.githubusercontent.com/u/943360?v=4?s=50" width="50px;" alt="Gabriel Velo"/><br /><sub><b>Gabriel Velo</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=gvelo" title="Code">💻</a></td>
+      <td align="center"><a href="http://burtonqin.github.io"><img src="https://avatars.githubusercontent.com/u/11943383?v=4?s=50" width="50px;" alt="Boqin Qin(秦 伯钦)"/><br /><sub><b>Boqin Qin(秦 伯钦)</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/issues?q=author%3ABurtonQin" title="Bug reports">🐛</a></td>
+    </tr>
+    <tr>
+      <td align="center"><a href="https://forloop.co.uk/blog"><img src="https://avatars.githubusercontent.com/u/208231?v=4?s=50" width="50px;" alt="Russ Cam"/><br /><sub><b>Russ Cam</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=russcam" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/erare-humanum"><img src="https://avatars.githubusercontent.com/u/116254494?v=4?s=50" width="50px;" alt="erare-humanum"/><br /><sub><b>erare-humanum</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=erare-humanum" title="Code">💻</a></td>
+    </tr>
+  </tbody>
 </table>
 
 <!-- markdownlint-restore -->
