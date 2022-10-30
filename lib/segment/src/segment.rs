@@ -97,6 +97,22 @@ impl Segment {
         Ok(())
     }
 
+    /// Operation wrapped, which handles previous and new errors in the segment,
+    /// automatically updates versions and skips operations if version is too old
+    ///
+    /// # Arguments
+    ///
+    /// * `op_num` - sequential operation of the current operation
+    /// * `op_point_offset` - if operation is point-related, specify this point offset.
+    ///     If point offset is specified, handler will use point version for comparision.
+    ///     Otherwise, it will use global storage version
+    /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside)
+    ///     and optionally new offset of the changed point.
+    ///
+    /// # Result
+    ///
+    /// Propagates `OperationResult` of bool (which is returned in the `op` closure)
+    ///
     fn handle_version_and_failure<F>(
         &mut self,
         op_num: SeqNumberType,
