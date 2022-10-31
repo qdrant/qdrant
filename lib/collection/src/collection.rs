@@ -2,7 +2,6 @@ use std::cmp::max;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1482,45 +1481,6 @@ impl Collection {
         }
 
         Ok(())
-    }
-
-    pub async fn suggest_shard_replica_changes(
-        &self,
-        new_repl_factor: NonZeroU32,
-        _all_peers: HashSet<PeerId>,
-    ) -> CollectionResult<HashSet<replica_set::Change>> {
-        let changes: HashSet<Change> = HashSet::new();
-
-        let shard_holder = self.shards_holder.read().await;
-        let mut shard_to_peers: HashMap<ShardId, HashSet<PeerId>> = HashMap::new();
-
-        for (shard_id, replica_set) in shard_holder.get_shards() {
-            let peers = replica_set.peers();
-            shard_to_peers.insert(*shard_id, peers.keys().copied().collect());
-        }
-
-        // ToDo: functions to use:
-        // * suggest_transfer_source
-        // * suggest_peer_to_add_replica
-        // * suggest_peer_to_remove_replica
-
-        for (_shard_id, replica_set) in shard_holder.get_shards() {
-            let peers = replica_set.peers();
-            let current_number_of_replicas = peers.len();
-            let required_number_of_replicas = new_repl_factor.get() as usize;
-            if current_number_of_replicas < required_number_of_replicas {
-                // We need to add replicas
-                // ToDo add replicas
-                log::warn!("Automatic replica addition is not implemented yet");
-            }
-            if current_number_of_replicas > required_number_of_replicas {
-                // We need to remove replicas
-                // ToDo remove replicas
-                log::warn!("Automatic replica removal is not implemented yet");
-            }
-        }
-
-        Ok(changes)
     }
 
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
