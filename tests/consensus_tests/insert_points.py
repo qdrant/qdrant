@@ -1,8 +1,7 @@
 import requests
 import sys
 
-from utils import assert_http_ok
-
+from assertions import assert_http_ok
 # Create points in peer's collection
 r = requests.put(
     f"http://127.0.0.1:{sys.argv[2]}/collections/{sys.argv[1]}/points?wait=true", json={

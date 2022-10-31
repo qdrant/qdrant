@@ -1,6 +1,7 @@
 import pathlib
 
 from .utils import *
+from .assertions import assert_http_ok
 
 N_PEERS = 3
 N_SHARDS = 4

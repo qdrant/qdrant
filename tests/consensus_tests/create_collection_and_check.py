@@ -2,7 +2,7 @@ import argparse
 import requests
 import time
 
-from utils import assert_http_ok
+from assertions import assert_http_ok
 
 parser = argparse.ArgumentParser("Create test collection")
 parser.add_argument("collection_name")

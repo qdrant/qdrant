@@ -1,7 +1,7 @@
 import requests
 import sys
 
-from utils import assert_http_ok
+from assertions import assert_http_ok
 
 # Check that 'search' returns the same results on all peers
 for i in range(2, len(sys.argv)):
