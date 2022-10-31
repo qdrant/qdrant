@@ -51,7 +51,7 @@ def assert_http_ok(response: requests.Response):
             raise Exception(f"Http request failed with status {response.status_code} and no content")
         else:
             raise Exception(
-                f"Http request failed with status {response.status_code} and contents:\n{response.json()}")
+                f"Http request failed with status {response.status_code} and content:\n{response.json()}")
 
 
 def assert_project_root():
@@ -333,7 +333,7 @@ def wait_collection_on_all_peers(collection_name: str, peer_api_uris: [str], max
         exists = True
         for url in peer_api_uris:
             r = requests.get(f"{url}/collections")
-            assert r.status_code == 200
+            assert_http_ok(r)
             collections = r.json()["result"]["collections"]
             exists &= any(collection["name"] == collection_name for collection in collections)
         if exists:
