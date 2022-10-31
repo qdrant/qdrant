@@ -126,26 +126,29 @@ impl SegmentBuilder {
                             }
                             continue;
                         };
-                    let other_version = other_id_tracker.version(external_id).unwrap();
+                    let other_version = other_id_tracker.internal_version(old_internal_id).unwrap();
 
-                    match id_tracker.version(external_id) {
+                    match id_tracker.internal_id(external_id) {
                         None => {
                             // New point, just insert
                             id_tracker.set_link(external_id, new_internal_id)?;
-                            id_tracker.set_version(external_id, other_version)?;
+                            id_tracker.set_internal_version(new_internal_id, other_version)?;
                             payload_index.assign(
                                 new_internal_id,
                                 &other_payload_index.payload(old_internal_id)?,
                             )?;
                         }
-                        Some(existing_version) => {
+                        Some(existing_internal_id) => {
+                            // Point exists in both: newly constructed and old segments, so we need to merge them
+                            // Based on version
+                            let existing_version =
+                                id_tracker.internal_version(existing_internal_id).unwrap();
                             let remove_id = if existing_version < other_version {
                                 // Other version is the newest, remove the existing one and replace
-                                let existing_internal_id =
-                                    id_tracker.internal_id(external_id).unwrap();
                                 id_tracker.drop(external_id)?;
                                 id_tracker.set_link(external_id, new_internal_id)?;
-                                id_tracker.set_version(external_id, other_version)?;
+                                id_tracker.set_internal_version(new_internal_id, other_version)?;
+                                payload_index.drop(existing_internal_id)?;
                                 payload_index.assign(
                                     new_internal_id,
                                     &other_payload_index.payload(old_internal_id)?,
