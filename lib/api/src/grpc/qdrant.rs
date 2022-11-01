@@ -647,8 +647,8 @@ pub mod collections_server {
     #[derive(Debug)]
     pub struct CollectionsServer<T: Collections> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Collections> CollectionsServer<T> {
@@ -671,6 +671,18 @@ pub mod collections_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with `gzip`.
+        #[must_use]
+        pub fn accept_gzip(mut self) -> Self {
+            self.accept_compression_encodings.enable_gzip();
+            self
+        }
+        /// Compress responses with `gzip`, if the client supports it.
+        #[must_use]
+        pub fn send_gzip(mut self) -> Self {
+            self.send_compression_encodings.enable_gzip();
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionsServer<T>
@@ -1107,8 +1119,8 @@ pub mod collections_internal_server {
     #[derive(Debug)]
     pub struct CollectionsInternalServer<T: CollectionsInternal> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: CollectionsInternal> CollectionsInternalServer<T> {
@@ -1131,6 +1143,18 @@ pub mod collections_internal_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with `gzip`.
+        #[must_use]
+        pub fn accept_gzip(mut self) -> Self {
+            self.accept_compression_encodings.enable_gzip();
+            self
+        }
+        /// Compress responses with `gzip`, if the client supports it.
+        #[must_use]
+        pub fn send_gzip(mut self) -> Self {
+            self.send_compression_encodings.enable_gzip();
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionsInternalServer<T>
@@ -2431,8 +2455,8 @@ pub mod points_server {
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Points> PointsServer<T> {
@@ -2455,6 +2479,18 @@ pub mod points_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with `gzip`.
+        #[must_use]
+        pub fn accept_gzip(mut self) -> Self {
+            self.accept_compression_encodings.enable_gzip();
+            self
+        }
+        /// Compress responses with `gzip`, if the client supports it.
+        #[must_use]
+        pub fn send_gzip(mut self) -> Self {
+            self.send_compression_encodings.enable_gzip();
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsServer<T>
@@ -3556,8 +3592,8 @@ pub mod points_internal_server {
     #[derive(Debug)]
     pub struct PointsInternalServer<T: PointsInternal> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: PointsInternal> PointsInternalServer<T> {
@@ -3580,6 +3616,18 @@ pub mod points_internal_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with `gzip`.
+        #[must_use]
+        pub fn accept_gzip(mut self) -> Self {
+            self.accept_compression_encodings.enable_gzip();
+            self
+        }
+        /// Compress responses with `gzip`, if the client supports it.
+        #[must_use]
+        pub fn send_gzip(mut self) -> Self {
+            self.send_compression_encodings.enable_gzip();
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsInternalServer<T>
@@ -4412,8 +4460,8 @@ pub mod raft_server {
     #[derive(Debug)]
     pub struct RaftServer<T: Raft> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Raft> RaftServer<T> {
@@ -4436,6 +4484,18 @@ pub mod raft_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with `gzip`.
+        #[must_use]
+        pub fn accept_gzip(mut self) -> Self {
+            self.accept_compression_encodings.enable_gzip();
+            self
+        }
+        /// Compress responses with `gzip`, if the client supports it.
+        #[must_use]
+        pub fn send_gzip(mut self) -> Self {
+            self.send_compression_encodings.enable_gzip();
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for RaftServer<T>
@@ -4872,8 +4932,8 @@ pub mod snapshots_server {
     #[derive(Debug)]
     pub struct SnapshotsServer<T: Snapshots> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Snapshots> SnapshotsServer<T> {
@@ -4896,6 +4956,18 @@ pub mod snapshots_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with `gzip`.
+        #[must_use]
+        pub fn accept_gzip(mut self) -> Self {
+            self.accept_compression_encodings.enable_gzip();
+            self
+        }
+        /// Compress responses with `gzip`, if the client supports it.
+        #[must_use]
+        pub fn send_gzip(mut self) -> Self {
+            self.send_compression_encodings.enable_gzip();
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for SnapshotsServer<T>
@@ -5217,8 +5289,8 @@ pub mod qdrant_server {
     #[derive(Debug)]
     pub struct QdrantServer<T: Qdrant> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Qdrant> QdrantServer<T> {
@@ -5241,6 +5313,18 @@ pub mod qdrant_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with `gzip`.
+        #[must_use]
+        pub fn accept_gzip(mut self) -> Self {
+            self.accept_compression_encodings.enable_gzip();
+            self
+        }
+        /// Compress responses with `gzip`, if the client supports it.
+        #[must_use]
+        pub fn send_gzip(mut self) -> Self {
+            self.send_compression_encodings.enable_gzip();
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for QdrantServer<T>
