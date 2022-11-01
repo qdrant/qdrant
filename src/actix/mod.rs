@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
-use actix_web::middleware::{Condition, Logger};
+use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use storage::dispatcher::Dispatcher;
@@ -71,6 +71,7 @@ pub fn init(
                 .allow_any_header();
 
             App::new()
+                .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default().exclude("/")) // Avoid logging healthcheck requests
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
