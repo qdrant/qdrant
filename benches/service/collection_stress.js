@@ -20,6 +20,7 @@ let vector_length = 128;
 let vectors_per_batch = 32;
 
 export const options = {
+    discardResponseBodies: true, //decrease memory usage
     scenarios: {
         upsert_points: {
             // function to execute

@@ -21,6 +21,7 @@ client.load(['/proto'], 'collections_service.proto', 'points_service.proto');
 const pointsCount = new Counter('points_count');
 
 export const options = {
+   discardResponseBodies: true, //decrease memory usage
     scenarios: {
         upsert_points: {
             // function to execute
