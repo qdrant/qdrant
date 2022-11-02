@@ -247,7 +247,6 @@ impl VectorIndex for PlainIndex {
 
     fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
         VectorIndexSearchesTelemetry {
-            links_mem: 0,
             index_name: None,
             unfiltered_plain: self.unfiltered_searches_telemetry.lock().get_statistics(),
             filtered_plain: self.filtered_searches_telemetry.lock().get_statistics(),

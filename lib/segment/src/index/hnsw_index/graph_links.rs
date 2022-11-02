@@ -15,20 +15,6 @@ pub struct GraphLinks {
 }
 
 impl GraphLinks {
-    pub fn get_memsize(&self) -> usize {
-        std::mem::size_of::<Self>()
-            + self
-                .layers
-                .iter()
-                .map(|layer| {
-                    std::mem::size_of::<LayerData>()
-                        + layer.links.capacity() * std::mem::size_of::<PointOffsetType>()
-                        + layer.offsets.capacity() * std::mem::size_of::<usize>()
-                })
-                .sum::<usize>()
-            + self.reindex.len() * std::mem::size_of::<PointOffsetType>()
-    }
-
     pub fn from_vec(edges: &Vec<Vec<Vec<PointOffsetType>>>) -> Self {
         let mut reindex = (0..edges.len() as PointOffsetType).collect::<Vec<PointOffsetType>>();
         reindex.sort_unstable_by_key(|&i| -(edges[i as usize].len() as i32));

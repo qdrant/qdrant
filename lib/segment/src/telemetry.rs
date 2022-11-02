@@ -38,8 +38,6 @@ impl PayloadIndexTelemetry {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
 pub struct VectorIndexSearchesTelemetry {
-    pub links_mem: usize,
-
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index_name: Option<String>,
 
@@ -114,7 +112,6 @@ impl Anonymize for VectorDataConfig {
 impl Anonymize for VectorIndexSearchesTelemetry {
     fn anonymize(&self) -> Self {
         VectorIndexSearchesTelemetry {
-            links_mem: self.links_mem,
             index_name: None,
             unfiltered_plain: self.unfiltered_plain.anonymize(),
             unfiltered_hnsw: self.unfiltered_hnsw.anonymize(),

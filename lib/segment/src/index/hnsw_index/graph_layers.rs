@@ -202,10 +202,6 @@ impl GraphLayersBase for GraphLayers {
 ///
 /// Assume all scores are similarities. Larger score = closer points
 impl GraphLayers {
-    pub fn get_links_memsize(&self) -> usize {
-        self.links.get_memsize()
-    }
-
     fn new_with_params(
         num_vectors: usize, // Initial number of points in index
         m: usize,           // Expected M for non-first layer
