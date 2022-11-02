@@ -32,7 +32,7 @@ export const options = {
         },
         search_points: {
             // schedule this scenario to start after the upserts (remove for mixed workload)
-            //startTime: "1m",
+            startTime: "1m",
             // function to execute
             exec: "search_points",
             // execution options

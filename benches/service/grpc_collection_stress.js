@@ -1,5 +1,6 @@
 import grpc from 'k6/net/grpc';
 import { check, sleep } from 'k6';
+import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
 
 import { random_city, random_vector } from '/code/utils.js';
@@ -73,8 +74,11 @@ export function setup() {
 }
 
 export function upsert_points() {
-    // connect client
-    client.connect(host, { plaintext: true });
+    // connect client on first iteration
+    // https://github.com/grafana/k6/issues/2719#issuecomment-1280033675
+    if (exec.vu.iterationInScenario == 0) {
+       client.connect(host, { plaintext: true });
+    }
 
     // points payload
     var payload = {
@@ -89,32 +93,38 @@ export function upsert_points() {
 
     // track number of points created
     pointsCount.add(vectors_per_batch);
-
-    // close client
-    client.close();
 }
 
 export function search_points() {
-    // connect client
-    client.connect(host, { plaintext: true });
+     // connect client on first iteration
+     // https://github.com/grafana/k6/issues/2719#issuecomment-1280033675
+     if (exec.vu.iterationInScenario == 0) {
+        client.connect(host, { plaintext: true });
+     }
 
     // generate random search query
     var filter_payload =
         {
             collection_name: collection_name,
+            vector: random_vector(vector_length),
             filter: {
                 must: [
                     {
-                        key: "city",
-                        match: {
-                            value: random_city()
+                        field: {
+                            key: "city",
+                            match: {
+                                keyword: random_city()
+                            }
                         }
                     }
                 ]
             },
-            with_vector: true,
-            with_payload: true,
-            vector: random_vector(vector_length),
+            with_vectors: {
+              enable: true,
+            },
+            with_payload: {
+              enable: true,
+            },
             limit: 100
         }
 
@@ -123,9 +133,6 @@ export function search_points() {
     check(res_search, {
         'search_points status is 200': (r) => r.status === grpc.StatusOK,
     });
-
-    // close client
-    client.close();
 }
 
 function generate_point() {
