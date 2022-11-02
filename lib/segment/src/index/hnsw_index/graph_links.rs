@@ -2,25 +2,42 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::PointOffsetType;
 
-// Links data for whole layer.
-// All links are flattened into one array.
-// Range of links in this array for point with index `i` is `offsets[i]..offsets[(i + 1)]`.
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
-pub struct LayerData {
-    pub links: Vec<PointOffsetType>,
-    pub offsets: Vec<usize>,
-}
+/*
+Links data for whole layer.
 
-// Links data for whole graph.
+                                    sorted
+                     points:        points:
+points to lvl        012345         142350
+     0 -> 0
+     1 -> 4    lvl4:  7       lvl4: 7
+     2 -> 2    lvl3:  Z  Y    lvl3: ZY
+     3 -> 2    lvl2:  abcd    lvl2: adbc
+     4 -> 3    lvl1:  ABCDE   lvl1: ADBCE
+     5 -> 1    lvl0: 123456   lvl0: 123456  <- lvl 0 is not sorted
+
+
+lvl offset:        6       11     15     17
+                   │       │      │      │
+                   │       │      │      │
+                   ▼       ▼      ▼      ▼
+indexes:  012345   6789A   BCDE   FG     H
+
+flatten:  123456   ADBCE   adbc   ZY     7
+                   ▲ ▲ ▲   ▲ ▲    ▲      ▲
+                   │ │ │   │ │    │      │
+                   │ │ │   │ │    │      │
+                   │ │ │   │ │    │      │
+reindex:           142350  142350 142350 142350  (same for each level)
+
+
+for lvl > 0:
+links offset = lvl offset + reindex[point_id]
+*/
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct GraphLinks {
-    // Links data for each layer.
-    layers: Vec<LayerData>,
-
-    // Reindexing for all layers except layer 0.
-    // This map reindexes from point index `i` to index in `LayerData.offsets`
-    // Reindexing sorts points by their max layer.
-    // That's why we can use one reindex for all layers.
+    links: Vec<PointOffsetType>,
+    offsets: Vec<usize>,
+    offsets_start: Vec<usize>,
     reindex: Vec<PointOffsetType>,
 }
 
@@ -29,6 +46,10 @@ impl GraphLinks {
     // `Vec<Vec<Vec<_>>>` means:
     // vector of points -> vector of layers for specific point -> vector of links for specific point and layer
     pub fn from_vec(edges: &Vec<Vec<Vec<PointOffsetType>>>) -> Self {
+        if edges.len() == 0 {
+            return Self::default();
+        }
+
         // create map from offsets to point id. sort by max layer and use this map to build `GraphLinks::reindex`
         let mut back_index = (0..edges.len() as PointOffsetType).collect::<Vec<PointOffsetType>>();
         back_index.sort_unstable_by_key(|&i| -(edges[i as usize].len() as i32));
@@ -39,42 +60,34 @@ impl GraphLinks {
             reindex[back_index[i] as usize] = i as PointOffsetType;
         }
 
-        let max_layers = edges.iter().map(|e| e.len()).max().unwrap_or(0);
-        let mut layers = vec![
-            LayerData {
-                links: Vec::new(),
-                offsets: vec![0],
-            };
-            max_layers
-        ];
+        let mut graph_links = GraphLinks {
+            links: Vec::new(),
+            offsets: vec![0],
+            offsets_start: Vec::new(),
+            reindex,
+        };
 
-        for i in 0..edges.len() {
-            // layer 0 doesn't use reindex
-            let layer_data = &mut layers[0];
-            if let Some(links) = edges[i].get(0) {
-                layer_data.links.extend_from_slice(links);
-            }
-            layer_data.offsets.push(layer_data.links.len());
-
-            // other layers use reindex
-            let i = back_index[i] as usize;
-            for (layer, links) in edges[i].iter().enumerate() {
-                if layer != 0 {
-                    let layer_data = &mut layers[layer];
-                    layer_data.links.extend_from_slice(links);
-                    layer_data.offsets.push(layer_data.links.len());
+        let max_levels = edges[back_index[0] as usize].len();
+        for level in 0..max_levels {
+            for i in 0..edges.len() {
+                let reindexed = if level == 0 {
+                    i
+                } else {
+                    back_index[i] as usize
+                };
+                if level >= edges[reindexed].len() {
+                    break;
                 }
+                let links = &edges[reindexed][level];
+                graph_links.links.extend_from_slice(links);
+                graph_links.offsets.push(graph_links.links.len());
             }
+            graph_links
+                .offsets_start
+                .push(graph_links.offsets.len() - 1);
         }
-
-        layers.iter_mut().for_each(|layer| {
-            layer.links.shrink_to_fit();
-            layer.offsets.shrink_to_fit();
-        });
-        layers.shrink_to_fit();
-        back_index.shrink_to_fit();
-
-        GraphLinks { layers, reindex }
+        graph_links.offsets_start.pop();
+        graph_links
     }
 
     pub fn to_vec(&self) -> Vec<Vec<Vec<PointOffsetType>>> {
@@ -93,33 +106,48 @@ impl GraphLinks {
     }
 
     pub fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
-        let layer_data = &self.layers[level];
         if level == 0 {
-            let start = layer_data.offsets[point_id as usize];
-            let end = layer_data.offsets[point_id as usize + 1];
-            &layer_data.links[start..end]
+            self.links_layer0(point_id)
         } else {
-            let reindexed = self.reindex[point_id as usize] as usize;
-            let start = layer_data.offsets[reindexed];
-            let end = layer_data.offsets[reindexed + 1];
-            &layer_data.links[start..end]
+            self.links_impl(point_id, level)
         }
     }
 
     pub fn num_points(&self) -> usize {
-        self.layers[0].offsets.len() - 1
+        self.offsets_start.first().copied().unwrap_or(0)
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
-        let reindexed = self.reindex[point_id as usize];
-        for (layer, data) in self.layers.iter().enumerate() {
-            if layer == 0 {
-                continue;
+        let reindexed = self.reindex[point_id as usize] as usize;
+        for level in 1.. {
+            if level > self.offsets_start.len() {
+                return level - 1;
             }
-            if reindexed as usize + 1 >= data.offsets.len() {
-                return layer - 1;
+            let layer_offsets_start = self.offsets_start[level - 1];
+            let layer_offsets_end = if level == self.offsets_start.len() {
+                self.offsets.len() - 1
+            } else {
+                self.offsets_start[level]
+            };
+            if layer_offsets_start + reindexed >= layer_offsets_end {
+                return level - 1;
             }
         }
-        self.layers.len() - 1
+        unreachable!()
+    }
+
+    fn links_layer0(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
+        let start = self.offsets[point_id as usize];
+        let end = self.offsets[point_id as usize + 1];
+        &self.links[start..end]
+    }
+
+    fn links_impl(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+        debug_assert!(level > 0);
+        let point_id = self.reindex[point_id as usize] as usize;
+        let layer_offsets_start = self.offsets_start[level - 1];
+        let start = self.offsets[layer_offsets_start + point_id as usize];
+        let end = self.offsets[layer_offsets_start + point_id as usize + 1];
+        &self.links[start..end]
     }
 }
