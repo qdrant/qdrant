@@ -2,6 +2,7 @@ import argparse
 import requests
 import time
 
+from assertions import assert_http_ok
 
 parser = argparse.ArgumentParser("Create test collection")
 parser.add_argument("collection_name")
@@ -17,7 +18,7 @@ r = requests.put(
         },
         "shard_number": 6
     })
-assert r.status_code == 200, r.text
+assert_http_ok(r)
 
 # Wait
 time.sleep(5)
@@ -28,7 +29,7 @@ while True:
     exists = True
     for port in args.ports:
         r = requests.get(f"http://127.0.0.1:{port}/collections")
-        assert r.status_code == 200
+        assert_http_ok(r)
         collections = r.json()["result"]["collections"]
         exists &= any(collection["name"] == args.collection_name for collection in collections)
     if exists:

@@ -57,6 +57,7 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
         vectors: VectorsConfig::Multi(vectors_config),
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
         replication_factor: NonZeroU32::new(1).unwrap(),
+        write_consistency_factor: NonZeroU32::new(1).unwrap(),
         on_disk_payload: false,
     };
 

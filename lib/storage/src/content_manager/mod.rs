@@ -1,14 +1,14 @@
 use collection::shards::shard::PeerId;
 
 use self::collection_meta_ops::CollectionMetaOperations;
-use self::consensus_state::CollectionsSnapshot;
+use self::consensus_manager::CollectionsSnapshot;
 use self::errors::StorageError;
 
 pub mod alias_mapping;
 pub mod collection_meta_ops;
 mod collections_ops;
 pub mod consensus;
-pub mod consensus_state;
+pub mod consensus_manager;
 pub mod conversions;
 pub mod errors;
 pub mod shard_distribution;
@@ -63,6 +63,22 @@ pub mod consensus_ops {
                 collection_id,
                 ShardTransferOperations::Finish(transfer),
             )))
+        }
+
+        pub fn activate_replica(
+            collection_name: CollectionId,
+            shard_id: u32,
+            peer_id: PeerId,
+        ) -> Self {
+            ConsensusOperations::CollectionMeta(
+                CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
+                    collection_name,
+                    shard_id,
+                    peer_id,
+                    state: ReplicaState::Active,
+                })
+                .into(),
+            )
         }
 
         pub fn deactivate_replica(

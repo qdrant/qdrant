@@ -4,7 +4,7 @@ use std::mem::{size_of, transmute};
 use std::path::Path;
 use std::sync::Arc;
 
-use memmap::{Mmap, MmapMut, MmapOptions};
+use memmap2::{Mmap, MmapMut, MmapOptions};
 use parking_lot::{RwLock, RwLockReadGuard};
 
 use crate::common::error_logging::LogError;

@@ -13,7 +13,7 @@ use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
-use storage::content_manager::consensus_state::ConsensusStateRef;
+use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tokio::{runtime, signal};
