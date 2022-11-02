@@ -2,15 +2,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::PointOffsetType;
 
+// Links data for whole layer.
+// All links are flattened into one array. 
+// Range of links in this array for point with index `i` is `offsets[i]..offsets[(i + 1)]`.
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct LayerData {
     pub links: Vec<PointOffsetType>,
     pub offsets: Vec<usize>,
 }
 
+// Links data for whole graph.
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct GraphLinks {
+    // Links data for each layer.
     layers: Vec<LayerData>,
+
+    // Reindexing for all layers except layer 0.
+    // This map reindexes from point index `i` to index in `LayerData.offsets`
+    // Reindexing sorts points by their max layer.
+    // That's why we can use one reindex for all layers.
     reindex: Vec<PointOffsetType>,
 }
 
