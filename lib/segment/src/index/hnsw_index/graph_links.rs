@@ -46,7 +46,7 @@ impl GraphLinks {
             for (layer, links) in edges[i].iter().enumerate() {
                 if layer != 0 {
                     let layer_data = &mut layers[layer];
-                    layer_data.links.extend_from_slice(&links);
+                    layer_data.links.extend_from_slice(links);
                     layer_data.offsets.push(layer_data.links.len());
                 }
             }
@@ -108,6 +108,6 @@ impl GraphLinks {
                 return layer - 1;
             }
         }
-        return self.layers.len() - 1;
+        self.layers.len() - 1
     }
 }

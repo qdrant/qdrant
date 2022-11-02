@@ -550,7 +550,6 @@ mod tests {
         assert_eq!(reference_top.into_vec(), graph_search);
     }
 
-    /*
     #[test]
     fn test_add_points() {
         let num_vectors = 1000;
@@ -568,14 +567,14 @@ mod tests {
             create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng2);
 
         // check is graph_layers_builder links are equeal to graph_layers_orig
-        let orig_len = graph_layers_orig.links_layers[0].len();
-        let builder_len = graph_layers_builder.links_layers[0].len();
+        let orig_len = graph_layers_orig.links.num_points();
+        let builder_len = graph_layers_builder.links_layers.len();
 
         assert_eq!(orig_len, builder_len);
 
         for idx in 0..builder_len {
-            let links_orig = &graph_layers_orig.links_layers[0][idx];
-            let links_builder = graph_layers_builder.links_layers[0][idx].read();
+            let links_orig = &graph_layers_orig.links.links(idx as PointOffsetType, 0);
+            let links_builder = graph_layers_builder.links_layers[idx][0].read();
             let link_container_from_builder = links_builder.iter().copied().collect::<Vec<_>>();
             assert_eq!(links_orig, &link_container_from_builder);
         }
@@ -657,18 +656,24 @@ mod tests {
         }
         let graph_layers = graph_layers_builder.into_graph_layers();
 
-        let number_layers = graph_layers.links_layers.len();
+        let number_layers = graph_layers.links.num_points();
         eprintln!("number_layers = {:#?}", number_layers);
 
-        let max_layers = graph_layers.links_layers.iter().map(|x| x.len()).max();
+        let max_layers = (0..NUM_VECTORS)
+            .map(|i| graph_layers.links.point_level(i as PointOffsetType))
+            .max()
+            .unwrap();
         eprintln!("max_layers = {:#?}", max_layers);
 
-        eprintln!(
-            "graph_layers.links_layers[910] = {:#?}",
-            graph_layers.links_layers[910]
-        );
+        let layers910 = graph_layers.links.point_level(910);
+        let links910 = (0..layers910 + 1)
+            .map(|i| graph_layers.links.links(910, i).to_vec())
+            .collect::<Vec<_>>();
+        eprintln!("graph_layers.links_layers[910] = {:#?}", links910,);
 
-        let total_edges: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
+        let total_edges: usize = (0..NUM_VECTORS)
+            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
+            .sum();
         let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
         eprintln!("avg_connectivity = {:#?}", avg_connectivity);
     }
@@ -769,5 +774,4 @@ mod tests {
         graph_layers_builder.links_map(0, 0, |link| result.push(link));
         assert_eq!(&result, &vec![1, 2, 3, 4, 5, 6]);
     }
-    */
 }

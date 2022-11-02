@@ -373,7 +373,6 @@ mod tests {
 
     const M: usize = 8;
 
-    /*
     #[test]
     fn test_search_on_level() {
         let dim = 8;
@@ -390,7 +389,9 @@ mod tests {
         let mut graph_layers =
             GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num);
 
-        graph_layers.links_layers[0][0] = vec![1, 2, 3, 4, 5, 6];
+        let mut graph_links = vec![vec![Vec::new()]; num_vectors];
+        graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
+        graph_layers.links = GraphLinks::from_vec(&graph_links);
 
         let linking_idx: PointOffsetType = 7;
 
@@ -410,10 +411,7 @@ mod tests {
             &[],
         );
 
-        assert_eq!(
-            nearest_on_level.len(),
-            graph_layers.links_layers[0][0].len() + 1
-        );
+        assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
 
         for nearest in &nearest_on_level {
             // eprintln!("nearest = {:#?}", nearest);
@@ -470,15 +468,15 @@ mod tests {
 
         assert!(main_entry.level > 0);
 
-        let num_levels = graph_layers
-            .links_layers
-            .iter()
-            .map(|x| x.len())
+        let num_levels = (0..num_vectors)
+            .map(|i| graph_layers.links.point_level(i as PointOffsetType))
             .max()
             .unwrap();
-        assert_eq!(main_entry.level + 1, num_levels);
+        assert_eq!(main_entry.level, num_levels);
 
-        let total_links_0: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
+        let total_links_0 = (0..num_vectors)
+            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
+            .sum::<usize>();
 
         eprintln!("total_links_0 = {:#?}", total_links_0);
         eprintln!("num_vectors = {:#?}", num_vectors);
@@ -532,5 +530,4 @@ mod tests {
         )
         .unwrap();
     }
-    */
 }
