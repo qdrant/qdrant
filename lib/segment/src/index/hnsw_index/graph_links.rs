@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::types::PointOffsetType;
 
 // Links data for whole layer.
-// All links are flattened into one array. 
+// All links are flattened into one array.
 // Range of links in this array for point with index `i` is `offsets[i]..offsets[(i + 1)]`.
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct LayerData {
@@ -25,13 +25,18 @@ pub struct GraphLinks {
 }
 
 impl GraphLinks {
+    // Convert from graph layers builder links
+    // `Vec<Vec<Vec<_>>>` means:
+    // vector of points -> vector of layers for specific point -> vector of links for specific point and layer
     pub fn from_vec(edges: &Vec<Vec<Vec<PointOffsetType>>>) -> Self {
-        let mut reindex = (0..edges.len() as PointOffsetType).collect::<Vec<PointOffsetType>>();
-        reindex.sort_unstable_by_key(|&i| -(edges[i as usize].len() as i32));
+        // create map from offsets to point id. sort by max layer and use this map to build `GraphLinks::reindex`
+        let mut back_index = (0..edges.len() as PointOffsetType).collect::<Vec<PointOffsetType>>();
+        back_index.sort_unstable_by_key(|&i| -(edges[i as usize].len() as i32));
 
-        let mut back_index = vec![0; edges.len()];
+        // reindex is map from point id to index in `LayerData.offsets`
+        let mut reindex = vec![0; edges.len()];
         for i in 0..edges.len() {
-            back_index[reindex[i] as usize] = i as PointOffsetType;
+            reindex[back_index[i] as usize] = i as PointOffsetType;
         }
 
         let max_layers = edges.iter().map(|e| e.len()).max().unwrap_or(0);
@@ -44,15 +49,15 @@ impl GraphLinks {
         ];
 
         for i in 0..edges.len() {
-            // layer 0
+            // layer 0 doesn't use reindex
             let layer_data = &mut layers[0];
             if let Some(links) = edges[i].get(0) {
                 layer_data.links.extend_from_slice(links);
             }
             layer_data.offsets.push(layer_data.links.len());
 
-            // other layers
-            let i = reindex[i] as usize;
+            // other layers use reindex
+            let i = back_index[i] as usize;
             for (layer, links) in edges[i].iter().enumerate() {
                 if layer != 0 {
                     let layer_data = &mut layers[layer];
@@ -67,12 +72,9 @@ impl GraphLinks {
             layer.offsets.shrink_to_fit();
         });
         layers.shrink_to_fit();
-        reindex.shrink_to_fit();
+        back_index.shrink_to_fit();
 
-        GraphLinks {
-            layers,
-            reindex: back_index,
-        }
+        GraphLinks { layers, reindex }
     }
 
     pub fn to_vec(&self) -> Vec<Vec<Vec<PointOffsetType>>> {
