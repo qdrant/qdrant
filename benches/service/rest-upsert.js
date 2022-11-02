@@ -5,7 +5,7 @@ import { random_city, random_vector } from '/code/utils.js';
 
 // test system parameters
 let host = 'http://localhost:6333'
-let collection_name = 'stress_collection';
+let collection_name = 'rest_stress';
 let shard_count = 1; // increase in distributed mode
 let replica_count = 1; // increase in distributed mode
 
@@ -17,30 +17,20 @@ let points_search_url = `${host}/collections/${collection_name}/points/search`;
 
 // test payload parameters
 let vector_length = 128;
-let vectors_per_batch = 32;
+let points_per_batch = 32;
+let number_of_points = 300000;
 
 export const options = {
-    discardResponseBodies: true, //decrease memory usage
+    discardResponseBodies: true, // decrease memory usage
     scenarios: {
         upsert_points: {
             // function to execute
             exec: "upsert_points",
             // execution options
-            executor: "ramping-vus",
-            stages: [{
-                duration: '1m', target: 30
-            }],
-        },
-        search_points: {
-            // schedule this scenario to start after the upserts (remove for mixed workload)
-            startTime: "1m",
-            // function to execute
-            exec: "search_points",
-            // execution options
-            executor: "ramping-vus",
-            stages: [{
-                duration: "1m", target: 30
-            }],
+            executor: 'shared-iterations',
+            vus: 30, // number of VUs to run concurrently
+            iterations: number_of_points / points_per_batch, //total number of iterations
+            maxDuration: '10m',
         },
     },
 };
@@ -111,7 +101,7 @@ export function setup() {
 export function upsert_points() {
     // points payload
     var payload = JSON.stringify({
-        "points": Array.from({ length: vectors_per_batch }, () => generate_point()),
+        "points": Array.from({ length: points_per_batch }, () => generate_point()),
     });
     // run upsert
     let res_upsert = http.put(points_url, payload, params);
@@ -119,36 +109,5 @@ export function upsert_points() {
         'upsert_points is status 200': (r) => r.status === 200,
     });
     // track number of points created
-    pointsCount.add(vectors_per_batch);
-}
-
-export function search_points() {
-    // generate random search query
-    var filter_payload =
-        {
-            "filter": {
-                "must": [
-                    {
-                        "key": "city",
-                        "match": {
-                            "value": random_city()
-                        }
-                    }
-                ]
-            },
-            "with_vector": true,
-            "with_payload": true,
-            "vector": random_vector(vector_length),
-            "limit": 100
-        }
-
-    let res_get = http.post(points_search_url, JSON.stringify(filter_payload), params);
-    //console.log(res_get.body);
-    check(res_get, {
-        'search_points is status 200': (r) => r.status === 200,
-    });
-}
-
-export function teardown() {
-    console.log('Done');
+    pointsCount.add(points_per_batch);
 }

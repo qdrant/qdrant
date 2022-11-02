@@ -9,6 +9,6 @@ docker run --network=host \
   -v "${PWD}"/benches/service:/code \
   --rm \
   -i loadimpact/k6 \
-  run - <"$DIR/grpc_collection_stress.js"
+  run - <"$DIR/grpc-upsert.js"
 
 

@@ -1,5 +1,5 @@
 import grpc from 'k6/net/grpc';
-import { check, sleep } from 'k6';
+import { check, group } from 'k6';
 import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
 
@@ -7,13 +7,14 @@ import { random_city, random_vector } from '/code/utils.js';
 
 // test system parameters
 let host = 'localhost:6334'
-let collection_name = 'grpc_stress_collection';
+let collection_name = 'grpc_stress';
 let shard_count = 1; // increase in distributed mode
 let replica_count = 1; // increase in distributed mode
 
 // test payload parameters
 let vector_length = 128;
-let vectors_per_batch = 32;
+let points_per_batch = 32;
+let number_of_points = 300000;
 
 const client = new grpc.Client();
 client.load(['/proto'], 'collections_service.proto', 'points_service.proto');
@@ -21,27 +22,16 @@ client.load(['/proto'], 'collections_service.proto', 'points_service.proto');
 const pointsCount = new Counter('points_count');
 
 export const options = {
-   discardResponseBodies: true, //decrease memory usage
+   discardResponseBodies: true, // decrease memory usage
     scenarios: {
         upsert_points: {
             // function to execute
             exec: "upsert_points",
             // execution options
-            executor: "ramping-vus",
-            stages: [{
-                duration: '1m', target: 30
-            }],
-        },
-        search_points: {
-            // schedule this scenario to start after the upserts (remove for mixed workload)
-            startTime: "1m",
-            // function to execute
-            exec: "search_points",
-            // execution options
-            executor: "ramping-vus",
-            stages: [{
-                duration: "1m", target: 30
-            }],
+            executor: 'shared-iterations',
+            vus: 30, // number of VUs to run concurrently
+            iterations: number_of_points / points_per_batch, //total number of iterations
+            maxDuration: '10m',
         },
     },
 };
@@ -84,7 +74,7 @@ export function upsert_points() {
     // points payload
     var payload = {
         collection_name: collection_name,
-        points: Array.from({ length: vectors_per_batch }, () => generate_point()),
+        points: Array.from({ length: points_per_batch }, () => generate_point()),
     }
     // run upsert
     let res_upsert = client.invoke('qdrant.Points/Upsert', payload);
@@ -93,47 +83,7 @@ export function upsert_points() {
     });
 
     // track number of points created
-    pointsCount.add(vectors_per_batch);
-}
-
-export function search_points() {
-     // connect client on first iteration
-     // https://github.com/grafana/k6/issues/2719#issuecomment-1280033675
-     if (exec.vu.iterationInScenario == 0) {
-        client.connect(host, { plaintext: true });
-     }
-
-    // generate random search query
-    var filter_payload =
-        {
-            collection_name: collection_name,
-            vector: random_vector(vector_length),
-            filter: {
-                must: [
-                    {
-                        field: {
-                            key: "city",
-                            match: {
-                                keyword: random_city()
-                            }
-                        }
-                    }
-                ]
-            },
-            with_vectors: {
-              enable: true,
-            },
-            with_payload: {
-              enable: true,
-            },
-            limit: 100
-        }
-
-    let res_search = client.invoke('qdrant.Points/Search', filter_payload);
-    //console.log(res_search.body);
-    check(res_search, {
-        'search_points status is 200': (r) => r.status === grpc.StatusOK,
-    });
+    pointsCount.add(points_per_batch);
 }
 
 function generate_point() {
