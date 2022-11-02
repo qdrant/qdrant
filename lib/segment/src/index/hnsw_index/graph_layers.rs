@@ -28,7 +28,9 @@ pub struct GraphLayersBackwardCompatibility {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) level_factor: f64,   // Deprecated
+    #[serde(default)]
+    pub(super) level_factor: f64, // Deprecated
+    #[serde(default)]
     pub(super) use_heuristic: bool, // Deprecated
     pub(super) links_layers: Vec<LayersContainer>,
     pub(super) entry_points: EntryPoints,
