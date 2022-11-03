@@ -117,7 +117,7 @@ impl GraphLinks {
             let mut layers = Vec::new();
             let num_levels = self.point_level(i as PointOffsetType) + 1;
             for level in 0..num_levels {
-                let links = self.links(i as PointOffsetType, level).to_vec();
+                let links = self.get_links(i as PointOffsetType, level).to_vec();
                 layers.push(links);
             }
             result.push(layers);
@@ -125,12 +125,10 @@ impl GraphLinks {
         result
     }
 
-    pub fn links(&self, point_id: PointOffsetType, level: usize) -> Vec<PointOffsetType> {
-        if level == 0 {
-            self.links_layer0(point_id)
-        } else {
-            self.links_impl(point_id, level)
-        }
+    pub fn get_links(&self, point_id: PointOffsetType, level: usize) -> Vec<PointOffsetType> {
+        let mut result = Vec::new();
+        self.map_links(point_id, level, |link| result.push(link));
+        result
     }
 
     pub fn map_links<F>(&self, point_id: PointOffsetType, level: usize, f: F)
@@ -165,46 +163,6 @@ impl GraphLinks {
             }
         }
         unreachable!()
-    }
-
-    fn links_layer0(&self, point_id: PointOffsetType) -> Vec<PointOffsetType> {
-        let start = self.offsets[point_id as usize];
-        let end = self.offsets[point_id as usize + 1];
-        Self::get_links(&self.links[start..end])
-    }
-
-    fn links_impl(&self, point_id: PointOffsetType, level: usize) -> Vec<PointOffsetType> {
-        debug_assert!(level > 0);
-        let point_id = self.reindex[point_id as usize] as usize;
-        let layer_offsets_start = self.offsets_start[level - 1];
-        let start = self.offsets[layer_offsets_start + point_id as usize];
-        let end = self.offsets[layer_offsets_start + point_id as usize + 1];
-        Self::get_links(&self.links[start..end])
-    }
-
-    fn get_links(data: &[u8]) -> Vec<PointOffsetType> {
-        let mut result = Vec::new();
-        let u24_count = data[0] as usize;
-
-        let mut i = 1;
-        for _ in 0..u24_count {
-            let link = (data[i] as PointOffsetType) << 16
-                | (data[i + 1] as PointOffsetType) << 8
-                | (data[i + 2] as PointOffsetType);
-            result.push(link);
-            i += 3;
-        }
-
-        while i < data.len() {
-            let link = (data[i] as PointOffsetType) << 24
-                | (data[i + 1] as PointOffsetType) << 16
-                | (data[i + 2] as PointOffsetType) << 8
-                | (data[i + 3] as PointOffsetType);
-            result.push(link);
-            i += 4;
-        }
-
-        result
     }
 
     fn map_links_layer0<F>(&self, point_id: PointOffsetType, f: F)

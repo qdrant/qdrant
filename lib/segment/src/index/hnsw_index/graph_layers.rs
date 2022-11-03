@@ -471,7 +471,7 @@ mod tests {
         assert_eq!(main_entry.level, num_levels);
 
         let total_links_0 = (0..num_vectors)
-            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
+            .map(|i| graph_layers.links.get_links(i as PointOffsetType, 0).len())
             .sum::<usize>();
 
         eprintln!("total_links_0 = {:#?}", total_links_0);
