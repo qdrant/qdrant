@@ -66,6 +66,29 @@ pub(crate) fn set_payload(
     Ok(updated_points.len())
 }
 
+pub(crate) fn set_payload_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    filter: &Filter,
+    payload: &Payload,
+) -> CollectionResult<usize> {
+    let mut points_to_set: Vec<PointIdType> = Vec::new();
+
+    segments.apply_segments(|s| {
+        let points = s.read_filtered(None, None, Some(filter));
+        points_to_set.extend_from_slice(points.as_slice());
+        Ok(true)
+    })?;
+
+    let updated_points = segments.apply_points_to_appendable(
+        op_num,
+        points_to_set.as_slice(),
+        |id, write_segment| write_segment.set_payload(op_num, id, payload),
+    )?;
+
+    Ok(updated_points.len())
+}
+
 pub(crate) fn delete_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -360,9 +383,11 @@ pub(crate) fn process_payload_operation(
     payload_operation: PayloadOps,
 ) -> CollectionResult<usize> {
     match payload_operation {
-        PayloadOps::SetPayload(sp) => {
-            let payload: Payload = sp.payload;
-            set_payload(&segments.read(), op_num, &payload, &sp.points)
+        PayloadOps::SetPayload { points, payload } => {
+            set_payload(&segments.read(), op_num, &payload, &points)
+        }
+        PayloadOps::SetPayloadByFilter { filter, payload } => {
+            set_payload_by_filter(&segments.read(), op_num, &filter, &payload)
         }
         PayloadOps::DeletePayload(dp) => {
             delete_payload(&segments.read(), op_num, &dp.points, &dp.keys)

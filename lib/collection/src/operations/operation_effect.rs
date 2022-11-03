@@ -77,8 +77,9 @@ impl EstimateOperationEffectArea for point_ops::PointInsertOperations {
 impl EstimateOperationEffectArea for PayloadOps {
     fn estimate_effect_area(&self) -> OperationEffectArea {
         match self {
-            PayloadOps::SetPayload(set_payload) => {
-                OperationEffectArea::Points(set_payload.points.clone())
+            PayloadOps::SetPayload { points, .. } => OperationEffectArea::Points(points.clone()),
+            PayloadOps::SetPayloadByFilter { filter, .. } => {
+                OperationEffectArea::Filter(filter.clone())
             }
             PayloadOps::DeletePayload(delete_payload) => {
                 OperationEffectArea::Points(delete_payload.points.clone())

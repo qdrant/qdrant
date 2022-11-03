@@ -3,6 +3,7 @@ use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
 
+use super::point_ops::PointsSelector;
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
 use crate::shards::shard::ShardId;
@@ -10,8 +11,8 @@ use crate::shards::shard::ShardId;
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SetPayload {
     pub payload: Payload,
-    /// Assigns payload to each point in this list
-    pub points: Vec<PointIdType>, // ToDo: replace with point selector
+    /// Assigns payload to each point selected
+    pub points: PointsSelector,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -26,7 +27,12 @@ pub struct DeletePayload {
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists
-    SetPayload(SetPayload),
+    SetPayload {
+        points: Vec<PointIdType>,
+        payload: Payload,
+    },
+    /// Set payload value by given filter criteria.
+    SetPayloadByFilter { filter: Filter, payload: Payload },
     /// Deletes specified payload values if they are assigned
     DeletePayload(DeletePayload),
     /// Drops all Payload values associated with given points.
@@ -38,7 +44,8 @@ pub enum PayloadOps {
 impl PayloadOps {
     pub fn is_write_operation(&self) -> bool {
         match self {
-            PayloadOps::SetPayload(_) => true,
+            PayloadOps::SetPayload { .. } => true,
+            PayloadOps::SetPayloadByFilter { .. } => true,
             PayloadOps::DeletePayload(_) => false,
             PayloadOps::ClearPayload { .. } => false,
             PayloadOps::ClearPayloadByFilter(_) => false,
@@ -49,8 +56,15 @@ impl PayloadOps {
 impl SplitByShard for PayloadOps {
     fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         match self {
-            PayloadOps::SetPayload(operation) => {
-                operation.split_by_shard(ring).map(PayloadOps::SetPayload)
+            PayloadOps::SetPayload { points, payload } => {
+                split_iter_by_shard(points, |id| *id, ring).map(|points| PayloadOps::SetPayload {
+                    points,
+                    payload: payload.clone(),
+                })
+            }
+
+            operation @ PayloadOps::SetPayloadByFilter { .. } => {
+                OperationToShard::to_all(operation)
             }
             PayloadOps::DeletePayload(operation) => operation
                 .split_by_shard(ring)
@@ -67,15 +81,6 @@ impl SplitByShard for DeletePayload {
         split_iter_by_shard(self.points, |id| *id, ring).map(|points| DeletePayload {
             points,
             keys: self.keys.clone(),
-        })
-    }
-}
-
-impl SplitByShard for SetPayload {
-    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
-        split_iter_by_shard(self.points, |id| *id, ring).map(|points| SetPayload {
-            points,
-            payload: self.payload.clone(),
         })
     }
 }

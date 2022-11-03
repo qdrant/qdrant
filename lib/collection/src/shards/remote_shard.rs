@@ -21,6 +21,7 @@ use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
 
+use super::conversions::internal_set_payload_by_filter;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::PointOperations;
 use crate::operations::types::{
@@ -214,8 +215,19 @@ impl ShardOperation for RemoteShard {
                 }
             },
             CollectionUpdateOperations::PayloadOperation(payload_ops) => match payload_ops {
-                PayloadOps::SetPayload(set_payload) => {
-                    let request = &internal_set_payload(set_payload, self, wait);
+                PayloadOps::SetPayload { points, payload } => {
+                    let request = &internal_set_payload(points, payload, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .set_payload(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
+                }
+
+                PayloadOps::SetPayloadByFilter { filter, payload } => {
+                    let request = &internal_set_payload_by_filter(filter, payload, self, wait);
                     self.with_points_client(|mut client| async move {
                         client
                             .set_payload(tonic::Request::new(request.clone()))
