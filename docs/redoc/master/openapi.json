@@ -4511,11 +4511,7 @@
             "$ref": "#/components/schemas/Payload"
           },
           "points": {
-            "description": "Assigns payload to each point in this list",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
-            }
+            "$ref": "#/components/schemas/PointsSelector"
           }
         }
       },

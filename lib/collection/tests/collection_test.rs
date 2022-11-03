@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use collection::operations::payload_ops::{PayloadOps, SetPayload};
+use collection::operations::payload_ops::PayloadOps;
 use collection::operations::point_ops::{Batch, PointOperations, PointStruct};
 use collection::operations::types::{
     CountRequest, PointRequest, RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus,
@@ -199,11 +199,10 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
 
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
 
-        let assign_payload =
-            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayload {
-                payload,
-                points: vec![2.into(), 3.into()],
-            }));
+        let assign_payload = CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload {
+            payload,
+            points: vec![2.into(), 3.into()],
+        });
 
         collection
             .update_from_client(assign_payload, true)

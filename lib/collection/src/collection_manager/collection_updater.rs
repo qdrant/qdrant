@@ -79,7 +79,7 @@ mod tests {
     use crate::collection_manager::fixtures::build_test_holder;
     use crate::collection_manager::segments_searcher::SegmentsSearcher;
     use crate::collection_manager::segments_updater::upsert_points;
-    use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
+    use crate::operations::payload_ops::{DeletePayload, PayloadOps};
     use crate::operations::point_ops::{PointOperations, PointStruct};
 
     #[test]
@@ -208,10 +208,10 @@ mod tests {
         process_payload_operation(
             &segments,
             100,
-            PayloadOps::SetPayload(SetPayload {
-                payload,
+            PayloadOps::SetPayload {
                 points: points.clone(),
-            }),
+                payload,
+            },
         )
         .unwrap();
 

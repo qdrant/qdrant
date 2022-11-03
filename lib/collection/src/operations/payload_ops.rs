@@ -87,7 +87,6 @@ impl SplitByShard for DeletePayload {
 
 #[cfg(test)]
 mod tests {
-    use segment::types::Payload;
     use serde_json::Value;
 
     use super::*;
@@ -110,8 +109,7 @@ mod tests {
         let operation: PayloadOps = serde_json::from_str(query1).unwrap();
 
         match operation {
-            PayloadOps::SetPayload(set_payload) => {
-                let payload: Payload = set_payload.payload;
+            PayloadOps::SetPayload { points: _, payload } => {
                 assert_eq!(payload.len(), 3);
 
                 assert!(payload.contains_key("key1"));
@@ -126,6 +124,38 @@ mod tests {
                 let payload_type_json = payload.get_value("key3");
 
                 assert!(matches!(payload_type_json, Some(Value::Object(_))))
+            }
+            _ => panic!("Wrong operation"),
+        }
+
+        let query = r#"
+        {
+            "set_payload_by_filter": {
+                "filter": {
+                    "must": [
+                        {"has_id": [2]}
+                    ]
+                },
+                "payload": {
+                    "key1":  "hello"
+                }
+            }
+        }
+        "#;
+        let operation: PayloadOps = serde_json::from_str(query).unwrap();
+
+        match operation {
+            PayloadOps::SetPayloadByFilter { filter: f, payload } => {
+                assert_eq!(payload.len(), 1);
+
+                assert!(payload.contains_key("key1"));
+
+                let payload_type = payload.get_value("key1").expect("No key key1");
+
+                match payload_type {
+                    Value::String(x) => assert_eq!(x, "hello"),
+                    _ => panic!("Wrong payload type"),
+                }
             }
             _ => panic!("Wrong operation"),
         }

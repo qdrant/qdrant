@@ -10,7 +10,7 @@ use api::grpc::qdrant::{
 use segment::types::{Filter, Payload, PayloadFieldSchema, PayloadSchemaParams, PointIdType};
 use tonic::Status;
 
-use crate::operations::payload_ops::{DeletePayload, SetPayload};
+use crate::operations::payload_ops::DeletePayload;
 use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation};
 use crate::operations::types::CollectionResult;
 use crate::operations::CreateIndex;
