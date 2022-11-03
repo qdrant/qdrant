@@ -178,13 +178,11 @@ impl GraphLayersBase for GraphLayers {
         self.visited_pool.return_back(visited_list);
     }
 
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
+    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
         F: FnMut(PointOffsetType),
     {
-        for link in self.links.links(point_id, level) {
-            f(link);
-        }
+        self.links.map_links(point_id, level, f)
     }
 
     fn get_m(&self, level: usize) -> usize {

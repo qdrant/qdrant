@@ -133,6 +133,17 @@ impl GraphLinks {
         }
     }
 
+    pub fn map_links<F>(&self, point_id: PointOffsetType, level: usize, f: F)
+    where
+        F: FnMut(PointOffsetType),
+    {
+        if level == 0 {
+            self.map_links_layer0(point_id, f)
+        } else {
+            self.map_links_impl(point_id, level, f)
+        }
+    }
+
     pub fn num_points(&self) -> usize {
         self.offsets_start.first().copied().unwrap_or(0)
     }
@@ -194,5 +205,50 @@ impl GraphLinks {
         }
 
         result
+    }
+
+    fn map_links_layer0<F>(&self, point_id: PointOffsetType, f: F)
+    where
+        F: FnMut(PointOffsetType),
+    {
+        let start = self.offsets[point_id as usize];
+        let end = self.offsets[point_id as usize + 1];
+        Self::map_get_links(&self.links[start..end], f);
+    }
+
+    fn map_links_impl<F>(&self, point_id: PointOffsetType, level: usize, f: F)
+    where
+        F: FnMut(PointOffsetType),
+    {
+        debug_assert!(level > 0);
+        let point_id = self.reindex[point_id as usize] as usize;
+        let layer_offsets_start = self.offsets_start[level - 1];
+        let start = self.offsets[layer_offsets_start + point_id as usize];
+        let end = self.offsets[layer_offsets_start + point_id as usize + 1];
+        Self::map_get_links(&self.links[start..end], f);
+    }
+
+    fn map_get_links<F>(data: &[u8], mut f: F)
+    where
+        F: FnMut(PointOffsetType),
+    {
+        let u24_count = data[0] as usize;
+        let mut i = 1;
+        for _ in 0..u24_count {
+            let link = (data[i] as PointOffsetType) << 16
+                | (data[i + 1] as PointOffsetType) << 8
+                | (data[i + 2] as PointOffsetType);
+            f(link);
+            i += 3;
+        }
+
+        while i < data.len() {
+            let link = (data[i] as PointOffsetType) << 24
+                | (data[i + 1] as PointOffsetType) << 16
+                | (data[i + 2] as PointOffsetType) << 8
+                | (data[i + 3] as PointOffsetType);
+            f(link);
+            i += 4;
+        }
     }
 }

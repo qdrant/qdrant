@@ -573,10 +573,12 @@ mod tests {
         assert_eq!(orig_len, builder_len);
 
         for idx in 0..builder_len {
-            let links_orig = &graph_layers_orig.links.links(idx as PointOffsetType, 0);
+            let mut links_orig = graph_layers_orig.links.links(idx as PointOffsetType, 0);
             let links_builder = graph_layers_builder.links_layers[idx][0].read();
-            let link_container_from_builder = links_builder.iter().copied().collect::<Vec<_>>();
-            assert_eq!(links_orig, &link_container_from_builder);
+            let mut link_container_from_builder = links_builder.iter().copied().collect::<Vec<_>>();
+            links_orig.sort();
+            link_container_from_builder.sort();
+            assert_eq!(&links_orig, &link_container_from_builder);
         }
 
         let main_entry = graph_layers_builder
