@@ -39,7 +39,7 @@ impl From<GraphLayersBackwardCompatibility> for GraphLayers {
             m: gl.m,
             m0: gl.m0,
             ef_construct: gl.ef_construct,
-            links: GraphLinks::from_vec(&gl.links_layers),
+            links: GraphLinks::from_vec(&gl.links_layers, gl.m0, gl.m),
             entry_points: gl.entry_points,
             visited_pool: VisitedPool::new(),
         }
@@ -183,7 +183,7 @@ impl GraphLayersBase for GraphLayers {
         F: FnMut(PointOffsetType),
     {
         for link in self.links.links(point_id, level) {
-            f(*link);
+            f(link);
         }
     }
 
@@ -280,7 +280,7 @@ impl GraphLayers {
 
         self.visited_pool.return_back(visited_list);
 
-        self.links = GraphLinks::from_vec(&self_links_layers);
+        self.links = GraphLinks::from_vec(&self_links_layers, self.m0, self.m);
     }
 
     pub fn search(
@@ -389,7 +389,7 @@ mod tests {
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
-        graph_layers.links = GraphLinks::from_vec(&graph_links);
+        graph_layers.links = GraphLinks::from_vec(&graph_links, m * 2, m);
 
         let linking_idx: PointOffsetType = 7;
 

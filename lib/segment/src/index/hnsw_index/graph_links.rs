@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::PointOffsetType;
 
+const MAX_U24: u32 = 256 * 256 * 256 - 1;
+
 /*
 Links data for whole layer.
 
@@ -35,7 +37,7 @@ links offset = lvl offset + reindex[point_id]
 */
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct GraphLinks {
-    links: Vec<PointOffsetType>,
+    links: Vec<u8>,
     offsets: Vec<usize>,
     offsets_start: Vec<usize>,
     reindex: Vec<PointOffsetType>,
@@ -45,7 +47,7 @@ impl GraphLinks {
     // Convert from graph layers builder links
     // `Vec<Vec<Vec<_>>>` means:
     // vector of points -> vector of layers for specific point -> vector of links for specific point and layer
-    pub fn from_vec(edges: &Vec<Vec<Vec<PointOffsetType>>>) -> Self {
+    pub fn from_vec(edges: &Vec<Vec<Vec<PointOffsetType>>>, m0: usize, m: usize) -> Self {
         if edges.len() == 0 {
             return Self::default();
         }
@@ -69,6 +71,7 @@ impl GraphLinks {
 
         let max_levels = edges[back_index[0] as usize].len();
         for level in 0..max_levels {
+            let m = if level == 0 { m0 } else { m };
             for i in 0..edges.len() {
                 let reindexed = if level == 0 {
                     i
@@ -78,8 +81,25 @@ impl GraphLinks {
                 if level >= edges[reindexed].len() {
                     break;
                 }
-                let links = &edges[reindexed][level];
-                graph_links.links.extend_from_slice(links);
+                let mut links = edges[reindexed][level].clone();
+                let links_count = links.len();
+                let first_links = &mut links[0..std::cmp::min(m, links_count)];
+                first_links.sort();
+                let u24_count = first_links.binary_search(&MAX_U24).err().unwrap();
+                graph_links.links.push(u24_count as u8);
+                for i in 0..u24_count {
+                    let link = links[i];
+                    graph_links.links.push(((link >> 16) % 256) as u8);
+                    graph_links.links.push(((link >> 8) % 256) as u8);
+                    graph_links.links.push((link % 256) as u8);
+                }
+                for i in u24_count..links_count {
+                    let link = links[i];
+                    graph_links.links.push(((link >> 24) % 256) as u8);
+                    graph_links.links.push(((link >> 16) % 256) as u8);
+                    graph_links.links.push(((link >> 8) % 256) as u8);
+                    graph_links.links.push((link % 256) as u8);
+                }
                 graph_links.offsets.push(graph_links.links.len());
             }
             graph_links
@@ -105,7 +125,7 @@ impl GraphLinks {
         result
     }
 
-    pub fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+    pub fn links(&self, point_id: PointOffsetType, level: usize) -> Vec<PointOffsetType> {
         if level == 0 {
             self.links_layer0(point_id)
         } else {
@@ -136,18 +156,43 @@ impl GraphLinks {
         unreachable!()
     }
 
-    fn links_layer0(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
+    fn links_layer0(&self, point_id: PointOffsetType) -> Vec<PointOffsetType> {
         let start = self.offsets[point_id as usize];
         let end = self.offsets[point_id as usize + 1];
-        &self.links[start..end]
+        Self::get_links(&self.links[start..end])
     }
 
-    fn links_impl(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+    fn links_impl(&self, point_id: PointOffsetType, level: usize) -> Vec<PointOffsetType> {
         debug_assert!(level > 0);
         let point_id = self.reindex[point_id as usize] as usize;
         let layer_offsets_start = self.offsets_start[level - 1];
         let start = self.offsets[layer_offsets_start + point_id as usize];
         let end = self.offsets[layer_offsets_start + point_id as usize + 1];
-        &self.links[start..end]
+        Self::get_links(&self.links[start..end])
+    }
+
+    fn get_links(data: &[u8]) -> Vec<PointOffsetType> {
+        let mut result = Vec::new();
+        let u24_count = data[0] as usize;
+
+        let mut i = 1;
+        for _ in 0..u24_count {
+            let link = (data[i] as PointOffsetType) << 16
+                | (data[i + 1] as PointOffsetType) << 8
+                | (data[i + 2] as PointOffsetType);
+            result.push(link);
+            i += 3;
+        }
+
+        while i < data.len() {
+            let link = (data[i] as PointOffsetType) << 24
+                | (data[i + 1] as PointOffsetType) << 16
+                | (data[i + 2] as PointOffsetType) << 8
+                | (data[i + 3] as PointOffsetType);
+            result.push(link);
+            i += 4;
+        }
+
+        result
     }
 }

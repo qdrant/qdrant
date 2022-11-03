@@ -77,7 +77,7 @@ impl GraphLayersBuilder {
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,
-            links: GraphLinks::from_vec(&unlocker_links_layers),
+            links: GraphLinks::from_vec(&unlocker_links_layers, self.m0, self.m),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         }
