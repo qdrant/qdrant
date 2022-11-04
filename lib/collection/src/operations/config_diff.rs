@@ -23,6 +23,15 @@ pub trait DiffConfig<T: DeserializeOwned + Serialize> {
     {
         update_config(config, self)
     }
+
+    fn from_full(full: &T) -> CollectionResult<Self>
+    where
+        Self: Sized,
+        Self: Serialize,
+        Self: DeserializeOwned,
+    {
+        from_full(full)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Merge, Hash)]
@@ -134,6 +143,38 @@ impl DiffConfig<WalConfig> for WalConfigDiff {}
 
 impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
 
+impl From<HnswConfig> for HnswConfigDiff {
+    fn from(config: HnswConfig) -> Self {
+        HnswConfigDiff::from_full(&config).unwrap()
+    }
+}
+
+impl From<OptimizersConfig> for OptimizersConfigDiff {
+    fn from(config: OptimizersConfig) -> Self {
+        OptimizersConfigDiff::from_full(&config).unwrap()
+    }
+}
+
+impl From<WalConfig> for WalConfigDiff {
+    fn from(config: WalConfig) -> Self {
+        WalConfigDiff::from_full(&config).unwrap()
+    }
+}
+
+impl From<CollectionParams> for CollectionParamsDiff {
+    fn from(config: CollectionParams) -> Self {
+        CollectionParamsDiff::from_full(&config).unwrap()
+    }
+}
+
+pub fn from_full<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serialize>(
+    full_config: &T,
+) -> CollectionResult<Y> {
+    let json = serde_json::to_value(full_config)?;
+    let res = serde_json::from_value(json)?;
+    Ok(res)
+}
+
 /// Hacky way to update configuration structures with diff-updates.
 /// Intended to only be used in non critical for speed places.
 /// ToDo: Replace with proc macro
@@ -141,11 +182,11 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
     config: &T,
     mut update: Y,
 ) -> CollectionResult<T> {
-    let serialized = serde_json::to_vec(config)?;
-    let config_as_diff: Y = serde_json::from_slice(&serialized)?;
+    let serialized = serde_json::to_value(config)?;
+    let config_as_diff: Y = serde_json::from_value(serialized)?;
     update.merge(config_as_diff);
-    let serialized = serde_json::to_vec(&update)?;
-    let res = serde_json::from_slice(&serialized)?;
+    let serialized = serde_json::to_value(&update)?;
+    let res = serde_json::from_value(serialized)?;
     Ok(res)
 }
 
