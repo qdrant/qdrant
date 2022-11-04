@@ -140,6 +140,10 @@ impl CreateCollectionOperation {
         }
     }
 
+    pub fn is_distribution_set(&self) -> bool {
+        self.distribution.is_some()
+    }
+
     pub fn take_distribution(&mut self) -> Option<ShardDistributionProposal> {
         self.distribution.take()
     }

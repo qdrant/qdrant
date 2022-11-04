@@ -14,8 +14,13 @@ use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
 /// * `mapping` - [ "<path>:<collection_name>" ]
 /// * `force` - if true, allow to overwrite collections from snapshots
 ///
-pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) {
+/// # Returns
+///
+/// * `Vec<String>` - list of collections that were recovered
+pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) -> Vec<String> {
     let collection_dir_path = Path::new(storage_dir).join(COLLECTIONS_DIR);
+    let mut recovered_collections: Vec<String> = vec![];
+
     for snapshot_params in mapping {
         let mut split = snapshot_params.split(':');
         let path = split
@@ -26,6 +31,7 @@ pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) {
         let collection_name = split
             .next()
             .unwrap_or_else(|| panic!("Collection name is missing: {}", snapshot_params));
+        recovered_collections.push(collection_name.to_string());
         assert!(
             split.next().is_none(),
             "Too many parts in snapshot mapping: {}",
@@ -58,9 +64,10 @@ pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) {
         }
         rename(&collection_temp_path, &collection_path).unwrap();
     }
+    recovered_collections
 }
 
-pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool) {
+pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool) -> Vec<String> {
     let temporary_dir = Path::new(storage_dir).join("snapshots_recovery_tmp");
     std::fs::create_dir_all(&temporary_dir).unwrap();
 
@@ -88,7 +95,7 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
         .collect();
 
     // Launch regular recovery of snapshots
-    recover_snapshots(&mapping, force, storage_dir);
+    let recovered_collection = recover_snapshots(&mapping, force, storage_dir);
 
     let alias_path = Path::new(storage_dir).join(ALIASES_PATH);
     let mut alias_persistence =
@@ -105,4 +112,5 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
 
     // Remove temporary directory
     remove_dir_all(&temporary_dir).unwrap();
+    recovered_collection
 }

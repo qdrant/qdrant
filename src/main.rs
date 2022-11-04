@@ -5,6 +5,7 @@ mod actix;
 pub mod common;
 mod consensus;
 mod greeting;
+mod migrations;
 mod settings;
 mod snapshots;
 mod startup;
@@ -34,6 +35,7 @@ use tikv_jemallocator::Jemalloc;
 use crate::common::helpers::create_search_runtime;
 use crate::common::telemetry::TelemetryCollector;
 use crate::greeting::welcome;
+use crate::migrations::single_to_cluster::handle_existing_collections;
 use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
 use crate::startup::setup_logger;
@@ -87,20 +89,22 @@ fn main() -> anyhow::Result<()> {
     setup_panic_hook();
     let args = Args::parse();
 
-    if let Some(full_snapshot) = args.storage_snapshot {
+    let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
         recover_full_snapshot(
             &full_snapshot,
             &settings.storage.storage_path,
             args.force_snapshot,
-        );
+        )
     } else if let Some(snapshots) = args.snapshot {
         // recover from snapshots
         recover_snapshots(
             &snapshots,
             args.force_snapshot,
             &settings.storage.storage_path,
-        );
-    }
+        )
+    } else {
+        vec![]
+    };
 
     welcome();
 
@@ -177,6 +181,8 @@ fn main() -> anyhow::Result<()> {
             storage_path,
         )
         .into();
+        let is_new_deployment = consensus_state.is_new_deployment();
+
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
 
         let dispatcher_arc = Arc::new(dispatcher);
@@ -211,8 +217,9 @@ fn main() -> anyhow::Result<()> {
         handles.push(handle);
 
         let toc_arc_clone = toc_arc.clone();
+        let consensus_state_clone = consensus_state.clone();
         let _cancel_transfer_handle = runtime_handle.spawn(async move {
-            consensus_state.is_leader_established.await_ready();
+            consensus_state_clone.is_leader_established.await_ready();
             match toc_arc_clone
                 .cancel_outgoing_all_transfers("Source peer restarted")
                 .await
@@ -225,6 +232,24 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         });
+
+        let collections_to_recover_in_consensus = if is_new_deployment {
+            let existing_collections = runtime_handle.block_on(toc_arc.all_collections());
+            existing_collections
+        } else {
+            restored_collections
+        };
+
+        if !collections_to_recover_in_consensus.is_empty() {
+            runtime_handle.spawn(handle_existing_collections(
+                toc_arc.clone(),
+                consensus_state.clone(),
+                dispatcher_arc.clone(),
+                consensus_state.this_peer_id(),
+                collections_to_recover_in_consensus,
+            ));
+        }
+
         (telemetry_collector, dispatcher_arc)
     } else {
         log::info!("Distributed mode disabled");
