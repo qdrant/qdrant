@@ -242,7 +242,7 @@ mod serialize_peer_addresses {
     where
         S: Serializer,
     {
-        serialize_peer_addresses::serialize(&*addresses.read(), serializer)
+        serialize_peer_addresses::serialize(&addresses.read(), serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<RwLock<PeerAddressById>>, D::Error>
