@@ -94,7 +94,7 @@ mod tests {
         let mut builder =
             SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config).unwrap();
 
-        builder.update_from(segment, &*stopped).unwrap();
+        builder.update_from(segment, &stopped).unwrap();
 
         let now = Instant::now();
 
@@ -108,7 +108,7 @@ mod tests {
             })
             .unwrap();
 
-        let res = builder.build(&*stopped);
+        let res = builder.build(&stopped);
 
         let is_cancelled = match res {
             Ok(_) => false,

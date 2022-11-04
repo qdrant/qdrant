@@ -16,7 +16,7 @@ pub struct ConsensusOpWal(Wal);
 
 impl ConsensusOpWal {
     pub fn new(storage_path: &str) -> Self {
-        let collections_meta_wal_path = Path::new(storage_path).join(&COLLECTIONS_META_WAL_DIR);
+        let collections_meta_wal_path = Path::new(storage_path).join(COLLECTIONS_META_WAL_DIR);
         create_dir_all(&collections_meta_wal_path)
             .expect("Can't create Collections meta Wal directory");
         ConsensusOpWal(Wal::open(collections_meta_wal_path).unwrap())

@@ -951,6 +951,7 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum Condition {
     /// Check if field satisfies provided condition
     Field(FieldCondition),

@@ -82,7 +82,7 @@ impl TableOfContent {
     ) -> Self {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
-        let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
+        let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         let collection_management_runtime = Runtime::new().unwrap();
         create_dir_all(&collections_path).expect("Can't create Collections directory");
         let collection_paths =
@@ -153,7 +153,7 @@ impl TableOfContent {
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
         Path::new(&self.storage_config.storage_path)
-            .join(&COLLECTIONS_DIR)
+            .join(COLLECTIONS_DIR)
             .join(collection_name)
     }
 

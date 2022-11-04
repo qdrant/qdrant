@@ -35,13 +35,13 @@ const I64_KEY_LEN: usize = 12;
 pub fn encode_f64_ascending(val: f64, buf: &mut Vec<u8>) {
     if val.is_nan() {
         buf.push(FLOAT_NAN);
-        buf.extend(&[0_u8; std::mem::size_of::<f64>()]);
+        buf.extend([0_u8; std::mem::size_of::<f64>()]);
         return;
     }
 
     if val == 0f64 {
         buf.push(FLOAT_ZERO);
-        buf.extend(&[0_u8; std::mem::size_of::<f64>()]);
+        buf.extend([0_u8; std::mem::size_of::<f64>()]);
         return;
     }
 
