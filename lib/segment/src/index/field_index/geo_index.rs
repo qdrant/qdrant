@@ -310,7 +310,7 @@ impl GeoMapIndex {
 
             geo_hashes.push(added_geo_hash);
 
-            self.db_wrapper.put(&key, &value)?;
+            self.db_wrapper.put(&key, value)?;
         }
 
         for geo_hash in &geo_hashes {
