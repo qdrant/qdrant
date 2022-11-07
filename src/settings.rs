@@ -147,7 +147,7 @@ pub fn max_web_workers(settings: &Settings) -> usize {
     if max_workers == Some(0) {
         let num_cpu = num_cpus::get();
         std::cmp::max(1, num_cpu - 1)
-    } else if max_workers == None {
+    } else if max_workers.is_none() {
         settings.storage.performance.max_search_threads
     } else {
         max_workers.unwrap()

@@ -51,32 +51,31 @@ impl Dispatcher {
             let op = match operation {
                 CollectionMetaOperations::CreateCollection(mut op) => {
                     self.toc.check_write_lock()?;
-                    debug_assert!(
-                        op.take_distribution().is_none(),
-                        "Distribution should be only set in this method."
-                    );
-                    let number_of_peers = state.0.peer_count();
-                    let shard_distribution = self
-                        .toc
-                        .suggest_shard_distribution(
-                            &op,
-                            NonZeroU32::new(number_of_peers as u32)
-                                .expect("Peer count should be always >= 1"),
-                        )
-                        .await;
+                    if !op.is_distribution_set() {
+                        // Suggest even distribution of shards across nodes
+                        let number_of_peers = state.0.peer_count();
+                        let shard_distribution = self
+                            .toc
+                            .suggest_shard_distribution(
+                                &op,
+                                NonZeroU32::new(number_of_peers as u32)
+                                    .expect("Peer count should be always >= 1"),
+                            )
+                            .await;
 
-                    // Expect all replicas to become active eventually
-                    for (shard_id, peer_ids) in &shard_distribution.distribution {
-                        for peer_id in peer_ids {
-                            expect_operations.push(ConsensusOperations::activate_replica(
-                                op.collection_name.clone(),
-                                *shard_id,
-                                *peer_id,
-                            ));
+                        // Expect all replicas to become active eventually
+                        for (shard_id, peer_ids) in &shard_distribution.distribution {
+                            for peer_id in peer_ids {
+                                expect_operations.push(ConsensusOperations::activate_replica(
+                                    op.collection_name.clone(),
+                                    *shard_id,
+                                    *peer_id,
+                                ));
+                            }
                         }
-                    }
 
-                    op.set_distribution(shard_distribution);
+                        op.set_distribution(shard_distribution);
+                    }
                     CollectionMetaOperations::CreateCollection(op)
                 }
                 op => op,

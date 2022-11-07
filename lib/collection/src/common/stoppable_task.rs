@@ -42,7 +42,7 @@ where
 
     StoppableTaskHandle {
         join_handle: tokio::task::spawn_blocking(move || {
-            let res = f(&*stopped);
+            let res = f(&stopped);
             // We use `Release` ordering to ensure that `f` won't be moved after the `store`
             // by the compiler
             finished.store(true, Ordering::Release);

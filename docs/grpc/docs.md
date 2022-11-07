@@ -274,8 +274,8 @@
 | shard_number | [uint32](#uint32) |  | Number of shards in collection |
 | on_disk_payload | [bool](#bool) |  | If true - point&#39;s payload will not be stored in memory |
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
-| replication_factor | [uint32](#uint32) |  | Number of replicas of each shard that network tries to maintain |
-| write_consistency_factor | [uint32](#uint32) |  | How many replicas should apply the operation for us to consider it successful |
+| replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain |
+| write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 
 
 
