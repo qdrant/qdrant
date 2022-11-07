@@ -247,42 +247,6 @@ impl GraphLayers {
         self.links.point_level(point_id)
     }
 
-    pub fn merge_from_other(&mut self, other: GraphLayers) {
-        self.max_level = std::cmp::max(self.max_level, other.max_level);
-        let mut self_links_layers = self.links.to_vec();
-        let other_links_layers = other.links.to_vec();
-
-        let mut visited_list = self.visited_pool.get(self.num_points());
-        if other_links_layers.len() > self_links_layers.len() {
-            self_links_layers.resize(other_links_layers.len(), vec![]);
-        }
-        for (point_id, layers) in other_links_layers.into_iter().enumerate() {
-            let current_layers = &mut self_links_layers[point_id];
-            for (level, other_links) in layers.into_iter().enumerate() {
-                if current_layers.len() <= level {
-                    current_layers.push(other_links);
-                } else {
-                    visited_list.next_iteration();
-                    let current_links = &mut current_layers[level];
-                    current_links.iter().copied().for_each(|x| {
-                        visited_list.check_and_update_visited(x);
-                    });
-                    for other_link in other_links
-                        .into_iter()
-                        .filter(|x| !visited_list.check_and_update_visited(*x))
-                    {
-                        current_links.push(other_link);
-                    }
-                }
-            }
-        }
-        self.entry_points.merge_from_other(other.entry_points);
-
-        self.visited_pool.return_back(visited_list);
-
-        self.links = GraphLinks::from_vec(&self_links_layers);
-    }
-
     pub fn search(
         &self,
         top: usize,

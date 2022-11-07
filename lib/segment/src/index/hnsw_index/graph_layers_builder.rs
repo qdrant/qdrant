@@ -134,6 +134,43 @@ impl GraphLayersBuilder {
         )
     }
 
+    pub fn merge_from_other(&mut self, other: GraphLayersBuilder) {
+        self.max_level = AtomicUsize::new(std::cmp::max(
+            self.max_level.load(std::sync::atomic::Ordering::Relaxed),
+            other.max_level.load(std::sync::atomic::Ordering::Relaxed),
+        ));
+        let mut visited_list = self.visited_pool.get(self.num_points());
+        if other.links_layers.len() > self.links_layers.len() {
+            self.links_layers
+                .resize_with(other.links_layers.len(), Vec::new);
+        }
+        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
+            let current_layers = &mut self.links_layers[point_id];
+            for (level, other_links) in layers.into_iter().enumerate() {
+                if current_layers.len() <= level {
+                    current_layers.push(other_links);
+                } else {
+                    let other_links = other_links.into_inner();
+                    visited_list.next_iteration();
+                    let mut current_links = current_layers[level].write();
+                    current_links.iter().copied().for_each(|x| {
+                        visited_list.check_and_update_visited(x);
+                    });
+                    for other_link in other_links
+                        .into_iter()
+                        .filter(|x| !visited_list.check_and_update_visited(*x))
+                    {
+                        current_links.push(other_link);
+                    }
+                }
+            }
+        }
+        self.entry_points
+            .lock()
+            .merge_from_other(other.entry_points.into_inner());
+        self.visited_pool.return_back(visited_list);
+    }
+
     fn num_points(&self) -> usize {
         self.links_layers.len()
     }
