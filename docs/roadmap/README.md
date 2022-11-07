@@ -35,8 +35,8 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
   * [x] Distributed querying
   * [x] Integration of [raft](https://raft.github.io/) for distributed consistency
   * [x] Sharding - group segments into shards
-  * [ ] Cluster scaling
-  * [ ] Replications - automatic segment replication between nodes in cluster
+  * [x] Cluster scaling
+  * [x] Replications - automatic segment replication between nodes in cluster
 
 ---
 
@@ -48,13 +48,18 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 
 * :truck: Payload Processing
   * [x] Support storing any JSON as a Payload
-  * [ ] Support more payload types, e.g.
-    * Data-time
+  * [ ] ~~Support more payload types, e.g.~~
+    * ~~Data-time~~
   * [x] Support for `Null` values
   * [x] Enable more types of filtering queries, e.g.
     * [x] Filter by Score
     * [x] Filter by number of stored elements
     * [x] `isNull` or `isEmpty` query conditions
+    
+    
+* Additionally
+  * [x] Full-text filtering support
+  * [x] Multiple vectors per record support  
 
 ---
 

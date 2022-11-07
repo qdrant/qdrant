@@ -161,8 +161,7 @@ impl Consensus {
             .build()?;
         let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
-        let is_new_deployment = state_ref.hard_state().term == 0;
-        if is_new_deployment {
+        if state_ref.is_new_deployment() {
             let leader_established_in_ms =
                 config.tick_period_ms * raft_config.max_election_tick() as u64;
             Self::init(

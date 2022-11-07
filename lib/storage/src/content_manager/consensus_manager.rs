@@ -470,6 +470,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .apply_state_update(move |state| state.conf_state = conf_state)
     }
 
+    /// Check if the consensus have empty operations log
+    pub fn is_new_deployment(&self) -> bool {
+        self.hard_state().term == 0
+    }
+
     pub fn hard_state(&self) -> raft::eraftpb::HardState {
         self.persistent.read().state().hard_state.clone()
     }
