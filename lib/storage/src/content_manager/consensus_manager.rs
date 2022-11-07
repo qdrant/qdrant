@@ -6,6 +6,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::{anyhow, Context};
 use chrono::Utc;
 use collection::collection_state;
 use collection::shards::shard::PeerId;
@@ -40,7 +41,7 @@ pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
 
-    pub type ConsensusState = super::ConsensusState<TableOfContent>;
+    pub type ConsensusState = super::ConsensusManager<TableOfContent>;
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -64,21 +65,38 @@ impl TryFrom<&[u8]> for SnapshotData {
     }
 }
 
-pub struct ConsensusState<C: CollectionContainer> {
+pub struct ConsensusManager<C: CollectionContainer> {
     pub persistent: RwLock<Persistent>,
+    /// Notifies if the current node knows who the leader and is not in the process of election
+    /// Otherwise the proposals are not accepted
     pub is_leader_established: Arc<IsReady>,
     wal: Mutex<ConsensusOpWal>,
+    /// Raft consensus state, which is not saved on disk.
+    /// They will change on restart anyway (role + leader id)
     soft_state: RwLock<Option<SoftState>>,
+    /// Storage-related container. Should apply and persist changes not related to consensus
+    /// (user changes)
     toc: Arc<C>,
+    /// Operation apply notifier.
+    /// Fires a signal if some specific operation is applied to the state machine.
+    /// Signal is changed on change proposal and triggered if the change was applied by consensus on this peer.
+    /// Also sends the result of the operation.
     on_consensus_op_apply:
         Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
+    /// Propose operation to the consensus.
+    /// Sends messages to the consensus thread, which is defined externally, outside of the state.
+    /// (e.g. in the `src/consensus.rs`)
     propose_sender: OperationSender,
+    /// Defines if this peer is a first peer of the consensus,
+    /// which might affect the init logic
     first_voter: RwLock<Option<PeerId>>,
+    /// Status of the consensus thread, changed by the consensus thread
     consensus_thread_status: RwLock<ConsensusThreadStatus>,
+    /// Consensus thread errors, changed by the consensus thread
     message_send_failures: RwLock<HashMap<String, MessageSendErrors>>,
 }
 
-impl<C: CollectionContainer> ConsensusState<C> {
+impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn new(
         persistent_state: Persistent,
         toc: Arc<C>,
@@ -155,6 +173,8 @@ impl<C: CollectionContainer> ConsensusState<C> {
         *self.first_voter.write() = Some(id);
     }
 
+    /// Report aggregated information about the cluster.
+    /// Useful for API reporting.
     pub fn cluster_status(&self) -> ClusterStatus {
         let persistent = self.persistent.read();
         let hard_state = &persistent.state.hard_state;
@@ -226,6 +246,99 @@ impl<C: CollectionContainer> ConsensusState<C> {
         Ok(stop_consensus)
     }
 
+    pub fn set_unapplied_entries(
+        &self,
+        first_index: EntryId,
+        last_index: EntryId,
+    ) -> Result<(), raft::Error> {
+        self.persistent
+            .write()
+            .set_unapplied_entries(first_index, last_index)
+            .map_err(raft_error_other)
+    }
+
+    /// Process the consensus operation, which are already committed.
+    /// If return Error - consensus should be stopped with error.
+    /// Return `true` if consensus should be stopped (peer removed)
+    /// Return `false` if everything is ok.
+    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
+        use raft::eraftpb::EntryType;
+
+        self.persistent
+            .write()
+            .save_if_dirty()
+            .context("Failed to save new state of applied entries queue")?;
+
+        loop {
+            let unapplied_index = self.persistent.read().current_unapplied_entry();
+            let entry_index = match unapplied_index {
+                Some(index) => index,
+                None => break,
+            };
+            log::debug!("Applying committed entry with index {entry_index}");
+            let entry = self
+                .wal
+                .lock()
+                .entry(entry_index)
+                .context(format!("Failed to get entry at index {entry_index}"))?;
+            let stop_consensus: bool = if entry.data.is_empty() {
+                // Empty entry, when the peer becomes Leader it will send an empty entry.
+                false
+            } else {
+                match entry.get_entry_type() {
+                    EntryType::EntryNormal => {
+                        let operation_result = self.apply_normal_entry(&entry);
+                        match operation_result {
+                            Ok(result) => {
+                                log::debug!(
+                                    "Successfully applied consensus operation entry. Index: {}. Result: {result}",
+                                    entry.index);
+                                false
+                            }
+                            Err(err @ StorageError::ServiceError { .. }) => {
+                                // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
+                                return Err(err)
+                                    .context("Failed to apply collection meta operation entry");
+                            }
+                            Err(err) => {
+                                log::warn!("Failed to apply collection meta operation entry with user error: {err}");
+                                // This is a user error so we can safely consider it applied but with error as it was incorrect.
+                                false
+                            }
+                        }
+                    }
+                    EntryType::EntryConfChangeV2 => {
+                        let stop_consensus = self
+                            .apply_conf_change_entry(&entry, raw_node)
+                            .context("Failed to apply configuration change entry")?;
+                        log::debug!(
+                            "Successfully applied configuration change entry. Index: {}. Stop consensus: {}",
+                            entry.index,
+                            stop_consensus
+                        );
+                        stop_consensus
+                    }
+                    ty => {
+                        return Err(anyhow!("Unexpected entry type: {:?}", ty));
+                    }
+                }
+            };
+            if stop_consensus {
+                return Ok(stop_consensus);
+            }
+            self.persistent
+                .write()
+                .entry_applied()
+                .context("Failed to save new state of applied entries queue")?;
+        }
+        Ok(false) // do not stop consensus
+    }
+
+    /// Process the consensus operation, which are already committed.
+    /// In this particular function - operations related to the cluster topology change:
+    ///
+    /// - AddPeer (different states)
+    /// - RemovePeer
     pub fn apply_conf_change_entry<T: Storage>(
         &self,
         entry: &RaftEntry,
@@ -261,15 +374,20 @@ impl<C: CollectionContainer> ConsensusState<C> {
                         .try_into()
                     {
                         let peer_uri: Uri = peer_uri;
+                        // Add peer to state
                         self.add_peer(single_change.node_id, peer_uri.clone())?;
-                        let operation = ConsensusOperations::AddPeer {
-                            peer_id: single_change.node_id,
-                            uri: peer_uri.to_string(),
-                        };
-                        let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-                        if let Some(on_apply) = on_apply {
-                            if on_apply.send(Ok(true)).is_err() {
-                                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+
+                        // Notify the submitter, that operation was performed
+                        {
+                            let operation = ConsensusOperations::AddPeer {
+                                peer_id: single_change.node_id,
+                                uri: peer_uri.to_string(),
+                            };
+                            let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+                            if let Some(on_apply) = on_apply {
+                                if on_apply.send(Ok(true)).is_err() {
+                                    log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+                                }
                             }
                         }
                     } else if entry.get_context().is_empty() {
@@ -290,100 +408,16 @@ impl<C: CollectionContainer> ConsensusState<C> {
         Ok(stop_consensus)
     }
 
-    pub fn set_unapplied_entries(
-        &self,
-        first_index: EntryId,
-        last_index: EntryId,
-    ) -> Result<(), raft::Error> {
-        self.persistent
-            .write()
-            .set_unapplied_entries(first_index, last_index)
-            .map_err(raft_error_other)
-    }
-
-    /// Return `true` if consensus should be stopped.
-    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> bool {
-        use raft::eraftpb::EntryType;
-
-        if let Err(err) = self.persistent.write().save_if_dirty() {
-            log::error!("Failed to save new state of applied entries queue: {err}");
-            return true;
-        }
-
-        loop {
-            let unapplied_index = self.persistent.read().current_unapplied_entry();
-            let entry_index = match unapplied_index {
-                Some(index) => index,
-                None => break,
-            };
-            log::debug!("Applying committed entry with index {entry_index}");
-            let entry = match self.wal.lock().entry(entry_index) {
-                Ok(entry) => entry,
-                Err(err) => {
-                    log::error!("Failed to get entry at index {entry_index}: {err}");
-                    break;
-                }
-            };
-            let stop_consensus: bool = if entry.data.is_empty() {
-                // Empty entry, when the peer becomes Leader it will send an empty entry.
-                false
-            } else {
-                match entry.get_entry_type() {
-                    EntryType::EntryNormal => {
-                        let operation_result = self.apply_normal_entry(&entry);
-                        match operation_result {
-                            Ok(result) => {
-                                log::debug!(
-                                    "Successfully applied consensus operation entry. Index: {}. Result: {result}",
-                                    entry.index);
-                                false
-                            }
-                            Err(err @ StorageError::ServiceError { .. }) => {
-                                log::error!("Failed to apply collection meta operation entry with service error: {err}");
-                                // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
-                                true
-                            }
-                            Err(err) => {
-                                log::warn!("Failed to apply collection meta operation entry with user error: {err}");
-                                // This is a user error so we can safely consider it applied but with error as it was incorrect.
-                                false
-                            }
-                        }
-                    }
-                    EntryType::EntryConfChangeV2 => {
-                        match self.apply_conf_change_entry(&entry, raw_node) {
-                            Ok(stop_consensus) => {
-                                log::trace!(
-                                    "Successfully applied configuration change entry. Index: {}.",
-                                    entry.index
-                                );
-                                stop_consensus
-                            }
-                            Err(err) => {
-                                log::error!(
-                                    "Failed to apply configuration change entry with error: {err}"
-                                );
-                                true
-                            }
-                        }
-                    }
-                    ty => {
-                        log::error!("Failed to apply entry: unsupported entry type {ty:?}");
-                        true
-                    }
-                }
-            };
-            if stop_consensus {
-                return stop_consensus;
-            }
-            if let Err(err) = self.persistent.write().entry_applied() {
-                log::error!("Failed to save new state of applied entries queue: {err}");
-                return true;
-            }
-        }
-        false // do not stop consensus
-    }
-
+    /// Process the consensus operation, which are already committed.
+    /// In this particular function - operations related to user data:
+    ///
+    /// - CreateCollection
+    /// - DropCollection
+    /// - Update collection params
+    /// - Update collection aliases
+    /// - Shards operations (transfer, remove, sync)
+    /// - e.t.c
+    ///
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
@@ -468,14 +502,6 @@ impl<C: CollectionContainer> ConsensusState<C> {
         self.persistent.read().save()
     }
 
-    pub async fn propose_consensus_op(
-        &self,
-        operation: ConsensusOperations,
-    ) -> Result<(), StorageError> {
-        self.is_leader_established.await_ready();
-        self.propose_sender.send(operation)
-    }
-
     async fn await_receiver(
         receiver: Receiver<Result<bool, StorageError>>,
         wait_timeout: Duration,
@@ -523,6 +549,16 @@ impl<C: CollectionContainer> ConsensusState<C> {
         }
     }
 
+    /// Send operation to the consensus thread and listen for the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `operation` - operation to propose
+    /// * `wait_timeout` - How long do we need to wait for the confirmation
+    /// * `with_confirmation` - If `true` - additional empty operation will be sent to the consensus thread.
+    ///   This is needed to ensure that the operation is committed and applied on majority of the nodes.
+    ///   We can not wait for all nodes confirmation, because it is not guaranteed that all nodes will be online.
+    ///
     pub async fn propose_consensus_op_with_await(
         &self,
         operation: ConsensusOperations,
@@ -587,7 +623,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
     }
 }
 
-impl<C: CollectionContainer> Storage for ConsensusState<C> {
+/// Implementation of the methods for Raft library to get information from
+/// our implementation of the storage.
+/// Well tested magic
+impl<C: CollectionContainer> Storage for ConsensusManager<C> {
     fn initial_state(&self) -> raft::Result<RaftState> {
         Ok(self.persistent.read().state.clone())
     }
@@ -731,7 +770,7 @@ mod tests {
     use raft::storage::{MemStorage, Storage};
     use tempfile::Builder;
 
-    use super::ConsensusState;
+    use super::ConsensusManager;
     use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
     use crate::content_manager::consensus::entry_queue::EntryApplyProgressQueue;
     use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -862,10 +901,10 @@ mod tests {
     fn setup_storages(
         entries: Vec<Entry>,
         path: &std::path::Path,
-    ) -> (ConsensusState<NoCollections>, MemStorage) {
+    ) -> (ConsensusManager<NoCollections>, MemStorage) {
         let persistent = Persistent::load_or_init(path, true).unwrap();
         let (sender, _) = mpsc::channel();
-        let consensus_state = ConsensusState::new(
+        let consensus_state = ConsensusManager::new(
             persistent,
             Arc::new(NoCollections),
             OperationSender::new(sender),

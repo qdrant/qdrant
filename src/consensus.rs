@@ -549,8 +549,6 @@ impl Consensus {
     ///
     /// The order of operations in this functions is critical, changing it might lead to bugs.
     ///
-    /// The order of operations in this functions is critical, changing it might lead to bugs.
-    ///
     /// Returns with err on failure to apply the state.
     /// If it receives message to stop the consensus - returns None instead of LightReady.
     fn process_ready(

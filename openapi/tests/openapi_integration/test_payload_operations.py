@@ -118,10 +118,12 @@ def test_payload_operations():
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "other_keyword"},
-            "filter": {
-                "must": [
-                    {"has_id": [6]}
-                ]
+            "selected_points": {
+                "filter": {
+                    "must": [
+                        {"has_id": [6]}
+                    ]
+                }
             }
         }
     )

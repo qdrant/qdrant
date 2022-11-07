@@ -9,6 +9,7 @@ import socket
 from contextlib import closing
 from pathlib import Path
 import pytest
+from .assertions import assert_http_ok
 
 # Tracks processes that need to be killed at the end of the test
 processes = []
@@ -324,7 +325,7 @@ def wait_collection_on_all_peers(collection_name: str, peer_api_uris: [str], max
         exists = True
         for url in peer_api_uris:
             r = requests.get(f"{url}/collections")
-            assert r.status_code == 200
+            assert_http_ok(r)
             collections = r.json()["result"]["collections"]
             exists &= any(collection["name"] == collection_name for collection in collections)
         if exists:
