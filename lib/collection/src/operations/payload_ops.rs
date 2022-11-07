@@ -12,7 +12,7 @@ use crate::shards::shard::ShardId;
 pub struct SetPayload {
     pub payload: Payload,
     /// Assigns payload to each point selected
-    pub points: PointsSelector,
+    pub selected_points: PointsSelector,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -145,7 +145,7 @@ mod tests {
         let operation: PayloadOps = serde_json::from_str(query).unwrap();
 
         match operation {
-            PayloadOps::SetPayloadByFilter { filter: f, payload } => {
+            PayloadOps::SetPayloadByFilter { filter: _, payload } => {
                 assert_eq!(payload.len(), 1);
 
                 assert!(payload.contains_key("key1"));

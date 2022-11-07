@@ -59,7 +59,7 @@ pub async fn do_set_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
-    let points_operation = match operation.points {
+    let points_operation = match operation.selected_points {
         PointsSelector::PointIdsSelector(points) => PayloadOps::SetPayload {
             payload: operation.payload,
             points: points.points,

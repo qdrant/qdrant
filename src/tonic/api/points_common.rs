@@ -161,7 +161,7 @@ pub async fn set_payload(
     };
     let operation = collection::operations::payload_ops::SetPayload {
         payload: proto_to_payloads(payload)?,
-        points: points_selector,
+        selected_points: points_selector,
     };
 
     let timing = Instant::now();

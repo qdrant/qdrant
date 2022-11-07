@@ -1827,7 +1827,7 @@
           "points"
         ],
         "summary": "Set payload",
-        "description": "Set payload for points",
+        "description": "Set payload for specified points",
         "operationId": "set_payload",
         "requestBody": {
           "description": "Set payload on points",
@@ -4504,13 +4504,13 @@
         "type": "object",
         "required": [
           "payload",
-          "points"
+          "selected_points"
         ],
         "properties": {
           "payload": {
             "$ref": "#/components/schemas/Payload"
           },
-          "points": {
+          "selected_points": {
             "$ref": "#/components/schemas/PointsSelector"
           }
         }

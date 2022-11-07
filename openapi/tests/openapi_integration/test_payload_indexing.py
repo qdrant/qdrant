@@ -22,7 +22,7 @@ def test_payload_indexing_operations():
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
-            "points": [6]
+            "selected_points": [6]
         }
     )
     assert response.ok

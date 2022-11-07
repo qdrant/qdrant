@@ -22,7 +22,7 @@ def test_payload_operations():
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
-            "points": [6]
+            "selected_points": { "points": [6] }
         }
     )
     assert response.ok
@@ -69,7 +69,7 @@ def test_payload_operations():
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
-            "points": [6]
+            "selected_points": { "points": [6] }
         }
     )
     assert response.ok
@@ -93,6 +93,47 @@ def test_payload_operations():
         method="GET",
         path_params={'collection_name': collection_name, 'id': 6},
     )
+
     assert response.ok
     assert len(response.json()['result']['payload']) == 0
 
+    # create payload
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": {"test_payload": "keyword"},
+            "selected_points": { "points": [6] }
+        }
+    )
+    assert response.ok
+
+    # set payload by filter
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload/delete',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": {"test_payload": "other_keyword"},
+            "filter": {
+                "must": [
+                    {"has_id": [6]}
+                ]
+            }
+        }
+    )
+    assert response.ok
+
+    # check payload
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 6},
+    )
+
+
+    assert response.ok
+    assert response.json()['result']['payload']['test_payload'] == "other_keyword"
