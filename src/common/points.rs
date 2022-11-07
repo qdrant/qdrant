@@ -59,8 +59,17 @@ pub async fn do_set_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
-    let collection_operation =
-        CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(operation));
+    let points_operation = match operation.selected_points {
+        PointsSelector::PointIdsSelector(points) => PayloadOps::SetPayload {
+            payload: operation.payload,
+            points: points.points,
+        },
+        PointsSelector::FilterSelector(filter_selector) => PayloadOps::SetPayloadByFilter {
+            filter: filter_selector.filter,
+            payload: operation.payload,
+        },
+    };
+    let collection_operation = CollectionUpdateOperations::PayloadOperation(points_operation);
     toc.update(collection_name, collection_operation, shard_selection, wait)
         .await
 }

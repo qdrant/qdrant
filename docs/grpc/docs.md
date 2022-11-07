@@ -1655,7 +1655,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | payload | [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry) | repeated | New payload values |
-| points | [PointId](#qdrant-PointId) | repeated | List of point to modify |
+| points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
 
 
 

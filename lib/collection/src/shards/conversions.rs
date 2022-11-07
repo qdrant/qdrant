@@ -7,10 +7,10 @@ use api::grpc::qdrant::{
     DeletePoints, DeletePointsInternal, PointsIdsList, PointsSelector, SetPayloadPoints,
     SetPayloadPointsInternal, SyncPoints, SyncPointsInternal, UpsertPoints, UpsertPointsInternal,
 };
-use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType};
+use segment::types::{Filter, Payload, PayloadFieldSchema, PayloadSchemaParams, PointIdType};
 use tonic::Status;
 
-use crate::operations::payload_ops::{DeletePayload, SetPayload};
+use crate::operations::payload_ops::DeletePayload;
 use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation};
 use crate::operations::types::CollectionResult;
 use crate::operations::CreateIndex;
@@ -95,7 +95,8 @@ pub fn internal_delete_points_by_filter(
 }
 
 pub fn internal_set_payload(
-    set_payload: SetPayload,
+    points: Vec<PointIdType>,
+    payload: Payload,
     shard: &RemoteShard,
     wait: bool,
 ) -> SetPayloadPointsInternal {
@@ -104,8 +105,31 @@ pub fn internal_set_payload(
         set_payload_points: Some(SetPayloadPoints {
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
-            payload: payload_to_proto(set_payload.payload),
-            points: set_payload.points.into_iter().map(|id| id.into()).collect(),
+            payload: payload_to_proto(payload),
+            points: Some(PointsSelector {
+                points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
+                    ids: points.into_iter().map(|id| id.into()).collect(),
+                })),
+            }),
+        }),
+    }
+}
+
+pub fn internal_set_payload_by_filter(
+    filter: Filter,
+    payload: Payload,
+    shard: &RemoteShard,
+    wait: bool,
+) -> SetPayloadPointsInternal {
+    SetPayloadPointsInternal {
+        shard_id: shard.id,
+        set_payload_points: Some(SetPayloadPoints {
+            collection_name: shard.collection_id.clone(),
+            wait: Some(wait),
+            payload: payload_to_proto(payload),
+            points: Some(PointsSelector {
+                points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
+            }),
         }),
     }
 }

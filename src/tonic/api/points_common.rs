@@ -155,12 +155,13 @@ pub async fn set_payload(
         points,
     } = set_payload_points;
 
+    let points_selector = match points {
+        None => return Err(Status::invalid_argument("PointSelector is missing")),
+        Some(p) => p.try_into()?,
+    };
     let operation = collection::operations::payload_ops::SetPayload {
         payload: proto_to_payloads(payload)?,
-        points: points
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?,
+        selected_points: points_selector,
     };
 
     let timing = Instant::now();
