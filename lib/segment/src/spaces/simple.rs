@@ -151,14 +151,14 @@ impl Metric for CosineMetric {
                 && is_x86_feature_detected!("fma")
                 && vector.len() >= MIN_DIM_SIZE_AVX
             {
-                return Some(unsafe { cosine_preprocess_avx(vector) });
+                return unsafe { cosine_preprocess_avx(vector) };
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("sse") && vector.len() >= MIN_DIM_SIZE_SIMD {
-                return Some(unsafe { cosine_preprocess_sse(vector) });
+                return unsafe { cosine_preprocess_sse(vector) };
             }
         }
 
@@ -166,11 +166,11 @@ impl Metric for CosineMetric {
         {
             if std::arch::is_aarch64_feature_detected!("neon") && vector.len() >= MIN_DIM_SIZE_SIMD
             {
-                return Some(unsafe { cosine_preprocess_neon(vector) });
+                return unsafe { cosine_preprocess_neon(vector) };
             }
         }
 
-        Some(cosine_preprocess(vector))
+        cosine_preprocess(vector)
     }
 
     fn postprocess(score: ScoreType) -> ScoreType {
@@ -188,10 +188,13 @@ pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> 
     -s
 }
 
-pub fn cosine_preprocess(vector: &[VectorElementType]) -> Vec<VectorElementType> {
+pub fn cosine_preprocess(vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
     let mut length: f32 = vector.iter().map(|x| x * x).sum();
+    if length < f32::EPSILON {
+        return None;
+    }
     length = length.sqrt();
-    vector.iter().map(|x| x / length).collect()
+    Some(vector.iter().map(|x| x / length).collect())
 }
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
@@ -205,6 +208,6 @@ mod tests {
     #[test]
     fn test_cosine_preprocessing() {
         let res = CosineMetric::preprocess(&[0.0, 0.0, 0.0, 0.0]);
-        eprintln!("res = {:#?}", res);
+        assert!(res.is_none());
     }
 }

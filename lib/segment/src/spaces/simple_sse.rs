@@ -56,7 +56,9 @@ pub(crate) unsafe fn euclid_similarity_sse(
 }
 
 #[target_feature(enable = "sse")]
-pub(crate) unsafe fn cosine_preprocess_sse(vector: &[VectorElementType]) -> Vec<VectorElementType> {
+pub(crate) unsafe fn cosine_preprocess_sse(
+    vector: &[VectorElementType],
+) -> Option<Vec<VectorElementType>> {
     let n = vector.len();
     let m = n - (n % 16);
     let mut ptr: *const f32 = vector.as_ptr();
@@ -90,8 +92,11 @@ pub(crate) unsafe fn cosine_preprocess_sse(vector: &[VectorElementType]) -> Vec<
     for i in 0..n - m {
         length += (*ptr.add(i)).powi(2);
     }
+    if length < f32::EPSILON {
+        return None;
+    }
     length = length.sqrt();
-    vector.iter().map(|x| x / length).collect()
+    Some(vector.iter().map(|x| x / length).collect())
 }
 
 #[target_feature(enable = "sse")]

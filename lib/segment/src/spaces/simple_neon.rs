@@ -48,7 +48,7 @@ pub(crate) unsafe fn euclid_similarity_neon(
 #[cfg(target_feature = "neon")]
 pub(crate) unsafe fn cosine_preprocess_neon(
     vector: &[VectorElementType],
-) -> Vec<VectorElementType> {
+) -> Option<Vec<VectorElementType>> {
     let n = vector.len();
     let m = n - (n % 16);
     let mut ptr: *const f32 = vector.as_ptr();
@@ -78,8 +78,11 @@ pub(crate) unsafe fn cosine_preprocess_neon(
     for v in vector.iter().take(n).skip(m) {
         length += v.powi(2);
     }
+    if length < f32::EPSILON {
+        return None;
+    }
     let length = length.sqrt();
-    vector.iter().map(|x| x / length).collect()
+    Some(vector.iter().map(|x| x / length).collect())
 }
 
 #[cfg(target_feature = "neon")]
