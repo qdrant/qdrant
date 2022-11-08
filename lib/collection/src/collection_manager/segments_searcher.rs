@@ -15,6 +15,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::operations::types::{CollectionResult, Record, SearchRequestBatch};
 
 /// Simple implementation of segment manager
@@ -39,6 +40,30 @@ impl SegmentsSearcher {
             if some_segment.is_none() {
                 return Ok(vec![]);
             }
+
+            // Use probabilistic sampling for the `limit` parameter to avoid over-fetching from segments
+            let limit = request.searches.first().map(|s| s.limit).unwrap_or(0);
+            let request = if segments.len() > 2 && limit > 100 && limit < 10000 {
+                let mut total_points = 0;
+                for (_, segment) in segments.iter() {
+                    total_points += segment.get().read().points_count();
+                }
+                let probability = segments.len() / total_points;
+                let sampling =
+                    find_search_sampling_over_point_distribution(limit as f64, probability as f64);
+                if sampling < limit {
+                    let mut new_request = (*request).clone();
+                    for search in new_request.searches.iter_mut() {
+                        search.limit = sampling as usize;
+                    }
+                    Arc::new(new_request)
+                } else {
+                    // sampling does seem to help
+                    request.clone()
+                }
+            } else {
+                request.clone()
+            };
 
             segments
                 .iter()

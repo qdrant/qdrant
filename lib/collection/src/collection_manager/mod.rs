@@ -8,5 +8,6 @@ mod segments_updater;
 #[allow(dead_code)]
 pub(crate) mod fixtures;
 
+mod probabilistic_segment_search_sampling;
 #[cfg(test)]
 mod tests;
