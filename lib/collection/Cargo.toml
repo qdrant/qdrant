@@ -41,7 +41,7 @@ segment = {path = "../segment"}
 api = {path = "../api"}
 
 itertools = "0.10"
-indicatif = "0.17.1"
+indicatif = "0.17.2"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono"] }
 num_cpus = "1.13.1"
