@@ -22,7 +22,7 @@ def test_payload_operations():
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
-            "selected_points": { "points": [6] }
+            "points": [6]
         }
     )
     assert response.ok
@@ -69,7 +69,7 @@ def test_payload_operations():
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
-            "selected_points": { "points": [6] }
+            "points": [6]
         }
     )
     assert response.ok
@@ -105,7 +105,7 @@ def test_payload_operations():
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
-            "selected_points": { "points": [6] }
+            "points": [6]
         }
     )
     assert response.ok
@@ -118,7 +118,7 @@ def test_payload_operations():
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "other_keyword"},
-            "selected_points": {
+            "points": {
                 "filter": {
                     "must": [
                         {"has_id": [6]}

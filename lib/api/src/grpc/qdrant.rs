@@ -1422,9 +1422,12 @@ pub struct SetPayloadPoints {
     /// New payload values
     #[prost(map="string, message", tag="3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// deprecated List of point to modify
+    #[prost(message, repeated, tag="4")]
+    pub points: ::prost::alloc::vec::Vec<PointId>,
     /// Affected points
     #[prost(message, optional, tag="5")]
-    pub points: ::core::option::Option<PointsSelector>,
+    pub selected_points: ::core::option::Option<PointsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPoints {

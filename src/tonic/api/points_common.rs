@@ -10,8 +10,9 @@ use api::grpc::qdrant::{
     SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
+use collection::operations::point_ops::PointsSelector::PointIdsSelector;
 use collection::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointSyncOperation,
+    PointIdsList, PointInsertOperations, PointOperations, PointSyncOperation,
 };
 use collection::operations::types::{
     default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
@@ -152,16 +153,23 @@ pub async fn set_payload(
         collection_name,
         wait,
         payload,
+        selected_points,
         points,
     } = set_payload_points;
 
-    let points_selector = match points {
-        None => return Err(Status::invalid_argument("PointSelector is missing")),
+    let points_selector = match selected_points {
+        //On deprecation of points: return Err(Status::invalid_argument("PointSelector is missing")),
+        None => PointIdsSelector(PointIdsList {
+            points: points
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
+        }),
         Some(p) => p.try_into()?,
     };
     let operation = collection::operations::payload_ops::SetPayload {
         payload: proto_to_payloads(payload)?,
-        selected_points: points_selector,
+        points: points_selector,
     };
 
     let timing = Instant::now();

@@ -4357,18 +4357,18 @@
         ]
       },
       "PointIdsList": {
-        "type": "object",
-        "required": [
-          "points"
-        ],
-        "properties": {
-          "points": {
+        "items": {
+          "$ref": "#/components/schemas/ExtendedPointId"
+        },
+        "anyOf": [
+          {
+            "type": "object"
+          },
+          {
             "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
-            }
+            "items": {}
           }
-        }
+        ]
       },
       "FilterSelector": {
         "type": "object",
@@ -4504,13 +4504,13 @@
         "type": "object",
         "required": [
           "payload",
-          "selected_points"
+          "points"
         ],
         "properties": {
           "payload": {
             "$ref": "#/components/schemas/Payload"
           },
-          "selected_points": {
+          "points": {
             "$ref": "#/components/schemas/PointsSelector"
           }
         }

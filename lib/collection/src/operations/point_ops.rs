@@ -80,6 +80,7 @@ impl Batch {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {
+    #[serde(flatten)]
     pub points: Vec<PointIdType>,
 }
 

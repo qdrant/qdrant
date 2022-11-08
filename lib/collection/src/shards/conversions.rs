@@ -106,11 +106,12 @@ pub fn internal_set_payload(
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             payload: payload_to_proto(payload),
-            points: Some(PointsSelector {
+            selected_points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
                     ids: points.into_iter().map(|id| id.into()).collect(),
                 })),
             }),
+            points: vec![], //remove on deprecation
         }),
     }
 }
@@ -127,9 +128,10 @@ pub fn internal_set_payload_by_filter(
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             payload: payload_to_proto(payload),
-            points: Some(PointsSelector {
+            selected_points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
             }),
+            points: vec![], //remove on deprecation
         }),
     }
 }

@@ -12,7 +12,7 @@ use crate::shards::shard::ShardId;
 pub struct SetPayload {
     pub payload: Payload,
     /// Assigns payload to each point selected
-    pub selected_points: PointsSelector,
+    pub points: PointsSelector,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
