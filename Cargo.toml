@@ -56,7 +56,7 @@ tar = "0.4.38"
 raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false }
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
-prost = "=0.9.0"
+prost = "=0.11.2"
 raft-proto = {  git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false}
 
 segment = { path = "lib/segment" }

@@ -296,7 +296,7 @@ name = "api"
 version = "0.11.1"
 dependencies = [
  "chrono",
- "prost 0.10.4",
+ "prost 0.11.2",
  "prost-types 0.10.1",
  "rand",
  "schemars",
@@ -2673,7 +2673,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "parking_lot",
- "prost 0.9.0",
+ "prost 0.11.2",
  "raft",
  "raft-proto",
  "rusty-hook",
@@ -3339,7 +3339,7 @@ dependencies = [
  "num_cpus",
  "parking_lot",
  "proptest",
- "prost 0.9.0",
+ "prost 0.11.2",
  "raft",
  "rand",
  "schemars",
