@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+use super::graph_links::GraphLinks;
 use crate::common::file_operations::{atomic_save_bin, read_bin};
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
@@ -27,8 +28,6 @@ pub struct GraphLayersBackwardCompatibility {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) level_factor: f64,   // Deprecated
-    pub(super) use_heuristic: bool, // Deprecated
     pub(super) links_layers: Vec<LayersContainer>,
     pub(super) entry_points: EntryPoints,
 }
@@ -40,7 +39,7 @@ impl From<GraphLayersBackwardCompatibility> for GraphLayers {
             m: gl.m,
             m0: gl.m0,
             ef_construct: gl.ef_construct,
-            links_layers: gl.links_layers,
+            links: GraphLinks::from_vec(&gl.links_layers),
             entry_points: gl.entry_points,
             visited_pool: VisitedPool::new(),
         }
@@ -53,7 +52,7 @@ pub struct GraphLayers {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) links_layers: Vec<LayersContainer>,
+    pub(super) links: GraphLinks,
     pub(super) entry_points: EntryPoints,
 
     #[serde(skip)]
@@ -183,7 +182,7 @@ impl GraphLayersBase for GraphLayers {
     where
         F: FnMut(PointOffsetType),
     {
-        for link in &self.links_layers[point_id as usize][level] {
+        for link in self.links.links(point_id, level) {
             f(*link);
         }
     }
@@ -224,7 +223,7 @@ impl GraphLayers {
             m,
             m0,
             ef_construct,
-            links_layers,
+            links: Default::default(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
         }
@@ -241,41 +240,11 @@ impl GraphLayers {
     }
 
     fn num_points(&self) -> usize {
-        self.links_layers.len()
+        self.links.num_points()
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
-        self.links_layers[point_id as usize].len() - 1
-    }
-
-    pub fn merge_from_other(&mut self, other: GraphLayers) {
-        let mut visited_list = self.visited_pool.get(self.num_points());
-        if other.links_layers.len() > self.links_layers.len() {
-            self.links_layers.resize(other.links_layers.len(), vec![]);
-        }
-        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
-            let current_layers = &mut self.links_layers[point_id];
-            for (level, other_links) in layers.into_iter().enumerate() {
-                if current_layers.len() <= level {
-                    current_layers.push(other_links);
-                } else {
-                    visited_list.next_iteration();
-                    let current_links = &mut current_layers[level];
-                    current_links.iter().copied().for_each(|x| {
-                        visited_list.check_and_update_visited(x);
-                    });
-                    for other_link in other_links
-                        .into_iter()
-                        .filter(|x| !visited_list.check_and_update_visited(*x))
-                    {
-                        current_links.push(other_link);
-                    }
-                }
-            }
-        }
-        self.entry_points.merge_from_other(other.entry_points);
-
-        self.visited_pool.return_back(visited_list);
+        self.links.point_level(point_id)
     }
 
     pub fn search(
@@ -382,7 +351,9 @@ mod tests {
         let mut graph_layers =
             GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num);
 
-        graph_layers.links_layers[0][0] = vec![1, 2, 3, 4, 5, 6];
+        let mut graph_links = vec![vec![Vec::new()]; num_vectors];
+        graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
+        graph_layers.links = GraphLinks::from_vec(&graph_links);
 
         let linking_idx: PointOffsetType = 7;
 
@@ -402,10 +373,7 @@ mod tests {
             &[],
         );
 
-        assert_eq!(
-            nearest_on_level.len(),
-            graph_layers.links_layers[0][0].len() + 1
-        );
+        assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
 
         for nearest in &nearest_on_level {
             // eprintln!("nearest = {:#?}", nearest);
@@ -462,15 +430,15 @@ mod tests {
 
         assert!(main_entry.level > 0);
 
-        let num_levels = graph_layers
-            .links_layers
-            .iter()
-            .map(|x| x.len())
+        let num_levels = (0..num_vectors)
+            .map(|i| graph_layers.links.point_level(i as PointOffsetType))
             .max()
             .unwrap();
-        assert_eq!(main_entry.level + 1, num_levels);
+        assert_eq!(main_entry.level, num_levels);
 
-        let total_links_0: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
+        let total_links_0 = (0..num_vectors)
+            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
+            .sum::<usize>();
 
         eprintln!("total_links_0 = {:#?}", total_links_0);
         eprintln!("num_vectors = {:#?}", num_vectors);

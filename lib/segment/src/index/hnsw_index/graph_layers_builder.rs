@@ -6,6 +6,7 @@ use parking_lot::{Mutex, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
 
+use super::graph_links::GraphLinks;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -76,7 +77,7 @@ impl GraphLayersBuilder {
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,
-            links_layers: unlocker_links_layers,
+            links: GraphLinks::from_vec(&unlocker_links_layers),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         }
@@ -131,6 +132,43 @@ impl GraphLayersBuilder {
             use_heuristic,
             true,
         )
+    }
+
+    pub fn merge_from_other(&mut self, other: GraphLayersBuilder) {
+        self.max_level = AtomicUsize::new(std::cmp::max(
+            self.max_level.load(std::sync::atomic::Ordering::Relaxed),
+            other.max_level.load(std::sync::atomic::Ordering::Relaxed),
+        ));
+        let mut visited_list = self.visited_pool.get(self.num_points());
+        if other.links_layers.len() > self.links_layers.len() {
+            self.links_layers
+                .resize_with(other.links_layers.len(), Vec::new);
+        }
+        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
+            let current_layers = &mut self.links_layers[point_id];
+            for (level, other_links) in layers.into_iter().enumerate() {
+                if current_layers.len() <= level {
+                    current_layers.push(other_links);
+                } else {
+                    let other_links = other_links.into_inner();
+                    visited_list.next_iteration();
+                    let mut current_links = current_layers[level].write();
+                    current_links.iter().copied().for_each(|x| {
+                        visited_list.check_and_update_visited(x);
+                    });
+                    for other_link in other_links
+                        .into_iter()
+                        .filter(|x| !visited_list.check_and_update_visited(*x))
+                    {
+                        current_links.push(other_link);
+                    }
+                }
+            }
+        }
+        self.entry_points
+            .lock()
+            .merge_from_other(other.entry_points.into_inner());
+        self.visited_pool.return_back(visited_list);
     }
 
     fn num_points(&self) -> usize {
@@ -566,14 +604,14 @@ mod tests {
             create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng2);
 
         // check is graph_layers_builder links are equeal to graph_layers_orig
-        let orig_len = graph_layers_orig.links_layers[0].len();
-        let builder_len = graph_layers_builder.links_layers[0].len();
+        let orig_len = graph_layers_orig.links.num_points();
+        let builder_len = graph_layers_builder.links_layers.len();
 
         assert_eq!(orig_len, builder_len);
 
         for idx in 0..builder_len {
-            let links_orig = &graph_layers_orig.links_layers[0][idx];
-            let links_builder = graph_layers_builder.links_layers[0][idx].read();
+            let links_orig = &graph_layers_orig.links.links(idx as PointOffsetType, 0);
+            let links_builder = graph_layers_builder.links_layers[idx][0].read();
             let link_container_from_builder = links_builder.iter().copied().collect::<Vec<_>>();
             assert_eq!(links_orig, &link_container_from_builder);
         }
@@ -655,18 +693,24 @@ mod tests {
         }
         let graph_layers = graph_layers_builder.into_graph_layers();
 
-        let number_layers = graph_layers.links_layers.len();
-        eprintln!("number_layers = {:#?}", number_layers);
+        let num_points = graph_layers.links.num_points();
+        eprintln!("number_points = {:#?}", num_points);
 
-        let max_layers = graph_layers.links_layers.iter().map(|x| x.len()).max();
-        eprintln!("max_layers = {:#?}", max_layers);
+        let max_layer = (0..NUM_VECTORS)
+            .map(|i| graph_layers.links.point_level(i as PointOffsetType))
+            .max()
+            .unwrap();
+        eprintln!("max_layer = {:#?}", max_layer + 1);
 
-        eprintln!(
-            "graph_layers.links_layers[910] = {:#?}",
-            graph_layers.links_layers[910]
-        );
+        let layers910 = graph_layers.links.point_level(910);
+        let links910 = (0..layers910 + 1)
+            .map(|i| graph_layers.links.links(910, i).to_vec())
+            .collect::<Vec<_>>();
+        eprintln!("graph_layers.links_layers[910] = {:#?}", links910,);
 
-        let total_edges: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
+        let total_edges: usize = (0..NUM_VECTORS)
+            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
+            .sum();
         let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
         eprintln!("avg_connectivity = {:#?}", avg_connectivity);
     }

@@ -346,8 +346,6 @@ impl VectorIndex for HNSWIndex {
             })
         })?;
 
-        self.graph = graph_layers_builder.into_graph_layers();
-
         debug!("finish main graph");
 
         let total_vectors_count = vector_storage.total_vector_count();
@@ -392,10 +390,12 @@ impl VectorIndex for HNSWIndex {
                     payload_block.condition,
                     &mut block_filter_list,
                 )?;
-                self.graph
-                    .merge_from_other(additional_graph.into_graph_layers());
+                graph_layers_builder.merge_from_other(additional_graph);
             }
         }
+
+        self.graph = graph_layers_builder.into_graph_layers();
+
         debug!("finish additional payload field indexing");
         self.save()
     }
