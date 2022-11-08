@@ -297,7 +297,7 @@ version = "0.11.1"
 dependencies = [
  "chrono",
  "prost 0.10.4",
- "prost-types 0.10.1",
+ "prost-types 0.11.2",
  "rand",
  "schemars",
  "segment",
