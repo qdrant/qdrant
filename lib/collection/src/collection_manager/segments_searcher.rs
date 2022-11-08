@@ -41,27 +41,33 @@ impl SegmentsSearcher {
                 return Ok(vec![]);
             }
 
-            // Use probabilistic sampling for the `limit` parameter to avoid over-fetching from segments
-            let limit = request.searches.first().map(|s| s.limit).unwrap_or(0);
-            let request = if segments.len() > 2 && limit > 100 && limit < 10000 {
+            // Use probabilistic sampling for the `limit` parameter to avoid over-fetching from segments.
+            // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
+            // With probabilistic sampling we determine a smaller sampling limit for each segment.
+            let request = if segments.len() > 2 {
                 let mut total_points = 0;
                 for (_, segment) in segments.iter() {
                     total_points += segment.get().read().points_count();
                 }
-                let probability = segments.len() / total_points;
-                let sampling =
-                    find_search_sampling_over_point_distribution(limit as f64, probability as f64);
-                if sampling < limit {
-                    let mut new_request = (*request).clone();
-                    for search in new_request.searches.iter_mut() {
-                        search.limit = sampling as usize;
+                let distribution_probability = segments.len() / total_points;
+                let mut new_request = (*request).clone();
+                for search in new_request.searches.iter_mut() {
+                    // Apply sampling only if the limit is within the sweet spot
+                    // (i.e. not too small and not too large)
+                    if search.limit > 100 && search.limit < 10000 {
+                        let sampling = find_search_sampling_over_point_distribution(
+                            search.limit as f64,
+                            distribution_probability as f64,
+                        );
+                        // Make sure that sampling is not larger than the limit
+                        if sampling < search.limit {
+                            search.limit = sampling;
+                        }
                     }
-                    Arc::new(new_request)
-                } else {
-                    // sampling does seem to help
-                    request.clone()
                 }
+                Arc::new(new_request)
             } else {
+                // use original request if there are less than 3 segments
                 request.clone()
             };
 

@@ -1,5 +1,7 @@
 /// Precomputed sampling table for the probabilistic segment search algorithm.
 ///
+/// Associate a lambda factor from the [Poisson distribution](https://en.wikipedia.org/wiki/Poisson_distribution) to a sampling size.
+///
 /// The table is precomputed for a range of segments and a range of `top` params.
 ///
 /// TODO attach proper python code to generate the table
@@ -138,6 +140,7 @@ const POISSON_DISTRIBUTION_SEARCH_SAMPLING: [(f64, usize); 120] = [
     (4900.0, 5132),
 ];
 
+/// Uses binary search to find the sampling size for a given lambda.
 pub fn find_search_sampling_over_point_distribution(n: f64, p: f64) -> usize {
     let target_lambda = p * n;
     let k = POISSON_DISTRIBUTION_SEARCH_SAMPLING
