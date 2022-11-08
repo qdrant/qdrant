@@ -693,14 +693,14 @@ mod tests {
         }
         let graph_layers = graph_layers_builder.into_graph_layers();
 
-        let number_layers = graph_layers.links.num_points();
-        eprintln!("number_layers = {:#?}", number_layers);
+        let num_points = graph_layers.links.num_points();
+        eprintln!("number_points = {:#?}", num_points);
 
-        let max_layers = (0..NUM_VECTORS)
+        let max_layer = (0..NUM_VECTORS)
             .map(|i| graph_layers.links.point_level(i as PointOffsetType))
             .max()
             .unwrap();
-        eprintln!("max_layers = {:#?}", max_layers);
+        eprintln!("max_layer = {:#?}", max_layer + 1);
 
         let layers910 = graph_layers.links.point_level(910);
         let links910 = (0..layers910 + 1)
