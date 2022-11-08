@@ -59,9 +59,12 @@ impl SegmentsSearcher {
                             search.limit as f64,
                             distribution_probability as f64,
                         );
-                        // Make sure that sampling is not larger than the limit
-                        if sampling < search.limit {
-                            search.limit = sampling;
+                        // Make sure that sampling is not larger than the initial limit
+                        match sampling {
+                            Some(sampling) if sampling < search.limit => {
+                                search.limit = sampling as usize;
+                            }
+                            _ => {}
                         }
                     }
                 }

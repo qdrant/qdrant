@@ -141,10 +141,12 @@ const POISSON_DISTRIBUTION_SEARCH_SAMPLING: [(f64, usize); 120] = [
 ];
 
 /// Uses binary search to find the sampling size for a given lambda.
-pub fn find_search_sampling_over_point_distribution(n: f64, p: f64) -> usize {
+pub fn find_search_sampling_over_point_distribution(n: f64, p: f64) -> Option<usize> {
     let target_lambda = p * n;
     let k = POISSON_DISTRIBUTION_SEARCH_SAMPLING
-        .binary_search_by(|&(lambda, _)| lambda.partial_cmp(&target_lambda).unwrap())
-        .unwrap_or_else(|i| i);
-    POISSON_DISTRIBUTION_SEARCH_SAMPLING[k].1
+        .binary_search_by(|&(lambda, _)| lambda.partial_cmp(&target_lambda).unwrap());
+    match k {
+        Ok(k) => Some(POISSON_DISTRIBUTION_SEARCH_SAMPLING[k].1),
+        Err(_) => None,
+    }
 }
