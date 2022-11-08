@@ -4,6 +4,7 @@ use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::future::{join, join_all};
 use futures::stream::FuturesUnordered;
@@ -39,6 +40,8 @@ use crate::shards::telemetry::ReplicaSetTelemetry;
 
 pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+
+const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(10);
 
 const READ_REMOTE_REPLICAS: u32 = 2;
 
@@ -851,6 +854,29 @@ impl ShardReplicaSet {
                     err
                 );
                 self.notify_peer_failure(*peer_id);
+            }
+            if wait && !failures.is_empty() {
+                // ToDo: allow timeout configuration in API
+                let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
+                let shards_disabled = self.replica_state.wait_for(
+                    |state| {
+                        failures.iter().all(|(peer_id, _)| {
+                            state
+                                .peers
+                                .get(peer_id)
+                                .map(|state| state != &ReplicaState::Active)
+                                .unwrap_or(true) // not found means that peer is dead
+                        })
+                    },
+                    DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
+                );
+                if !shards_disabled {
+                    return Err(CollectionError::service_error(format!(
+                        "Some replica of shard {} failed to apply operation and deactivation \
+                         timed out after {} seconds. Consistency of this update is not guaranteed. Please retry.",
+                        self.shard_id, timeout.as_secs()
+                    )));
+                }
             }
         }
 
