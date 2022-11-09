@@ -44,7 +44,7 @@ itertools = "0.10"
 indicatif = "0.17.2"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono"] }
-num_cpus = "1.13.1"
+num_cpus = "1.14.0"
 tar = "0.4.38"
 fs_extra = "1.2.0"
 semver = "1.0.14"
