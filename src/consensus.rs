@@ -752,7 +752,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
-    use collection::config::VectorParams;
+    use collection::operations::types::VectorParams;
     use collection::shards::channel_service::ChannelService;
     use segment::types::Distance;
     use slog::Drain;

@@ -144,7 +144,7 @@ mod tests {
     use super::*;
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
-    use crate::config::{VectorParams, VectorsConfig};
+    use crate::operations::types::{VectorParams, VectorsConfig};
 
     #[test]
     fn test_vacuum_conditions() {

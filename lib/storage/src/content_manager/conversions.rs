@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use collection::config::VectorsConfig;
+use collection::operations::types::VectorsConfig;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{

@@ -5,12 +5,10 @@ use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
 
 use collection::collection::Collection;
-use collection::config::{
-    CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig,
-};
+use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use collection::operations::types::{
-    CollectionError, PointRequest, RecommendRequest, SearchRequest,
+    CollectionError, PointRequest, RecommendRequest, SearchRequest, VectorParams, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use segment::data_types::named_vectors::NamedVectors;

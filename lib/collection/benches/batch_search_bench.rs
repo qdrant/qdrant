@@ -5,9 +5,9 @@ mod prof;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 
-use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
+use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
-use collection::operations::types::{SearchRequest, SearchRequestBatch};
+use collection::operations::types::{SearchRequest, SearchRequestBatch, VectorParams};
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;

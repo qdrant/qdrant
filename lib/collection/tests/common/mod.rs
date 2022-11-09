@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
-use collection::config::{CollectionConfig, CollectionParams, VectorParams, WalConfig};
-use collection::operations::types::CollectionError;
+use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::operations::types::{CollectionError, VectorParams};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;

@@ -10,7 +10,7 @@ use tonic::Status;
 use super::config_diff::CollectionParamsDiff;
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
-    CollectionParams, VectorParams, VectorsConfig, WalConfig,
+    CollectionParams, WalConfig,
 };
 use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
@@ -19,7 +19,7 @@ use crate::operations::point_ops::{
 };
 use crate::operations::types::{
     CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, RecommendRequest, Record,
-    SearchRequest, UpdateResult, UpdateStatus,
+    SearchRequest, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionSearchRequest;
