@@ -17,7 +17,8 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
-use crate::config::{CollectionParams, VectorParams, VectorsConfig};
+use crate::config::CollectionParams;
+use crate::operations::types::{VectorParams, VectorsConfig};
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()

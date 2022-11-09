@@ -5,7 +5,7 @@ mod tests {
     use std::num::NonZeroU64;
     use std::sync::Arc;
 
-    use collection::config::VectorParams;
+    use collection::operations::types::VectorParams;
     use collection::optimizers_builder::OptimizersConfig;
     use segment::types::Distance;
     use storage::content_manager::collection_meta_ops::{

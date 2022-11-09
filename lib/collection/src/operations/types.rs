@@ -1,18 +1,20 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroU64;
 use std::result;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
 use segment::data_types::vectors::{
     NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
-    SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType,
+    SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -580,6 +582,73 @@ impl Record {
             }
             Some(VectorStruct::Multi(vectors)) => vectors.get(name),
             None => None,
+        }
+    }
+}
+
+/// Params of single vector data storage
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorParams {
+    /// Size of a vectors used
+    pub size: NonZeroU64,
+    /// Type of distance function used for measuring distance between vectors
+    pub distance: Distance,
+}
+
+/// Vector params separator for single and multiple vector modes
+/// Single mode:
+///
+/// { "size": 128, "distance": "Cosine" }
+///
+/// or multiple mode:
+///
+/// {
+///      "default": {
+///          "size": 128,
+///          "distance": "Cosine"
+///      }
+/// }
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum VectorsConfig {
+    Single(VectorParams),
+    Multi(BTreeMap<String, VectorParams>),
+}
+
+impl Anonymize for VectorParams {
+    fn anonymize(&self) -> Self {
+        self.clone()
+    }
+}
+
+impl Anonymize for VectorsConfig {
+    fn anonymize(&self) -> Self {
+        match self {
+            VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
+            VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
+        }
+    }
+}
+
+impl From<VectorParams> for VectorsConfig {
+    fn from(params: VectorParams) -> Self {
+        VectorsConfig::Single(params)
+    }
+}
+
+impl VectorsConfig {
+    pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
+        match self {
+            VectorsConfig::Single(params) => {
+                if name == DEFAULT_VECTOR_NAME {
+                    Some(params)
+                } else {
+                    None
+                }
+            }
+            VectorsConfig::Multi(params) => params.get(name),
         }
     }
 }

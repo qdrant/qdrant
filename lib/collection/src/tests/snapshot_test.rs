@@ -6,7 +6,8 @@ use segment::types::Distance;
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
-use crate::config::{CollectionConfig, CollectionParams, VectorParams, VectorsConfig, WalConfig};
+use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::operations::types::{VectorParams, VectorsConfig};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;

@@ -1,8 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fs::File;
-use std::hash::Hash;
 use std::io::{Read, Write};
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use atomicwrites::AtomicFile;
@@ -10,11 +9,11 @@ use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::types::{Distance, HnswConfig, VectorDataConfig};
+use segment::types::{HnswConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
 use wal::WalOptions;
 
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
 use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
@@ -70,52 +69,6 @@ pub struct CollectionParams {
     pub on_disk_payload: bool,
 }
 
-/// Params of single vector data storage
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub struct VectorParams {
-    /// Size of a vectors used
-    pub size: NonZeroU64,
-    /// Type of distance function used for measuring distance between vectors
-    pub distance: Distance,
-}
-
-/// Vector params separator for single and multiple vector modes
-/// Single mode:
-///
-/// { "size": 128, "distance": "Cosine" }
-///
-/// or multiple mode:
-///
-/// {
-///      "default": {
-///          "size": 128,
-///          "distance": "Cosine"
-///      }
-/// }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
-pub enum VectorsConfig {
-    Single(VectorParams),
-    Multi(BTreeMap<String, VectorParams>),
-}
-
-impl Anonymize for VectorParams {
-    fn anonymize(&self) -> Self {
-        self.clone()
-    }
-}
-
-impl Anonymize for VectorsConfig {
-    fn anonymize(&self) -> Self {
-        match self {
-            VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
-            VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
-        }
-    }
-}
-
 impl Anonymize for CollectionParams {
     fn anonymize(&self) -> Self {
         CollectionParams {
@@ -124,27 +77,6 @@ impl Anonymize for CollectionParams {
             replication_factor: self.replication_factor,
             write_consistency_factor: self.write_consistency_factor,
             on_disk_payload: self.on_disk_payload,
-        }
-    }
-}
-
-impl From<VectorParams> for VectorsConfig {
-    fn from(params: VectorParams) -> Self {
-        VectorsConfig::Single(params)
-    }
-}
-
-impl VectorsConfig {
-    fn get_params(&self, name: &str) -> Option<&VectorParams> {
-        match self {
-            VectorsConfig::Single(params) => {
-                if name == DEFAULT_VECTOR_NAME {
-                    Some(params)
-                } else {
-                    None
-                }
-            }
-            VectorsConfig::Multi(params) => params.get(name),
         }
     }
 }
