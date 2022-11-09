@@ -5,13 +5,15 @@ use std::path::PathBuf;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
 
 /// Functions as a smart pointer which gives a write guard and saves data on disk
 /// when write guard is dropped.
 #[derive(Debug, Default)]
 pub struct SaveOnDisk<T> {
+    change_notification: Condvar,
+    notification_lock: Mutex<()>,
     data: RwLock<T>,
     path: PathBuf,
 }
@@ -40,25 +42,35 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             Default::default()
         };
         Ok(Self {
+            change_notification: Condvar::new(),
+            notification_lock: Default::default(),
             data: RwLock::new(data),
             path,
         })
     }
 
-    pub fn write_with_res<O, E: std::error::Error + 'static>(
-        &self,
-        f: impl FnOnce(&mut T) -> Result<O, E>,
-    ) -> Result<O, Error> {
-        let read_data = self.data.upgradable_read();
-
-        let mut data_copy = (*read_data).clone();
-        let output = f(&mut data_copy).map_err(|err| Error::FromClosure(Box::new(err)))?;
-        Self::save_data_to(&self.path, &data_copy)?;
-
-        let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
-
-        *write_data = data_copy;
-        Ok(output)
+    /// Wait for a condition on data to be true.
+    ///
+    /// Returns `true` if condition is true, `false` if timed out.
+    pub fn wait_for<F>(&self, check: F, timeout: std::time::Duration) -> bool
+    where
+        F: Fn(&T) -> bool,
+    {
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
+            let mut data_read_guard = self.data.read();
+            if check(&data_read_guard) {
+                return true;
+            }
+            let notification_guard = self.notification_lock.lock();
+            // Based on https://github.com/Amanieu/parking_lot/issues/165
+            RwLockReadGuard::unlocked(&mut data_read_guard, || {
+                // Move the guard in so it gets unlocked before we re-lock g
+                let mut guard = notification_guard;
+                self.change_notification.wait_for(&mut guard, timeout);
+            });
+        }
+        false
     }
 
     pub fn write<O>(&self, f: impl FnOnce(&mut T) -> O) -> Result<O, Error> {
@@ -70,6 +82,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         let mut write_data = RwLockUpgradableReadGuard::upgrade(read_data);
 
         *write_data = data_copy;
+        self.change_notification.notify_all();
         Ok(output)
     }
 
@@ -107,7 +120,10 @@ impl<T> DerefMut for SaveOnDisk<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+    use std::{fs, thread};
 
     use tempfile::Builder;
 
@@ -141,5 +157,43 @@ mod tests {
         let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
         let value = *counter.read();
         assert_eq!(value, 1)
+    }
+
+    #[test]
+    fn test_wait_for_condition_change() {
+        let dir = Builder::new().prefix("test").tempdir().unwrap();
+        let counter_file = dir.path().join("counter");
+        let counter: Arc<SaveOnDisk<u32>> =
+            Arc::new(SaveOnDisk::load_or_init(&counter_file).unwrap());
+        let counter_copy = counter.clone();
+        let handle = thread::spawn(move || {
+            sleep(Duration::from_millis(100));
+            counter_copy.write(|counter| *counter += 3).unwrap();
+            sleep(Duration::from_millis(100));
+            counter_copy.write(|counter| *counter += 7).unwrap();
+            sleep(Duration::from_millis(100));
+        });
+
+        assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(1)));
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_wait_for_condition_change_timeout() {
+        let dir = Builder::new().prefix("test").tempdir().unwrap();
+        let counter_file = dir.path().join("counter");
+        let counter: Arc<SaveOnDisk<u32>> =
+            Arc::new(SaveOnDisk::load_or_init(&counter_file).unwrap());
+        let counter_copy = counter.clone();
+        let handle = thread::spawn(move || {
+            sleep(Duration::from_millis(200));
+            counter_copy.write(|counter| *counter += 3).unwrap();
+            sleep(Duration::from_millis(200));
+            counter_copy.write(|counter| *counter += 7).unwrap();
+            sleep(Duration::from_millis(200));
+        });
+
+        assert!(!counter.wait_for(|counter| *counter > 5, Duration::from_millis(300)));
+        handle.join().unwrap();
     }
 }
