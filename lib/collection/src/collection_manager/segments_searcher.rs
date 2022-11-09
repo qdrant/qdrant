@@ -3,13 +3,14 @@ use std::sync::Arc;
 
 use futures::future::try_join_all;
 use itertools::Itertools;
+use ordered_float::Float;
 use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
 use segment::spaces::tools::peek_top_largest_iterable;
 use segment::types::{
-    Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, WithPayload,
+    Filter, PointIdType, ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayload,
     WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
@@ -17,6 +18,9 @@ use tokio::runtime::Handle;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::operations::types::{CollectionResult, Record, SearchRequestBatch};
+
+/// Search `Limit` lower threshold above which we will use sampling.
+const LOWER_SEARCH_LIMIT_SAMPLING: usize = 100;
 
 /// Simple implementation of segment manager
 ///  - rebuild segment for memory optimization purposes
@@ -28,6 +32,7 @@ impl SegmentsSearcher {
         segments: &RwLock<SegmentHolder>,
         request: Arc<SearchRequestBatch>,
         runtime_handle: &Handle,
+        sampling_enabled: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
@@ -41,51 +46,68 @@ impl SegmentsSearcher {
                 return Ok(vec![]);
             }
 
-            // Use probabilistic sampling for the `limit` parameter to avoid over-fetching from segments.
+            // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
             // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
             // With probabilistic sampling we determine a smaller sampling limit for each segment.
-            let request = if segments.len() > 2 {
-                let mut total_points = 0;
+            // Use probabilistic sampling if:
+            // - sampling is enabled
+            // - more than 1 segment
+            // - segments are not empty
+            let mut total_points_segments = 0;
+            let mut use_sampling = false;
+            if sampling_enabled && segments.len() > 1 {
                 for (_, segment) in segments.iter() {
-                    total_points += segment.get().read().points_count();
+                    total_points_segments += segment.get().read().points_count();
                 }
-                let distribution_probability = segments.len() / total_points;
-                let mut new_request = (*request).clone();
-                for search in new_request.searches.iter_mut() {
-                    // Apply sampling only if the limit is within the sweet spot
-                    // (i.e. not too small and not too large)
-                    if search.limit > 100 && search.limit < 10000 {
-                        let sampling = find_search_sampling_over_point_distribution(
-                            search.limit as f64,
-                            distribution_probability as f64,
-                        );
-                        // Make sure that sampling is not larger than the initial limit
-                        match sampling {
-                            Some(sampling) if sampling < search.limit => {
-                                search.limit = sampling as usize;
-                            }
-                            _ => {}
-                        }
-                    }
+                if total_points_segments > 0 {
+                    use_sampling = true;
                 }
-                Arc::new(new_request)
-            } else {
-                // use original request if there are less than 3 segments
-                request.clone()
-            };
+            }
 
             segments
                 .iter()
-                .map(|(_id, segment)| search_in_segment(segment.clone(), request.clone()))
+                .map(|(_id, segment)| {
+                    let request = if use_sampling {
+                        // division per 0 protected by `use_sampling` flag
+                        let segment_probability =
+                            segment.get().read().points_count() / total_points_segments;
+                        let mut new_request = (*request).clone();
+                        for search in new_request.searches.iter_mut() {
+                            // Apply sampling only if the limit is above the threshold
+                            if search.limit > LOWER_SEARCH_LIMIT_SAMPLING {
+                                let sampling = find_search_sampling_over_point_distribution(
+                                    search.limit as f64,
+                                    segment_probability as f64,
+                                );
+                                // Make sure that sampling is not larger than the initial limit
+                                match sampling {
+                                    Some(sampling) if sampling < search.limit => {
+                                        // set sampling as new limit
+                                        search.limit = sampling as usize;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        Arc::new(new_request)
+                    } else {
+                        // use original request if no sampling is needed
+                        request.clone()
+                    };
+                    search_in_segment(segment.clone(), request)
+                })
                 .map(|f| runtime_handle.spawn(f))
                 .collect()
         };
 
         // perform search on all segments concurrently
+        // the resulting Vec is in the same order as the segment searches were provided.
         let all_searches = try_join_all(searches);
-        let all_search_results: Vec<CollectionResult<Vec<Vec<ScoredPoint>>>> = all_searches.await?;
+        let all_search_results_per_segment: Vec<CollectionResult<Vec<Vec<ScoredPoint>>>> =
+            all_searches.await?;
 
-        match all_search_results
+        // shortcut on first segment error
+        match all_search_results_per_segment
             .iter()
             .filter_map(|res| res.to_owned().err())
             .next()
@@ -94,20 +116,54 @@ impl SegmentsSearcher {
             Some(error) => return Err(error),
         }
 
-        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.searches.len()];
-        for segment_result in all_search_results {
-            let segment_result = segment_result.unwrap();
-            for (idx, query_res) in segment_result.into_iter().enumerate() {
-                merged_results[idx].extend(query_res);
+        // The lowest scored element must be larger or equal to the worst scored element in each segment.
+        // Otherwise, the sampling is invalid and some points might be missing.
+        // e.g. with 3 segments with the following sampled ranges:
+        // s1 - [0.91 -> 0.87]
+        // s2 - [0.92 -> 0.86]
+        // s3 - [0.93 -> 0.85]
+        // If the top merged scores result range is [0.93 -> 0.86] then we do not know if s1 could have contributed more points at the lower part between [0.87 -> 0.86]
+        // In that case, we need to re-run the search without sampling on that segment.
+
+        // Therefore we need to track the lowest scored element per segment for each batch
+        let mut lowest_scores_per_batch_request_per_segment: Vec<Vec<ScoreType>> = vec![
+            vec![f32::max_value(); request.searches.len()]; // initial max score value for each batch
+                all_search_results_per_segment.len() // number of segments
+            ];
+
+        // Batch results merged from all segments
+        let mut merged_results_per_batch: Vec<Vec<ScoredPoint>> =
+            vec![vec![]; request.searches.len()];
+        for (segment_idx, segment_result) in all_search_results_per_segment.into_iter().enumerate()
+        {
+            let segment_result = segment_result?;
+            // merge results for each batch search request across segments
+            for (batch_req_idx, query_res) in segment_result.into_iter().enumerate() {
+                // keep track of the lowest score per batch per segment to validate that the sampling is correct
+                let current_lowest_score =
+                    lowest_scores_per_batch_request_per_segment[segment_idx][batch_req_idx];
+                // the last element is the lowest scored element
+                if let Some(lowest_score_point) = query_res.last() {
+                    if lowest_score_point.score < current_lowest_score {
+                        lowest_scores_per_batch_request_per_segment[segment_idx][batch_req_idx] =
+                            lowest_score_point.score;
+                    }
+                } else {
+                    // if the batch has no results, then the lowest score for the batch is 0
+                    lowest_scores_per_batch_request_per_segment[segment_idx][batch_req_idx] = 0.0;
+                }
+                // merge results per batch
+                merged_results_per_batch[batch_req_idx].extend(query_res);
             }
         }
 
-        let top_scores = merged_results
+        let top_scores = merged_results_per_batch
             .into_iter()
+            .enumerate()
             .zip(request.searches.iter())
-            .map(|(all_search_results_per_vector, req)| {
+            .map(|((batch_req_idx, all_search_results_per_vector), req)| {
                 let mut seen_idx: HashSet<PointIdType> = HashSet::new();
-                peek_top_largest_iterable(
+                let result = peek_top_largest_iterable(
                     all_search_results_per_vector
                         .into_iter()
                         .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
@@ -118,7 +174,33 @@ impl SegmentsSearcher {
                             !res
                         }),
                     req.limit + req.offset,
-                )
+                );
+                for (segment_idx, segment_batch_result) in
+                    lowest_scores_per_batch_request_per_segment
+                        .iter()
+                        .enumerate()
+                {
+                    let lowest_score_for_batch_on_segment = segment_batch_result[batch_req_idx];
+                    if let Some(lowest_score_for_batch) =
+                        result.last().map(|scored_point| scored_point.score)
+                    {
+                        // validate that no potential points are missing due to sampling
+                        if lowest_score_for_batch_on_segment > lowest_score_for_batch {
+                            eprintln!(
+                                "Sampling failed for segment {} and batch request {}. {} vs {}.",
+                                segment_idx,
+                                batch_req_idx,
+                                lowest_score_for_batch_on_segment,
+                                lowest_score_for_batch
+                            );
+                            eprintln!("{:?}", segment_batch_result);
+                            eprintln!("{:?}", result);
+                            // TODO add telemetry for failing sampling search query
+                            todo!("re-run search without sampling on that segment for this batch");
+                        }
+                    }
+                }
+                result
             })
             .collect();
 
@@ -285,13 +367,17 @@ mod tests {
             searches: vec![req],
         };
 
-        let result =
-            SegmentsSearcher::search(&segment_holder, Arc::new(batch_request), &Handle::current())
-                .await
-                .unwrap()
-                .into_iter()
-                .next()
-                .unwrap();
+        let result = SegmentsSearcher::search(
+            &segment_holder,
+            Arc::new(batch_request),
+            &Handle::current(),
+            true,
+        )
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
 
         // eprintln!("result = {:?}", &result);
 
@@ -299,6 +385,64 @@ mod tests {
 
         assert!(result[0].id == 3.into() || result[0].id == 11.into());
         assert!(result[1].id == 3.into() || result[1].id == 11.into());
+    }
+
+    #[tokio::test]
+    async fn test_segments_search_sampling() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        // contains 2 segments to test sampling
+        let segment_holder = build_test_holder(dir.path());
+
+        let req1 = SearchRequest {
+            vector: vec![1.0, 1.0, 1.0, 1.0].into(),
+            with_payload: None,
+            with_vector: None,
+            filter: None,
+            params: None,
+            limit: 5,
+            score_threshold: None,
+            offset: 0,
+        };
+
+        let req2 = SearchRequest {
+            vector: vec![2.0, 1.0, 1.0, 2.0].into(),
+            with_payload: None,
+            with_vector: None,
+            filter: None,
+            params: None,
+            limit: 2,
+            score_threshold: None,
+            offset: 0,
+        };
+
+        let batch_request = SearchRequestBatch {
+            searches: vec![req1, req2],
+        };
+
+        let result_no_sampling = SegmentsSearcher::search(
+            &segment_holder,
+            Arc::new(batch_request.clone()),
+            &Handle::current(),
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert!(!result_no_sampling.is_empty());
+
+        let result_sampling = SegmentsSearcher::search(
+            &segment_holder,
+            Arc::new(batch_request),
+            &Handle::current(),
+            true,
+        )
+        .await
+        .unwrap();
+        assert!(!result_sampling.is_empty());
+
+        // assert equivalence in depth
+        assert_eq!(result_no_sampling, result_sampling);
     }
 
     #[tokio::test]
