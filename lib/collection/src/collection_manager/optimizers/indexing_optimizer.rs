@@ -268,8 +268,8 @@ mod tests {
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
-    use crate::config::{VectorParams, VectorsConfig};
     use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
+    use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::operations::{CreateIndex, FieldIndexOperations};
 
     fn init() {

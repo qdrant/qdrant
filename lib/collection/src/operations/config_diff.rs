@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 use segment::types::HnswConfig;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
@@ -175,27 +176,79 @@ pub fn from_full<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serializ
     Ok(res)
 }
 
+/// Merge first level of json values, if diff values present explicitly
+///
+/// Example:
+///
+/// base: {"a": 1, "b": 2}
+/// diff: {"a": 3}
+/// result: {"a": 3, "b": 2}
+///
+/// base: {"a": 1, "b": 2}
+/// diff: {"a": null}
+/// result: {"a": 1, "b": 2}
+fn merge_level_0(base: &mut Value, diff: Value) {
+    match (base, diff) {
+        (base @ &mut Value::Object(_), Value::Object(diff)) => {
+            let base = base.as_object_mut().unwrap();
+            for (k, v) in diff {
+                if !v.is_null() {
+                    base.insert(k, v);
+                }
+            }
+        }
+        (_base, _diff) => {}
+    }
+}
+
 /// Hacky way to update configuration structures with diff-updates.
 /// Intended to only be used in non critical for speed places.
 /// ToDo: Replace with proc macro
 pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serialize + Merge>(
     config: &T,
-    mut update: Y,
+    update: Y,
 ) -> CollectionResult<T> {
-    let serialized = serde_json::to_value(config)?;
-    let config_as_diff: Y = serde_json::from_value(serialized)?;
-    update.merge(config_as_diff);
-    let serialized = serde_json::to_value(&update)?;
-    let res = serde_json::from_value(serialized)?;
+    let mut config_values = serde_json::to_value(config)?;
+    let diff_values = serde_json::to_value(&update)?;
+    merge_level_0(&mut config_values, diff_values);
+    let res = serde_json::from_value(config_values)?;
     Ok(res)
 }
 
 #[cfg(test)]
 mod tests {
-    use segment::types::HnswConfig;
+    use std::num::NonZeroU64;
+
+    use segment::types::{Distance, HnswConfig};
 
     use super::*;
+    use crate::operations::types::VectorParams;
     use crate::optimizers_builder::OptimizersConfig;
+
+    #[test]
+    fn test_update_collection_params() {
+        let params = CollectionParams {
+            vectors: VectorParams {
+                size: NonZeroU64::new(128).unwrap(),
+                distance: Distance::Cosine,
+            }
+            .into(),
+            shard_number: NonZeroU32::new(1).unwrap(),
+            replication_factor: NonZeroU32::new(1).unwrap(),
+            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            on_disk_payload: false,
+        };
+
+        let diff = CollectionParamsDiff {
+            replication_factor: None,
+            write_consistency_factor: Some(NonZeroU32::new(2).unwrap()),
+        };
+
+        let new_params = diff.update(&params).unwrap();
+
+        assert_eq!(new_params.replication_factor.get(), 1);
+        assert_eq!(new_params.write_consistency_factor.get(), 2);
+    }
 
     #[test]
     fn test_hnsw_update() {
