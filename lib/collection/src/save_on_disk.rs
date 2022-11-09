@@ -58,15 +58,15 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     {
         let start = std::time::Instant::now();
         while start.elapsed() < timeout {
-            let mut g = self.data.read();
-            if check(&g) {
+            let mut data_read_guard = self.data.read();
+            if check(&data_read_guard) {
                 return true;
             }
-            let guard = self.notification_lock.lock();
+            let notification_guard = self.notification_lock.lock();
             // Based on https://github.com/Amanieu/parking_lot/issues/165
-            RwLockReadGuard::unlocked(&mut g, || {
+            RwLockReadGuard::unlocked(&mut data_read_guard, || {
                 // Move the guard in so it gets unlocked before we re-lock g
-                let mut guard = guard;
+                let mut guard = notification_guard;
                 self.change_notification.wait_for(&mut guard, timeout);
             });
         }
@@ -175,6 +175,25 @@ mod tests {
         });
 
         assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(1)));
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_wait_for_condition_change_timeout() {
+        let dir = Builder::new().prefix("test").tempdir().unwrap();
+        let counter_file = dir.path().join("counter");
+        let counter: Arc<SaveOnDisk<u32>> =
+            Arc::new(SaveOnDisk::load_or_init(&counter_file).unwrap());
+        let counter_copy = counter.clone();
+        let handle = thread::spawn(move || {
+            sleep(Duration::from_millis(200));
+            counter_copy.write(|counter| *counter += 3).unwrap();
+            sleep(Duration::from_millis(200));
+            counter_copy.write(|counter| *counter += 7).unwrap();
+            sleep(Duration::from_millis(200));
+        });
+
+        assert!(!counter.wait_for(|counter| *counter > 5, Duration::from_millis(300)));
         handle.join().unwrap();
     }
 }
