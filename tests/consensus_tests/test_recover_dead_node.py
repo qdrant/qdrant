@@ -1,6 +1,7 @@
 import pathlib
 
 from .utils import *
+from .assertions import assert_http_ok
 
 N_PEERS = 3
 N_SHARDS = 4
@@ -56,7 +57,9 @@ def search(peer_url, city):
             ]
         }
     }
-    return requests.post(f"{peer_url}/collections/test_collection/points/search", json=q).json()["result"]
+    r_search = requests.post(f"{peer_url}/collections/test_collection/points/search", json=q)
+    assert_http_ok(r_search)
+    return r_search.json()["result"]
 
 
 def test_recover_dead_node(tmp_path: pathlib.Path):

@@ -19,14 +19,21 @@ use crate::StorageError;
 
 const STATE_FILE_NAME: &str = "raft_state";
 
+/// State of the Raft consensus, which should be saved between restarts.
+/// State of the collections, aliases and transfers are stored as regular storage.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Persistent {
+    /// last known state of the Raft consensus
     #[serde(with = "RaftStateDef")]
     pub state: RaftState,
+    /// Store last applied snapshot index, required in case if there are no raft change log except
+    /// for this last snapshot ID (term + commit)
     #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
     pub latest_snapshot_meta: SnapshotMetadataSer,
+    /// Operations to applied, consensus consider them commited, but this peer didn't apply them yet
     #[serde(default)]
     pub apply_progress_queue: EntryApplyProgressQueue,
+    /// Last known cluster topology
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
     pub this_peer_id: u64,
@@ -204,6 +211,7 @@ impl Persistent {
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct SnapshotMetadataSer {
     pub term: u64,
+    /// Aka: commit
     pub index: u64,
 }
 

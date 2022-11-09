@@ -26,7 +26,7 @@ use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
-use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
+use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
@@ -174,7 +174,7 @@ fn main() -> anyhow::Result<()> {
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
     let (telemetry_collector, dispatcher_arc) = if settings.cluster.enabled {
-        let consensus_state: ConsensusStateRef = ConsensusState::new(
+        let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
             toc_arc.clone(),
             propose_operation_sender.unwrap(),
@@ -328,7 +328,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     for handle in handles.into_iter() {
-        handle.join().expect("Couldn't join on the thread")?;
+        handle.join().expect("thread is not panicking")?;
     }
     drop(toc_arc);
     drop(settings);

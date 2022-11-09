@@ -2,6 +2,7 @@ import pathlib
 import time
 
 from .utils import *
+from .assertions import assert_http_ok
 
 N_PEERS = 2
 N_SHARDS = 2

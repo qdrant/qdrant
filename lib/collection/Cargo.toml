@@ -9,7 +9,7 @@ edition = "2021"
 [dev-dependencies]
 tempfile = "3.3.0"
 criterion = "0.4"
-pprof = { version = "0.10", features = ["flamegraph", "prost-codec"] }
+pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
 
 [dependencies]
 
@@ -22,14 +22,14 @@ serde_json = { version = "~1.0", features = ["std"] }
 serde_cbor = "0.11.2"
 rmp-serde = "~1.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "0dd3943113ff7ec2fbc5428bb77ba206c8492fa9" }
-ordered-float = "3.3"
+ordered-float = "3.4"
 hashring = "0.3.0"
 
 tokio = {version = "~1.21", features = ["full"]}
 futures = "0.3.25"
 atomicwrites = "0.3.1"
 log = "0.4"
-env_logger = "0.9.1"
+env_logger = "0.9.3"
 merge = "0.1.0"
 async-trait = "0.1.58"
 arc-swap = "1.5.1"
@@ -41,10 +41,10 @@ segment = {path = "../segment"}
 api = {path = "../api"}
 
 itertools = "0.10"
-indicatif = "0.17.1"
+indicatif = "0.17.2"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono"] }
-num_cpus = "1.13.1"
+num_cpus = "1.14.0"
 tar = "0.4.38"
 fs_extra = "1.2.0"
 semver = "1.0.14"

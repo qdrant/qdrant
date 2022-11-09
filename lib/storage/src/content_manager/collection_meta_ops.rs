@@ -193,6 +193,14 @@ impl UpdateCollectionOperation {
         }
     }
 
+    // Returns `true` if there are replica changes associated with this operation
+    pub fn have_replica_changes(&self) -> bool {
+        self.shard_replica_changes
+            .as_ref()
+            .map(|changes| !changes.is_empty())
+            .unwrap_or(false)
+    }
+
     pub fn take_shard_replica_changes(&mut self) -> Option<Vec<replica_set::Change>> {
         self.shard_replica_changes.take()
     }

@@ -5,7 +5,7 @@ use collection::shards::shard::PeerId;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollection, CreateCollectionOperation, SetShardReplicaState,
 };
-use storage::content_manager::consensus_state::ConsensusStateRef;
+use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::shard_distribution::ShardDistributionProposal;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;

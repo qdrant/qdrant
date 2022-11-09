@@ -78,21 +78,6 @@ impl Dispatcher {
                     }
                     CollectionMetaOperations::CreateCollection(op)
                 }
-                CollectionMetaOperations::UpdateCollection(mut op) => {
-                    if let Some(repl_factor) = op
-                        .update_collection
-                        .params
-                        .as_ref()
-                        .and_then(|params| params.replication_factor)
-                    {
-                        let changes = self
-                            .toc
-                            .suggest_shard_replica_changes(&op.collection_name, repl_factor)
-                            .await?;
-                        op.set_shard_replica_changes(changes.into_iter().collect());
-                    }
-                    CollectionMetaOperations::UpdateCollection(op)
-                }
                 op => op,
             };
 

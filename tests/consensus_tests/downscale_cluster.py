@@ -2,6 +2,7 @@ import argparse
 import requests
 import time
 
+from assertions import assert_http_ok
 
 parser = argparse.ArgumentParser("Move all shards to first node and detach the last one")
 parser.add_argument("collection_name")
@@ -11,7 +12,7 @@ args = parser.parse_args()
 
 # Check collection cluster distribution
 r = requests.get(f"http://127.0.0.1:{args.ports[0]}/collections/{args.collection_name}/cluster")
-assert r.status_code == 200, r.text
+assert_http_ok(r)
 
 """
 Example output:
@@ -62,7 +63,7 @@ max_wait = 60
 # Check that the shard is moved
 while max_wait > 0:
     r = requests.get(f"http://127.0.0.1:{args.ports[0]}/collections/{args.collection_name}/cluster")
-    assert r.status_code == 200, r.text
+    assert_http_ok(r)
     collection_cluster_status = r.json()
 
     if len(collection_cluster_status["result"]["local_shards"]) == 0:
@@ -74,5 +75,5 @@ while max_wait > 0:
 
 # Disconnect peer from the cluster
 r = requests.delete(f"http://127.0.0.1:{args.ports[0]}/cluster/peer/{from_peer}?timeout=60")
-assert r.status_code == 200, r.text
+assert_http_ok(r)
 

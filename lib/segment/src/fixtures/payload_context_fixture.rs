@@ -35,13 +35,13 @@ impl FixtureIdTracker {
 }
 
 impl IdTracker for FixtureIdTracker {
-    fn version(&self, _external_id: PointIdType) -> Option<SeqNumberType> {
+    fn internal_version(&self, _internal_id: PointOffsetType) -> Option<SeqNumberType> {
         Some(0)
     }
 
-    fn set_version(
+    fn set_internal_version(
         &mut self,
-        _external_id: PointIdType,
+        _internal_id: PointOffsetType,
         _version: SeqNumberType,
     ) -> OperationResult<()> {
         Ok(())

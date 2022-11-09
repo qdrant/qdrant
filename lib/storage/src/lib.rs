@@ -6,8 +6,8 @@
 //! implement any concrete interface.
 
 use content_manager::collection_meta_ops::CollectionMetaOperations;
+use content_manager::consensus_manager::ConsensusStateRef;
 use content_manager::consensus_ops::ConsensusOperations;
-use content_manager::consensus_state::ConsensusStateRef;
 use content_manager::errors::StorageError;
 use content_manager::toc::TableOfContent;
 use types::ClusterStatus;
