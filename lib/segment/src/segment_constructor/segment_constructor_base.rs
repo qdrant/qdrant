@@ -98,12 +98,21 @@ fn create_segment(
                 vector_storage.clone(),
                 payload_index.clone(),
             )),
-            Indexes::Hnsw(hnsw_config) => sp(HNSWIndex::open(
-                &vector_index_path,
-                vector_storage.clone(),
-                payload_index.clone(),
-                hnsw_config,
-            )?),
+            Indexes::Hnsw(hnsw_config) => if hnsw_config.on_disk {
+                sp(HNSWIndex::open(
+                    &vector_index_path,
+                    vector_storage.clone(),
+                    payload_index.clone(),
+                    hnsw_config,
+                )?)
+            } else {
+                sp(HNSWIndex::open(
+                    &vector_index_path,
+                    vector_storage.clone(),
+                    payload_index.clone(),
+                    hnsw_config,
+                )?)
+            }
         };
 
         vector_data.insert(
