@@ -149,8 +149,9 @@ impl SegmentsSearcher {
                             lowest_score_point.score;
                     }
                 } else {
-                    // if the batch has no results, then the lowest score for the batch is 0
-                    lowest_scores_per_batch_request_per_segment[segment_idx][batch_req_idx] = 0.0;
+                    // if the batch has no results, then the lowest score for the batch is set to a large min value
+                    lowest_scores_per_batch_request_per_segment[segment_idx][batch_req_idx] =
+                        f32::min_value();
                 }
                 // merge results per batch
                 merged_results_per_batch[batch_req_idx].extend(query_res);
@@ -163,7 +164,7 @@ impl SegmentsSearcher {
             .zip(request.searches.iter())
             .map(|((batch_req_idx, all_search_results_per_vector), req)| {
                 let mut seen_idx: HashSet<PointIdType> = HashSet::new();
-                let result = peek_top_largest_iterable(
+                let batch_result = peek_top_largest_iterable(
                     all_search_results_per_vector
                         .into_iter()
                         .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
@@ -180,27 +181,27 @@ impl SegmentsSearcher {
                         .iter()
                         .enumerate()
                 {
-                    let lowest_score_for_batch_on_segment = segment_batch_result[batch_req_idx];
+                    // validate that no potential points are missing due to sampling
                     if let Some(lowest_score_for_batch) =
-                        result.last().map(|scored_point| scored_point.score)
+                        batch_result.last().map(|scored_point| scored_point.score)
                     {
-                        // validate that no potential points are missing due to sampling
+                        let lowest_score_for_batch_on_segment = segment_batch_result[batch_req_idx];
                         if lowest_score_for_batch_on_segment > lowest_score_for_batch {
                             eprintln!(
-                                "Sampling failed for segment {} and batch request {}. {} vs {}.",
+                                "Sampling failed for segment {} and batch request {}: min segment {} vs min batch {}",
                                 segment_idx,
                                 batch_req_idx,
                                 lowest_score_for_batch_on_segment,
                                 lowest_score_for_batch
                             );
                             eprintln!("{:?}", segment_batch_result);
-                            eprintln!("{:?}", result);
+                            eprintln!("{:?}", batch_result);
                             // TODO add telemetry for failing sampling search query
                             todo!("re-run search without sampling on that segment for this batch");
                         }
                     }
                 }
-                result
+                batch_result
             })
             .collect();
 
