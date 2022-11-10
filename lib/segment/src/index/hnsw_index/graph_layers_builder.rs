@@ -73,7 +73,6 @@ impl GraphLayersBuilder {
             .collect();
 
         GraphLayers {
-            max_level: self.max_level.load(std::sync::atomic::Ordering::Relaxed),
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,

@@ -35,7 +35,6 @@ pub struct GraphLayersBackwardCompatibility {
 impl From<GraphLayersBackwardCompatibility> for GraphLayers {
     fn from(gl: GraphLayersBackwardCompatibility) -> Self {
         GraphLayers {
-            max_level: gl.max_level,
             m: gl.m,
             m0: gl.m0,
             ef_construct: gl.ef_construct,
@@ -48,7 +47,6 @@ impl From<GraphLayersBackwardCompatibility> for GraphLayers {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GraphLayers {
-    pub(super) max_level: usize,
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
@@ -310,7 +308,6 @@ mod tests {
             TestRawScorerProducer::<DotProductMetric>::new(dim, num_vectors, &mut rng);
 
         let mut graph_layers = GraphLayers {
-            max_level: 0,
             m,
             m0: 2 * m,
             ef_construct,
