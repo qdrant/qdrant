@@ -2909,6 +2909,11 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "on_disk": {
+            "description": "Store HNSW index on disk. If set to false, index will be stored in RAM.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
