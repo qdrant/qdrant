@@ -100,14 +100,14 @@ fn create_segment(
                 payload_index.clone(),
             )),
             Indexes::Hnsw(hnsw_config) => if hnsw_config.on_disk {
-                sp(HNSWIndex::<GraphLinksRam>::open(
+                sp(HNSWIndex::<GraphLinksMmap>::open(
                     &vector_index_path,
                     vector_storage.clone(),
                     payload_index.clone(),
                     hnsw_config,
                 )?)
             } else {
-                sp(HNSWIndex::<GraphLinksMmap>::open(
+                sp(HNSWIndex::<GraphLinksRam>::open(
                     &vector_index_path,
                     vector_storage.clone(),
                     payload_index.clone(),
