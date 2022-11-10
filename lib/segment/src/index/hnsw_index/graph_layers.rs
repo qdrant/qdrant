@@ -32,13 +32,15 @@ pub struct GraphLayersBackwardCompatibility {
     pub(super) entry_points: EntryPoints,
 }
 
-impl From<GraphLayersBackwardCompatibility> for GraphLayers {
+impl<TGraphLinks: GraphLinks> From<GraphLayersBackwardCompatibility> for GraphLayers<TGraphLinks> {
     fn from(gl: GraphLayersBackwardCompatibility) -> Self {
+        let mut links = TGraphLinks::default();
+        links.from_vec(&gl.links_layers);
         GraphLayers {
             m: gl.m,
             m0: gl.m0,
             ef_construct: gl.ef_construct,
-            links: GraphLinks::from_vec(&gl.links_layers),
+            links,
             entry_points: gl.entry_points,
             visited_pool: VisitedPool::new(),
         }
@@ -46,11 +48,11 @@ impl From<GraphLayersBackwardCompatibility> for GraphLayers {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct GraphLayers {
+pub struct GraphLayers<TGraphLinks: GraphLinks> {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) links: GraphLinks,
+    pub(super) links: TGraphLinks,
     pub(super) entry_points: EntryPoints,
 
     #[serde(skip)]
@@ -167,9 +169,9 @@ pub trait GraphLayersBase {
     }
 }
 
-impl GraphLayersBase for GraphLayers {
+impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
     fn get_visited_list_from_pool(&self) -> VisitedList {
-        self.visited_pool.get(self.num_points())
+        self.visited_pool.get(self.links.num_points())
     }
 
     fn return_visited_list_to_pool(&self, visited_list: VisitedList) {
@@ -197,11 +199,8 @@ impl GraphLayersBase for GraphLayers {
 /// Object contains links between nodes for HNSW search
 ///
 /// Assume all scores are similarities. Larger score = closer points
-impl GraphLayers {
-    fn num_points(&self) -> usize {
-        self.links.num_points()
-    }
-
+impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks>
+{
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
         self.links.point_level(point_id)
     }
@@ -235,7 +234,12 @@ impl GraphLayers {
     pub fn get_path(path: &Path) -> PathBuf {
         path.join(HNSW_GRAPH_FILE)
     }
+}
 
+impl<TGraphLinks> GraphLayers<TGraphLinks>
+where 
+    TGraphLinks: GraphLinks + Serialize + serde::de::DeserializeOwned,
+{
     pub fn load(path: &Path) -> OperationResult<Self> {
         let try_self: Result<Self, _> = read_bin(path);
 
@@ -275,15 +279,16 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
+    use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
 
-    fn search_in_graph(
+    fn search_in_graph<TGraphLinks: GraphLinks>(
         query: &[VectorElementType],
         top: usize,
         vector_storage: &TestRawScorerProducer<CosineMetric>,
-        graph: &GraphLayers,
+        graph: &GraphLayers<TGraphLinks>,
     ) -> Vec<ScoredPointOffset> {
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
@@ -311,14 +316,14 @@ mod tests {
             m,
             m0: 2 * m,
             ef_construct,
-            links: Default::default(),
+            links: GraphLinksRam::default(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
         };
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
-        graph_layers.links = GraphLinks::from_vec(&graph_links);
+        graph_layers.links.from_vec(&graph_links);
 
         let linking_idx: PointOffsetType = 7;
 
@@ -366,10 +371,10 @@ mod tests {
 
         let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
 
-        let path = GraphLayers::get_path(dir.path());
+        let path = GraphLayers::<GraphLinksRam>::get_path(dir.path());
         graph_layers.save(&path).unwrap();
 
-        let graph2 = GraphLayers::load(&path).unwrap();
+        let graph2 = GraphLayers::<GraphLinksRam>::load(&path).unwrap();
 
         let res2 = search_in_graph(&query, top, &vector_holder, &graph2);
 

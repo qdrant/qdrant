@@ -16,6 +16,7 @@ use crate::common::version::StorageVersion;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+use crate::index::hnsw_index::graph_links::{GraphLinksRam, GraphLinksMmap};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -99,14 +100,14 @@ fn create_segment(
                 payload_index.clone(),
             )),
             Indexes::Hnsw(hnsw_config) => if hnsw_config.on_disk {
-                sp(HNSWIndex::open(
+                sp(HNSWIndex::<GraphLinksRam>::open(
                     &vector_index_path,
                     vector_storage.clone(),
                     payload_index.clone(),
                     hnsw_config,
                 )?)
             } else {
-                sp(HNSWIndex::open(
+                sp(HNSWIndex::<GraphLinksMmap>::open(
                     &vector_index_path,
                     vector_storage.clone(),
                     payload_index.clone(),

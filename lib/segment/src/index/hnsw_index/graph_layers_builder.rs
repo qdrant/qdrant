@@ -65,18 +65,20 @@ impl GraphLayersBase for GraphLayersBuilder {
 }
 
 impl GraphLayersBuilder {
-    pub fn into_graph_layers(self) -> GraphLayers {
+    pub fn into_graph_layers<TGraphLinks: GraphLinks>(self) -> GraphLayers<TGraphLinks> {
         let unlocker_links_layers = self
             .links_layers
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
             .collect();
 
+        let mut links = TGraphLinks::default();
+        links.from_vec(&unlocker_links_layers);
         GraphLayers {
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,
-            links: GraphLinks::from_vec(&unlocker_links_layers),
+            links,
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         }
@@ -425,6 +427,7 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
+    use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
@@ -575,7 +578,7 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder.into_graph_layers();
+        let graph = graph_layers_builder.into_graph_layers::<GraphLinksRam>();
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query);
@@ -656,7 +659,7 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder.into_graph_layers();
+        let graph = graph_layers_builder.into_graph_layers::<GraphLinksRam>();
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query);
@@ -690,7 +693,7 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
         }
-        let graph_layers = graph_layers_builder.into_graph_layers();
+        let graph_layers = graph_layers_builder.into_graph_layers::<GraphLinksRam>();
 
         let num_points = graph_layers.links.num_points();
         eprintln!("number_points = {:#?}", num_points);

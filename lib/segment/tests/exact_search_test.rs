@@ -8,6 +8,7 @@ mod tests {
     use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
+    use segment::index::hnsw_index::graph_links::GraphLinksRam;
     use segment::index::hnsw_index::hnsw::HNSWIndex;
     use segment::index::{PayloadIndex, VectorIndex};
     use segment::segment_constructor::build_segment;
@@ -80,7 +81,7 @@ mod tests {
             on_disk: false,
         };
 
-        let mut hnsw_index = HNSWIndex::open(
+        let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
             hnsw_dir.path(),
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_storage

@@ -30,15 +30,17 @@ use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
+use super::graph_links::GraphLinks;
+
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
 
-pub struct HNSWIndex {
+pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    graph: Option<GraphLayers>,
+    graph: Option<GraphLayers<TGraphLinks>>,
     searches_telemetry: SearchesTelemetry,
 }
 
@@ -50,7 +52,10 @@ struct SearchesTelemetry {
     exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
-impl HNSWIndex {
+impl<TGraphLinks> HNSWIndex<TGraphLinks>
+where 
+    TGraphLinks: GraphLinks + serde::Serialize + serde::de::DeserializeOwned,
+{
     pub fn open(
         path: &Path,
         vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
@@ -74,7 +79,7 @@ impl HNSWIndex {
             )
         };
 
-        let graph_path = GraphLayers::get_path(path);
+        let graph_path = GraphLayers::<TGraphLinks>::get_path(path);
         let graph = if graph_path.exists() {
             Some(GraphLayers::load(&graph_path)?)
         } else {
@@ -103,7 +108,7 @@ impl HNSWIndex {
     }
 
     fn save_graph(&self) -> OperationResult<()> {
-        let graph_path = GraphLayers::get_path(&self.path);
+        let graph_path = GraphLayers::<TGraphLinks>::get_path(&self.path);
         if let Some(graph) = &self.graph {
             graph.save(&graph_path)
         } else {
@@ -213,7 +218,10 @@ impl HNSWIndex {
     }
 }
 
-impl VectorIndex for HNSWIndex {
+impl<TGraphLinks> VectorIndex for HNSWIndex<TGraphLinks>
+where 
+    TGraphLinks: GraphLinks + serde::Serialize + serde::de::DeserializeOwned,
+{
     fn search(
         &self,
         vectors: &[&[VectorElementType]],

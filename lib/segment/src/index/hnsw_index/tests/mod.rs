@@ -7,13 +7,15 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
 use crate::types::PointOffsetType;
 
+use super::graph_links::GraphLinksRam;
+
 pub(crate) fn create_graph_layer_fixture<TMetric: Metric, R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
     use_heuristic: bool,
     rng: &mut R,
-) -> (TestRawScorerProducer<TMetric>, GraphLayers)
+) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>)
 where
     R: Rng + ?Sized,
 {
