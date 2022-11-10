@@ -38,7 +38,7 @@ pub struct HNSWIndex {
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    graph: GraphLayers,
+    graph: Option<GraphLayers>,
     searches_telemetry: SearchesTelemetry,
 }
 
@@ -76,19 +76,9 @@ impl HNSWIndex {
 
         let graph_path = GraphLayers::get_path(path);
         let graph = if graph_path.exists() {
-            GraphLayers::load(&graph_path)?
+            Some(GraphLayers::load(&graph_path)?)
         } else {
-            let borrowed_vector_storage = vector_storage.borrow();
-            let total_points = borrowed_vector_storage.total_vector_count();
-            let vector_per_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
-                / (borrowed_vector_storage.vector_dim() * VECTOR_ELEMENT_SIZE);
-            GraphLayers::new(
-                borrowed_vector_storage.total_vector_count(),
-                config.m,
-                config.m0,
-                config.ef_construct,
-                max(1, total_points / vector_per_threshold * 10),
-            )
+            None
         };
 
         Ok(HNSWIndex {
@@ -114,7 +104,11 @@ impl HNSWIndex {
 
     fn save_graph(&self) -> OperationResult<()> {
         let graph_path = GraphLayers::get_path(&self.path);
-        self.graph.save(&graph_path)
+        if let Some(graph) = &self.graph {
+            graph.save(&graph_path)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn save(&self) -> OperationResult<()> {
@@ -144,10 +138,12 @@ impl HNSWIndex {
             block_filter_list.check_and_update_visited(block_point_id);
         }
 
-        for block_point_id in points_to_index.iter().copied() {
-            // Use same levels, as in the original graph
-            let level = self.graph.point_level(block_point_id);
-            graph_layers_builder.set_levels(block_point_id, level);
+        if let Some(graph) = &self.graph {
+            for &block_point_id in &points_to_index {
+                // Use same levels, as in the original graph
+                let level = graph.point_level(block_point_id);
+                graph_layers_builder.set_levels(block_point_id, level);
+            }
         }
 
         pool.install(|| {
@@ -196,7 +192,11 @@ impl HNSWIndex {
 
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
-        self.graph.search(top, ef, points_scorer)
+        if let Some(graph) = &self.graph {
+            graph.search(top, ef, points_scorer)
+        } else {
+            Vec::new()
+        }
     }
 
     fn search_vectors_with_graph(
@@ -394,7 +394,7 @@ impl VectorIndex for HNSWIndex {
             }
         }
 
-        self.graph = graph_layers_builder.into_graph_layers();
+        self.graph = Some(graph_layers_builder.into_graph_layers());
 
         debug!("finish additional payload field indexing");
         self.save()

@@ -200,45 +200,6 @@ impl GraphLayersBase for GraphLayers {
 ///
 /// Assume all scores are similarities. Larger score = closer points
 impl GraphLayers {
-    fn new_with_params(
-        num_vectors: usize, // Initial number of points in index
-        m: usize,           // Expected M for non-first layer
-        m0: usize,          // Expected M for first layer
-        ef_construct: usize,
-        entry_points_num: usize, // Depends on number of points
-        reserve: bool,
-    ) -> Self {
-        let mut links_layers: Vec<LayersContainer> = vec![];
-
-        for _i in 0..num_vectors {
-            let mut links: LinkContainer = Vec::new();
-            if reserve {
-                links.reserve(m0);
-            }
-            links_layers.push(vec![links]);
-        }
-
-        GraphLayers {
-            max_level: 0,
-            m,
-            m0,
-            ef_construct,
-            links: Default::default(),
-            entry_points: EntryPoints::new(entry_points_num),
-            visited_pool: VisitedPool::new(),
-        }
-    }
-
-    pub fn new(
-        num_vectors: usize, // Initial number of points in index
-        m: usize,           // Expected M for non-first layer
-        m0: usize,          // Expected M for first layer
-        ef_construct: usize,
-        entry_points_num: usize, // Depends on number of points
-    ) -> Self {
-        Self::new_with_params(num_vectors, m, m0, ef_construct, entry_points_num, true)
-    }
-
     fn num_points(&self) -> usize {
         self.links.num_points()
     }
@@ -348,8 +309,15 @@ mod tests {
         let vector_holder =
             TestRawScorerProducer::<DotProductMetric>::new(dim, num_vectors, &mut rng);
 
-        let mut graph_layers =
-            GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num);
+        let mut graph_layers = GraphLayers {
+            max_level: 0,
+            m,
+            m0: 2 * m,
+            ef_construct,
+            links: Default::default(),
+            entry_points: EntryPoints::new(entry_points_num),
+            visited_pool: VisitedPool::new(),
+        };
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
