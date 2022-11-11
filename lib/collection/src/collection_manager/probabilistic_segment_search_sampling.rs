@@ -17,7 +17,7 @@
 /// res = sorted(res, key=lambda x: x[0])
 ///
 /// with additional code to remove duplicates and values within 5% of each other.
-const POISSON_DISTRIBUTION_SEARCH_SAMPLING: [(f64, usize); 120] = [
+const POISSON_DISTRIBUTION_SEARCH_SAMPLING: [(f64, usize); 121] = [
     (0.19342359767891684, 4),
     (0.398406374501992, 5),
     (0.6666666666666667, 6),
@@ -138,15 +138,16 @@ const POISSON_DISTRIBUTION_SEARCH_SAMPLING: [(f64, usize); 120] = [
     (4400.0, 4620),
     (4650.0, 4876),
     (4900.0, 5132),
+    (f64::MAX, usize::MAX),
 ];
 
 /// Uses binary search to find the sampling size for a given lambda.
 pub fn find_search_sampling_over_point_distribution(n: f64, p: f64) -> Option<usize> {
     let target_lambda = p * n;
     let k = POISSON_DISTRIBUTION_SEARCH_SAMPLING
-        .binary_search_by(|&(lambda, _)| lambda.partial_cmp(&target_lambda).unwrap());
+        .binary_search_by(|&(lambda, _sampling)| lambda.partial_cmp(&target_lambda).unwrap());
     match k {
         Ok(k) => Some(POISSON_DISTRIBUTION_SEARCH_SAMPLING[k].1),
-        Err(_) => None,
+        Err(insert) => Some(POISSON_DISTRIBUTION_SEARCH_SAMPLING[insert].1),
     }
 }

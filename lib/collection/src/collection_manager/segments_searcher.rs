@@ -606,4 +606,14 @@ mod tests {
         .unwrap();
         assert_eq!(records.len(), 3);
     }
+
+    #[test]
+    fn test_sampling_limit() {
+        assert_eq!(sampling_limit(1000, 464530, 35103551), 30);
+    }
+
+    #[test]
+    fn test_sampling_limit_high() {
+        assert_eq!(sampling_limit(1000000, 464530, 35103551), 1000000);
+    }
 }
