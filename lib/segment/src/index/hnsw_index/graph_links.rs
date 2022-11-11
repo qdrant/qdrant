@@ -168,7 +168,7 @@ impl GraphLinksConverter {
             .read(true)
             .write(true)
             .create(true)
-            .open(&path)?;
+            .open(path)?;
 
         let header = GraphLinksFileHeader {
             point_count: self.reindex.len() as u64,
@@ -206,7 +206,7 @@ impl GraphLinksConverter {
             for level in 0..header.levels_count as usize {
                 level_offsets.push(offsets_pos as u64 - 1);
                 self.iterate_level_points(level, |_, links| {
-                    links_mmap[links_pos..links_pos + links.len()].copy_from_slice(&links);
+                    links_mmap[links_pos..links_pos + links.len()].copy_from_slice(links);
                     links_pos += links.len();
 
                     offsets_mmap[offsets_pos] = links_pos as u64;
@@ -278,12 +278,12 @@ pub trait GraphLinks: Default {
     fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
         if level == 0 {
             let links_range = self.get_links_range(point_id as usize);
-            &self.get_links(links_range)
+            self.get_links(links_range)
         } else {
             let reindexed_point_id = self.reindex(point_id) as usize;
             let layer_offsets_start = self.get_level_offset(level);
             let links_range = self.get_links_range(layer_offsets_start + reindexed_point_id);
-            &self.get_links(links_range)
+            self.get_links(links_range)
         }
     }
 
@@ -455,7 +455,7 @@ impl GraphLinks for GraphLinksMmap {
             .read(true)
             .write(false)
             .create(false)
-            .open(&path)?;
+            .open(path)?;
 
         let mmap = unsafe { Mmap::map(&file)? };
         let header = GraphLinksFileHeader::load(&mmap);
