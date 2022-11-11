@@ -399,6 +399,13 @@ async fn search_in_segment(
                 } else {
                     prev_params.top
                 };
+                log::warn!(
+                    "Use sampling {} top {} segment_points {} total_point {}",
+                    use_sampling,
+                    top,
+                    segment_points,
+                    total_points
+                );
 
                 let mut res = read_segment.search_batch(
                     prev_params.vector_name,
