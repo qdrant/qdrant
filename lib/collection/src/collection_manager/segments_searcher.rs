@@ -202,6 +202,16 @@ impl SegmentsSearcher {
         let (all_search_results_per_segment, further_results) =
             Self::execute_searches(searches).await?;
         log::warn!("searches {:?}", timing.elapsed());
+        for (s, br) in all_search_results_per_segment.iter().enumerate() {
+            log::warn!("segment {} batch score", s);
+            for (b, batch) in br.iter().enumerate() {
+                log::warn!(
+                    "batch {} scores {:?}",
+                    b,
+                    batch.iter().map(|x| x.score).collect::<Vec<_>>()
+                );
+            }
+        }
         debug_assert!(all_search_results_per_segment.len() == locked_segments.len());
 
         let (mut result_aggregator, searches_to_rerun) = Self::process_search_result_step1(
