@@ -21,6 +21,7 @@ pub type LinkContainerRef<'a> = &'a [PointOffsetType];
 pub type LayersContainer = Vec<LinkContainer>;
 
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
+pub const HNSW_LINKS_FILE: &str = "links.bin";
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GraphLayersBackwardCompatibility {
@@ -32,26 +33,13 @@ pub struct GraphLayersBackwardCompatibility {
     pub(super) entry_points: EntryPoints,
 }
 
-impl<TGraphLinks: GraphLinks> From<GraphLayersBackwardCompatibility> for GraphLayers<TGraphLinks> {
-    fn from(gl: GraphLayersBackwardCompatibility) -> Self {
-        let mut links = TGraphLinks::default();
-        links.from_vec(&gl.links_layers);
-        GraphLayers {
-            m: gl.m,
-            m0: gl.m0,
-            ef_construct: gl.ef_construct,
-            links,
-            entry_points: gl.entry_points,
-            visited_pool: VisitedPool::new(),
-        }
-    }
-}
-
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GraphLayers<TGraphLinks: GraphLinks> {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
+
+    #[serde(skip)]
     pub(super) links: TGraphLinks,
     pub(super) entry_points: EntryPoints,
 
@@ -234,23 +222,38 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks>
     pub fn get_path(path: &Path) -> PathBuf {
         path.join(HNSW_GRAPH_FILE)
     }
+
+    pub fn get_links_path(path: &Path) -> PathBuf {
+        path.join(HNSW_LINKS_FILE)
+    }
 }
 
 impl<TGraphLinks> GraphLayers<TGraphLinks>
-where 
-    TGraphLinks: GraphLinks + Serialize + serde::de::DeserializeOwned,
+where TGraphLinks: GraphLinks
 {
-    pub fn load(path: &Path) -> OperationResult<Self> {
-        let try_self: Result<Self, _> = read_bin(path);
+    pub fn load(graph_path: &Path, links_path: &Path) -> OperationResult<Self> {
+        let try_self: Result<Self, _> = read_bin(graph_path);
 
         match try_self {
-            Ok(slf) => Ok(slf),
+            Ok(mut slf) => {
+                let links = TGraphLinks::load_from_file(links_path)?;
+                slf.links = links;
+                Ok(slf)
+            },
             Err(err) => {
-                let try_legacy: Result<GraphLayersBackwardCompatibility, _> = read_bin(path);
+                let try_legacy: Result<GraphLayersBackwardCompatibility, _> = read_bin(graph_path);
                 if let Ok(legacy) = try_legacy {
-                    let slf: Self = legacy.into();
                     log::debug!("Converting legacy graph to new format");
-                    slf.save(path)?;
+                    let links = TGraphLinks::from_vec(legacy.links_layers, Some(links_path))?;
+                    let slf = Self {
+                        m: legacy.m,
+                        m0: legacy.m0,
+                        ef_construct: legacy.ef_construct,
+                        links,
+                        entry_points: legacy.entry_points,
+                        visited_pool: VisitedPool::new(),
+                    };
+                    slf.save(graph_path)?;
                     Ok(slf)
                 } else {
                     Err(err)?
@@ -323,7 +326,7 @@ mod tests {
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
-        graph_layers.links.from_vec(&graph_links);
+        graph_layers.links = GraphLinksRam::from_vec(graph_links.clone(), None).unwrap();
 
         let linking_idx: PointOffsetType = 7;
 
@@ -362,19 +365,19 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
+        let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
+        let links_path = GraphLayers::<GraphLinksRam>::get_links_path(dir.path());
         let (vector_holder, graph_layers) =
-            create_graph_layer_fixture::<CosineMetric, _>(num_vectors, M, dim, false, &mut rng);
+            create_graph_layer_fixture::<CosineMetric, _>(num_vectors, M, dim, false, &mut rng, Some(&links_path));
 
         let query = random_vector(&mut rng, dim);
 
         let res1 = search_in_graph(&query, top, &vector_holder, &graph_layers);
 
-        let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
-
         let path = GraphLayers::<GraphLinksRam>::get_path(dir.path());
         graph_layers.save(&path).unwrap();
 
-        let graph2 = GraphLayers::<GraphLinksRam>::load(&path).unwrap();
+        let graph2 = GraphLayers::<GraphLinksRam>::load(&path, &links_path).unwrap();
 
         let res2 = search_in_graph(&query, top, &vector_holder, &graph2);
 
@@ -391,7 +394,7 @@ mod tests {
         type M = CosineMetric;
 
         let (vector_holder, graph_layers) =
-            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng);
+            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng, None);
 
         let main_entry = graph_layers
             .entry_points
@@ -441,7 +444,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let (vector_holder, graph_layers) =
-            create_graph_layer_fixture::<CosineMetric, _>(num_vectors, M, dim, true, &mut rng);
+            create_graph_layer_fixture::<CosineMetric, _>(num_vectors, M, dim, true, &mut rng, None);
 
         let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
 

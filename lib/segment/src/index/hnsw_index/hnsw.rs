@@ -52,9 +52,7 @@ struct SearchesTelemetry {
     exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
-impl<TGraphLinks> HNSWIndex<TGraphLinks>
-where 
-    TGraphLinks: GraphLinks + serde::Serialize + serde::de::DeserializeOwned,
+impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks>
 {
     pub fn open(
         path: &Path,
@@ -80,8 +78,9 @@ where
         };
 
         let graph_path = GraphLayers::<TGraphLinks>::get_path(path);
+        let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(path);
         let graph = if graph_path.exists() {
-            Some(GraphLayers::load(&graph_path)?)
+            Some(GraphLayers::load(&graph_path, &graph_links_path)?)
         } else {
             None
         };
@@ -218,9 +217,7 @@ where
     }
 }
 
-impl<TGraphLinks> VectorIndex for HNSWIndex<TGraphLinks>
-where 
-    TGraphLinks: GraphLinks + serde::Serialize + serde::de::DeserializeOwned,
+impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks>
 {
     fn search(
         &self,
@@ -402,7 +399,8 @@ where
             }
         }
 
-        self.graph = Some(graph_layers_builder.into_graph_layers());
+        let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(&self.path);
+        self.graph = Some(graph_layers_builder.into_graph_layers(Some(&graph_links_path))?);
 
         debug!("finish additional payload field indexing");
         self.save()

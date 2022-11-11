@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use rand::Rng;
 
 use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
@@ -15,6 +17,7 @@ pub(crate) fn create_graph_layer_fixture<TMetric: Metric, R>(
     dim: usize,
     use_heuristic: bool,
     rng: &mut R,
+    links_path: Option<&Path>,
 ) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>)
 where
     R: Rng + ?Sized,
@@ -43,5 +46,5 @@ where
         graph_layers_builder.link_new_point(idx, scorer);
     }
 
-    (vector_holder, graph_layers_builder.into_graph_layers())
+    (vector_holder, graph_layers_builder.into_graph_layers(links_path).unwrap())
 }
