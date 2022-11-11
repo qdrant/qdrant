@@ -14,6 +14,7 @@ use segment::types::{
 };
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
@@ -152,6 +153,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let timing = Instant::now();
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
         // does not impl Send trait
@@ -193,12 +195,12 @@ impl SegmentsSearcher {
                 .map(|(segment, f)| (segment, runtime_handle.spawn(f)))
                 .unzip()
         };
-
+        log::warn!("spawning searches {:?}", timing.elapsed());
         // perform search on all segments concurrently
         // the resulting Vec is in the same order as the segment searches were provided.
         let (all_search_results_per_segment, further_results) =
             Self::execute_searches(searches).await?;
-
+        log::warn!("searches {:?}", timing.elapsed());
         debug_assert!(all_search_results_per_segment.len() == locked_segments.len());
 
         let (mut result_aggregator, searches_to_rerun) = Self::process_search_result_step1(
@@ -210,7 +212,7 @@ impl SegmentsSearcher {
                 .collect(),
             further_results,
         );
-
+        log::warn!("process_search_result_step1 {:?}", timing.elapsed());
         // The second step of the search is to re-run the search without sampling on some segments
         // Expected that this stage will be executed rarely
         if !searches_to_rerun.is_empty() {
@@ -256,10 +258,11 @@ impl SegmentsSearcher {
                         .update_batch_results(batch_id, secondary_batch_result.into_iter());
                 }
             }
+            log::warn!("rerunning searches {:?}", timing.elapsed());
         }
 
         let top_scores: Vec<_> = result_aggregator.into_topk();
-
+        log::warn!("end {:?}", timing.elapsed());
         Ok(top_scores)
     }
 
