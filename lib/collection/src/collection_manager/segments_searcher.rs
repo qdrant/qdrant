@@ -132,6 +132,7 @@ impl SegmentsSearcher {
                         && retrieved_points < required_limit
                         && segment_lowest_score >= lowest_batch_score
                     {
+                        log::warn!("segment_id: {} segment_lowest_score: {}, lowest_batch_score: {}, retrieved_points: {}, required_limit: {}, have_further_results: {}", segment_id, segment_lowest_score, lowest_batch_score, retrieved_points, required_limit, have_further_results);
                         // It is possible, that current segment can have better results than
                         // the lowest score in the batch. In that case, we need to re-run the search
                         // without sampling on that segment.
