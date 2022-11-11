@@ -67,7 +67,10 @@ impl GraphLayersBase for GraphLayersBuilder {
 }
 
 impl GraphLayersBuilder {
-    pub fn into_graph_layers<TGraphLinks: GraphLinks>(self, path: Option<&Path>) -> OperationResult<GraphLayers<TGraphLinks>> {
+    pub fn into_graph_layers<TGraphLinks: GraphLinks>(
+        self,
+        path: Option<&Path>,
+    ) -> OperationResult<GraphLayers<TGraphLinks>> {
         let unlocker_links_layers = self
             .links_layers
             .into_iter()
@@ -579,7 +582,9 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder.into_graph_layers::<GraphLinksRam>(None).unwrap();
+        let graph = graph_layers_builder
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query);
@@ -660,7 +665,9 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder.into_graph_layers::<GraphLinksRam>(None).unwrap();
+        let graph = graph_layers_builder
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query);
@@ -694,7 +701,9 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
         }
-        let graph_layers = graph_layers_builder.into_graph_layers::<GraphLinksRam>(None).unwrap();
+        let graph_layers = graph_layers_builder
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
 
         let num_points = graph_layers.links.num_points();
         eprintln!("number_points = {:#?}", num_points);

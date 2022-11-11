@@ -187,8 +187,7 @@ impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
 /// Object contains links between nodes for HNSW search
 ///
 /// Assume all scores are similarities. Larger score = closer points
-impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks>
-{
+impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
         self.links.point_level(point_id)
     }
@@ -229,7 +228,8 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks>
 }
 
 impl<TGraphLinks> GraphLayers<TGraphLinks>
-where TGraphLinks: GraphLinks
+where
+    TGraphLinks: GraphLinks,
 {
     pub fn load(graph_path: &Path, links_path: &Path) -> OperationResult<Self> {
         let try_self: Result<Self, _> = read_bin(graph_path);
@@ -239,7 +239,7 @@ where TGraphLinks: GraphLinks
                 let links = TGraphLinks::load_from_file(links_path)?;
                 slf.links = links;
                 Ok(slf)
-            },
+            }
             Err(err) => {
                 let try_legacy: Result<GraphLayersBackwardCompatibility, _> = read_bin(graph_path);
                 if let Ok(legacy) = try_legacy {
@@ -367,8 +367,14 @@ mod tests {
 
         let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
         let links_path = GraphLayers::<GraphLinksRam>::get_links_path(dir.path());
-        let (vector_holder, graph_layers) =
-            create_graph_layer_fixture::<CosineMetric, _>(num_vectors, M, dim, false, &mut rng, Some(&links_path));
+        let (vector_holder, graph_layers) = create_graph_layer_fixture::<CosineMetric, _>(
+            num_vectors,
+            M,
+            dim,
+            false,
+            &mut rng,
+            Some(&links_path),
+        );
 
         let query = random_vector(&mut rng, dim);
 
@@ -443,8 +449,14 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let (vector_holder, graph_layers) =
-            create_graph_layer_fixture::<CosineMetric, _>(num_vectors, M, dim, true, &mut rng, None);
+        let (vector_holder, graph_layers) = create_graph_layer_fixture::<CosineMetric, _>(
+            num_vectors,
+            M,
+            dim,
+            true,
+            &mut rng,
+            None,
+        );
 
         let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
 

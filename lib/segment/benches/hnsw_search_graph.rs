@@ -35,7 +35,9 @@ fn hnsw_benchmark(c: &mut Criterion) {
         graph_layers_builder.set_levels(idx, level);
         graph_layers_builder.link_new_point(idx, scorer);
     }
-    let graph_layers = graph_layers_builder.into_graph_layers::<GraphLinksRam>(None).unwrap();
+    let graph_layers = graph_layers_builder
+        .into_graph_layers::<GraphLinksRam>(None)
+        .unwrap();
 
     group.bench_function("hnsw_search", |b| {
         b.iter(|| {

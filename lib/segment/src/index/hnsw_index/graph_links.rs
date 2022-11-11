@@ -1,8 +1,12 @@
-use std::{ops::Range, path::Path, fs::OpenOptions, mem::size_of};
+use std::fs::OpenOptions;
+use std::mem::size_of;
+use std::ops::Range;
+use std::path::Path;
 
-use memmap2::{MmapMut, Mmap};
+use memmap2::{Mmap, MmapMut};
 
-use crate::{types::PointOffsetType, entry::entry_point::{OperationResult, OperationError}};
+use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::types::PointOffsetType;
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
 
@@ -175,7 +179,7 @@ impl GraphLinksConverter {
 
         file.set_len(header.get_file_size())?;
 
-        let m = unsafe {MmapMut::map_mut(&file) };
+        let m = unsafe { MmapMut::map_mut(&file) };
         let mut mmap = m?;
         header.save(&mut mmap);
 
@@ -191,9 +195,10 @@ impl GraphLinksConverter {
             let links_range = header.get_links_range();
             let offsets_range = header.get_offsets_range();
             let union_range = links_range.start..offsets_range.end;
-            let (links_mmap, offsets_mmap) = mmap[union_range].as_mut().split_at_mut(links_range.len());
-            let links_mmap: &mut[PointOffsetType] = transmute_from_u8_mut(links_mmap);
-            let offsets_mmap: &mut[u64] = transmute_from_u8_mut(offsets_mmap);
+            let (links_mmap, offsets_mmap) =
+                mmap[union_range].as_mut().split_at_mut(links_range.len());
+            let links_mmap: &mut [PointOffsetType] = transmute_from_u8_mut(links_mmap);
+            let offsets_mmap: &mut [u64] = transmute_from_u8_mut(offsets_mmap);
             offsets_mmap[0] = 0;
 
             let mut links_pos = 0;
@@ -227,13 +232,12 @@ impl GraphLinksConverter {
     }
 
     pub fn iterate_level_points<F>(&mut self, level: usize, mut f: F)
-    where F: FnMut(usize, &mut Vec<PointOffsetType>)
+    where
+        F: FnMut(usize, &mut Vec<PointOffsetType>),
     {
         let edges_len = self.edges.len();
         if level == 0 {
-            (0..edges_len).for_each(|point_id| 
-                f(point_id, &mut self.edges[point_id][0])
-            );
+            (0..edges_len).for_each(|point_id| f(point_id, &mut self.edges[point_id][0]));
         } else {
             for i in 0..edges_len {
                 let point_id = self.back_index[i];
@@ -266,7 +270,10 @@ pub trait GraphLinks: Default {
     // Convert from graph layers builder links
     // `Vec<Vec<Vec<_>>>` means:
     // vector of points -> vector of layers for specific point -> vector of links for specific point and layer
-    fn from_vec(edges: Vec<Vec<Vec<PointOffsetType>>>, path: Option<&Path>) -> OperationResult<Self>;
+    fn from_vec(
+        edges: Vec<Vec<Vec<PointOffsetType>>>,
+        path: Option<&Path>,
+    ) -> OperationResult<Self>;
 
     fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
         if level == 0 {
@@ -339,7 +346,10 @@ impl GraphLinks for GraphLinksRam {
         })
     }
 
-    fn from_vec(edges: Vec<Vec<Vec<PointOffsetType>>>, path: Option<&Path>) -> OperationResult<Self> {
+    fn from_vec(
+        edges: Vec<Vec<Vec<PointOffsetType>>>,
+        path: Option<&Path>,
+    ) -> OperationResult<Self> {
         let mut graph_links = GraphLinksRam {
             links: Vec::new(),
             offsets: vec![0],
@@ -355,7 +365,9 @@ impl GraphLinks for GraphLinksRam {
         if !converter.edges.is_empty() {
             let levels_count = converter.get_levels_count();
             for level in 0..levels_count {
-                graph_links.level_offsets.push(graph_links.offsets.len() as u64 - 1);
+                graph_links
+                    .level_offsets
+                    .push(graph_links.offsets.len() as u64 - 1);
                 converter.iterate_level_points(level, |_, links| {
                     graph_links.links.extend_from_slice(links);
                     graph_links.offsets.push(graph_links.links.len() as u64);
@@ -444,7 +456,7 @@ impl GraphLinks for GraphLinksMmap {
             .write(false)
             .create(false)
             .open(&path)?;
-        
+
         let mmap = unsafe { Mmap::map(&file)? };
         let header = GraphLinksFileHeader::load(&mmap);
         let level_offsets_range = header.get_level_offsets_range();
@@ -459,13 +471,18 @@ impl GraphLinks for GraphLinksMmap {
         })
     }
 
-    fn from_vec(edges: Vec<Vec<Vec<PointOffsetType>>>, path: Option<&Path>) -> OperationResult<Self> {
+    fn from_vec(
+        edges: Vec<Vec<Vec<PointOffsetType>>>,
+        path: Option<&Path>,
+    ) -> OperationResult<Self> {
         let mut converter = GraphLinksConverter::new(edges);
         if let Some(path) = path {
             converter.save_to_file(path)?;
             Self::load_from_file(path)
         } else {
-            Err(OperationError::service_error("path is required for GraphLinksMmap"))
+            Err(OperationError::service_error(
+                "path is required for GraphLinksMmap",
+            ))
         }
     }
 

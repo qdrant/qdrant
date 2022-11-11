@@ -38,7 +38,10 @@ fn build_index<TMetric: Metric>(
         graph_layers_builder.set_levels(idx, level);
         graph_layers_builder.link_new_point(idx, scorer);
     }
-    (vector_holder, graph_layers_builder.into_graph_layers(None).unwrap())
+    (
+        vector_holder,
+        graph_layers_builder.into_graph_layers(None).unwrap(),
+    )
 }
 
 fn hnsw_build_asymptotic(c: &mut Criterion) {

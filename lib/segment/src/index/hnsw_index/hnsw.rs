@@ -11,6 +11,7 @@ use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
+use super::graph_links::GraphLinks;
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -29,8 +30,6 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
-
-use super::graph_links::GraphLinks;
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
@@ -52,8 +51,7 @@ struct SearchesTelemetry {
     exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
-impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks>
-{
+impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     pub fn open(
         path: &Path,
         vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
@@ -217,8 +215,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks>
     }
 }
 
-impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks>
-{
+impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
     fn search(
         &self,
         vectors: &[&[VectorElementType]],
