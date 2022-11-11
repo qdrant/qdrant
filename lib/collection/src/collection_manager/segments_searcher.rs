@@ -214,8 +214,12 @@ impl SegmentsSearcher {
         // The second step of the search is to re-run the search without sampling on some segments
         // Expected that this stage will be executed rarely
         if !searches_to_rerun.is_empty() {
-            // TODO notify telemetry of failing sampling
-            // Ensure consistent order of segment ids
+            log::warn!(
+                "{} searches will be re-run without sampling",
+                searches_to_rerun.len()
+            ); // TODO downgrade log level after investigation
+               // TODO notify telemetry of failing sampling
+               // Ensure consistent order of segment ids
             let searches_to_rerun: Vec<(SegmentOffset, Vec<BatchOffset>)> =
                 searches_to_rerun.into_iter().collect();
 
