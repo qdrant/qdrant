@@ -1117,8 +1117,11 @@ impl Collection {
         &self,
         params_diff: CollectionParamsDiff,
     ) -> CollectionResult<()> {
-        let mut config = self.config.write().await;
-        config.params = params_diff.update(&config.params)?;
+        {
+            let mut config = self.config.write().await;
+            config.params = params_diff.update(&config.params)?;
+        }
+        self.config.read().await.save(&self.path)?;
         Ok(())
     }
 
