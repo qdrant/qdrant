@@ -5,8 +5,14 @@ use api::grpc::conversions::date_time_to_proto;
 use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::operations::types::CollectionResult;
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+pub struct SnapshotRecover {
+    pub location: Url,
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotDescription {

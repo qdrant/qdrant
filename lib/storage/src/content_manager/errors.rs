@@ -188,3 +188,11 @@ impl From<tonic::transport::Error> for StorageError {
         }
     }
 }
+
+impl From<reqwest::Error> for StorageError {
+    fn from(err: reqwest::Error) -> Self {
+        StorageError::ServiceError {
+            description: format!("Http request error: {}", err),
+        }
+    }
+}

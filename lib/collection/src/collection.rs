@@ -1451,7 +1451,7 @@ impl Collection {
 
     pub fn restore_snapshot(snapshot_path: &Path, target_dir: &Path) -> CollectionResult<()> {
         // decompress archive
-        let archive_file = std::fs::File::open(snapshot_path).unwrap();
+        let archive_file = std::fs::File::open(snapshot_path)?;
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(target_dir)?;
 
