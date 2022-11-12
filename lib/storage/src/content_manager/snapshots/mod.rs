@@ -3,7 +3,9 @@ mod download;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use collection::operations::snapshot_ops::{get_snapshot_description, list_snapshots_in_directory, SnapshotDescription, SnapshotRecover};
+use collection::operations::snapshot_ops::{
+    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription, SnapshotRecover,
+};
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tokio::io::AsyncWriteExt;
@@ -36,7 +38,7 @@ pub async fn get_full_snapshot_path(
 pub async fn do_recover_from_snapshot(
     toc: &TableOfContent,
     snapshot_name: &str,
-    source: SnapshotRecover
+    source: SnapshotRecover,
 ) -> Result<bool, StorageError> {
     // toc.snapshots_path();
     todo!()
