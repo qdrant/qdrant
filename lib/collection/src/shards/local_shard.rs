@@ -58,6 +58,23 @@ pub struct LocalShard {
 
 /// Shard holds information about segments and WAL.
 impl LocalShard {
+    pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
+        let wal_from = Self::wal_path(from);
+        let wal_to = Self::wal_path(to);
+        let segments_from = Self::segments_path(from);
+        let segments_to = Self::segments_path(to);
+        tokio::fs::rename(wal_from, wal_to).await?;
+        tokio::fs::rename(segments_from, segments_to).await?;
+        Ok(())
+    }
+
+    /// Checks if path have local shard data present
+    pub async fn check_data(shard_path: &Path) -> bool {
+        let wal_path = Self::wal_path(shard_path);
+        let segments_path = Self::segments_path(shard_path);
+        wal_path.exists() && segments_path.exists()
+    }
+
     /// Clear local shard related data.
     ///
     /// Do NOT remove config file.
@@ -149,7 +166,7 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
-    ) -> LocalShard {
+    ) -> CollectionResult<LocalShard> {
         let collection_config = shared_config.read().await;
 
         let wal_path = Self::wal_path(shard_path);
@@ -160,47 +177,43 @@ impl LocalShard {
             wal_path.to_str().unwrap(),
             &(&collection_config.wal_config).into(),
         )
-        .expect("Can't read WAL");
+        .map_err(|e| CollectionError::service_error(format!("Wal error: {}", e)))?;
 
-        let segment_dirs = std::fs::read_dir(&segments_path).unwrap_or_else(|err| {
-            panic!(
+        let segment_dirs = std::fs::read_dir(&segments_path).map_err(|err| {
+            CollectionError::service_error(format!(
                 "Can't read segments directory due to {}\nat {}",
                 err,
                 segments_path.to_str().unwrap()
-            )
-        });
+            ))
+        })?;
 
         let mut load_handlers = vec![];
 
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
             if segments_path.ends_with("deleted") {
-                std::fs::remove_dir_all(&segments_path).unwrap_or_else(|_| {
-                    panic!(
+                std::fs::remove_dir_all(&segments_path).map_err(|_| {
+                    CollectionError::service_error(format!(
                         "Can't remove marked-for-remove segment {}",
                         segments_path.to_str().unwrap()
-                    )
-                });
+                    ))
+                })?;
                 continue;
             }
             load_handlers.push(
                 thread::Builder::new()
                     .name("shard-load".to_string())
-                    .spawn(move || load_segment(&segments_path))
-                    .unwrap(),
+                    .spawn(move || load_segment(&segments_path))?,
             );
         }
 
         for handler in load_handlers {
-            let res = handler.join();
-            if let Err(err) = res {
-                panic!("Can't load segment {:?}", err);
-            }
-            let res = res.unwrap();
-            if let Err(res) = res {
-                panic!("Can't load segment {:?}", res);
-            }
-            let segment_opt = res.unwrap();
+            let segment_opt = handler.join().map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't join segment load thread: {:?}",
+                    err.type_id()
+                ))
+            })??;
             if let Some(segment) = segment_opt {
                 segment_holder.add(segment);
             }
@@ -228,7 +241,7 @@ impl LocalShard {
 
         collection.load_from_wal(collection_id).await;
 
-        collection
+        Ok(collection)
     }
 
     pub fn shard_path(&self) -> PathBuf {

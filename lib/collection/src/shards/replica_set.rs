@@ -359,7 +359,11 @@ impl ShardReplicaSet {
                 shard_path,
                 shared_config.clone(),
             )
-            .await;
+            .await
+            .map_err(|e| {
+                panic!("Failed to load local shard {:?}: {}", shard_path, e);
+            })
+            .unwrap();
             Some(Local(shard))
         } else {
             None
@@ -382,6 +386,35 @@ impl ShardReplicaSet {
 
     pub fn notify_peer_failure(&self, peer_id: PeerId) {
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
+    }
+
+    /// Change state of the replica to the given.
+    /// Ensure that replica actually exist in the set, create one if required
+    pub async fn ensure_replica_with_state(
+        &self,
+        peer_id: &PeerId,
+        state: ReplicaState,
+    ) -> CollectionResult<()> {
+        if *peer_id == self.replica_state.read().this_peer_id {
+            if !self.has_local_shard().await {
+                let shard = LocalShard::build(
+                    self.shard_id,
+                    self.collection_id.clone(),
+                    &self.shard_path,
+                    self.collection_config.clone(),
+                )
+                .await?;
+                let removed_shard = self.set_local(shard, Some(state)).await?;
+                if let Some(mut removed_shard) = removed_shard {
+                    removed_shard.before_drop().await;
+                }
+            } else {
+                self.set_replica_state(peer_id, state)?;
+            }
+        } else {
+            self.add_remote(*peer_id, state).await?;
+        }
+        Ok(())
     }
 
     pub fn set_replica_state(&self, peer_id: &PeerId, state: ReplicaState) -> CollectionResult<()> {
@@ -626,6 +659,30 @@ impl ShardReplicaSet {
                 .map(|remote| remote.get_telemetry_data())
                 .collect(),
         }
+    }
+
+    pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<()> {
+        if LocalShard::check_data(replica_path).await {
+            let mut local = self.local.write().await;
+            let removing_local = local.take();
+
+            if let Some(mut removing_local) = removing_local {
+                removing_local.before_drop().await;
+                LocalShard::clear(&self.shard_path).await?;
+            }
+            LocalShard::move_data(replica_path, &self.shard_path).await?;
+
+            let new_local_shard = LocalShard::load(
+                self.shard_id,
+                self.collection_id.clone(),
+                &self.shard_path,
+                self.collection_config.clone(),
+            )
+            .await?;
+
+            local.replace(Local(new_local_shard));
+        }
+        Ok(())
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {

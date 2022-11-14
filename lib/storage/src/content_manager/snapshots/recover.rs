@@ -1,0 +1,135 @@
+use std::path::Path;
+
+use collection::collection::Collection;
+use collection::config::CollectionConfig;
+use collection::operations::snapshot_ops::SnapshotRecover;
+use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard_config::ShardType;
+use collection::shards::shard_versioning::latest_shard_paths;
+
+use crate::content_manager::snapshots::download::{download_snapshot, downloaded_snapshots_dir};
+use crate::{StorageError, TableOfContent};
+
+pub async fn do_recover_from_snapshot(
+    toc: &TableOfContent,
+    collection_name: &str,
+    source: SnapshotRecover,
+) -> Result<bool, StorageError> {
+    let SnapshotRecover { location } = source;
+
+    let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
+    let snapshot_path = download_snapshot(location, &snapshot_download_path).await?;
+
+    let tmp_collection_dir = Path::new(toc.storage_path())
+        .join("tmp_collections")
+        .join(collection_name);
+
+    if tmp_collection_dir.exists() {
+        tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
+    }
+    tokio::fs::create_dir_all(&tmp_collection_dir).await?;
+
+    // Unpack snapshot collection to the target folder
+    Collection::restore_snapshot(&snapshot_path, &tmp_collection_dir)?;
+
+    let snapshot_config = CollectionConfig::load(&tmp_collection_dir)?;
+
+    let collection = toc.get_collection(collection_name).await?;
+
+    let state = collection.state().await;
+
+    // Check config compatibility
+    // Check vectors config
+    if snapshot_config.params.vectors != state.config.params.vectors {
+        return Err(StorageError::bad_input(&format!(
+            "Snapshot is not compatible with existing collection: Collection vectors: {:?} Snapshot Vectors: {:?}",
+            state.config.params.vectors, state.config.params.vectors
+        )));
+    }
+    // Check shard number
+    if snapshot_config.params.shard_number != state.config.params.shard_number {
+        return Err(StorageError::bad_input(&format!(
+            "Snapshot is not compatible with existing collection: Collection shard number: {:?} Snapshot shard number: {:?}",
+            state.config.params.shard_number, state.config.params.shard_number
+        )));
+    }
+
+    // Deactivate collection local shards during recovery
+    let this_peer_id = toc.this_peer_id;
+
+    for (shard_id, shard_info) in &state.shards {
+        if shard_info.replicas.get(&this_peer_id) != Some(&ReplicaState::Partial) {
+            toc.send_set_replica_state_proposal(
+                collection_name.to_string(),
+                this_peer_id,
+                *shard_id,
+                ReplicaState::Partial,
+            )?;
+        }
+    }
+
+    // Recover shards from the snapshot
+    for (shard_id, shard_info) in &state.shards {
+        let shards = latest_shard_paths(&tmp_collection_dir, *shard_id).await?;
+
+        let snapshot_shard_path = shards
+            .into_iter()
+            .filter_map(
+                |(snapshot_shard_path, _version, shard_type)| match shard_type {
+                    ShardType::Local => Some(snapshot_shard_path),
+                    ShardType::ReplicaSet => Some(snapshot_shard_path),
+                    ShardType::Remote { .. } => None,
+                    ShardType::Temporary => None,
+                },
+            )
+            .next();
+
+        if let Some(snapshot_shard_path) = snapshot_shard_path {
+            collection
+                .recover_local_shard_from(&snapshot_shard_path, *shard_id)
+                .await?;
+
+            // If this is te only replica, we can activate it
+            // If not - de-sync is possible, so we need to run synchronization
+            let other_active_replicas: Vec<_> = shard_info
+                .replicas
+                .iter()
+                .filter(|(peer_id, state)| {
+                    *state == &ReplicaState::Active && **peer_id != this_peer_id
+                })
+                .collect();
+
+            if other_active_replicas.is_empty() {
+                // No other active replicas, we can activate this shard
+                // as there is no de-sync possible
+                if toc.is_distributed() {
+                    toc.send_set_replica_state_proposal(
+                        collection_name.to_string(),
+                        this_peer_id,
+                        *shard_id,
+                        ReplicaState::Active,
+                    )?;
+                } else {
+                    collection
+                        .set_shard_replica_state(*shard_id, this_peer_id, ReplicaState::Active)
+                        .await?;
+                }
+            } else {
+                let (replica_peer_id, _state) = other_active_replicas.into_iter().next().unwrap();
+                // assume that if there is another peers, the server is distributed
+                toc.request_shard_transfer(
+                    collection_name.to_string(),
+                    *shard_id,
+                    *replica_peer_id,
+                    this_peer_id,
+                    true,
+                )?;
+            }
+        }
+    }
+
+    // Remove tmp collection dir
+    tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
+
+    Ok(true)
+}

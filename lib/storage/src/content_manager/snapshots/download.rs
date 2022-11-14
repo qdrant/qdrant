@@ -9,12 +9,12 @@ use uuid::Uuid;
 
 use crate::StorageError;
 
-fn downloaded_snapshots_dir(snapshots_dir: &str) -> PathBuf {
+pub fn downloaded_snapshots_dir(snapshots_dir: &str) -> PathBuf {
     Path::new(snapshots_dir).join("downloaded-snapshots")
 }
 
 fn random_name() -> String {
-    format!("{}.snapshot", Uuid::new_v4().to_string())
+    format!("{}.snapshot", Uuid::new_v4())
 }
 
 fn snapshot_name(url: &Url) -> String {
@@ -26,7 +26,7 @@ fn snapshot_name(url: &Url) -> String {
         .unwrap_or_else(random_name)
 }
 
-async fn download_files(url: &Url, path: &Path) -> Result<(), StorageError> {
+async fn download_file(url: &Url, path: &Path) -> Result<(), StorageError> {
     let mut file = File::create(path).await?;
 
     let response = reqwest::get(url.clone()).await?;
@@ -42,7 +42,7 @@ async fn download_files(url: &Url, path: &Path) -> Result<(), StorageError> {
     Ok(())
 }
 
-pub async fn download_snapshot(url: Url, snapshots_dir: &str) -> Result<PathBuf, StorageError> {
+pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf, StorageError> {
     match url.scheme() {
         "file" => {
             let local_file_path = Path::new(url.path());
@@ -55,32 +55,17 @@ pub async fn download_snapshot(url: Url, snapshots_dir: &str) -> Result<PathBuf,
             Ok(local_file_path.to_path_buf())
         }
         "http" | "https" => {
-            let download_to = Path::new(snapshots_dir).join(snapshot_name(&url));
+            let download_to = snapshots_dir.join(snapshot_name(&url));
 
-            download_files(&url, &download_to).await?;
+            download_file(&url, &download_to).await?;
             Ok(download_to)
         }
         _ => {
-            return Err(StorageError::bad_request(&format!(
+            Err(StorageError::bad_request(&format!(
                 "URL {} with schema {} is not supported",
                 url,
                 url.scheme()
             )))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_url_parsing() {
-        let remote_url = Url::parse("http://localhost:6333/collections/test_collection/snapshots/test_collection-2022-08-04-10-49-10.snapshot").unwrap();
-        let local_url =
-            Url::parse("file:///qdrant/snapshots/test_collection-2022-08-04-10-49-10.snapshot")
-                .unwrap();
-
-        eprintln!("local_url_abs.path() = {:#?}", remote_url.path());
     }
 }

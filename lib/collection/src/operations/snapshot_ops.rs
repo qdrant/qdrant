@@ -11,6 +11,9 @@ use crate::operations::types::CollectionResult;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotRecover {
+    /// Examples:
+    /// - URL `http://localhost:8080/collections/my_collection/snapshots/my_snapshot`
+    /// - Local path `file:///qdrant/snapshots/test_collection-2022-08-04-10-49-10.snapshot`
     pub location: Url,
 }
 
