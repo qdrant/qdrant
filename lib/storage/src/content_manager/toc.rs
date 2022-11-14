@@ -1231,22 +1231,7 @@ impl CollectionContainer for TableOfContent {
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
         self.collection_management_runtime.block_on(async {
             // Validation:
-            // 1. Check that we are not removing some unique shards
-
-            for collection_name in self.all_collections().await {
-                let collection = self.get_collection(&collection_name).await?;
-                let collection_state = collection.state().await;
-                for (shard_id, shard) in collection_state.shards.iter() {
-                    if shard.replicas.len() == 1 && shard.replicas.contains_key(&peer_id) {
-                        return Err(StorageError::bad_request(&format!(
-                            "Cannot remove peer {} because it is the only replica of shard {} of collection {}",
-                            peer_id,
-                            shard_id,
-                            collection_name
-                        )));
-                    }
-                }
-            }
+            // 1. Check that we are not removing some unique shards (removed)
 
             // Validation passed
 

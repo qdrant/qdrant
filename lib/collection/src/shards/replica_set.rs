@@ -389,29 +389,16 @@ impl ShardReplicaSet {
     }
 
     /// Change state of the replica to the given.
-    /// Ensure that replica actually exist in the set, create one if required
+    /// Ensure that remote shard is initialized.
     pub async fn ensure_replica_with_state(
         &self,
         peer_id: &PeerId,
         state: ReplicaState,
     ) -> CollectionResult<()> {
         if *peer_id == self.replica_state.read().this_peer_id {
-            if !self.has_local_shard().await {
-                let shard = LocalShard::build(
-                    self.shard_id,
-                    self.collection_id.clone(),
-                    &self.shard_path,
-                    self.collection_config.clone(),
-                )
-                .await?;
-                let removed_shard = self.set_local(shard, Some(state)).await?;
-                if let Some(mut removed_shard) = removed_shard {
-                    removed_shard.before_drop().await;
-                }
-            } else {
-                self.set_replica_state(peer_id, state)?;
-            }
+            self.set_replica_state(peer_id, state)?;
         } else {
+            // Create remote shard if necessary
             self.add_remote(*peer_id, state).await?;
         }
         Ok(())
@@ -661,7 +648,8 @@ impl ShardReplicaSet {
         }
     }
 
-    pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<()> {
+    /// Returns if local shard was recovered from path
+    pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
         if LocalShard::check_data(replica_path).await {
             let mut local = self.local.write().await;
             let removing_local = local.take();
@@ -681,8 +669,10 @@ impl ShardReplicaSet {
             .await?;
 
             local.replace(Local(new_local_shard));
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {

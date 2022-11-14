@@ -1455,7 +1455,7 @@ impl Collection {
         &self,
         snapshot_shard_path: &Path,
         shard_id: ShardId,
-    ) -> CollectionResult<()> {
+    ) -> CollectionResult<bool> {
         let shard_holder = self.shards_holder.read().await;
         let replica_set =
             shard_holder

@@ -18,16 +18,34 @@ pub async fn do_recover_from_snapshot(
     let SnapshotRecover { location } = source;
 
     let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
+    tokio::fs::create_dir_all(&snapshot_download_path).await?;
+
+    log::debug!(
+        "Downloading snapshot from {} to {}",
+        location,
+        snapshot_download_path.display()
+    );
+
     let snapshot_path = download_snapshot(location, &snapshot_download_path).await?;
+
+    log::debug!("Snapshot downloaded to {}", snapshot_path.display());
 
     let tmp_collection_dir = Path::new(toc.storage_path())
         .join("tmp_collections")
         .join(collection_name);
 
+    log::debug!(
+        "Recovering collection {} from snapshot {}",
+        collection_name,
+        snapshot_path.display()
+    );
+
     if tmp_collection_dir.exists() {
         tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
     }
     tokio::fs::create_dir_all(&tmp_collection_dir).await?;
+
+    log::debug!("Unpacking snapshot to {}", tmp_collection_dir.display());
 
     // Unpack snapshot collection to the target folder
     Collection::restore_snapshot(&snapshot_path, &tmp_collection_dir)?;
@@ -85,9 +103,20 @@ pub async fn do_recover_from_snapshot(
             .next();
 
         if let Some(snapshot_shard_path) = snapshot_shard_path {
-            collection
+            log::debug!(
+                "Recovering shard {} from {}",
+                shard_id,
+                snapshot_shard_path.display()
+            );
+
+            let recovered = collection
                 .recover_local_shard_from(&snapshot_shard_path, *shard_id)
                 .await?;
+
+            if !recovered {
+                log::debug!("Shard {} if not in snapshot", shard_id);
+                continue;
+            }
 
             // If this is te only replica, we can activate it
             // If not - de-sync is possible, so we need to run synchronization
@@ -103,6 +132,11 @@ pub async fn do_recover_from_snapshot(
                 // No other active replicas, we can activate this shard
                 // as there is no de-sync possible
                 if toc.is_distributed() {
+                    log::debug!(
+                        "Activating shard {} of collection {} with consensus",
+                        shard_id,
+                        collection_name
+                    );
                     toc.send_set_replica_state_proposal(
                         collection_name.to_string(),
                         this_peer_id,
@@ -110,12 +144,24 @@ pub async fn do_recover_from_snapshot(
                         ReplicaState::Active,
                     )?;
                 } else {
+                    log::debug!(
+                        "Activating shard {} of collection {} locally",
+                        shard_id,
+                        collection_name
+                    );
                     collection
                         .set_shard_replica_state(*shard_id, this_peer_id, ReplicaState::Active)
                         .await?;
                 }
             } else {
                 let (replica_peer_id, _state) = other_active_replicas.into_iter().next().unwrap();
+                log::debug!(
+                    "Running synchronization for shard {} of collection {} from {}",
+                    shard_id,
+                    collection_name,
+                    replica_peer_id
+                );
+
                 // assume that if there is another peers, the server is distributed
                 toc.request_shard_transfer(
                     collection_name.to_string(),
