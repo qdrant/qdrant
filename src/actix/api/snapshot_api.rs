@@ -1,12 +1,11 @@
 use actix_files::NamedFile;
 use actix_web::rt::time::Instant;
-use actix_web::{get, post, put, Responder, Result, web};
+use actix_web::{get, post, put, web, Responder, Result};
 use collection::operations::snapshot_ops::SnapshotRecover;
-use storage::content_manager::snapshots::{
-    do_create_full_snapshot, do_list_full_snapshots,
-    get_full_snapshot_path,
-};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
+use storage::content_manager::snapshots::{
+    do_create_full_snapshot, do_list_full_snapshots, get_full_snapshot_path,
+};
 use storage::content_manager::toc::TableOfContent;
 
 use crate::actix::helpers::{

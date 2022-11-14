@@ -60,12 +60,10 @@ pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf
             download_file(&url, &download_to).await?;
             Ok(download_to)
         }
-        _ => {
-            Err(StorageError::bad_request(&format!(
-                "URL {} with schema {} is not supported",
-                url,
-                url.scheme()
-            )))
-        }
+        _ => Err(StorageError::bad_request(&format!(
+            "URL {} with schema {} is not supported",
+            url,
+            url.scheme()
+        ))),
     }
 }

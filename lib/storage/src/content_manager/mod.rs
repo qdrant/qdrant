@@ -69,7 +69,7 @@ pub mod consensus_ops {
             collection_name: CollectionId,
             shard_id: u32,
             peer_id: PeerId,
-            state: ReplicaState
+            state: ReplicaState,
         ) -> Self {
             ConsensusOperations::CollectionMeta(
                 CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
@@ -78,7 +78,7 @@ pub mod consensus_ops {
                     peer_id,
                     state,
                 })
-                    .into(),
+                .into(),
             )
         }
 
