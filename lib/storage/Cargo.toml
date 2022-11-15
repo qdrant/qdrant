@@ -42,3 +42,4 @@ anyhow = "1.0.68"
 uuid = "1.2.1"
 url = "2.3.1"
 reqwest = { version = "0.11", features = ["stream", "rustls-tls"] }
+openssl = { version = "0.10", features = ["vendored"] }
