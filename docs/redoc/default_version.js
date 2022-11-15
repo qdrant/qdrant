@@ -1,1 +1,1 @@
-const defaultApiVersion = 'v0.11.2';
+const defaultApiVersion = 'v0.11.3';
