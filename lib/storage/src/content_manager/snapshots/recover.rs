@@ -17,6 +17,8 @@ pub async fn do_recover_from_snapshot(
 ) -> Result<bool, StorageError> {
     let SnapshotRecover { location } = source;
 
+    let collection = toc.get_collection(collection_name).await?;
+
     let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
     tokio::fs::create_dir_all(&snapshot_download_path).await?;
 
@@ -51,8 +53,6 @@ pub async fn do_recover_from_snapshot(
     Collection::restore_snapshot(&snapshot_path, &tmp_collection_dir)?;
 
     let snapshot_config = CollectionConfig::load(&tmp_collection_dir)?;
-
-    let collection = toc.get_collection(collection_name).await?;
 
     let state = collection.state().await;
 
