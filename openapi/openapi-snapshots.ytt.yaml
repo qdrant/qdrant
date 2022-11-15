@@ -1,6 +1,28 @@
 #@ load("openapi.lib.yml", "response", "reference", "type", "array")
 
 paths:
+  /collections/{collection_name}/snapshots/recover:
+    put:
+      tags:
+        - snapshots
+        - collections
+      summary: Recover from a snapshot
+      description: Recover local collection data from a snapshot. This will overwrite any data, stored on this node, for the collection.
+      operationId: recover_from_snapshot
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Snapshot to recover from
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnapshotRecover"
+      responses: #@ response(type("boolean"))
 
   /collections/{collection_name}/snapshots:
     get:

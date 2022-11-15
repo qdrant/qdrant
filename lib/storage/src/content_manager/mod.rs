@@ -65,20 +65,29 @@ pub mod consensus_ops {
             )))
         }
 
-        pub fn activate_replica(
+        pub fn set_replica_state(
             collection_name: CollectionId,
             shard_id: u32,
             peer_id: PeerId,
+            state: ReplicaState,
         ) -> Self {
             ConsensusOperations::CollectionMeta(
                 CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
                     collection_name,
                     shard_id,
                     peer_id,
-                    state: ReplicaState::Active,
+                    state,
                 })
                 .into(),
             )
+        }
+
+        pub fn activate_replica(
+            collection_name: CollectionId,
+            shard_id: u32,
+            peer_id: PeerId,
+        ) -> Self {
+            Self::set_replica_state(collection_name, shard_id, peer_id, ReplicaState::Active)
         }
 
         pub fn deactivate_replica(
@@ -86,15 +95,7 @@ pub mod consensus_ops {
             shard_id: u32,
             peer_id: PeerId,
         ) -> Self {
-            ConsensusOperations::CollectionMeta(
-                CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
-                    collection_name,
-                    shard_id,
-                    peer_id,
-                    state: ReplicaState::Dead,
-                })
-                .into(),
-            )
+            Self::set_replica_state(collection_name, shard_id, peer_id, ReplicaState::Dead)
         }
 
         pub fn start_transfer(collection_id: CollectionId, transfer: ShardTransfer) -> Self {

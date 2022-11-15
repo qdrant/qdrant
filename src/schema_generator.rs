@@ -2,7 +2,7 @@ use api::grpc::models::CollectionsResponse;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
-use collection::operations::snapshot_ops::SnapshotDescription;
+use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
 use collection::operations::types::{
     CollectionClusterInfo, CollectionInfo, CountRequest, CountResult, PointRequest,
     RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
@@ -56,6 +56,7 @@ struct AllDefinitions {
     at: SearchRequestBatch,
     au: RecommendRequestBatch,
     av: LocksOption,
+    aw: SnapshotRecover,
 }
 
 fn save_schema<T: JsonSchema>() {

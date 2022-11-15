@@ -32,6 +32,12 @@ impl StorageError {
         }
     }
 
+    pub fn bad_input(description: &str) -> StorageError {
+        StorageError::BadInput {
+            description: description.to_string(),
+        }
+    }
+
     /// Used to override the `description` field of the resulting `StorageError`
     pub fn from_inconsistent_shard_failure(
         err: CollectionError,
@@ -185,6 +191,14 @@ impl From<tonic::transport::Error> for StorageError {
     fn from(err: tonic::transport::Error) -> Self {
         StorageError::ServiceError {
             description: format!("Tonic transport error: {}", err),
+        }
+    }
+}
+
+impl From<reqwest::Error> for StorageError {
+    fn from(err: reqwest::Error) -> Self {
+        StorageError::ServiceError {
+            description: format!("Http request error: {}", err),
         }
     }
 }

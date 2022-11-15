@@ -1,6 +1,8 @@
 use actix_files::NamedFile;
 use actix_web::rt::time::Instant;
-use actix_web::{get, post, web, Responder, Result};
+use actix_web::{get, post, put, web, Responder, Result};
+use collection::operations::snapshot_ops::SnapshotRecover;
+use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_list_full_snapshots, get_full_snapshot_path,
 };
@@ -58,6 +60,21 @@ async fn create_snapshot(
     process_response(response, timing)
 }
 
+#[put("/collections/{name}/snapshots/recover")]
+async fn recover_from_snapshot(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<String>,
+    request: web::Json<SnapshotRecover>,
+) -> impl Responder {
+    let collection_name = path.into_inner();
+    let snapshot_recover = request.into_inner();
+
+    let timing = Instant::now();
+    let response =
+        do_recover_from_snapshot(toc.get_ref(), &collection_name, snapshot_recover).await;
+    process_response(response, timing)
+}
+
 #[get("/collections/{name}/snapshots/{snapshot_name}")]
 async fn get_snapshot(
     toc: web::Data<TableOfContent>,
@@ -94,6 +111,7 @@ async fn get_full_snapshot(
 pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
     cfg.service(list_snapshots)
         .service(create_snapshot)
+        .service(recover_from_snapshot)
         .service(get_snapshot)
         .service(list_full_snapshots)
         .service(create_full_snapshot)

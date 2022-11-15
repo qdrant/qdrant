@@ -359,7 +359,11 @@ impl ShardReplicaSet {
                 shard_path,
                 shared_config.clone(),
             )
-            .await;
+            .await
+            .map_err(|e| {
+                panic!("Failed to load local shard {:?}: {}", shard_path, e);
+            })
+            .unwrap();
             Some(Local(shard))
         } else {
             None
@@ -382,6 +386,22 @@ impl ShardReplicaSet {
 
     pub fn notify_peer_failure(&self, peer_id: PeerId) {
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
+    }
+
+    /// Change state of the replica to the given.
+    /// Ensure that remote shard is initialized.
+    pub async fn ensure_replica_with_state(
+        &self,
+        peer_id: &PeerId,
+        state: ReplicaState,
+    ) -> CollectionResult<()> {
+        if *peer_id == self.replica_state.read().this_peer_id {
+            self.set_replica_state(peer_id, state)?;
+        } else {
+            // Create remote shard if necessary
+            self.add_remote(*peer_id, state).await?;
+        }
+        Ok(())
     }
 
     pub fn set_replica_state(&self, peer_id: &PeerId, state: ReplicaState) -> CollectionResult<()> {
@@ -625,6 +645,33 @@ impl ShardReplicaSet {
                 .iter()
                 .map(|remote| remote.get_telemetry_data())
                 .collect(),
+        }
+    }
+
+    /// Returns if local shard was recovered from path
+    pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
+        if LocalShard::check_data(replica_path).await {
+            let mut local = self.local.write().await;
+            let removed_local = local.take();
+
+            if let Some(mut removing_local) = removed_local {
+                removing_local.before_drop().await;
+                LocalShard::clear(&self.shard_path).await?;
+            }
+            LocalShard::move_data(replica_path, &self.shard_path).await?;
+
+            let new_local_shard = LocalShard::load(
+                self.shard_id,
+                self.collection_id.clone(),
+                &self.shard_path,
+                self.collection_config.clone(),
+            )
+            .await?;
+
+            local.replace(Local(new_local_shard));
+            Ok(true)
+        } else {
+            Ok(false)
         }
     }
 

@@ -114,13 +114,18 @@ def start_cluster(tmp_path, num_peers):
     return peer_api_uris, peer_dirs, bootstrap_uri
 
 
+def make_peer_folder(base_path: Path, peer_number: int) -> Path:
+    peer_dir = base_path / f"peer{peer_number}"
+    peer_dir.mkdir()
+    shutil.copytree("config", peer_dir / "config")
+    return peer_dir
+
+
 def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
     peer_dirs = []
     for i in range(n_peers):
-        peer_dir = base_path / f"peer{i}"
-        peer_dir.mkdir()
+        peer_dir = make_peer_folder(base_path, i)
         peer_dirs.append(peer_dir)
-        shutil.copytree("config", peer_dir / "config")
     return peer_dirs
 
 

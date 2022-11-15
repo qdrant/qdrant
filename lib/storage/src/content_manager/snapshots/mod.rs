@@ -1,3 +1,6 @@
+pub mod download;
+pub mod recover;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

@@ -209,7 +209,8 @@ impl ShardHolder {
                             &path,
                             shared_collection_config.clone(),
                         )
-                        .await;
+                        .await
+                        .unwrap();
                         replica_set
                             .set_local(local_shard, Some(ReplicaState::Active))
                             .await
@@ -228,7 +229,8 @@ impl ShardHolder {
                             &path,
                             shared_collection_config.clone(),
                         )
-                        .await;
+                        .await
+                        .unwrap();
 
                         replica_set
                             .set_local(temp_shard, Some(ReplicaState::Partial))
