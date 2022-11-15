@@ -385,7 +385,12 @@ async fn search_in_segment(
                 let read_segment = locked_segment.read();
                 let segment_points = read_segment.points_count();
                 let top = if use_sampling {
-                    sampling_limit(prev_params.top, segment_points, total_points)
+                    let param_limit = prev_params
+                        .params
+                        .and_then(|p| p.hnsw_ef)
+                        .map(|hnsw_ef| min(hnsw_ef, prev_params.top))
+                        .unwrap_or(prev_params.top);
+                    sampling_limit(param_limit, segment_points, total_points)
                 } else {
                     prev_params.top
                 };
@@ -418,7 +423,12 @@ async fn search_in_segment(
         let read_segment = locked_segment.read();
         let segment_points = read_segment.points_count();
         let top = if use_sampling {
-            sampling_limit(prev_params.top, segment_points, total_points)
+            let param_limit = prev_params
+                .params
+                .and_then(|p| p.hnsw_ef)
+                .map(|hnsw_ef| min(hnsw_ef, prev_params.top))
+                .unwrap_or(prev_params.top);
+            sampling_limit(param_limit, segment_points, total_points)
         } else {
             prev_params.top
         };
