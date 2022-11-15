@@ -652,9 +652,9 @@ impl ShardReplicaSet {
     pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
         if LocalShard::check_data(replica_path).await {
             let mut local = self.local.write().await;
-            let removing_local = local.take();
+            let removed_local = local.take();
 
-            if let Some(mut removing_local) = removing_local {
+            if let Some(mut removing_local) = removed_local {
                 removing_local.before_drop().await;
                 LocalShard::clear(&self.shard_path).await?;
             }

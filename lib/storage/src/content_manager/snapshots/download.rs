@@ -30,6 +30,15 @@ async fn download_file(url: &Url, path: &Path) -> Result<(), StorageError> {
     let mut file = File::create(path).await?;
 
     let response = reqwest::get(url.clone()).await?;
+
+    if !response.status().is_success() {
+        return Err(StorageError::bad_input(&format!(
+            "Failed to download snapshot from {}: status - {}",
+            url,
+            response.status()
+        )));
+    }
+
     let mut stream = response.bytes_stream();
 
     while let Some(chunk_result) = stream.next().await {
