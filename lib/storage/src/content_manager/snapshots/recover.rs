@@ -118,7 +118,7 @@ pub async fn do_recover_from_snapshot(
                 continue;
             }
 
-            // If this is te only replica, we can activate it
+            // If this is the only replica, we can activate it
             // If not - de-sync is possible, so we need to run synchronization
             let other_active_replicas: Vec<_> = shard_info
                 .replicas
