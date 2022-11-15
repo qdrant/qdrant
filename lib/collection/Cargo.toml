@@ -36,6 +36,7 @@ arc-swap = "1.5.1"
 tonic = "0.7.2"
 tower = "0.4.13"
 uuid = { version = "1.2", features = ["v4", "serde"] }
+url = { version = "2", features = ["serde"] }
 
 segment = {path = "../segment"}
 api = {path = "../api"}
@@ -43,7 +44,7 @@ api = {path = "../api"}
 itertools = "0.10"
 indicatif = "0.17.2"
 chrono = { version = "~0.4", features = ["serde"] }
-schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono"] }
+schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono", "url"] }
 num_cpus = "1.14.0"
 tar = "0.4.38"
 fs_extra = "1.2.0"

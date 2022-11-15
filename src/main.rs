@@ -73,11 +73,17 @@ struct Args {
 
     /// List of paths to snapshot files.
     /// Format: <snapshot_file_path>:<target_collection_name>
+    ///
+    /// WARN: Do not use this option if you are recovering collection in existing distributed cluster.
+    /// Use `/collections/<collection-name>/snapshots/recover` API instead.
     #[arg(long, value_name = "PATH:NAME", alias = "collection-snapshot")]
     snapshot: Option<Vec<String>>,
 
     /// Path to snapshot of multiple collections.
     /// Format: <snapshot_file_path>
+    ///
+    /// WARN: Do not use this option if you are recovering collection in existing distributed cluster.
+    /// Use `/collections/<collection-name>/snapshots/recover` API instead.
     #[arg(long, value_name = "PATH")]
     storage_snapshot: Option<String>,
 }

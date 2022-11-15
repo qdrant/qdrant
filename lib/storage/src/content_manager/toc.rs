@@ -23,7 +23,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::shard_transfer::validate_transfer;
+use collection::shards::transfer::shard_transfer::{validate_transfer, ShardTransfer};
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
@@ -149,6 +149,11 @@ impl TableOfContent {
             is_write_locked: AtomicBool::new(false),
             lock_error_message: parking_lot::Mutex::new(None),
         }
+    }
+
+    /// Return `true` if service is working in distributed mode.
+    pub fn is_distributed(&self) -> bool {
+        self.consensus_proposal_sender.is_some()
     }
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
@@ -372,18 +377,31 @@ impl TableOfContent {
         Ok(())
     }
 
+    fn send_set_replica_state_proposal_op(
+        proposal_sender: &OperationSender,
+        collection_name: String,
+        peer_id: PeerId,
+        shard_id: ShardId,
+        state: ReplicaState,
+    ) -> Result<(), StorageError> {
+        let operation =
+            ConsensusOperations::set_replica_state(collection_name, shard_id, peer_id, state);
+        proposal_sender.send(operation)
+    }
+
     fn on_peer_failure_callback(
         proposal_sender: Option<OperationSender>,
         collection_name: String,
     ) -> replica_set::OnPeerFailure {
         Arc::new(move |peer_id, shard_id| {
             if let Some(proposal_sender) = &proposal_sender {
-                let operation = ConsensusOperations::deactivate_replica(
+                if let Err(send_error) = Self::send_set_replica_state_proposal_op(
+                    proposal_sender,
                     collection_name.clone(),
-                    shard_id,
                     peer_id,
-                );
-                if let Err(send_error) = proposal_sender.send(operation) {
+                    shard_id,
+                    ReplicaState::Dead,
+                ) {
                     log::error!(
                         "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
                         peer_id,
@@ -396,6 +414,25 @@ impl TableOfContent {
                 log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");
             }
         })
+    }
+
+    pub fn send_set_replica_state_proposal(
+        &self,
+        collection_name: String,
+        peer_id: PeerId,
+        shard_id: ShardId,
+        state: ReplicaState,
+    ) -> Result<(), StorageError> {
+        if let Some(operation_sender) = &self.consensus_proposal_sender {
+            Self::send_set_replica_state_proposal_op(
+                operation_sender,
+                collection_name,
+                peer_id,
+                shard_id,
+                state,
+            )?;
+        }
+        Ok(())
     }
 
     fn request_shard_transfer_callback(
@@ -420,6 +457,27 @@ impl TableOfContent {
                 log::error!("Can't send proposal to request shard transfer. Error: this is a single node deployment");
             }
         })
+    }
+
+    pub fn request_shard_transfer(
+        &self,
+        collection_name: String,
+        shard_id: ShardId,
+        from_peer: PeerId,
+        to_peer: PeerId,
+        sync: bool,
+    ) -> Result<(), StorageError> {
+        if let Some(proposal_sender) = &self.consensus_proposal_sender {
+            let transfer_request = ShardTransfer {
+                shard_id,
+                from: from_peer,
+                to: to_peer,
+                sync,
+            };
+            let operation = ConsensusOperations::start_transfer(collection_name, transfer_request);
+            proposal_sender.send(operation)?;
+        }
+        Ok(())
     }
 
     async fn update_collection(
@@ -1173,22 +1231,7 @@ impl CollectionContainer for TableOfContent {
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
         self.collection_management_runtime.block_on(async {
             // Validation:
-            // 1. Check that we are not removing some unique shards
-
-            for collection_name in self.all_collections().await {
-                let collection = self.get_collection(&collection_name).await?;
-                let collection_state = collection.state().await;
-                for (shard_id, shard) in collection_state.shards.iter() {
-                    if shard.replicas.len() == 1 && shard.replicas.contains_key(&peer_id) {
-                        return Err(StorageError::bad_request(&format!(
-                            "Cannot remove peer {} because it is the only replica of shard {} of collection {}",
-                            peer_id,
-                            shard_id,
-                            collection_name
-                        )));
-                    }
-                }
-            }
+            // 1. Check that we are not removing some unique shards (removed)
 
             // Validation passed
 

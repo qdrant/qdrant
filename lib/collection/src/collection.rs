@@ -316,7 +316,9 @@ impl Collection {
             }
         }
 
-        replica_set.set_replica_state(&peer_id, state)?;
+        replica_set
+            .ensure_replica_with_state(&peer_id, state)
+            .await?;
 
         // Try to request shard transfer if replicas on the current peer are dead
         if state == ReplicaState::Dead && self.this_peer_id == peer_id {
@@ -1452,9 +1454,27 @@ impl Collection {
         get_snapshot_description(&snapshot_path).await
     }
 
+    pub async fn recover_local_shard_from(
+        &self,
+        snapshot_shard_path: &Path,
+        shard_id: ShardId,
+    ) -> CollectionResult<bool> {
+        let shard_holder = self.shards_holder.read().await;
+        let replica_set =
+            shard_holder
+                .get_shard(&shard_id)
+                .ok_or_else(|| CollectionError::NotFound {
+                    what: format!("Shard {shard_id}"),
+                })?;
+
+        replica_set
+            .restore_local_replica_from(snapshot_shard_path)
+            .await
+    }
+
     pub fn restore_snapshot(snapshot_path: &Path, target_dir: &Path) -> CollectionResult<()> {
         // decompress archive
-        let archive_file = std::fs::File::open(snapshot_path).unwrap();
+        let archive_file = std::fs::File::open(snapshot_path)?;
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(target_dir)?;
 

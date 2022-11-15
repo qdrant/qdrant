@@ -14,7 +14,7 @@ num_cpus = "1.14"
 thiserror = "1.0"
 rand = "0.8.5"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "0dd3943113ff7ec2fbc5428bb77ba206c8492fa9" }
-tokio = {version = "~1.21", features = ["rt-multi-thread"]}
+tokio = { version = "~1.21", features = ["rt-multi-thread"] }
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
 schemars = { version = "0.8.11", features = ["uuid1", "preserve_order"] }
@@ -23,7 +23,7 @@ async-trait = "0.1.58"
 log = "0.4"
 tonic = "0.7.2"
 http = "0.2"
-parking_lot = { version = "0.12.1", features=["deadlock_detection", "serde"]}
+parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
 tar = "0.4.38"
 chrono = { version = "~0.4", features = ["serde"] }
 
@@ -33,8 +33,11 @@ raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77
 prost = { version = "=0.9.0" } # version of prost used by raft
 serde_cbor = { version = "0.11.2" }
 
-segment = {path = "../segment"}
-collection = {path = "../collection"}
-api = {path = "../api"}
+segment = { path = "../segment" }
+collection = { path = "../collection" }
+api = { path = "../api" }
 futures = "0.3.25"
 anyhow = "1.0.66"
+uuid = "1.2.1"
+url = "2.3.1"
+reqwest = { version = "0.11", features = ["stream", "rustls-tls"] }

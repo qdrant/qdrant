@@ -7,7 +7,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
 use api::grpc::transport_channel_pool::TransportChannelPool;
@@ -173,11 +173,16 @@ impl Consensus {
                 &runtime,
                 leader_established_in_ms,
             )
-            .context("Failed to initialize Consensus for new Raft state")?;
+            .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {}", err))?;
         } else {
             runtime
                 .block_on(Self::recover(&state_ref, uri.clone(), p2p_port, &config))
-                .context("Failed to recover Consensus from existing Raft state")?;
+                .map_err(|err| {
+                    anyhow!(
+                        "Failed to recover Consensus from existing Raft state: {}",
+                        err
+                    )
+                })?;
 
             if bootstrap_peer.is_some() || uri.is_some() {
                 log::debug!("Local raft state found - bootstrap and uri cli arguments were ignored")
@@ -251,7 +256,7 @@ impl Consensus {
             cluster_uri,
         )
         .await
-        .context("Failed to create timeout channel")?;
+        .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
         let mut client = RaftClient::new(channel);
         let all_peers = client
             .add_peer_to_known(tonic::Request::new(
@@ -262,7 +267,7 @@ impl Consensus {
                 },
             ))
             .await
-            .context("Failed to add peer to known")?
+            .map_err(|err| anyhow!("Failed to add peer to known: {}", err))?
             .into_inner();
         Ok(all_peers)
     }
@@ -348,7 +353,7 @@ impl Consensus {
                         .parse()
                         .context(format!("Failed to parse peer URI: {}", peer.uri))?,
                 )
-                .context("Failed to add peer")?;
+                .map_err(|err| anyhow!("Failed to add peer: {}", err))?
         }
         // Only first peer has itself as a voter in the initial conf state.
         // This needs to be propagated manually to other peers as it is not contained in any log entry.
@@ -365,7 +370,7 @@ impl Consensus {
         loop {
             if !self
                 .try_promote_learner()
-                .context("Failed to promote learner")?
+                .map_err(|err| anyhow!("Failed to promote learner: {}", err))?
             {
                 // If learner promotion was proposed - do not add other proposals.
                 self.propose_updates(timeout)?;
@@ -570,21 +575,21 @@ impl Consensus {
             log::debug!("Applying snapshot");
             store
                 .apply_snapshot(&ready.snapshot().clone())
-                .context("Failed to apply snapshot")?
+                .map_err(|err| anyhow!("Failed to apply snapshot: {}", err))?
         }
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
             log::debug!("Appending {} entries to raft log", ready.entries().len());
             store
                 .append_entries(ready.take_entries())
-                .context("Failed to append entries")?;
+                .map_err(|err| anyhow!("Failed to append entries: {}", err))?
         }
         if let Some(hs) = ready.hs() {
             // Raft HardState changed, and we need to persist it.
             log::debug!("Changing hard state. New hard state: {hs:?}");
             store
                 .set_hard_state(hs.clone())
-                .context("Failed to set hard state")?;
+                .map_err(|err| anyhow!("Failed to set hard state: {}", err))?
         }
         let role_change = ready.ss().map(|ss| ss.raft_state);
         if let Some(ss) = ready.ss() {
@@ -605,7 +610,7 @@ impl Consensus {
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
         let stop_consensus =
             handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
-                .context("Failed to apply committed entries")?;
+                .map_err(|err| anyhow!("Failed to handle committed entries: {}", err))?;
         if stop_consensus {
             return Ok((None, None));
         }
@@ -629,7 +634,7 @@ impl Consensus {
             log::debug!("Updating commit index to {commit}");
             store
                 .set_commit_index(commit)
-                .context("Failed to set commit index")?;
+                .map_err(|err| anyhow!("Failed to set commit index: {}", err))?;
         }
         if let Err(err) = self.send_messages(light_rd.take_messages(), peer_address_by_id) {
             log::warn!("Failed to send messages: {err}")
@@ -637,7 +642,7 @@ impl Consensus {
         // Apply all committed entries.
         let stop_consensus =
             handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
-                .context("Failed to apply committed entries")?;
+                .map_err(|err| anyhow!("Failed to apply committed entries: {}", err))?;
         // Advance the apply index.
         self.node.advance_apply();
         Ok(stop_consensus)
@@ -730,7 +735,7 @@ async fn who_is(
     let channel =
         TransportChannelPool::make_channel(bootstrap_timeout, bootstrap_timeout, bootstrap_uri)
             .await
-            .context("Failed to create timeout channel")?;
+            .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
     let mut client = RaftClient::new(channel);
     Ok(client
         .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
