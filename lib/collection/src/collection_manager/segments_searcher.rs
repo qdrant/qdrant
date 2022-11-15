@@ -14,7 +14,6 @@ use segment::types::{
 };
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
-use tokio::time::Instant;
 
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
@@ -132,7 +131,7 @@ impl SegmentsSearcher {
                         && retrieved_points < required_limit
                         && segment_lowest_score >= lowest_batch_score
                     {
-                        log::warn!("segment_id: {} segment_lowest_score: {}, lowest_batch_score: {}, retrieved_points: {}, required_limit: {}, have_further_results: {}", segment_id, segment_lowest_score, lowest_batch_score, retrieved_points, required_limit, have_further_results);
+                        log::trace!("Search to re-run without sampling on segment_id: {} segment_lowest_score: {}, lowest_batch_score: {}, retrieved_points: {}, required_limit: {}", segment_id, segment_lowest_score, lowest_batch_score, retrieved_points, required_limit);
                         // It is possible, that current segment can have better results than
                         // the lowest score in the batch. In that case, we need to re-run the search
                         // without sampling on that segment.
@@ -154,7 +153,6 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let timing = Instant::now();
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
         // does not impl Send trait
@@ -196,22 +194,10 @@ impl SegmentsSearcher {
                 .map(|(segment, f)| (segment, runtime_handle.spawn(f)))
                 .unzip()
         };
-        log::warn!("spawning searches {:?}", timing.elapsed());
         // perform search on all segments concurrently
         // the resulting Vec is in the same order as the segment searches were provided.
         let (all_search_results_per_segment, further_results) =
             Self::execute_searches(searches).await?;
-        log::warn!("searches {:?}", timing.elapsed());
-        for (s, br) in all_search_results_per_segment.iter().enumerate() {
-            log::warn!("segment {} batch score", s);
-            for (b, batch) in br.iter().enumerate() {
-                log::warn!(
-                    "batch {} scores {:?}",
-                    b,
-                    batch.iter().map(|x| x.score).collect::<Vec<_>>()
-                );
-            }
-        }
         debug_assert!(all_search_results_per_segment.len() == locked_segments.len());
 
         let (mut result_aggregator, searches_to_rerun) = Self::process_search_result_step1(
@@ -223,16 +209,11 @@ impl SegmentsSearcher {
                 .collect(),
             further_results,
         );
-        log::warn!("process_search_result_step1 {:?}", timing.elapsed());
         // The second step of the search is to re-run the search without sampling on some segments
         // Expected that this stage will be executed rarely
         if !searches_to_rerun.is_empty() {
-            log::warn!(
-                "{} searches will be re-run without sampling",
-                searches_to_rerun.len()
-            ); // TODO downgrade log level after investigation
-               // TODO notify telemetry of failing sampling
-               // Ensure consistent order of segment ids
+            // TODO notify telemetry of failing sampling
+            // Ensure consistent order of segment ids
             let searches_to_rerun: Vec<(SegmentOffset, Vec<BatchOffset>)> =
                 searches_to_rerun.into_iter().collect();
 
@@ -269,11 +250,9 @@ impl SegmentsSearcher {
                         .update_batch_results(batch_id, secondary_batch_result.into_iter());
                 }
             }
-            log::warn!("rerunning searches {:?}", timing.elapsed());
         }
 
         let top_scores: Vec<_> = result_aggregator.into_topk();
-        log::warn!("end {:?}", timing.elapsed());
         Ok(top_scores)
     }
 
@@ -410,13 +389,6 @@ async fn search_in_segment(
                 } else {
                     prev_params.top
                 };
-                log::warn!(
-                    "Use sampling {} top {} segment_points {} total_point {}",
-                    use_sampling,
-                    top,
-                    segment_points,
-                    total_points
-                );
 
                 let mut res = read_segment.search_batch(
                     prev_params.vector_name,
@@ -450,13 +422,6 @@ async fn search_in_segment(
         } else {
             prev_params.top
         };
-        log::warn!(
-            "Last batch Use sampling {} top {} segment_points {} total_point {}",
-            use_sampling,
-            top,
-            segment_points,
-            total_points
-        );
         let mut res = read_segment.search_batch(
             prev_params.vector_name,
             &vectors_batch,
