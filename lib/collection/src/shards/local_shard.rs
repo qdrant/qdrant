@@ -437,15 +437,15 @@ impl LocalShard {
 
     pub async fn before_drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
-        self.update_sender
-            .load()
-            .send(UpdateSignal::Stop)
-            .await
-            .unwrap();
+        if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
+            log::warn!("Error sending stop signal to update handler: {}", err);
+        }
 
         self.stop_flush_worker().await;
 
-        self.wait_update_workers_stop().await.unwrap();
+        if let Err(err) = self.wait_update_workers_stop().await {
+            log::warn!("Update workers failed with: {}", err);
+        }
 
         match self.runtime_handle.take() {
             None => {}
