@@ -9,7 +9,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Filter, PointIdType, ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayload,
+    Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayload,
     WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
@@ -353,6 +353,11 @@ async fn search_in_segment(
     use_sampling: bool,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let batch_size = request.searches.len();
+    // None if plain index, Some if hnsw.
+    let hnsw_ef_construct = match segment.get().read().config().index {
+        Indexes::Plain { .. } => None,
+        Indexes::Hnsw(config) => Some(config.ef_construct),
+    };
 
     let mut result: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
     let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // true if segment have more points to return
@@ -388,9 +393,13 @@ async fn search_in_segment(
                     let param_limit = prev_params
                         .params
                         .and_then(|p| p.hnsw_ef)
-                        .map(|hnsw_ef| min(hnsw_ef, prev_params.top))
+                        .or(hnsw_ef_construct)
                         .unwrap_or(prev_params.top);
-                    sampling_limit(param_limit, segment_points, total_points)
+                    sampling_limit(
+                        min(param_limit, prev_params.top),
+                        segment_points,
+                        total_points,
+                    )
                 } else {
                     prev_params.top
                 };
@@ -426,9 +435,13 @@ async fn search_in_segment(
             let param_limit = prev_params
                 .params
                 .and_then(|p| p.hnsw_ef)
-                .map(|hnsw_ef| min(hnsw_ef, prev_params.top))
+                .or(hnsw_ef_construct)
                 .unwrap_or(prev_params.top);
-            sampling_limit(param_limit, segment_points, total_points)
+            sampling_limit(
+                min(param_limit, prev_params.top),
+                segment_points,
+                total_points,
+            )
         } else {
             prev_params.top
         };
