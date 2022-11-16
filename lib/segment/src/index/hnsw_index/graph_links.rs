@@ -519,11 +519,12 @@ impl GraphLinks for GraphLinksMmap {
 #[cfg(test)]
 mod tests {
     use rand::Rng;
+    use tempfile::Builder;
 
     use super::*;
     use crate::types::PointOffsetType;
 
-    fn to_vec(links: &GraphLinksRam) -> Vec<Vec<Vec<PointOffsetType>>> {
+    fn to_vec<TGraphLinks: GraphLinks>(links: &TGraphLinks) -> Vec<Vec<Vec<PointOffsetType>>> {
         let mut result = Vec::new();
         let num_points = links.num_points();
         for i in 0..num_points {
@@ -536,6 +537,39 @@ mod tests {
             result.push(layers);
         }
         result
+    }
+
+    fn random_links(
+        points_count: usize,
+        max_levels_count: usize,
+    ) -> Vec<Vec<Vec<PointOffsetType>>> {
+        let mut rng = rand::thread_rng();
+        (0..points_count)
+            .map(|_| {
+                let levels_count = rng.gen_range(1..max_levels_count);
+                (0..levels_count)
+                    .map(|_| {
+                        let links_count = rng.gen_range(0..max_levels_count);
+                        (0..links_count)
+                            .map(|_| rng.gen_range(0..points_count) as PointOffsetType)
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn test_save_load<A, B>(points_count: usize, max_levels_count: usize)
+    where
+        A: GraphLinks,
+        B: GraphLinks,
+    {
+        let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
+        let links_file = path.path().join("links.bin");
+        let links = random_links(points_count, max_levels_count);
+        A::from_vec(links.clone(), Some(&links_file)).unwrap();
+        let cmp_links = to_vec(&B::load_from_file(&links_file).unwrap());
+        assert_eq!(links, cmp_links);
     }
 
     #[test]
@@ -585,23 +619,16 @@ mod tests {
         assert_eq!(links, cmp_links);
 
         // fully random links
-        let mut rng = rand::thread_rng();
-        let points_count = 100;
-        let max_levels_count = 10;
-        let links: Vec<Vec<Vec<PointOffsetType>>> = (0..points_count)
-            .map(|_| {
-                let levels_count = rng.gen_range(1..max_levels_count);
-                (0..levels_count)
-                    .map(|_| {
-                        let links_count = rng.gen_range(0..max_levels_count);
-                        (0..links_count)
-                            .map(|_| rng.gen_range(0..points_count) as PointOffsetType)
-                            .collect()
-                    })
-                    .collect()
-            })
-            .collect();
+        let links = random_links(100, 10);
         let cmp_links = to_vec(&GraphLinksRam::from_vec(links.clone(), None).unwrap());
         assert_eq!(links, cmp_links);
+    }
+
+    #[test]
+    fn test_graph_links_mmap_ram_compability() {
+        test_save_load::<GraphLinksRam, GraphLinksRam>(1000, 10);
+        test_save_load::<GraphLinksMmap, GraphLinksRam>(1000, 10);
+        test_save_load::<GraphLinksRam, GraphLinksMmap>(1000, 10);
+        test_save_load::<GraphLinksMmap, GraphLinksMmap>(1000, 10);
     }
 }

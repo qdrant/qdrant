@@ -5,7 +5,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::graph_links::GraphLinks;
-use crate::common::file_operations::{atomic_save_bin, read_bin};
+use crate::common::file_operations::{atomic_save_bin, read_bin, FileStorageError};
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
@@ -232,7 +232,14 @@ where
     TGraphLinks: GraphLinks,
 {
     pub fn load(graph_path: &Path, links_path: &Path) -> OperationResult<Self> {
-        let try_self: Result<Self, _> = read_bin(graph_path);
+        let try_self: Result<Self, FileStorageError> = if links_path.exists() {
+            read_bin(graph_path)
+        } else {
+            Err(FileStorageError::generic_error(&format!(
+                "Links file does not exists: {:?}",
+                links_path
+            )))
+        };
 
         match try_self {
             Ok(mut slf) => {
