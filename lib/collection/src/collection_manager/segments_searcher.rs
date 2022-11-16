@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -8,10 +8,7 @@ use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
-use segment::types::{
-    Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayload,
-    WithPayloadInterface, WithVector,
-};
+use segment::types::{Filter, PointIdType, ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayload, WithPayloadInterface, WithVector, Indexes};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
@@ -30,9 +27,6 @@ type BatchSearchResult = Vec<SegmentBatchSearchResult>;
 
 // Result of batch search in one segment
 type SegmentSearchExecutedResult = CollectionResult<(SegmentBatchSearchResult, Vec<bool>)>;
-
-/// Search `Limit` lower threshold above which we will use sampling.
-const LOWER_SEARCH_LIMIT_SAMPLING: usize = 100;
 
 /// Simple implementation of segment manager
 ///  - rebuild segment for memory optimization purposes
@@ -153,6 +147,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        log::warn!("Search batch_request");
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
         // does not impl Send trait
@@ -319,17 +314,25 @@ struct BatchSearchParams<'a> {
 }
 
 /// Returns suggested search sampling size for a given number of points and required limit.
-fn sampling_limit(limit: usize, segment_points: usize, total_points: usize) -> usize {
-    let segment_probability = segment_points as f64 / total_points as f64;
-    if limit > LOWER_SEARCH_LIMIT_SAMPLING {
-        min(
-            find_search_sampling_over_point_distribution(limit as f64, segment_probability)
-                .unwrap_or(limit),
-            limit,
-        )
-    } else {
-        limit
+fn sampling_limit(limit: usize, ef_limit: Option<usize>, segment_points: usize, total_points: usize) -> usize {
+    // shortcut empty segment
+    if segment_points == 0 {
+        return 0;
     }
+    let segment_probability = segment_points as f64 / total_points as f64;
+    let poisson_sampling = find_search_sampling_over_point_distribution(limit as f64, segment_probability).unwrap_or(limit);
+    let res = if poisson_sampling > limit {
+        // sampling cannot be greater than limit
+        return limit;
+    } else {
+        // sampling should not be less than ef_limit
+        max(poisson_sampling, ef_limit.unwrap_or(0))
+    };
+    log::warn!(
+        "sampling: {}, poisson: {} segment_probability: {}, segment_points: {}, total_points: {}",
+        res, poisson_sampling, segment_probability, segment_points, total_points
+    );
+    res
 }
 
 /// Process sequentially contiguous batches
@@ -390,13 +393,11 @@ async fn search_in_segment(
                 let read_segment = locked_segment.read();
                 let segment_points = read_segment.points_count();
                 let top = if use_sampling {
-                    let param_limit = prev_params
+                    let ef_limit = prev_params
                         .params
                         .and_then(|p| p.hnsw_ef)
-                        .or(hnsw_ef_construct)
-                        .unwrap_or(prev_params.top);
-                    sampling_limit(
-                        min(param_limit, prev_params.top),
+                        .or(hnsw_ef_construct);
+                    sampling_limit(prev_params.top, ef_limit,
                         segment_points,
                         total_points,
                     )
@@ -432,13 +433,12 @@ async fn search_in_segment(
         let read_segment = locked_segment.read();
         let segment_points = read_segment.points_count();
         let top = if use_sampling {
-            let param_limit = prev_params
+            let ef_limit = prev_params
                 .params
                 .and_then(|p| p.hnsw_ef)
-                .or(hnsw_ef_construct)
-                .unwrap_or(prev_params.top);
+                .or(hnsw_ef_construct);
             sampling_limit(
-                min(param_limit, prev_params.top),
+                 prev_params.top, ef_limit,
                 segment_points,
                 total_points,
             )
@@ -608,11 +608,16 @@ mod tests {
 
     #[test]
     fn test_sampling_limit() {
-        assert_eq!(sampling_limit(1000, 464530, 35103551), 30);
+        assert_eq!(sampling_limit(1000, None, 464530, 35103551), 30);
+    }
+
+    #[test]
+    fn test_sampling_limit_ef() {
+        assert_eq!(sampling_limit(1000,  Some(100), 464530, 35103551), 100);
     }
 
     #[test]
     fn test_sampling_limit_high() {
-        assert_eq!(sampling_limit(1000000, 464530, 35103551), 1000000);
+        assert_eq!(sampling_limit(1000000, None, 464530, 35103551), 1000000);
     }
 }
