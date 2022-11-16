@@ -1,3 +1,5 @@
+mod test_search_aggregation;
+
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;

@@ -109,8 +109,13 @@ impl ShardOperation for LocalShard {
         for req in &request.searches {
             collection_params.get_vector_params(req.vector.get_name())?;
         }
-        let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
-            .await?;
+        let res = SegmentsSearcher::search(
+            self.segments(),
+            request.clone(),
+            search_runtime_handle,
+            true,
+        )
+        .await?;
         let top_results = res
             .into_iter()
             .zip(request.searches.iter())
