@@ -46,7 +46,7 @@ pub async fn do_list_full_snapshots(
 pub async fn do_create_full_snapshot(
     toc: &TableOfContent,
 ) -> Result<SnapshotDescription, StorageError> {
-    let snapshot_dir = Path::new(toc.snapshots_path());
+    let snapshot_dir = Path::new(toc.snapshots_path()).to_path_buf();
 
     let all_collections = toc.all_collections().await;
     let mut created_snapshots: Vec<(&str, SnapshotDescription)> = vec![];
@@ -90,19 +90,31 @@ pub async fn do_create_full_snapshot(
     }
 
     let full_snapshot_path = snapshot_dir.join(&snapshot_name);
-    // have to use std here, cause TarBuilder is not async
-    let file = std::fs::File::create(&full_snapshot_path)?;
-    let mut builder = TarBuilder::new(file);
-    for (collection_name, snapshot_details) in created_snapshots {
-        let snapshot_path = snapshot_dir
-            .join(collection_name)
-            .join(&snapshot_details.name);
-        builder.append_path_with_name(&snapshot_path, &snapshot_details.name)?;
-        tokio::fs::remove_file(snapshot_path).await?;
-    }
-    builder.append_path_with_name(&config_path, "config.json")?;
 
-    builder.finish()?;
+    let config_path_clone = config_path.clone();
+    let full_snapshot_path_clone = full_snapshot_path.clone();
+    let created_snapshots_clone: Vec<_> = created_snapshots
+        .iter()
+        .map(|(x, y)| (x.to_string(), y.to_owned()))
+        .collect();
+    let archiving = tokio::task::spawn_blocking(move || {
+        // have to use std here, cause TarBuilder is not async
+        let file = std::fs::File::create(&full_snapshot_path_clone)?;
+        let mut builder = TarBuilder::new(file);
+        for (collection_name, snapshot_details) in created_snapshots_clone {
+            let snapshot_path = snapshot_dir
+                .join(collection_name)
+                .join(&snapshot_details.name);
+            builder.append_path_with_name(&snapshot_path, &snapshot_details.name)?;
+            std::fs::remove_file(snapshot_path)?;
+        }
+        builder.append_path_with_name(&config_path_clone, "config.json")?;
+
+        builder.finish()?;
+        Ok::<(), StorageError>(())
+    });
+
+    archiving.await??;
 
     tokio::fs::remove_file(&config_path).await?;
 
