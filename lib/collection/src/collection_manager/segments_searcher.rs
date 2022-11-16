@@ -8,7 +8,10 @@ use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
-use segment::types::{Filter, PointIdType, ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayload, WithPayloadInterface, WithVector, Indexes};
+use segment::types::{
+    Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig,
+    SeqNumberType, WithPayload, WithPayloadInterface, WithVector,
+};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
@@ -125,7 +128,7 @@ impl SegmentsSearcher {
                         && retrieved_points < required_limit
                         && segment_lowest_score >= lowest_batch_score
                     {
-                        log::warn!("Search to re-run without sampling on segment_id: {} segment_lowest_score: {}, lowest_batch_score: {}, retrieved_points: {}, required_limit: {}", segment_id, segment_lowest_score, lowest_batch_score, retrieved_points, required_limit);
+                        log::debug!("Search to re-run without sampling on segment_id: {} segment_lowest_score: {}, lowest_batch_score: {}, retrieved_points: {}, required_limit: {}", segment_id, segment_lowest_score, lowest_batch_score, retrieved_points, required_limit);
                         // It is possible, that current segment can have better results than
                         // the lowest score in the batch. In that case, we need to re-run the search
                         // without sampling on that segment.
@@ -147,7 +150,6 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        log::warn!("Search batch_request");
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
         // does not impl Send trait
@@ -314,13 +316,20 @@ struct BatchSearchParams<'a> {
 }
 
 /// Returns suggested search sampling size for a given number of points and required limit.
-fn sampling_limit(limit: usize, ef_limit: Option<usize>, segment_points: usize, total_points: usize) -> usize {
+fn sampling_limit(
+    limit: usize,
+    ef_limit: Option<usize>,
+    segment_points: usize,
+    total_points: usize,
+) -> usize {
     // shortcut empty segment
     if segment_points == 0 {
         return 0;
     }
     let segment_probability = segment_points as f64 / total_points as f64;
-    let poisson_sampling = find_search_sampling_over_point_distribution(limit as f64, segment_probability).unwrap_or(limit);
+    let poisson_sampling =
+        find_search_sampling_over_point_distribution(limit as f64, segment_probability)
+            .unwrap_or(limit);
     let res = if poisson_sampling > limit {
         // sampling cannot be greater than limit
         return limit;
@@ -328,9 +337,13 @@ fn sampling_limit(limit: usize, ef_limit: Option<usize>, segment_points: usize, 
         // sampling should not be less than ef_limit
         max(poisson_sampling, ef_limit.unwrap_or(0))
     };
-    log::warn!(
+    log::trace!(
         "sampling: {}, poisson: {} segment_probability: {}, segment_points: {}, total_points: {}",
-        res, poisson_sampling, segment_probability, segment_points, total_points
+        res,
+        poisson_sampling,
+        segment_probability,
+        segment_points,
+        total_points
     );
     res
 }
@@ -356,11 +369,6 @@ async fn search_in_segment(
     use_sampling: bool,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let batch_size = request.searches.len();
-    // None if plain index, Some if hnsw.
-    let hnsw_ef_construct = match segment.get().read().config().index {
-        Indexes::Plain { .. } => None,
-        Indexes::Hnsw(config) => Some(config.ef_construct),
-    };
 
     let mut result: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
     let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // true if segment have more points to return
@@ -396,11 +404,8 @@ async fn search_in_segment(
                     let ef_limit = prev_params
                         .params
                         .and_then(|p| p.hnsw_ef)
-                        .or(hnsw_ef_construct);
-                    sampling_limit(prev_params.top, ef_limit,
-                        segment_points,
-                        total_points,
-                    )
+                        .or_else(|| config_hnsw_ef_construct(read_segment.config()));
+                    sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
                 } else {
                     prev_params.top
                 };
@@ -436,12 +441,8 @@ async fn search_in_segment(
             let ef_limit = prev_params
                 .params
                 .and_then(|p| p.hnsw_ef)
-                .or(hnsw_ef_construct);
-            sampling_limit(
-                 prev_params.top, ef_limit,
-                segment_points,
-                total_points,
-            )
+                .or_else(|| config_hnsw_ef_construct(read_segment.config()));
+            sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
         } else {
             prev_params.top
         };
@@ -461,6 +462,14 @@ async fn search_in_segment(
     }
 
     Ok((result, further_results))
+}
+
+/// None if plain index, Some if hnsw.
+fn config_hnsw_ef_construct(config: SegmentConfig) -> Option<usize> {
+    match config.index {
+        Indexes::Plain { .. } => None,
+        Indexes::Hnsw(config) => Some(config.ef_construct),
+    }
 }
 
 #[cfg(test)]
@@ -613,7 +622,7 @@ mod tests {
 
     #[test]
     fn test_sampling_limit_ef() {
-        assert_eq!(sampling_limit(1000,  Some(100), 464530, 35103551), 100);
+        assert_eq!(sampling_limit(1000, Some(100), 464530, 35103551), 100);
     }
 
     #[test]
