@@ -277,11 +277,13 @@ fn default_max_indexing_threads() -> usize {
     0
 }
 
+pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
+
 impl Default for HnswConfig {
     fn default() -> Self {
         HnswConfig {
             m: 16,
-            ef_construct: 100,
+            ef_construct: DEFAULT_HNSW_EF_CONSTRUCT,
             full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
             max_indexing_threads: 0,
         }
