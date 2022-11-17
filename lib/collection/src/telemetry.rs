@@ -22,7 +22,7 @@ impl Anonymize for CollectionTelemetry {
             config: self.config.anonymize(),
             init_time_ms: self.init_time_ms,
             shards: self.shards.anonymize(),
-            transfers: vec![]
+            transfers: vec![],
         }
     }
 }
