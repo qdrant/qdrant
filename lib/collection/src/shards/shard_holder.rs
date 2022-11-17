@@ -8,7 +8,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
@@ -119,6 +119,24 @@ impl ShardHolder {
             transfers.retain(|transfer| !key.check(transfer));
             before_remove != transfers.len() // `true` if something was removed
         })?)
+    }
+
+    pub fn get_shard_transfer_info(&self) -> Vec<ShardTransferInfo> {
+        let mut shard_transfers = vec![];
+        for shard_transfer in self.shard_transfers.read().iter() {
+            let shard_id = shard_transfer.shard_id;
+            let to = shard_transfer.to;
+            let from = shard_transfer.from;
+            let sync = shard_transfer.sync;
+            shard_transfers.push(ShardTransferInfo {
+                shard_id,
+                from,
+                to,
+                sync,
+            })
+        }
+        shard_transfers.sort_by_key(|k| k.shard_id);
+        shard_transfers
     }
 
     pub fn set_shard_replica_state(

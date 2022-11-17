@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -7,18 +8,21 @@ use segment::telemetry::SegmentTelemetry;
 use serde::{Deserialize, Serialize};
 
 use crate::operations::types::OptimizersStatus;
-use crate::shards::shard::ShardId;
+use crate::shards::replica_set::ReplicaState;
+use crate::shards::shard::{PeerId, ShardId};
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct ReplicaSetTelemetry {
     pub id: ShardId,
     pub local: Option<LocalShardTelemetry>,
     pub remote: Vec<RemoteShardTelemetry>,
+    pub replicate_states: HashMap<PeerId, ReplicaState>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct RemoteShardTelemetry {
     pub shard_id: ShardId,
+    pub peer_id: Option<PeerId>,
     pub searches: OperationDurationStatistics,
     pub updates: OperationDurationStatistics,
 }
@@ -70,6 +74,7 @@ impl Anonymize for RemoteShardTelemetry {
     fn anonymize(&self) -> Self {
         RemoteShardTelemetry {
             shard_id: self.shard_id,
+            peer_id: None,
             searches: self.searches.anonymize(),
             updates: self.updates.anonymize(),
         }
@@ -82,6 +87,7 @@ impl Anonymize for ReplicaSetTelemetry {
             id: self.id,
             local: self.local.anonymize(),
             remote: self.remote.anonymize(),
+            replicate_states: Default::default(),
         }
     }
 }
