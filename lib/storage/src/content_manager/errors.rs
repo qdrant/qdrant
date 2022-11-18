@@ -202,3 +202,11 @@ impl From<reqwest::Error> for StorageError {
         }
     }
 }
+
+impl From<tokio::task::JoinError> for StorageError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        StorageError::ServiceError {
+            description: format!("Tokio task join error: {}", err),
+        }
+    }
+}

@@ -1434,12 +1434,19 @@ impl Collection {
             .await
             .save(&snapshot_path_with_tmp_extension)?;
 
-        // have to use std here, cause TarBuilder is not async
-        let file = std::fs::File::create(&snapshot_path_with_arc_extension)?;
-        let mut builder = TarBuilder::new(file);
-        // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
-        builder.append_dir_all(".", &snapshot_path_with_tmp_extension)?;
-        builder.finish()?;
+        let snapshot_path_with_arc_extension_clone = snapshot_path_with_arc_extension.clone();
+        let snapshot_path_with_tmp_extension_clone = snapshot_path_with_tmp_extension.clone();
+        let archiving = tokio::task::spawn_blocking(move || {
+            // have to use std here, cause TarBuilder is not async
+            let file = std::fs::File::create(&snapshot_path_with_arc_extension_clone)?;
+            let mut builder = TarBuilder::new(file);
+            // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
+            builder.append_dir_all(".", &snapshot_path_with_tmp_extension_clone)?;
+            builder.finish()?;
+            Ok::<_, CollectionError>(())
+        });
+
+        archiving.await??;
 
         // remove temporary snapshot directory
         remove_dir_all(&snapshot_path_with_tmp_extension).await?;
