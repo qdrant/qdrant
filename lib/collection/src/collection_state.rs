@@ -76,6 +76,7 @@ impl State {
         // updating replication factor
         let mut config = collection.config.write().await;
         config.params.replication_factor = new_config.params.replication_factor;
+        config.params.write_consistency_factor = new_config.params.write_consistency_factor;
         Ok(())
     }
 
