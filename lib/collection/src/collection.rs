@@ -1278,7 +1278,7 @@ impl Collection {
         let mut shard_transfers = Vec::new();
         let count_request = Arc::new(CountRequest {
             filter: None,
-            exact: true,
+            exact: false, // Don't need exact count of unique ids here, only size estimation
         });
         // extract shards info
         for (shard_id, replica_set) in shards_holder.get_shards() {
