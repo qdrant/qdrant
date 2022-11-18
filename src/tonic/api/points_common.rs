@@ -257,11 +257,11 @@ pub async fn create_field_index(
         field_index_params,
     } = create_field_index_collection;
 
-    let filed_type_parsed = field_type
+    let field_type_parsed = field_type
         .map(FieldType::from_i32)
         .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
 
-    let field_schema = match (filed_type_parsed, field_index_params) {
+    let field_schema = match (field_type_parsed, field_index_params) {
         (
             Some(v),
             Some(PayloadIndexParams {

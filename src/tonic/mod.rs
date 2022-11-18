@@ -59,7 +59,7 @@ pub fn init(
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
 
-            let service = QdrantService::default();
+            let qdrant_service = QdrantService::default();
             let collections_service = CollectionsService::new(dispatcher.clone());
             let points_service = PointsService::new(dispatcher.toc().clone());
             let snapshot_service = SnapshotsService::new(dispatcher.toc().clone());
@@ -70,10 +70,18 @@ pub fn init(
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
-                .add_service(QdrantServer::new(service))
-                .add_service(CollectionsServer::new(collections_service))
-                .add_service(PointsServer::new(points_service))
-                .add_service(SnapshotsServer::new(snapshot_service))
+                .add_service(QdrantServer::new(qdrant_service).send_gzip().accept_gzip())
+                .add_service(
+                    CollectionsServer::new(collections_service)
+                        .send_gzip()
+                        .accept_gzip(),
+                )
+                .add_service(PointsServer::new(points_service).send_gzip().accept_gzip())
+                .add_service(
+                    SnapshotsServer::new(snapshot_service)
+                        .send_gzip()
+                        .accept_gzip(),
+                )
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
                     log::debug!("Stopping gRPC");
@@ -109,7 +117,7 @@ pub fn init_internal(
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
-            let service = QdrantService::default();
+            let qdrant_service = QdrantService::default();
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
             let raft_service = RaftService::new(to_consensus, consensus_state);
@@ -120,10 +128,18 @@ pub fn init_internal(
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
-                .add_service(QdrantServer::new(service))
-                .add_service(CollectionsInternalServer::new(collections_internal_service))
-                .add_service(PointsInternalServer::new(points_internal_service))
-                .add_service(RaftServer::new(raft_service))
+                .add_service(QdrantServer::new(qdrant_service).send_gzip().accept_gzip())
+                .add_service(
+                    CollectionsInternalServer::new(collections_internal_service)
+                        .send_gzip()
+                        .accept_gzip(),
+                )
+                .add_service(
+                    PointsInternalServer::new(points_internal_service)
+                        .send_gzip()
+                        .accept_gzip(),
+                )
+                .add_service(RaftServer::new(raft_service).send_gzip().accept_gzip())
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
                     log::debug!("Stopping internal gRPC");

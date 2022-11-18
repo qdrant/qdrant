@@ -1,10 +1,11 @@
 import http from "k6/http";
 import { check, group } from 'k6';
 import { Counter } from 'k6/metrics';
+import { random_city, random_vector } from '/code/utils.js';
 
 // test system parameters
 let host = 'http://localhost:6333'
-let collection_name = 'stress_collection';
+let collection_name = 'rest_stress';
 let shard_count = 1; // increase in distributed mode
 let replica_count = 1; // increase in distributed mode
 
@@ -16,29 +17,20 @@ let points_search_url = `${host}/collections/${collection_name}/points/search`;
 
 // test payload parameters
 let vector_length = 128;
-let vectors_per_batch = 32;
+let points_per_batch = 32;
+let number_of_points = 300000;
 
 export const options = {
+    discardResponseBodies: true, // decrease memory usage
     scenarios: {
         upsert_points: {
             // function to execute
             exec: "upsert_points",
             // execution options
-            executor: "ramping-vus",
-            stages: [{
-                duration: '1m', target: 30
-            }],
-        },
-        search_points: {
-            // schedule this scenario to start after the upserts (remove for mixed workload)
-            startTime: "1m",
-            // function to execute
-            exec: "search_points",
-            // execution options
-            executor: "ramping-vus",
-            stages: [{
-                duration: "1m", target: 30
-            }],
+            executor: 'shared-iterations',
+            vus: 30, // number of VUs to run concurrently
+            iterations: number_of_points / points_per_batch, //total number of iterations
+            maxDuration: '10m',
         },
     },
 };
@@ -66,74 +58,14 @@ var create_payload_index_payload = JSON.stringify(
 var params = {
     headers: {
         'Content-Type': 'application/json',
+        'Accept-Encoding': 'gzip',
     },
 };
-
-var cities = [
-    "Tokyo",
-    "Delhi",
-    "Shanghai",
-    "São Paulo",
-    "Mexico City",
-    "Cairo",
-    "Mumbai",
-    "Beijing",
-    "Dhaka",
-    "Osaka",
-    "New York City",
-    "Karachi",
-    "Buenos Aires",
-    "Chongqing",
-    "Istanbul",
-    "Kolkata",
-    "Manila",
-    "Lagos",
-    "Rio de Janeiro",
-    "Tianjin",
-    "Kinshasa",
-    "Guangzhou",
-    "Los Angeles",
-    "Moscow",
-    "Shenzhen",
-    "Lahore",
-    "Bangalore",
-    "Paris",
-    "Bogotá",
-    "Jakarta",
-    "Chennai",
-    "Lima",
-    "Bangkok",
-    "Seoul",
-    "Nagoya",
-    "Hyderabad",
-    "London",
-    "Tehran",
-    "Chicago",
-    "Chengdu",
-    "Nanjing",
-    "Wuhan",
-    "Ho Chi Minh City",
-    "Luanda",
-    "Ahmedabad",
-    "Kuala Lumpur",
-    "Xi'an",
-    "Hong Kong",
-    "Dongguan",
-    "Hangzhou"
-]
-
-function random_vector() {
-    return Array.from({ length: vector_length }, () => Math.random());
-}
-
-function random_city() {
-    return cities[Math.round(Math.random()*(cities.length-1))];
-}
 
 function generate_point() {
     var idx = Math.floor(Math.random() * 1000000000);
     var count = Math.floor(Math.random() * 100);
-    var vector = random_vector();
+    var vector = random_vector(vector_length);
     var city = random_city();
 
     return {
@@ -167,45 +99,15 @@ export function setup() {
 }
 
 export function upsert_points() {
-    pointsCount.add(vectors_per_batch);
     // points payload
     var payload = JSON.stringify({
-        "points": Array.from({ length: vectors_per_batch }, () => generate_point()),
+        "points": Array.from({ length: points_per_batch }, () => generate_point()),
     });
     // run upsert
     let res_upsert = http.put(points_url, payload, params);
     check(res_upsert, {
         'upsert_points is status 200': (r) => r.status === 200,
     });
-}
-
-export function search_points() {
-    // generate random search query
-    var filter_payload =
-        {
-            "filter": {
-                "must": [
-                    {
-                        "key": "city",
-                        "match": {
-                            "value": random_city()
-                        }
-                    }
-                ]
-            },
-            "with_vector": true,
-            "with_payload": true,
-            "vector": random_vector(),
-            "limit": 10
-        }
-
-    let res_get = http.post(points_search_url, JSON.stringify(filter_payload), params);
-    //console.log(res_get.body);
-    check(res_get, {
-        'search_points is status 200': (r) => r.status === 200,
-    });
-}
-
-export function teardown() {
-    console.log('Done');
+    // track number of points created
+    pointsCount.add(points_per_batch);
 }

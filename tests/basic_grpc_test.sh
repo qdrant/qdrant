@@ -14,7 +14,6 @@ $docker_grpcurl -d '{
    "collection_name": "test_collection"
 }' $QDRANT_HOST qdrant.Collections/Delete
 
-
 $docker_grpcurl -d '{
    "collection_name": "test_collection",
    "vectors_config": {
