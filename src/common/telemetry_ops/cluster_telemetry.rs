@@ -76,7 +76,7 @@ impl ClusterTelemetry {
                     role: cluster_info.raft_info.role,
                     is_voter: cluster_info.raft_info.is_voter,
                     peer_id: Some(cluster_info.peer_id),
-                    consensus_thread_status: cluster_info.consensus_thread_status.clone(),
+                    consensus_thread_status: cluster_info.consensus_thread_status,
                 }),
             }
         } else {
