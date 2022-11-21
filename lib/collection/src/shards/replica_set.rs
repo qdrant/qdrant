@@ -645,6 +645,7 @@ impl ShardReplicaSet {
                 .iter()
                 .map(|remote| remote.get_telemetry_data())
                 .collect(),
+            replicate_states: self.replica_state.read().peers.clone(),
         }
     }
 

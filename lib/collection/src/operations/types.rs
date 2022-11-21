@@ -115,7 +115,7 @@ pub struct CollectionClusterInfo {
     pub shard_transfers: Vec<ShardTransferInfo>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct ShardTransferInfo {
     pub shard_id: ShardId,
     pub from: PeerId,
