@@ -1,8 +1,9 @@
+use collection::shards::shard::PeerId;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use storage::dispatcher::Dispatcher;
-use storage::types::{ClusterStatus, StateRole};
+use storage::types::{ClusterStatus, ConsensusThreadStatus, StateRole};
 
 use crate::settings::Settings;
 
@@ -49,6 +50,8 @@ pub struct ClusterStatusTelemetry {
     pub pending_operations: usize,
     pub role: Option<StateRole>,
     pub is_voter: bool,
+    pub peer_id: Option<PeerId>,
+    pub consensus_thread_status: ConsensusThreadStatus,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -72,6 +75,8 @@ impl ClusterTelemetry {
                     pending_operations: cluster_info.raft_info.pending_operations,
                     role: cluster_info.raft_info.role,
                     is_voter: cluster_info.raft_info.is_voter,
+                    peer_id: Some(cluster_info.peer_id),
+                    consensus_thread_status: cluster_info.consensus_thread_status,
                 }),
             }
         } else {
@@ -104,7 +109,16 @@ impl Anonymize for ClusterTelemetry {
 
 impl Anonymize for ClusterStatusTelemetry {
     fn anonymize(&self) -> Self {
-        self.clone()
+        ClusterStatusTelemetry {
+            number_of_peers: self.number_of_peers,
+            term: self.term,
+            commit: self.commit,
+            pending_operations: self.pending_operations,
+            role: self.role,
+            is_voter: self.is_voter,
+            peer_id: None,
+            consensus_thread_status: self.consensus_thread_status.clone(),
+        }
     }
 }
 

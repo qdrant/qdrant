@@ -32,8 +32,8 @@ use crate::operations::snapshot_ops::{
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
     CountResult, LocalShardInfo, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
-    RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    ShardTransferInfo, UpdateResult, UsingVector,
+    RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
+    UsingVector,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -1275,7 +1275,6 @@ impl Collection {
         let shard_count = shards_holder.len();
         let mut local_shards = Vec::new();
         let mut remote_shards = Vec::new();
-        let mut shard_transfers = Vec::new();
         let count_request = Arc::new(CountRequest {
             filter: None,
             exact: false, // Don't need exact count of unique ids here, only size estimation
@@ -1309,24 +1308,11 @@ impl Collection {
                 });
             }
         }
-        // extract shard transfers info
-        for shard_transfer in shards_holder.shard_transfers.read().iter() {
-            let shard_id = shard_transfer.shard_id;
-            let to = shard_transfer.to;
-            let from = shard_transfer.from;
-            let sync = shard_transfer.sync;
-            shard_transfers.push(ShardTransferInfo {
-                shard_id,
-                from,
-                to,
-                sync,
-            })
-        }
+        let shard_transfers = shards_holder.get_shard_transfer_info();
 
         // sort by shard_id
         local_shards.sort_by_key(|k| k.shard_id);
         remote_shards.sort_by_key(|k| k.shard_id);
-        shard_transfers.sort_by_key(|k| k.shard_id);
 
         let info = CollectionClusterInfo {
             peer_id,
@@ -1371,13 +1357,13 @@ impl Collection {
     }
 
     pub async fn get_telemetry_data(&self) -> CollectionTelemetry {
-        let shards_telemetry = {
+        let (shards_telemetry, transfers) = {
             let mut shards_telemetry = Vec::new();
             let shards_holder = self.shards_holder.read().await;
             for shard in shards_holder.all_shards() {
                 shards_telemetry.push(shard.get_telemetry_data().await)
             }
-            shards_telemetry
+            (shards_telemetry, shards_holder.get_shard_transfer_info())
         };
 
         CollectionTelemetry {
@@ -1385,6 +1371,7 @@ impl Collection {
             init_time_ms: self.init_time.as_millis() as u64,
             config: self.config.read().await.clone(),
             shards: shards_telemetry,
+            transfers,
         }
     }
 
