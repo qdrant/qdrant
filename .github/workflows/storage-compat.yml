@@ -28,7 +28,7 @@ jobs:
       - name: Install protoc
         run: .github/scripts/protoc.sh
         shell: bash
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
       - name: Run storage compatibility test
         run: ./tests/storage-compat/storage-compatibility.sh
         shell: bash

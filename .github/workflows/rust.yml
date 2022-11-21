@@ -21,7 +21,7 @@ jobs:
         profile: minimal
         toolchain: stable
     - uses: actions/checkout@v3
-    - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v2
     - name: Install dependencies
       run: sudo apt-get install clang
     - name: Install protoc

@@ -15,7 +15,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v2
     - name: Get current tag
       id: vars
       run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
