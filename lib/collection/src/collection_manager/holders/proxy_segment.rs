@@ -492,7 +492,7 @@ impl SegmentEntry for ProxySegment {
         let write_segment_count = self.write_segment.get().read().points_count();
         count += wrapped_segment_count;
         count += write_segment_count;
-        count -= count.saturating_sub(deleted_points_count);
+        count = count.saturating_sub(deleted_points_count);
         count
     }
 
