@@ -28,6 +28,12 @@ def get_local_shards(peer_api_uri):
     return r.json()["result"]['local_shards']
 
 
+def get_remote_shards(peer_api_uri):
+    r = requests.get(f"{peer_api_uri}/collections/{COLLECTION_NAME}/cluster")
+    assert_http_ok(r)
+    return r.json()["result"]['remote_shards']
+
+
 def recover_snapshot(peer_api_uri, snapshot_url):
     r = requests.put(f"{peer_api_uri}/collections/{COLLECTION_NAME}/snapshots/recover",
                      json={"location": snapshot_url})
@@ -68,6 +74,7 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
 
     process_peer_id = get_peer_id(peer_api_uris[-1])
     local_shards = get_local_shards(peer_api_uris[-1])
+    # peer_0_remote_shards = get_remote_shards(peer_api_uris[0])
 
     # Kill last peer
     p = processes.pop()
@@ -120,3 +127,9 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     assert len(new_search_result) == len(search_result)
     for i in range(len(new_search_result)):
         assert new_search_result[i] == search_result[i]
+
+    peer_0_remote_shards_new = get_remote_shards(peer_api_uris[0])
+    for shard in peer_0_remote_shards_new:
+        print("remote shard", shard)
+        assert shard['state'] == 'Active'
+    assert len(peer_0_remote_shards_new) == 2 * n_replicas
