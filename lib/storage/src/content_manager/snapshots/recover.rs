@@ -76,13 +76,19 @@ pub async fn do_recover_from_snapshot(
     let this_peer_id = toc.this_peer_id;
 
     for (shard_id, shard_info) in &state.shards {
-        if shard_info.replicas.get(&this_peer_id) != Some(&ReplicaState::Partial) {
-            toc.send_set_replica_state_proposal(
-                collection_name.to_string(),
-                this_peer_id,
-                *shard_id,
-                ReplicaState::Partial,
-            )?;
+        let local_shard_state = shard_info.replicas.get(&this_peer_id);
+        match local_shard_state {
+            None => {} // Shard is not on this node, skip
+            Some(state) => {
+                if state != &ReplicaState::Partial {
+                    toc.send_set_replica_state_proposal(
+                        collection_name.to_string(),
+                        this_peer_id,
+                        *shard_id,
+                        ReplicaState::Partial,
+                    )?;
+                }
+            }
         }
     }
 
