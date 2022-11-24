@@ -875,7 +875,10 @@ impl ShardReplicaSet {
                     let remote_updates = join_all(remote_futures);
 
                     // run local and remote shards read concurrently
-                    let (mut remote_res, local_res) = join(remote_updates, local_update).await;
+                    let (mut remote_res, local_res): (
+                        Vec<Result<UpdateResult, (PeerId, CollectionError)>>,
+                        _,
+                    ) = join(remote_updates, local_update).await;
                     // return both remote and local results
                     remote_res.push(local_res);
                     remote_res
@@ -893,6 +896,7 @@ impl ShardReplicaSet {
         // 2. ???
 
         if !successes.is_empty() {
+            let mut wait_for_deactivation = false;
             // report all failing peers to consensus
             for (peer_id, err) in &failures {
                 log::warn!(
@@ -901,9 +905,20 @@ impl ShardReplicaSet {
                     peer_id,
                     err
                 );
+                match err {
+                    CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. } => {
+                        // If the error is service error, we should deactivate the peer
+                        // before allowing other operations to continue.
+                        // Otherwise, the failed node can become responsive again, before
+                        // the other nodes deactivate it, so the storage might be inconsistent.
+                        wait_for_deactivation = true;
+                    }
+                    _ => {}
+                }
+
                 self.notify_peer_failure(*peer_id);
             }
-            if wait && !failures.is_empty() {
+            if wait && wait_for_deactivation && !failures.is_empty() {
                 // ToDo: allow timeout configuration in API
                 let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
                 let shards_disabled = self.replica_state.wait_for(

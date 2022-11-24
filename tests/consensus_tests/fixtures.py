@@ -11,10 +11,10 @@ def random_vector():
     return [random.random() for _ in range(4)]
 
 
-def upsert_random_points(peer_url, num):
+def upsert_random_points(peer_url, num, collection_name="test_collection", fail_on_error=True):
     # Create points in first peer's collection
     r_batch = requests.put(
-        f"{peer_url}/collections/test_collection/points?wait=true", json={
+        f"{peer_url}/collections/{collection_name}/points?wait=true", json={
             "points": [
                 {
                     "id": i,
@@ -23,7 +23,8 @@ def upsert_random_points(peer_url, num):
                 } for i in range(num)
             ]
         })
-    assert_http_ok(r_batch)
+    if fail_on_error:
+        assert_http_ok(r_batch)
 
 
 def create_collection(peer_url, collection="test_collection", shard_number=1, replication_factor=1, timeout=10):
@@ -37,6 +38,13 @@ def create_collection(peer_url, collection="test_collection", shard_number=1, re
             "shard_number": shard_number,
             "replication_factor": replication_factor,
         })
+    assert_http_ok(r_batch)
+
+
+def drop_collection(peer_url, collection="test_collection", timeout=10):
+    # Create collection in first peer
+    r_batch = requests.delete(
+        f"{peer_url}/collections/{collection}?timeout={timeout}")
     assert_http_ok(r_batch)
 
 
