@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
@@ -83,7 +83,16 @@ impl TableOfContent {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
-        let collection_management_runtime = Runtime::new().unwrap();
+        let collection_management_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_time()
+            .enable_io()
+            .thread_name_fn(|| {
+                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                format!("toc-{}", id)
+            })
+            .build()
+            .unwrap();
         create_dir_all(&collections_path).expect("Can't create Collections directory");
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");

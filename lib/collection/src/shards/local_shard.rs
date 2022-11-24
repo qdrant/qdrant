@@ -199,7 +199,7 @@ impl LocalShard {
             }
             load_handlers.push(
                 thread::Builder::new()
-                    .name("shard-load".to_string())
+                    .name(format!("shard-load-{}-{}", collection_id, id))
                     .spawn(move || load_segment(&segments_path))?,
             );
         }
@@ -322,7 +322,7 @@ impl LocalShard {
                 },
             };
             let segment = thread::Builder::new()
-                .name("shard-build".to_string())
+                .name(format!("shard-build-{}-{}", collection_id, id))
                 .spawn(move || build_segment(&path_clone, &segment_config))
                 .unwrap();
             build_handlers.push(segment);
