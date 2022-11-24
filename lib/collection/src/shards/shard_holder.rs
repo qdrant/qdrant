@@ -73,6 +73,7 @@ impl ShardHolder {
         self.shards.contains_key(shard_id)
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn get_shard(&self, shard_id: &ShardId) -> Option<&ShardReplicaSet> {
         self.shards.get(shard_id)
     }

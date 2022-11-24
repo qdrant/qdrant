@@ -242,6 +242,7 @@ impl Consensus {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn add_peer_to_known_for(
         this_peer_id: PeerId,
         cluster_uri: Uri,
@@ -274,6 +275,7 @@ impl Consensus {
 
     // Re-attach peer to the consensus:
     // Notifies the cluster(any node) that this node changed its address
+    #[tracing::instrument(skip_all)]
     async fn recover(
         state_ref: &ConsensusStateRef,
         uri: Option<String>,
@@ -398,6 +400,7 @@ impl Consensus {
     }
 
     /// Listens for the next proposal and sends it to the Raft node.
+    #[tracing::instrument(skip_all)]
     fn propose_updates(&mut self, timeout: Duration) -> anyhow::Result<()> {
         match self.receiver.recv_timeout(timeout) {
             Ok(Message::FromPeer(message)) => {
@@ -472,6 +475,7 @@ impl Consensus {
     /// So consensus should guarantee that learners are promoted one-by-one.
     /// Promotions are done by leader and only after it has no pending entries,
     /// that guarantees that learner will start voting only after it applies all the changes in the log
+    #[tracing::instrument(skip_all)]
     fn try_promote_learner(&mut self) -> anyhow::Result<bool> {
         let learner = if let Some(learner) = self.find_learner_to_promote() {
             learner
@@ -500,6 +504,7 @@ impl Consensus {
         Ok(true)
     }
 
+    #[tracing::instrument(skip_all)]
     fn find_learner_to_promote(&self) -> Option<u64> {
         let commit = self.node.store().hard_state().commit;
         let learners: HashSet<_> = self
@@ -518,6 +523,7 @@ impl Consensus {
     }
 
     /// Returns `true` if consensus should be stopped, `false` otherwise.
+    #[tracing::instrument(skip_all)]
     fn on_ready(&mut self) -> anyhow::Result<bool> {
         if !self.node.has_ready() {
             return Ok(false);

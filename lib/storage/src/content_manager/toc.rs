@@ -232,6 +232,7 @@ impl TableOfContent {
         Ok(resolved_name)
     }
 
+    #[tracing::instrument(skip(self))]
     async fn create_collection(
         &self,
         collection_name: &str,
@@ -480,6 +481,7 @@ impl TableOfContent {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn update_collection(
         &self,
         mut operation: UpdateCollectionOperation,
@@ -502,6 +504,7 @@ impl TableOfContent {
         Ok(true)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
         if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
             removed.before_drop().await;
@@ -565,6 +568,7 @@ impl TableOfContent {
         Ok(true)
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn perform_collection_meta_op_sync(
         &self,
         operation: CollectionMetaOperations,
@@ -573,6 +577,7 @@ impl TableOfContent {
             .block_on(self.perform_collection_meta_op(operation))
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
@@ -633,6 +638,7 @@ impl TableOfContent {
     }
 
     /// Cancels all transfers where the source peer is the current peer.
+    #[tracing::instrument(skip_all)]
     pub async fn cancel_outgoing_all_transfers(&self, reason: &str) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
@@ -649,6 +655,7 @@ impl TableOfContent {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn handle_transfer(
         &self,
         collection_id: CollectionId,
@@ -733,6 +740,7 @@ impl TableOfContent {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn get_collection(
         &self,
         collection_name: &str,
@@ -748,6 +756,7 @@ impl TableOfContent {
     /// Initiate receiving shard.
     ///
     /// Fails if the collection does not exist
+    #[tracing::instrument(skip_all)]
     pub async fn initiate_receiving_shard(
         &self,
         collection_name: String,
@@ -907,6 +916,7 @@ impl TableOfContent {
     }
 
     /// List of all collections
+    #[tracing::instrument(skip_all)]
     pub async fn all_collections(&self) -> Vec<String> {
         self.collections.read().await.keys().cloned().collect()
     }
@@ -957,6 +967,7 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn update(
         &self,
         collection_name: &str,
@@ -1005,6 +1016,7 @@ impl TableOfContent {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn apply_collections_snapshot(
         &self,
         data: consensus_manager::CollectionsSnapshot,
@@ -1152,6 +1164,7 @@ impl TableOfContent {
         result
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         for collection in self.collections.read().await.values() {
             let state = collection.state().await;

@@ -8,6 +8,7 @@ use tonic::{Response, Status};
 
 use crate::common::collections::do_get_collection;
 
+#[tracing::instrument(skip(toc))]
 pub async fn get(
     toc: &TableOfContent,
     get_collection_info_request: GetCollectionInfoRequest,

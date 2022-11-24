@@ -194,6 +194,7 @@ pub async fn handle_transferred_shard_proxy(
     Ok(true)
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn transfer_shard(
     shard_holder: Arc<LockedShardHolder>,
     shard_id: ShardId,
@@ -401,6 +402,7 @@ pub fn suggest_peer_to_remove_replica(
     candidates.into_iter().next().map(|(peer_id, _, _)| peer_id)
 }
 
+#[tracing::instrument(skip_all)]
 pub fn spawn_transfer_task<T, F>(
     shards_holder: Arc<LockedShardHolder>,
     transfer: ShardTransfer,

@@ -87,6 +87,7 @@ pub trait SegmentOptimizer {
     }
 
     /// Build optimized segment
+    #[tracing::instrument(skip_all)]
     fn optimized_segment_builder(
         &self,
         optimizing_segments: &[LockedSegment],
@@ -204,6 +205,7 @@ pub trait SegmentOptimizer {
     /// All processed changes will still be there, but the collection should be returned
     /// into state before optimization.
     ///
+    #[tracing::instrument(skip_all)]
     fn handle_cancellation(
         &self,
         segments: &LockedSegmentHolder,
@@ -232,6 +234,7 @@ pub trait SegmentOptimizer {
     /// # Result
     ///
     /// Constructs optimized segment
+    #[tracing::instrument(skip_all)]
     fn build_new_segment(
         &self,
         optimizing_segments: &[LockedSegment],
@@ -315,6 +318,7 @@ pub trait SegmentOptimizer {
     /// New optimized segment should be added into `segments`.
     /// If there were any record changes during the optimization - an additional plain segment will be created.
     ///
+    #[tracing::instrument(skip_all)]
     fn optimize(
         &self,
         segments: LockedSegmentHolder,

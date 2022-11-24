@@ -37,6 +37,7 @@ tonic = "0.7.2"
 tower = "0.4.13"
 uuid = { version = "1.2", features = ["v4", "serde"] }
 url = { version = "2", features = ["serde"] }
+tracing = "0.1.35"
 
 segment = {path = "../segment"}
 api = {path = "../api"}

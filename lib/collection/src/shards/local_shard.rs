@@ -158,6 +158,7 @@ impl LocalShard {
     }
 
     /// Recovers shard from disk.
+    #[tracing::instrument]
     pub async fn load(
         id: ShardId,
         collection_id: CollectionId,
@@ -373,17 +374,20 @@ impl LocalShard {
         Ok(collection)
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn stop_flush_worker(&self) {
         let mut update_handler = self.update_handler.lock().await;
         update_handler.stop_flush_worker()
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
         let mut update_handler = self.update_handler.lock().await;
         update_handler.wait_workers_stops().await
     }
 
     /// Loads latest collection operations from WAL
+    #[tracing::instrument(skip_all)]
     pub async fn load_from_wal(&self, collection_id: CollectionId) {
         let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());
@@ -410,6 +414,7 @@ impl LocalShard {
         bar.finish();
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         let config = self.config.read().await;
         let mut update_handler = self.update_handler.lock().await;
@@ -435,6 +440,7 @@ impl LocalShard {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn before_drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
         if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {

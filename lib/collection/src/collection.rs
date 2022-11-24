@@ -379,6 +379,7 @@ impl Collection {
         transfers
     }
 
+    #[tracing::instrument(skip_all)]
     async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
     where
         OF: Future<Output = ()> + Send + 'static,
@@ -405,6 +406,7 @@ impl Collection {
         active_transfer_tasks.add_task(&transfer, transfer_task);
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn start_shard_transfer<T, F>(
         &self,
         shard_transfer: ShardTransfer,
@@ -548,6 +550,7 @@ impl Collection {
     /// Initiate local partial shard
     ///
     /// Drops existing temporary shards for `shard_id`.
+    #[tracing::instrument(skip_all)]
     pub async fn initiate_local_partial_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
         let shards_holder = self.shards_holder.read().await;
         let replica_set = match shards_holder.get_shard(&shard_id) {
@@ -586,6 +589,7 @@ impl Collection {
     /// Handle collection updates from peers.
     ///
     /// Shard transfer aware.
+    #[tracing::instrument(skip_all)]
     pub async fn update_from_peer(
         &self,
         operation: CollectionUpdateOperations,
@@ -609,6 +613,7 @@ impl Collection {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,

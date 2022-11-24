@@ -138,6 +138,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .remove(&peer_address.to_string());
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn record_consensus_working(&self) {
         *self.consensus_thread_status.write() = ConsensusThreadStatus::Working {
             last_update: Utc::now(),
@@ -261,6 +262,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// If return Error - consensus should be stopped with error.
     /// Return `true` if consensus should be stopped (peer removed)
     /// Return `false` if everything is ok.
+    #[tracing::instrument(skip_all)]
     pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
         use raft::eraftpb::EntryType;
 
@@ -418,6 +420,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// - Shards operations (transfer, remove, sync)
     /// - e.t.c
     ///
+    #[tracing::instrument(skip_all)]
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
@@ -442,6 +445,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         result
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn apply_snapshot(&self, snapshot: &raft::eraftpb::Snapshot) -> Result<(), StorageError> {
         let meta = snapshot.get_metadata();
         if raft::Storage::first_index(self)? > meta.index {
@@ -519,6 +523,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             )??
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn await_for_multiple_operations(
         &self,
         operations: Vec<ConsensusOperations>,
@@ -559,6 +564,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ///   This is needed to ensure that the operation is committed and applied on majority of the nodes.
     ///   We can not wait for all nodes confirmation, because it is not guaranteed that all nodes will be online.
     ///
+    #[tracing::instrument(skip_all)]
     pub async fn propose_consensus_op_with_await(
         &self,
         operation: ConsensusOperations,

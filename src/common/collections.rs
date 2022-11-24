@@ -19,6 +19,7 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 
+#[tracing::instrument(skip(toc))]
 pub async fn do_get_collection(
     toc: &TableOfContent,
     name: &str,
@@ -28,6 +29,7 @@ pub async fn do_get_collection(
     Ok(collection.info(shard_selection).await?)
 }
 
+#[tracing::instrument(skip(toc))]
 pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
     let collections = toc
         .all_collections()
@@ -65,6 +67,7 @@ pub async fn do_get_collection_cluster(
     Ok(collection.cluster_info(toc.this_peer_id).await?)
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn do_update_collection_cluster(
     toc: &TableOfContent,
     collection_name: String,

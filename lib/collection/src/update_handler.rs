@@ -142,6 +142,7 @@ impl UpdateHandler {
 
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
+    #[tracing::instrument(skip_all)]
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
         let maybe_handle = self.update_worker.take();
         if let Some(handle) = maybe_handle {
@@ -169,6 +170,7 @@ impl UpdateHandler {
 
     /// Checks if there are any failed operations.
     /// If so - attempts to re-apply all failed operations.
+    #[tracing::instrument(skip_all)]
     async fn try_recover(
         segments: LockedSegmentHolder,
         wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
@@ -190,6 +192,7 @@ impl UpdateHandler {
     /// Checks conditions for all optimizers until there is no suggested segment
     /// Starts a task for each optimization
     /// Returns handles for started tasks
+    #[tracing::instrument(skip_all)]
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
@@ -249,6 +252,7 @@ impl UpdateHandler {
         handles
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
@@ -271,6 +275,7 @@ impl UpdateHandler {
         handles.retain(|h| !h.is_finished())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         sender: Sender<OptimizerSignal>,
@@ -311,6 +316,7 @@ impl UpdateHandler {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn update_worker_fn(
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
@@ -370,6 +376,7 @@ impl UpdateHandler {
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 
+    #[tracing::instrument(skip_all)]
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,

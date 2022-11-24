@@ -64,6 +64,7 @@ impl ForwardProxyShard {
 
     /// Move batch of points to the remote shard.
     /// Returns an offset of the next batch to be transferred.
+    #[tracing::instrument(skip_all)]
     pub async fn transfer_batch(
         &self,
         offset: Option<PointIdType>,

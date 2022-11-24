@@ -24,6 +24,7 @@ impl CollectionsInternalService {
 
 #[tonic::async_trait]
 impl CollectionsInternal for CollectionsInternalService {
+    #[tracing::instrument(skip(self))]
     async fn get(
         &self,
         request: Request<GetCollectionInfoRequestInternal>,
@@ -44,6 +45,7 @@ impl CollectionsInternal for CollectionsInternalService {
         .await
     }
 
+    #[tracing::instrument(skip(self))]
     async fn initiate(
         &self,
         request: Request<InitiateShardTransferRequest>,

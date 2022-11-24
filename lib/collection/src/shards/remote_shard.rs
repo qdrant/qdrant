@@ -171,6 +171,7 @@ pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchReque
 #[async_trait]
 #[allow(unused_variables)]
 impl ShardOperation for RemoteShard {
+    #[tracing::instrument(skip_all)]
     async fn update(
         &self,
         operation: CollectionUpdateOperations,

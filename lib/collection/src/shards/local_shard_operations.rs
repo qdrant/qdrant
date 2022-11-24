@@ -23,6 +23,7 @@ impl ShardOperation for LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
+    #[tracing::instrument(skip_all)]
     async fn update(
         &self,
         operation: CollectionUpdateOperations,

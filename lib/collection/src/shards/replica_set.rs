@@ -318,6 +318,7 @@ impl ShardReplicaSet {
     ///
     /// WARN: This method intended to be used only on the initial start of the node.
     /// It does not implement any logic to recover from a failure. Will panic if there is a failure.
+    #[tracing::instrument(skip_all)]
     pub async fn load(
         shard_id: ShardId,
         collection_id: CollectionId,
@@ -404,6 +405,7 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn set_replica_state(&self, peer_id: &PeerId, state: ReplicaState) -> CollectionResult<()> {
         self.replica_state.write(|rs| {
             if rs.this_peer_id == *peer_id {
@@ -414,6 +416,7 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn apply_state(
         &self,
         replicas: HashMap<PeerId, ReplicaState>,
@@ -499,6 +502,7 @@ impl ShardReplicaSet {
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
     /// 3 - Fallbacks to all remaining shards if the optimisations fails.
     /// It does not report failing peer_ids to the consensus.
+    #[tracing::instrument(skip_all)]
     pub async fn execute_read_operation<'a, F, Fut, Res>(
         &'_ self,
         read_operation: F,
@@ -621,6 +625,7 @@ impl ShardReplicaSet {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn before_drop(&mut self) {
         let mut write_local = self.local.write().await;
         if let Some(shard) = &mut *write_local {
@@ -776,6 +781,7 @@ impl ShardReplicaSet {
     }
 
     /// Update local shard if any without forwarding to remote shards
+    #[tracing::instrument(skip_all)]
     pub async fn update_local(
         &self,
         operation: CollectionUpdateOperations,
@@ -826,6 +832,7 @@ impl ShardReplicaSet {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn update(
         &self,
         operation: CollectionUpdateOperations,
@@ -979,6 +986,7 @@ impl ShardReplicaSet {
             .await
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn search(
         &self,
         request: Arc<SearchRequestBatch>,

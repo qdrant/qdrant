@@ -22,6 +22,8 @@ use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
+use opentelemetry::sdk::Resource;
+use opentelemetry::{global, sdk, KeyValue};
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
@@ -31,6 +33,9 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 use crate::common::helpers::create_search_runtime;
 use crate::common::telemetry::TelemetryCollector;
@@ -91,7 +96,7 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     let settings = Settings::new().expect("Can't read config.");
 
-    setup_logger(&settings.log_level);
+    //setup_logger(&settings.log_level);
     setup_panic_hook();
     let args = Args::parse();
 
@@ -119,6 +124,42 @@ fn main() -> anyhow::Result<()> {
     let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
         .expect("Can't create runtime.");
     let runtime_handle = runtime.handle().clone();
+
+    // Tracing
+    runtime_handle.block_on(async {
+        // Create a Jaeger Tracer
+        global::set_text_map_propagator(opentelemetry_jaeger::Propagator::new());
+
+        let tracer_jaeger = opentelemetry_jaeger::new_agent_pipeline()
+            .with_service_name("qdrant")
+            .with_trace_config(
+                sdk::trace::Config::default().with_resource(Resource::new(vec![KeyValue::new(
+                    "service.http_port",
+                    settings.service.http_port.to_string(),
+                )])),
+            )
+            .with_auto_split_batch(true)
+            .install_batch(opentelemetry::runtime::Tokio)
+            .unwrap();
+
+        // Create a tracing layer with the configured tracer
+        let opentelemetry_layer = tracing_opentelemetry::layer()
+            .with_tracer(tracer_jaeger)
+            .with_threads(true);
+
+        let log_layer = tracing_subscriber::fmt::layer()
+            .with_target(false)
+            .with_ansi(true)
+            .with_writer(std::io::stderr);
+
+        // Register Layers
+        tracing_subscriber::registry()
+            .with(log_layer)
+            .with(opentelemetry_layer)
+            .with(EnvFilter::from_default_env())
+            .try_init()
+            .unwrap();
+    });
 
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();

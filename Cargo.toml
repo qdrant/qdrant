@@ -52,6 +52,13 @@ tower-layer = "0.3.2"
 num-traits = "0.2.15"
 tar = "0.4.38"
 
+# tracing
+opentelemetry = { version = "0.18.0", features = ["trace", "metrics", "rt-tokio"] }
+opentelemetry-jaeger = { version = "0.17.0", features = ["rt-tokio"] }
+tracing = "0.1.37"
+tracing-opentelemetry = "0.18.0"
+tracing-subscriber = { version = "0.3.16", features = ["env-filter", "fmt"] }
+
 # Consensus related crates
 raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false }
 slog = "2.7.0"
