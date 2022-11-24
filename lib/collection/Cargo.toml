@@ -29,7 +29,7 @@ tokio = {version = "~1.22", features = ["full"]}
 futures = "0.3.25"
 atomicwrites = "0.3.1"
 log = "0.4"
-env_logger = "0.9.3"
+env_logger = "0.10.0"
 merge = "0.1.0"
 async-trait = "0.1.58"
 arc-swap = "1.5.1"
