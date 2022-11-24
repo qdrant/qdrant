@@ -1,5 +1,4 @@
 use std::sync::mpsc::SyncSender;
-use std::sync::Mutex;
 
 use api::grpc::qdrant::raft_server::Raft;
 use api::grpc::qdrant::{
@@ -7,6 +6,7 @@ use api::grpc::qdrant::{
 };
 use itertools::Itertools;
 use raft::eraftpb::Message as RaftMessage;
+use tokio::sync::Mutex;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use tonic::transport::Uri;
@@ -37,7 +37,7 @@ impl Raft for RaftService {
             })?;
         self.message_sender
             .lock()
-            .map_err(|_| Status::internal("Can't capture the Raft message sender lock"))?
+            .await
             .send(consensus::Message::FromPeer(Box::new(message)))
             .map_err(|_| Status::internal("Can't send Raft message over channel"))?;
         Ok(Response::new(()))
