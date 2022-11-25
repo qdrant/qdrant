@@ -319,20 +319,6 @@ impl GraphLinksConverter {
     }
 }
 
-impl TryFrom<GraphLinksConverter> for GraphLinksMmap {
-    type Error = OperationError;
-
-    fn try_from(converter: GraphLinksConverter) -> Result<Self, Self::Error> {
-        if let Some(path) = converter.path {
-            GraphLinksMmap::load_from_file(&path)
-        } else {
-            Err(OperationError::service_error(
-                "Can`t create GraphLinksMmap from GraphLinksConverter without path",
-            ))
-        }
-    }
-}
-
 pub trait GraphLinks: Default {
     fn load_from_file(path: &Path) -> OperationResult<Self>;
 
