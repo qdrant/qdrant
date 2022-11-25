@@ -271,6 +271,10 @@ pub struct HnswConfig {
     /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[serde(default = "default_max_indexing_threads")]
     pub max_indexing_threads: usize,
+    /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    pub on_disk: Option<bool>,
 }
 
 fn default_max_indexing_threads() -> usize {
@@ -286,6 +290,7 @@ impl Default for HnswConfig {
             ef_construct: DEFAULT_HNSW_EF_CONSTRUCT,
             full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
             max_indexing_threads: 0,
+            on_disk: Some(false),
         }
     }
 }

@@ -3411,7 +3411,7 @@ dependencies = [
 
 [[package]]
 name = "segment"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "atomic_refcell",
  "atomicwrites",

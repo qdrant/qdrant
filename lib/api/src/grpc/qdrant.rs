@@ -86,6 +86,10 @@ pub struct HnswConfigDiff {
     ///Number of parallel threads used for background index building. If 0 - auto selection.
     #[prost(uint64, optional, tag="4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
+    ///
+    ///Store HNSW index on disk. If set to false, index will be stored in RAM.
+    #[prost(bool, optional, tag="5")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WalConfigDiff {
