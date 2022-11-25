@@ -1,14 +1,17 @@
 use std::cmp::min;
 use std::collections::BinaryHeap;
+use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
 
 use super::graph_links::GraphLinks;
+use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
+use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
@@ -65,22 +68,34 @@ impl GraphLayersBase for GraphLayersBuilder {
 }
 
 impl GraphLayersBuilder {
-    pub fn into_graph_layers(self) -> GraphLayers {
+    pub fn get_entry_points(&self) -> MutexGuard<EntryPoints> {
+        self.entry_points.lock()
+    }
+
+    pub fn into_graph_layers<TGraphLinks: GraphLinks>(
+        self,
+        path: Option<&Path>,
+    ) -> OperationResult<GraphLayers<TGraphLinks>> {
         let unlocker_links_layers = self
             .links_layers
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
             .collect();
 
-        GraphLayers {
-            max_level: self.max_level.load(std::sync::atomic::Ordering::Relaxed),
+        let mut links_converter = GraphLinksConverter::new(unlocker_links_layers);
+        if let Some(path) = path {
+            links_converter.save_as(path)?;
+        }
+
+        let links = TGraphLinks::from_converter(links_converter)?;
+        Ok(GraphLayers {
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,
-            links: GraphLinks::from_vec(&unlocker_links_layers),
+            links,
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
-        }
+        })
     }
 
     pub fn new_with_params(
@@ -426,6 +441,7 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
+    use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
@@ -576,7 +592,9 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder.into_graph_layers();
+        let graph = graph_layers_builder
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query);
@@ -601,7 +619,7 @@ mod tests {
             create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
 
         let (_vector_holder_orig, graph_layers_orig) =
-            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng2);
+            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng2, None);
 
         // check is graph_layers_builder links are equeal to graph_layers_orig
         let orig_len = graph_layers_orig.links.num_points();
@@ -657,7 +675,9 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder.into_graph_layers();
+        let graph = graph_layers_builder
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query);
@@ -691,7 +711,9 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
         }
-        let graph_layers = graph_layers_builder.into_graph_layers();
+        let graph_layers = graph_layers_builder
+            .into_graph_layers::<GraphLinksRam>(None)
+            .unwrap();
 
         let num_points = graph_layers.links.num_points();
         eprintln!("number_points = {:#?}", num_points);

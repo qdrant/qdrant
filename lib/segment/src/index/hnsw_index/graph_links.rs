@@ -1,8 +1,27 @@
+use std::cmp::max;
+use std::fs::OpenOptions;
+use std::mem::size_of;
 use std::ops::Range;
+use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use memmap2::{Mmap, MmapMut};
 
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
+
+pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
+
+fn transmute_from_u8<T>(data: &[u8]) -> &[T] {
+    let len = data.len() / size_of::<T>();
+    let ptr = data.as_ptr() as *const T;
+    unsafe { std::slice::from_raw_parts(ptr, len) }
+}
+
+fn transmute_from_u8_mut<T>(data: &mut [u8]) -> &mut [T] {
+    let len = data.len() / size_of::<T>();
+    let ptr = data.as_mut_ptr() as *mut T;
+    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
+}
 
 /*
 Links data for whole graph layers.
@@ -35,26 +54,112 @@ reindex:           142350  142350 142350 142350  (same for each level)
 for lvl > 0:
 links offset = level_offsets[level] + offsets[reindex[point_id]]
 */
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
-pub struct GraphLinks {
-    // all flattened links of all levels
-    links: Vec<PointOffsetType>,
-    // all ranges in `links`. each range is `links[offsets[i]..offsets[i+1]]`
-    // ranges are sorted by level
-    offsets: Vec<usize>,
-    // start offet of each level in `offsets`
-    level_offsets: Vec<usize>,
-    // for level 1 and above: reindex[point_id] = index of point_id in offsets
-    reindex: Vec<PointOffsetType>,
+
+#[derive(Default)]
+struct GraphLinksFileHeader {
+    pub point_count: u64,
+    pub levels_count: u64,
+    pub total_links_len: u64,
+    pub total_offsets_len: u64,
 }
 
-impl GraphLinks {
-    // Convert from graph layers builder links
-    // `Vec<Vec<Vec<_>>>` means:
-    // vector of points -> vector of layers for specific point -> vector of links for specific point and layer
-    pub fn from_vec(edges: &Vec<Vec<Vec<PointOffsetType>>>) -> Self {
+fn reindex_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [PointOffsetType] {
+    let reindex_range = header.get_reindex_range();
+    let reindex_byte_slice = &data[reindex_range];
+    transmute_from_u8(reindex_byte_slice)
+}
+
+fn links_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [PointOffsetType] {
+    let links_range = header.get_links_range();
+    let links_byte_slice = &data[links_range];
+    transmute_from_u8(links_byte_slice)
+}
+
+fn offsets_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [u64] {
+    let offsets_range = header.get_offsets_range();
+    let offsets_byte_slice = &data[offsets_range];
+    transmute_from_u8(offsets_byte_slice)
+}
+
+fn level_offsets(data: &[u8], header: &GraphLinksFileHeader) -> Vec<u64> {
+    let level_offsets_range = header.get_level_offsets_range();
+    let level_offsets_byte_slice = &data[level_offsets_range];
+    let level_offsets: &[u64] = transmute_from_u8(level_offsets_byte_slice);
+    level_offsets.to_vec()
+}
+
+impl GraphLinksFileHeader {
+    pub fn raw_size() -> usize {
+        size_of::<u64>() * 4
+    }
+
+    pub fn serialize_bytes_to(&self, raw_data: &mut [u8]) {
+        let byte_slice = &mut raw_data[0..Self::raw_size()];
+        let arr: &mut [u64] = transmute_from_u8_mut(byte_slice);
+        arr[0] = self.point_count;
+        arr[1] = self.levels_count;
+        arr[2] = self.total_links_len;
+        arr[3] = self.total_offsets_len;
+    }
+
+    pub fn deserialize_bytes_from(raw_data: &[u8]) -> GraphLinksFileHeader {
+        let byte_slice = &raw_data[0..Self::raw_size()];
+        let arr: &[u64] = transmute_from_u8(byte_slice);
+        GraphLinksFileHeader {
+            point_count: arr[0],
+            levels_count: arr[1],
+            total_links_len: arr[2],
+            total_offsets_len: arr[3],
+        }
+    }
+
+    pub fn get_data_size(&self) -> u64 {
+        self.get_offsets_range().end as u64
+    }
+
+    pub fn get_level_offsets_range(&self) -> Range<usize> {
+        // level offsets are stored after header
+        // but we might want to have some extra space for future changes
+        let start = max(64, Self::raw_size());
+        start..start + self.levels_count as usize * size_of::<u64>()
+    }
+
+    pub fn get_reindex_range(&self) -> Range<usize> {
+        let start = self.get_level_offsets_range().end;
+        start..start + self.point_count as usize * size_of::<PointOffsetType>()
+    }
+
+    pub fn get_links_range(&self) -> Range<usize> {
+        let start = self.get_reindex_range().end;
+        start..start + self.total_links_len as usize * size_of::<PointOffsetType>()
+    }
+
+    pub fn get_offsets_range(&self) -> Range<usize> {
+        let start = self.get_links_range().end;
+        start..start + self.total_offsets_len as usize * size_of::<u64>()
+    }
+}
+
+pub struct GraphLinksConverter {
+    edges: Vec<Vec<Vec<PointOffsetType>>>,
+    reindex: Vec<PointOffsetType>,
+    back_index: Vec<usize>,
+    total_links_len: usize,
+    total_offsets_len: usize,
+    path: Option<PathBuf>,
+}
+
+impl GraphLinksConverter {
+    pub fn new(edges: Vec<Vec<Vec<PointOffsetType>>>) -> Self {
         if edges.is_empty() {
-            return Self::default();
+            return Self {
+                edges,
+                reindex: Vec::new(),
+                back_index: Vec::new(),
+                total_links_len: 0,
+                total_offsets_len: 1,
+                path: None,
+            };
         }
 
         // create map from index in `offsets` to point_id
@@ -69,62 +174,184 @@ impl GraphLinks {
             reindex[back_index[i]] = i as PointOffsetType;
         }
 
-        let mut graph_links = GraphLinks {
-            links: Vec::new(),
-            offsets: vec![0],
-            level_offsets: Vec::new(),
+        // estimate size of `links` and `offsets`
+        let mut total_links_len = 0;
+        let mut total_offsets_len = 1;
+        for point in edges.iter() {
+            for layer in point.iter() {
+                total_links_len += layer.len();
+                total_offsets_len += 1;
+            }
+        }
+
+        Self {
+            edges,
             reindex,
+            back_index,
+            total_links_len,
+            total_offsets_len,
+            path: None,
+        }
+    }
+
+    pub fn set_path(&mut self, path: PathBuf) {
+        self.path = Some(path);
+    }
+
+    fn get_header(&self) -> GraphLinksFileHeader {
+        GraphLinksFileHeader {
+            point_count: self.reindex.len() as u64,
+            levels_count: self.get_levels_count() as u64,
+            total_links_len: self.total_links_len as u64,
+            total_offsets_len: self.total_offsets_len as u64,
+        }
+    }
+
+    /// Size of compacted graph in bytes.
+    pub fn data_size(&self) -> u64 {
+        self.get_header().get_data_size()
+    }
+
+    pub fn serialize_to(&self, bytes_data: &mut [u8]) {
+        let header = GraphLinksFileHeader {
+            point_count: self.reindex.len() as u64,
+            levels_count: self.get_levels_count() as u64,
+            total_links_len: self.total_links_len as u64,
+            total_offsets_len: self.total_offsets_len as u64,
         };
 
-        // because back_index is sorted by point`s max layer, we can retrieve max level from `point_id = back_index[0]`
-        let levels_count = edges[back_index[0]].len();
+        header.serialize_bytes_to(bytes_data);
 
-        // fill level 0 links. level 0 is required
-        debug_assert!(levels_count > 0);
-        graph_links.fill_level_links(0, 0..edges.len(), edges);
-
-        // fill other levels links
-        for level in 1..levels_count {
-            let point_id_iter = back_index
-                .iter()
-                .cloned()
-                .take_while(|&point_id| level < edges[point_id].len());
-            graph_links.fill_level_links(level, point_id_iter, edges);
+        {
+            let reindex_range = header.get_reindex_range();
+            let reindex_byte_slice = &mut bytes_data[reindex_range];
+            let reindex_slice: &mut [PointOffsetType] = transmute_from_u8_mut(reindex_byte_slice);
+            reindex_slice.copy_from_slice(&self.reindex);
         }
 
-        graph_links
-    }
+        let mut level_offsets = Vec::new();
+        {
+            let links_range = header.get_links_range();
+            let offsets_range = header.get_offsets_range();
+            let union_range = links_range.start..offsets_range.end;
+            let (links_mmap, offsets_mmap) = bytes_data[union_range]
+                .as_mut()
+                .split_at_mut(links_range.len());
+            let links_mmap: &mut [PointOffsetType] = transmute_from_u8_mut(links_mmap);
+            let offsets_mmap: &mut [u64] = transmute_from_u8_mut(offsets_mmap);
+            offsets_mmap[0] = 0;
 
-    // Convert into graph builder format
-    pub fn to_vec(&self) -> Vec<Vec<Vec<PointOffsetType>>> {
-        let mut result = Vec::new();
-        let num_points = self.num_points();
-        for i in 0..num_points {
-            let mut layers = Vec::new();
-            let num_levels = self.point_level(i as PointOffsetType) + 1;
-            for level in 0..num_levels {
-                let links = self.links(i as PointOffsetType, level).to_vec();
-                layers.push(links);
+            let mut links_pos = 0;
+            let mut offsets_pos = 1;
+            for level in 0..header.levels_count as usize {
+                level_offsets.push(offsets_pos as u64 - 1);
+                self.iterate_level_points(level, |_, links| {
+                    links_mmap[links_pos..links_pos + links.len()].copy_from_slice(links);
+                    links_pos += links.len();
+
+                    offsets_mmap[offsets_pos] = links_pos as u64;
+                    offsets_pos += 1;
+                });
             }
-            result.push(layers);
         }
-        result
+
+        {
+            let level_offsets_range = header.get_level_offsets_range();
+            let level_offsets_byte_slice = &mut bytes_data[level_offsets_range];
+            let level_offsets_slice: &mut [u64] = transmute_from_u8_mut(level_offsets_byte_slice);
+            level_offsets_slice.copy_from_slice(&level_offsets);
+        }
     }
 
-    pub fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![0; self.data_size() as usize];
+        self.serialize_to(&mut bytes);
+        bytes
+    }
+
+    pub fn save_as(&mut self, path: &Path) -> OperationResult<()> {
+        self.path = Some(path.to_path_buf());
+        let tmp_path = path.with_extension("tmp");
+        {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(tmp_path.as_path())?;
+
+            file.set_len(self.data_size())?;
+            let m = unsafe { MmapMut::map_mut(&file) };
+            let mut mmap = m?;
+
+            self.serialize_to(&mut mmap);
+
+            mmap.flush()?;
+        }
+        std::fs::rename(tmp_path, path)?;
+
+        Ok(())
+    }
+
+    pub fn get_levels_count(&self) -> usize {
+        if self.back_index.is_empty() {
+            return 0;
+        }
+        // because back_index is sorted by point`s max layer, we can retrieve max level from `point_id = back_index[0]`
+        self.edges[self.back_index[0]].len()
+    }
+
+    pub fn iterate_level_points<F>(&self, level: usize, mut f: F)
+    where
+        F: FnMut(usize, &Vec<PointOffsetType>),
+    {
+        let edges_len = self.edges.len();
         if level == 0 {
-            self.get_links_at_zero_level(point_id)
+            (0..edges_len).for_each(|point_id| f(point_id, &self.edges[point_id][0]));
         } else {
-            self.get_links_at_nonzero_level(point_id, level)
+            for i in 0..edges_len {
+                let point_id = self.back_index[i];
+                if level >= self.edges[point_id].len() {
+                    break;
+                }
+                f(point_id, &self.edges[point_id][level]);
+            }
+        }
+    }
+}
+
+pub trait GraphLinks: Default {
+    fn load_from_file(path: &Path) -> OperationResult<Self>;
+
+    fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self>;
+
+    fn offsets_len(&self) -> usize;
+
+    fn levels_count(&self) -> usize;
+
+    fn get_links(&self, range: Range<usize>) -> &[PointOffsetType];
+
+    fn get_links_range(&self, idx: usize) -> Range<usize>;
+
+    fn get_level_offset(&self, level: usize) -> usize;
+
+    fn reindex(&self, point_id: PointOffsetType) -> PointOffsetType;
+
+    fn num_points(&self) -> usize;
+
+    fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+        if level == 0 {
+            let links_range = self.get_links_range(point_id as usize);
+            self.get_links(links_range)
+        } else {
+            let reindexed_point_id = self.reindex(point_id) as usize;
+            let layer_offsets_start = self.get_level_offset(level);
+            let links_range = self.get_links_range(layer_offsets_start + reindexed_point_id);
+            self.get_links(links_range)
         }
     }
 
-    pub fn num_points(&self) -> usize {
-        self.reindex.len()
-    }
-
-    pub fn point_level(&self, point_id: PointOffsetType) -> usize {
-        let reindexed_point_id = self.reindex[point_id as usize] as usize;
+    fn point_level(&self, point_id: PointOffsetType) -> usize {
+        let reindexed_point_id = self.reindex(point_id) as usize;
         // level 0 is always present, start checking from level 1. Stop checking when level is incorrect
         for level in 1.. {
             if let Some(offsets_range) = self.get_level_offsets_range(level) {
@@ -140,117 +367,224 @@ impl GraphLinks {
         unreachable!()
     }
 
-    fn get_links_at_zero_level(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
-        let start = self.offsets[point_id as usize];
-        let end = self.offsets[point_id as usize + 1];
-        &self.links[start..end]
-    }
-
-    fn get_links_at_nonzero_level(
-        &self,
-        point_id: PointOffsetType,
-        level: usize,
-    ) -> &[PointOffsetType] {
-        debug_assert!(level > 0);
-        let reindexed_point_id = self.reindex[point_id as usize] as usize;
-        let layer_offsets_start = self.level_offsets[level];
-        let start = self.offsets[layer_offsets_start + reindexed_point_id];
-        let end = self.offsets[layer_offsets_start + reindexed_point_id + 1];
-        &self.links[start..end]
-    }
-
     fn get_level_offsets_range(&self, level: usize) -> Option<Range<usize>> {
-        if level < self.level_offsets.len() {
-            let layer_offsets_start = self.level_offsets[level];
-            let layer_offsets_end = if level + 1 < self.level_offsets.len() {
+        if level < self.levels_count() {
+            let layer_offsets_start = self.get_level_offset(level);
+            let layer_offsets_end = if level + 1 < self.levels_count() {
                 // `level` is not last, next level_offsets is end of range
-                self.level_offsets[level + 1]
+                self.get_level_offset(level + 1)
             } else {
                 // `level` is last, next `offsets.len()` is end of range
-                self.offsets.len() - 1
+                self.offsets_len() - 1
             };
             Some(layer_offsets_start..layer_offsets_end)
         } else {
             None
         }
     }
+}
 
-    fn fill_level_links<I>(
-        &mut self,
-        level: usize,
-        level_points_iter: I,
-        edges: &[Vec<Vec<PointOffsetType>>],
-    ) where
-        I: Iterator<Item = usize>,
-    {
-        self.level_offsets.push(self.offsets.len() - 1);
+#[derive(Default)]
+pub struct GraphLinksRam {
+    // all flattened links of all levels
+    links: Vec<PointOffsetType>,
+    // all ranges in `links`. each range is `links[offsets[i]..offsets[i+1]]`
+    // ranges are sorted by level
+    offsets: Vec<u64>,
+    // start offset of each level in `offsets`
+    level_offsets: Vec<u64>,
+    // for level 1 and above: reindex[point_id] = index of point_id in offsets
+    reindex: Vec<PointOffsetType>,
+}
 
-        for point_id in level_points_iter {
-            let links = &edges[point_id][level];
-            self.links.extend_from_slice(links);
-            self.offsets.push(self.links.len());
+impl GraphLinksRam {
+    pub fn load_from_memory(data: &[u8]) -> Self {
+        let header = GraphLinksFileHeader::deserialize_bytes_from(data);
+        let links = links_slice(data, &header).to_vec();
+        let offsets = offsets_slice(data, &header).to_vec();
+        let level_offsets = level_offsets(data, &header);
+        let reindex = reindex_slice(data, &header).to_vec();
+        Self {
+            links,
+            offsets,
+            level_offsets,
+            reindex,
         }
+    }
+}
+
+impl GraphLinks for GraphLinksRam {
+    fn load_from_file(path: &Path) -> OperationResult<Self> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(path)?;
+
+        let mmap = unsafe { Mmap::map(&file)? };
+
+        Ok(Self::load_from_memory(&mmap))
+    }
+
+    fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self> {
+        let mut data = vec![0; converter.data_size() as usize];
+        converter.serialize_to(&mut data);
+        drop(converter);
+        Ok(GraphLinksRam::load_from_memory(&data))
+    }
+
+    fn offsets_len(&self) -> usize {
+        self.offsets.len()
+    }
+
+    fn levels_count(&self) -> usize {
+        self.level_offsets.len()
+    }
+
+    fn get_links(&self, range: Range<usize>) -> &[PointOffsetType] {
+        &self.links[range]
+    }
+
+    fn get_links_range(&self, idx: usize) -> Range<usize> {
+        let start = self.offsets[idx];
+        let end = self.offsets[idx + 1];
+        start as usize..end as usize
+    }
+
+    fn get_level_offset(&self, level: usize) -> usize {
+        self.level_offsets[level] as usize
+    }
+
+    fn reindex(&self, point_id: PointOffsetType) -> PointOffsetType {
+        self.reindex[point_id as usize]
+    }
+
+    fn num_points(&self) -> usize {
+        self.reindex.len()
+    }
+}
+
+#[derive(Default)]
+pub struct GraphLinksMmap {
+    mmap: Option<Mmap>,
+    header: GraphLinksFileHeader,
+    level_offsets: Vec<u64>,
+}
+
+impl GraphLinksMmap {
+    fn get_reindex_slice(&self) -> &[PointOffsetType] {
+        if let Some(mmap) = &self.mmap {
+            reindex_slice(mmap, &self.header)
+        } else {
+            panic!("{}", MMAP_PANIC_MESSAGE);
+        }
+    }
+
+    fn get_links_slice(&self) -> &[PointOffsetType] {
+        if let Some(mmap) = &self.mmap {
+            links_slice(mmap, &self.header)
+        } else {
+            panic!("{}", "Mmap links are not loaded");
+        }
+    }
+
+    fn get_offsets_slice(&self) -> &[u64] {
+        if let Some(mmap) = &self.mmap {
+            offsets_slice(mmap, &self.header)
+        } else {
+            panic!("{}", MMAP_PANIC_MESSAGE);
+        }
+    }
+}
+
+impl GraphLinks for GraphLinksMmap {
+    fn load_from_file(path: &Path) -> OperationResult<Self> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(path)?;
+
+        let mmap = unsafe { Mmap::map(&file)? };
+        let header = GraphLinksFileHeader::deserialize_bytes_from(&mmap);
+        let level_offsets = level_offsets(&mmap, &header);
+
+        Ok(Self {
+            mmap: Some(mmap),
+            header,
+            level_offsets,
+        })
+    }
+
+    fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self> {
+        if let Some(path) = converter.path {
+            GraphLinksMmap::load_from_file(&path)
+        } else {
+            Err(OperationError::service_error(
+                "HNSW links Data needs to be saved to file before it can be loaded as mmap",
+            ))
+        }
+    }
+
+    fn offsets_len(&self) -> usize {
+        self.header.get_offsets_range().len() / size_of::<u64>()
+    }
+
+    fn levels_count(&self) -> usize {
+        self.level_offsets.len()
+    }
+
+    fn get_links(&self, range: Range<usize>) -> &[PointOffsetType] {
+        &self.get_links_slice()[range]
+    }
+
+    fn get_links_range(&self, idx: usize) -> Range<usize> {
+        let offsets_slice = self.get_offsets_slice();
+        offsets_slice[idx as usize] as usize..offsets_slice[idx as usize + 1] as usize
+    }
+
+    fn get_level_offset(&self, level: usize) -> usize {
+        self.level_offsets[level] as usize
+    }
+
+    fn reindex(&self, point_id: PointOffsetType) -> PointOffsetType {
+        self.get_reindex_slice()[point_id as usize]
+    }
+
+    fn num_points(&self) -> usize {
+        self.header.point_count as usize
     }
 }
 
 #[cfg(test)]
 mod tests {
     use rand::Rng;
+    use tempfile::Builder;
 
     use super::*;
     use crate::types::PointOffsetType;
 
-    #[test]
-    fn test_graph_links_construction() {
-        // no points
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![];
-        let cmp_links = GraphLinks::from_vec(&links).to_vec();
-        assert_eq!(links, cmp_links);
+    fn to_vec<TGraphLinks: GraphLinks>(links: &TGraphLinks) -> Vec<Vec<Vec<PointOffsetType>>> {
+        let mut result = Vec::new();
+        let num_points = links.num_points();
+        for i in 0..num_points {
+            let mut layers = Vec::new();
+            let num_levels = links.point_level(i as PointOffsetType) + 1;
+            for level in 0..num_levels {
+                let links = links.links(i as PointOffsetType, level).to_vec();
+                layers.push(links);
+            }
+            result.push(layers);
+        }
+        result
+    }
 
-        // 2 points without any links
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![]], vec![vec![]]];
-        let cmp_links = GraphLinks::from_vec(&links).to_vec();
-        assert_eq!(links, cmp_links);
-
-        // one link at level 0
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![1]], vec![vec![0]]];
-        let cmp_links = GraphLinks::from_vec(&links).to_vec();
-        assert_eq!(links, cmp_links);
-
-        // 3 levels with no links at second level
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
-            vec![vec![1, 2]],
-            vec![vec![0, 2], vec![], vec![2]],
-            vec![vec![0, 1], vec![], vec![1]],
-        ];
-        let cmp_links = GraphLinks::from_vec(&links).to_vec();
-        assert_eq!(links, cmp_links);
-
-        // 3 levels with no links at last level
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
-            vec![vec![1, 2], vec![2], vec![]],
-            vec![vec![0, 2], vec![1], vec![]],
-            vec![vec![0, 1]],
-        ];
-        let cmp_links = GraphLinks::from_vec(&links).to_vec();
-        assert_eq!(links, cmp_links);
-
-        // 4 levels with random unexists links
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
-            vec![vec![1, 2, 5, 6]],
-            vec![vec![0, 2, 7, 8], vec![], vec![34, 45, 10]],
-            vec![vec![0, 1, 1, 2], vec![3, 5, 9], vec![9, 8], vec![9], vec![]],
-            vec![vec![0, 1, 5, 6], vec![1, 5, 0]],
-            vec![vec![0, 1, 9, 18], vec![1, 5, 6], vec![5], vec![9]],
-        ];
-        let cmp_links = GraphLinks::from_vec(&links).to_vec();
-        assert_eq!(links, cmp_links);
-
-        // fully random links
+    fn random_links(
+        points_count: usize,
+        max_levels_count: usize,
+    ) -> Vec<Vec<Vec<PointOffsetType>>> {
         let mut rng = rand::thread_rng();
-        let points_count = 100;
-        let max_levels_count = 10;
-        let links: Vec<Vec<Vec<PointOffsetType>>> = (0..points_count)
+        (0..points_count)
             .map(|_| {
                 let levels_count = rng.gen_range(1..max_levels_count);
                 (0..levels_count)
@@ -262,8 +596,96 @@ mod tests {
                     })
                     .collect()
             })
-            .collect();
-        let cmp_links = GraphLinks::from_vec(&links).to_vec();
+            .collect()
+    }
+
+    fn test_save_load<A, B>(points_count: usize, max_levels_count: usize)
+    where
+        A: GraphLinks,
+        B: GraphLinks,
+    {
+        let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
+        let links_file = path.path().join("links.bin");
+        let links = random_links(points_count, max_levels_count);
+        {
+            let mut links_converter = GraphLinksConverter::new(links.clone());
+            links_converter.save_as(&links_file).unwrap();
+        }
+        let cmp_links = to_vec(&B::load_from_file(&links_file).unwrap());
         assert_eq!(links, cmp_links);
+    }
+
+    #[test]
+    fn test_graph_links_construction() {
+        // no points
+        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![];
+        let cmp_links = to_vec(
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+        );
+        assert_eq!(links, cmp_links);
+
+        // 2 points without any links
+        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![]], vec![vec![]]];
+        let cmp_links = to_vec(
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+        );
+        assert_eq!(links, cmp_links);
+
+        // one link at level 0
+        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![1]], vec![vec![0]]];
+        let cmp_links = to_vec(
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+        );
+        assert_eq!(links, cmp_links);
+
+        // 3 levels with no links at second level
+        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
+            vec![vec![1, 2]],
+            vec![vec![0, 2], vec![], vec![2]],
+            vec![vec![0, 1], vec![], vec![1]],
+        ];
+        let cmp_links = to_vec(
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+        );
+        assert_eq!(links, cmp_links);
+
+        // 3 levels with no links at last level
+        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
+            vec![vec![1, 2], vec![2], vec![]],
+            vec![vec![0, 2], vec![1], vec![]],
+            vec![vec![0, 1]],
+        ];
+        let cmp_links = to_vec(
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+        );
+        assert_eq!(links, cmp_links);
+
+        // 4 levels with random unexists links
+        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
+            vec![vec![1, 2, 5, 6]],
+            vec![vec![0, 2, 7, 8], vec![], vec![34, 45, 10]],
+            vec![vec![0, 1, 1, 2], vec![3, 5, 9], vec![9, 8], vec![9], vec![]],
+            vec![vec![0, 1, 5, 6], vec![1, 5, 0]],
+            vec![vec![0, 1, 9, 18], vec![1, 5, 6], vec![5], vec![9]],
+        ];
+        let cmp_links = to_vec(
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+        );
+        assert_eq!(links, cmp_links);
+
+        // fully random links
+        let links = random_links(100, 10);
+        let cmp_links = to_vec(
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+        );
+        assert_eq!(links, cmp_links);
+    }
+
+    #[test]
+    fn test_graph_links_mmap_ram_compability() {
+        test_save_load::<GraphLinksRam, GraphLinksRam>(1000, 10);
+        test_save_load::<GraphLinksMmap, GraphLinksRam>(1000, 10);
+        test_save_load::<GraphLinksRam, GraphLinksMmap>(1000, 10);
+        test_save_load::<GraphLinksMmap, GraphLinksMmap>(1000, 10);
     }
 }

@@ -86,6 +86,10 @@ message HnswConfigDiff {
   Number of parallel threads used for background index building. If 0 - auto selection.
    */
   optional uint64 max_indexing_threads = 4;
+  /*
+  Store HNSW index on disk. If set to false, index will be stored in RAM.
+   */
+  optional bool on_disk = 5;
 }
 
 message WalConfigDiff {

@@ -2989,6 +2989,12 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "on_disk": {
+            "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
+            "default": null,
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -4157,6 +4163,12 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0,
+            "nullable": true
+          },
+          "on_disk": {
+            "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
+            "default": null,
+            "type": "boolean",
             "nullable": true
           }
         }

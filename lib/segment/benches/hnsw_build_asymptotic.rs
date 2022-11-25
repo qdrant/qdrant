@@ -7,6 +7,7 @@ use segment::data_types::vectors::VectorElementType;
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::CosineMetric;
@@ -22,7 +23,7 @@ const USE_HEURISTIC: bool = true;
 
 fn build_index<TMetric: Metric>(
     num_vectors: usize,
-) -> (TestRawScorerProducer<TMetric>, GraphLayers) {
+) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>) {
     let mut rng = thread_rng();
 
     let vector_holder = TestRawScorerProducer::<TMetric>::new(DIM, num_vectors, &mut rng);
@@ -37,7 +38,10 @@ fn build_index<TMetric: Metric>(
         graph_layers_builder.set_levels(idx, level);
         graph_layers_builder.link_new_point(idx, scorer);
     }
-    (vector_holder, graph_layers_builder.into_graph_layers())
+    (
+        vector_holder,
+        graph_layers_builder.into_graph_layers(None).unwrap(),
+    )
 }
 
 fn hnsw_build_asymptotic(c: &mut Criterion) {
