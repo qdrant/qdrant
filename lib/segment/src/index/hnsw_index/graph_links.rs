@@ -427,13 +427,10 @@ impl GraphLinks for GraphLinksRam {
     }
 
     fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self> {
-        if let Some(path) = converter.path {
-            GraphLinksRam::load_from_file(&path)
-        } else {
-            let mut data = vec![0; converter.data_size() as usize];
-            converter.serialize_to(&mut data);
-            Ok(GraphLinksRam::load_from_memory(&data))
-        }
+        let mut data = vec![0; converter.data_size() as usize];
+        converter.serialize_to(&mut data);
+        drop(converter);
+        Ok(GraphLinksRam::load_from_memory(&data))
     }
 
     fn offsets_len(&self) -> usize {
