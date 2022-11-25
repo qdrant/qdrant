@@ -1,3 +1,5 @@
+mod test_compact_graph_layer;
+
 use std::path::Path;
 
 use rand::Rng;
@@ -10,14 +12,13 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
 use crate::types::PointOffsetType;
 
-pub(crate) fn create_graph_layer_fixture<TMetric: Metric, R>(
+pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric, R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
     use_heuristic: bool,
     rng: &mut R,
-    links_path: Option<&Path>,
-) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>)
+) -> (TestRawScorerProducer<TMetric>, GraphLayersBuilder)
 where
     R: Rng + ?Sized,
 {
@@ -44,6 +45,22 @@ where
         graph_layers_builder.set_levels(idx, level);
         graph_layers_builder.link_new_point(idx, scorer);
     }
+    (vector_holder, graph_layers_builder)
+}
+
+pub(crate) fn create_graph_layer_fixture<TMetric: Metric, R>(
+    num_vectors: usize,
+    m: usize,
+    dim: usize,
+    use_heuristic: bool,
+    rng: &mut R,
+    links_path: Option<&Path>,
+) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>)
+where
+    R: Rng + ?Sized,
+{
+    let (vector_holder, graph_layers_builder) =
+        create_graph_layer_builder_fixture(num_vectors, m, dim, use_heuristic, rng);
 
     (
         vector_holder,

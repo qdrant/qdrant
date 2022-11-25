@@ -78,7 +78,7 @@ mod tests {
             ef_construct,
             full_scan_threshold,
             max_indexing_threads: 2,
-            on_disk: false,
+            on_disk: Some(false),
         };
 
         let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(

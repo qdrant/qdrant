@@ -9,6 +9,7 @@ use crate::common::file_operations::{atomic_save_bin, read_bin, FileStorageError
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
+use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
@@ -251,7 +252,11 @@ where
                 let try_legacy: Result<GraphLayersBackwardCompatibility, _> = read_bin(graph_path);
                 if let Ok(legacy) = try_legacy {
                     log::debug!("Converting legacy graph to new format");
-                    let links = TGraphLinks::from_vec(legacy.links_layers, Some(links_path))?;
+
+                    let mut converter = GraphLinksConverter::new(legacy.links_layers);
+                    converter.save_as(links_path)?;
+
+                    let links = TGraphLinks::from_converter(converter)?;
                     let slf = Self {
                         m: legacy.m,
                         m0: legacy.m0,
@@ -333,7 +338,9 @@ mod tests {
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
-        graph_layers.links = GraphLinksRam::from_vec(graph_links.clone(), None).unwrap();
+
+        graph_layers.links =
+            GraphLinksRam::from_converter(GraphLinksConverter::new(graph_links.clone())).unwrap();
 
         let linking_idx: PointOffsetType = 7;
 

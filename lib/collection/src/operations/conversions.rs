@@ -30,6 +30,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             m: value.m.map(|v| v as usize),
             ef_construct: value.ef_construct.map(|v| v as usize),
             full_scan_threshold: value.full_scan_threshold.map(|v| v as usize),
+            on_disk: value.on_disk,
         }
     }
 }
@@ -149,7 +150,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     ef_construct: Some(config.hnsw_config.ef_construct as u64),
                     full_scan_threshold: Some(config.hnsw_config.full_scan_threshold as u64),
                     max_indexing_threads: Some(config.hnsw_config.max_indexing_threads as u64),
-                    on_disk: Some(config.hnsw_config.on_disk),
+                    on_disk: config.hnsw_config.on_disk,
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
                     deleted_threshold: Some(config.optimizer_config.deleted_threshold),

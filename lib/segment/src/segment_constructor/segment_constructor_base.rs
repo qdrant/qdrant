@@ -100,7 +100,7 @@ fn create_segment(
                 payload_index.clone(),
             )),
             Indexes::Hnsw(hnsw_config) => {
-                if hnsw_config.on_disk {
+                if hnsw_config.on_disk.unwrap_or(false) {
                     sp(HNSWIndex::<GraphLinksMmap>::open(
                         &vector_index_path,
                         vector_storage.clone(),
@@ -168,14 +168,25 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
     if stored_version != app_version {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
 
-        if stored_version.minor == 3 {
-            let segment_state = load_segment_state_v3(path)?;
-            Segment::save_state(&segment_state, path)?;
-        } else {
+        if stored_version > app_version {
+            log::warn!(
+                "Data version {} is newer than application version {}. \
+                Please upgrade the application. Compatibility is not guaranteed.",
+                stored_version,
+                app_version
+            );
+        }
+
+        if stored_version.major < 3 {
             return Err(OperationError::service_error(&format!(
                 "Segment version({}) is not compatible with current version({})",
                 stored_version, app_version
             )));
+        }
+
+        if stored_version.minor == 3 {
+            let segment_state = load_segment_state_v3(path)?;
+            Segment::save_state(&segment_state, path)?;
         }
 
         SegmentVersion::save(path)?

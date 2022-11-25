@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
 
@@ -11,6 +11,7 @@ use super::graph_links::GraphLinks;
 use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
+use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
@@ -67,6 +68,10 @@ impl GraphLayersBase for GraphLayersBuilder {
 }
 
 impl GraphLayersBuilder {
+    pub fn get_entry_points(&self) -> MutexGuard<EntryPoints> {
+        self.entry_points.lock()
+    }
+
     pub fn into_graph_layers<TGraphLinks: GraphLinks>(
         self,
         path: Option<&Path>,
@@ -77,7 +82,12 @@ impl GraphLayersBuilder {
             .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
             .collect();
 
-        let links = TGraphLinks::from_vec(unlocker_links_layers, path)?;
+        let mut links_converter = GraphLinksConverter::new(unlocker_links_layers);
+        if let Some(path) = path {
+            links_converter.save_as(path)?;
+        }
+
+        let links = TGraphLinks::from_converter(links_converter)?;
         Ok(GraphLayers {
             m: self.m,
             m0: self.m0,
