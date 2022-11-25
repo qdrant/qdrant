@@ -813,7 +813,7 @@ dependencies = [
  "atomicwrites",
  "chrono",
  "criterion",
- "env_logger",
+ "env_logger 0.10.0",
  "fs_extra",
  "futures",
  "hashring",
@@ -1173,6 +1173,19 @@ checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
 dependencies = [
  "atty",
  "humantime",
+ "log 0.4.17",
+ "regex",
+ "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
+dependencies = [
+ "humantime",
+ "is-terminal",
  "log 0.4.17",
  "regex",
  "termcolor",
@@ -2861,7 +2874,7 @@ dependencies = [
  "collection",
  "colored",
  "config",
- "env_logger",
+ "env_logger 0.10.0",
  "futures",
  "futures-util",
  "itertools",
@@ -4314,7 +4327,7 @@ dependencies = [
  "byteorder",
  "crc",
  "docopt",
- "env_logger",
+ "env_logger 0.9.3",
  "eventual",
  "fs2",
  "log 0.4.17",
