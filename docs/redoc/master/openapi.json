@@ -2992,7 +2992,6 @@
           },
           "on_disk": {
             "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
-            "default": null,
             "type": "boolean",
             "nullable": true
           }
@@ -4165,6 +4164,14 @@
             "minimum": 0,
             "nullable": true
           },
+          "max_indexing_threads": {
+            "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "on_disk": {
             "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
             "default": null,
@@ -5193,7 +5200,8 @@
           "config",
           "id",
           "init_time_ms",
-          "shards"
+          "shards",
+          "transfers"
         ],
         "properties": {
           "id": {
@@ -5212,6 +5220,12 @@
             "items": {
               "$ref": "#/components/schemas/ReplicaSetTelemetry"
             }
+          },
+          "transfers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardTransferInfo"
+            }
           }
         }
       },
@@ -5219,7 +5233,8 @@
         "type": "object",
         "required": [
           "id",
-          "remote"
+          "remote",
+          "replicate_states"
         ],
         "properties": {
           "id": {
@@ -5241,6 +5256,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RemoteShardTelemetry"
+            }
+          },
+          "replicate_states": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ReplicaState"
             }
           }
         }
@@ -5640,6 +5661,12 @@
             "format": "uint32",
             "minimum": 0
           },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
           "searches": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
@@ -5704,6 +5731,7 @@
         "type": "object",
         "required": [
           "commit",
+          "consensus_thread_status",
           "is_voter",
           "number_of_peers",
           "pending_operations",
@@ -5742,6 +5770,15 @@
           },
           "is_voter": {
             "type": "boolean"
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "consensus_thread_status": {
+            "$ref": "#/components/schemas/ConsensusThreadStatus"
           }
         }
       },

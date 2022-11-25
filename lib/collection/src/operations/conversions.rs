@@ -30,6 +30,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             m: value.m.map(|v| v as usize),
             ef_construct: value.ef_construct.map(|v| v as usize),
             full_scan_threshold: value.full_scan_threshold.map(|v| v as usize),
+            max_indexing_threads: value.max_indexing_threads.map(|v| v as usize),
             on_disk: value.on_disk,
         }
     }

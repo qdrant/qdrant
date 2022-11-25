@@ -48,6 +48,9 @@ pub struct HnswConfigDiff {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "full_scan_threshold_kb")]
     pub full_scan_threshold: Option<usize>,
+    /// Number of parallel threads used for background index building. If 0 - auto selection.
+    #[serde(default)]
+    pub max_indexing_threads: Option<usize>,
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     #[serde(default)]
     pub on_disk: Option<bool>,
