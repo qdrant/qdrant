@@ -169,22 +169,21 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
 
         if stored_version > app_version {
-            log::warn!(
+            return Err(OperationError::service_error(&format!(
                 "Data version {} is newer than application version {}. \
                 Please upgrade the application. Compatibility is not guaranteed.",
-                stored_version,
-                app_version
-            );
+                stored_version, app_version
+            )));
         }
 
-        if stored_version.major < 3 {
+        if stored_version.major == 0 && stored_version.minor < 3 {
             return Err(OperationError::service_error(&format!(
                 "Segment version({}) is not compatible with current version({})",
                 stored_version, app_version
             )));
         }
 
-        if stored_version.minor == 3 {
+        if stored_version.major == 0 && stored_version.minor == 3 {
             let segment_state = load_segment_state_v3(path)?;
             Segment::save_state(&segment_state, path)?;
         }
