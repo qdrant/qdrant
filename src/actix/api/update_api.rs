@@ -10,7 +10,7 @@ use storage::content_manager::toc::TableOfContent;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_set_payload, do_upsert_points, do_overwrite_payload, CreateFieldIndex,
+    do_overwrite_payload, do_set_payload, do_upsert_points, CreateFieldIndex,
 };
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -78,7 +78,8 @@ pub async fn overwrite_payload(
     let wait = params.wait.unwrap_or(false);
     let timing = Instant::now();
 
-    let response = do_overwrite_payload(toc.get_ref(), &collection_name, operation, None, wait).await;
+    let response =
+        do_overwrite_payload(toc.get_ref(), &collection_name, operation, None, wait).await;
     process_response(response, timing)
 }
 

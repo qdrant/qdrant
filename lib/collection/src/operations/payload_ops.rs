@@ -61,9 +61,9 @@ impl SplitByShard for PayloadOps {
             PayloadOps::ClearPayload { points } => split_iter_by_shard(points, |id| *id, ring)
                 .map(|points| PayloadOps::ClearPayload { points }),
             operation @ PayloadOps::ClearPayloadByFilter(_) => OperationToShard::to_all(operation),
-            PayloadOps::OverwritePayload(operation) => {
-                operation.split_by_shard(ring).map(PayloadOps::OverwritePayload)
-            }
+            PayloadOps::OverwritePayload(operation) => operation
+                .split_by_shard(ring)
+                .map(PayloadOps::OverwritePayload),
         }
     }
 }
