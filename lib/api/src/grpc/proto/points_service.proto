@@ -24,6 +24,10 @@ service Points {
    */
   rpc SetPayload (SetPayloadPoints) returns (PointsOperationResponse) {}
   /*
+  Overwrite payload for points
+   */
+  rpc OverwritePayload (SetPayloadPoints) returns (PointsOperationResponse) {}
+  /*
   Delete specified key payload for points
    */
   rpc DeletePayload (DeletePayloadPoints) returns (PointsOperationResponse) {}

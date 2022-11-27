@@ -255,6 +255,16 @@ impl ShardOperation for RemoteShard {
                     .await?
                     .into_inner()
                 }
+                PayloadOps::OverwritePayload(set_payload) => {
+                    let request = &internal_set_payload(set_payload, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .overwrite_payload(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
+                }
             },
             CollectionUpdateOperations::FieldIndexOperation(field_index_op) => match field_index_op
             {

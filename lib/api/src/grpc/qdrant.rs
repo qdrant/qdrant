@@ -2161,6 +2161,27 @@ pub mod points_client {
             self.inner.unary(request.into_request(), path, codec).await
         }
         ///
+        ///Overwrite payload for points
+        pub async fn overwrite_payload(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetPayloadPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/OverwritePayload",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        ///
         ///Delete specified key payload for points
         pub async fn delete_payload(
             &mut self,
@@ -2392,6 +2413,12 @@ pub mod points_server {
         ///
         ///Set payload for points
         async fn set_payload(
+            &self,
+            request: tonic::Request<super::SetPayloadPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ///
+        ///Overwrite payload for points
+        async fn overwrite_payload(
             &self,
             request: tonic::Request<super::SetPayloadPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
@@ -2648,6 +2675,44 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = SetPayloadSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/OverwritePayload" => {
+                    #[allow(non_camel_case_types)]
+                    struct OverwritePayloadSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::SetPayloadPoints>
+                    for OverwritePayloadSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetPayloadPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).overwrite_payload(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = OverwritePayloadSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -3337,6 +3402,25 @@ pub mod points_internal_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn overwrite_payload(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetPayloadPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/OverwritePayload",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         pub async fn delete_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePayloadPointsInternal>,
@@ -3549,6 +3633,10 @@ pub mod points_internal_server {
             request: tonic::Request<super::DeletePointsInternal>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
         async fn set_payload(
+            &self,
+            request: tonic::Request<super::SetPayloadPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn overwrite_payload(
             &self,
             request: tonic::Request<super::SetPayloadPointsInternal>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
@@ -3793,6 +3881,46 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = SetPayloadSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/OverwritePayload" => {
+                    #[allow(non_camel_case_types)]
+                    struct OverwritePayloadSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::SetPayloadPointsInternal>
+                    for OverwritePayloadSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetPayloadPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).overwrite_payload(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = OverwritePayloadSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
