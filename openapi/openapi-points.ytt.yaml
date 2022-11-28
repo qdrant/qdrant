@@ -108,10 +108,37 @@ paths:
       tags:
         - points
       summary: Set payload
-      description: Set payload for points
+      description: Set payload values for points
       operationId: set_payload
       requestBody:
         description: Set payload on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPayload"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to set from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+    put:
+      tags:
+        - points
+      summary: Overwrite payload
+      description: Replace full payload of points with new one
+      operationId: overwrite_payload
+      requestBody:
+        description: Payload and points selector
         content:
           application/json:
             schema:

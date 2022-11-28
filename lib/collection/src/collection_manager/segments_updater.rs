@@ -50,6 +50,22 @@ pub(crate) fn delete_points(
     Ok(res)
 }
 
+pub(crate) fn overwrite_payload(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    payload: &Payload,
+    points: &[PointIdType],
+) -> CollectionResult<usize> {
+    let updated_points =
+        segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
+            write_segment.set_full_payload(op_num, id, payload)?;
+            Ok(true)
+        })?;
+
+    check_unprocessed_points(points, &updated_points)?;
+    Ok(updated_points.len())
+}
+
 pub(crate) fn set_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -372,6 +388,10 @@ pub(crate) fn process_payload_operation(
         }
         PayloadOps::ClearPayloadByFilter(ref filter) => {
             clear_payload_by_filter(&segments.read(), op_num, filter)
+        }
+        PayloadOps::OverwritePayload(sp) => {
+            let payload: Payload = sp.payload;
+            overwrite_payload(&segments.read(), op_num, &payload, &sp.points)
         }
     }
 }

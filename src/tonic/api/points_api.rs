@@ -13,7 +13,8 @@ use tonic::{Request, Response, Status};
 
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    recommend, recommend_batch, scroll, search, search_batch, set_payload, upsert,
+    overwrite_payload, recommend, recommend_batch, scroll, search, search_batch, set_payload,
+    upsert,
 };
 
 pub struct PointsService {
@@ -51,6 +52,13 @@ impl Points for PointsService {
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         set_payload(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
+    async fn overwrite_payload(
+        &self,
+        request: Request<SetPayloadPoints>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        overwrite_payload(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn delete_payload(

@@ -14,7 +14,7 @@ use tonic::{Request, Response, Status};
 
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    recommend, scroll, search, search_batch, set_payload, sync, upsert,
+    overwrite_payload, recommend, scroll, search, search_batch, set_payload, sync, upsert,
 };
 
 /// This API is intended for P2P communication within a distributed deployment.
@@ -249,6 +249,21 @@ impl PointsInternal for PointsInternalService {
         let sync_points =
             sync_points.ok_or_else(|| Status::invalid_argument("SyncPoints is missing"))?;
         sync(self.toc.as_ref(), sync_points, shard_id).await
+    }
+
+    async fn overwrite_payload(
+        &self,
+        request: Request<SetPayloadPointsInternal>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        let SetPayloadPointsInternal {
+            set_payload_points,
+            shard_id,
+        } = request.into_inner();
+
+        let set_payload_points = set_payload_points
+            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
+
+        overwrite_payload(self.toc.as_ref(), set_payload_points, Some(shard_id)).await
     }
 }
 

@@ -27,8 +27,8 @@ use tonic::{Response, Status};
 
 use crate::common::points::{
     do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
-    do_delete_points, do_get_points, do_scroll_points, do_search_batch_points, do_search_points,
-    do_set_payload, do_upsert_points, CreateFieldIndex,
+    do_delete_points, do_get_points, do_overwrite_payload, do_scroll_points,
+    do_search_batch_points, do_search_points, do_set_payload, do_upsert_points, CreateFieldIndex,
 };
 
 pub fn points_operation_response(
@@ -165,6 +165,41 @@ pub async fn set_payload(
 
     let timing = Instant::now();
     let result = do_set_payload(
+        toc,
+        &collection_name,
+        operation,
+        shard_selection,
+        wait.unwrap_or(false),
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn overwrite_payload(
+    toc: &TableOfContent,
+    set_payload_points: SetPayloadPoints,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let SetPayloadPoints {
+        collection_name,
+        wait,
+        payload,
+        points,
+    } = set_payload_points;
+
+    let operation = collection::operations::payload_ops::SetPayload {
+        payload: proto_to_payloads(payload)?,
+        points: points
+            .into_iter()
+            .map(|p| p.try_into())
+            .collect::<Result<_, _>>()?,
+    };
+
+    let timing = Instant::now();
+    let result = do_overwrite_payload(
         toc,
         &collection_name,
         operation,

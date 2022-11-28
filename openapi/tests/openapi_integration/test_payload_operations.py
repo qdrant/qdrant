@@ -96,3 +96,69 @@ def test_payload_operations():
     assert response.ok
     assert len(response.json()['result']['payload']) == 0
 
+    #
+    # test PUT vs POST of the payload - set vs overwrite
+    #
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"key1": "aaa", "key2": "bbb"},
+            "points": [6]
+        }
+    )
+    assert response.ok
+
+    # check payload
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 6},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 2
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"key1": "ccc"},
+            "points": [6]
+        }
+    )
+    assert response.ok
+
+    # check payload
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 6},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 2
+    assert response.json()['result']['payload']["key1"] == "ccc"
+    assert response.json()['result']['payload']["key2"] == "bbb"
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"key2": "eee"},
+            "points": [6]
+        }
+    )
+    assert response.ok
+
+    # check payload
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 6},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 1
+    assert response.json()['result']['payload']["key2"] == "eee"
+

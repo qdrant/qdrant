@@ -11,6 +11,7 @@ service PointsInternal {
   rpc Sync (SyncPointsInternal) returns (PointsOperationResponse) {}
   rpc Delete (DeletePointsInternal) returns (PointsOperationResponse) {}
   rpc SetPayload (SetPayloadPointsInternal) returns (PointsOperationResponse) {}
+  rpc OverwritePayload (SetPayloadPointsInternal) returns (PointsOperationResponse) {}
   rpc DeletePayload (DeletePayloadPointsInternal) returns (PointsOperationResponse) {}
   rpc ClearPayload (ClearPayloadPointsInternal) returns (PointsOperationResponse) {}
   rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponse) {}

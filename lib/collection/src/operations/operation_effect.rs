@@ -85,6 +85,9 @@ impl EstimateOperationEffectArea for PayloadOps {
             }
             PayloadOps::ClearPayload { points } => OperationEffectArea::Points(points.clone()),
             PayloadOps::ClearPayloadByFilter(filter) => OperationEffectArea::Filter(filter.clone()),
+            PayloadOps::OverwritePayload(set_payload) => {
+                OperationEffectArea::Points(set_payload.points.clone())
+            }
         }
     }
 }
