@@ -1,6 +1,3 @@
-extern crate serde_cbor;
-extern crate wal;
-
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::result;
@@ -115,14 +112,12 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    extern crate tempfile;
-
     use std::fs;
     use std::os::unix::fs::MetadataExt;
 
     use tempfile::Builder;
+
+    use super::*;
 
     #[test]
     fn test_wal() {
