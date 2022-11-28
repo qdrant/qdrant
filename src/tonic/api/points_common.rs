@@ -11,7 +11,7 @@ use api::grpc::qdrant::{
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointSyncOperation,
+    PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector,
 };
 use collection::operations::types::{
     default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
@@ -153,14 +153,27 @@ pub async fn set_payload(
         wait,
         payload,
         points,
+        points_selector,
     } = set_payload_points;
+
+    let (points, filter) = if let Some(points_selector) = points_selector {
+        let points_selector: PointsSelector = points_selector.try_into()?;
+        match points_selector {
+            PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
+            PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
+        }
+    } else {
+        let points = points
+            .into_iter()
+            .map(|point| point.try_into())
+            .collect::<Result<_, _>>()?;
+        (Some(points), None)
+    };
 
     let operation = collection::operations::payload_ops::SetPayload {
         payload: proto_to_payloads(payload)?,
-        points: points
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?,
+        points,
+        filter,
     };
 
     let timing = Instant::now();
@@ -188,14 +201,27 @@ pub async fn overwrite_payload(
         wait,
         payload,
         points,
+        points_selector,
     } = set_payload_points;
+
+    let (points, filter) = if let Some(points_selector) = points_selector {
+        let points_selector: PointsSelector = points_selector.try_into()?;
+        match points_selector {
+            PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
+            PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
+        }
+    } else {
+        let points = points
+            .into_iter()
+            .map(|point| point.try_into())
+            .collect::<Result<_, _>>()?;
+        (Some(points), None)
+    };
 
     let operation = collection::operations::payload_ops::SetPayload {
         payload: proto_to_payloads(payload)?,
-        points: points
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?,
+        points,
+        filter,
     };
 
     let timing = Instant::now();
@@ -223,14 +249,27 @@ pub async fn delete_payload(
         wait,
         keys,
         points,
+        points_selector,
     } = delete_payload_points;
+
+    let (points, filter) = if let Some(points_selector) = points_selector {
+        let points_selector: PointsSelector = points_selector.try_into()?;
+        match points_selector {
+            PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
+            PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
+        }
+    } else {
+        let points = points
+            .into_iter()
+            .map(|point| point.try_into())
+            .collect::<Result<_, _>>()?;
+        (Some(points), None)
+    };
 
     let operation = DeletePayload {
         keys,
-        points: points
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?,
+        points,
+        filter,
     };
 
     let timing = Instant::now();

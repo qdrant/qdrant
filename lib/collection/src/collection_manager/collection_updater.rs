@@ -210,7 +210,8 @@ mod tests {
             100,
             PayloadOps::SetPayload(SetPayload {
                 payload,
-                points: points.clone(),
+                points: Some(points.clone()),
+                filter: None,
             }),
         )
         .unwrap();
@@ -237,8 +238,9 @@ mod tests {
             &segments,
             101,
             PayloadOps::DeletePayload(DeletePayload {
-                points: vec![3.into()],
+                points: Some(vec![3.into()]),
                 keys: vec!["color".to_string(), "empty".to_string()],
+                filter: None,
             }),
         )
         .unwrap();

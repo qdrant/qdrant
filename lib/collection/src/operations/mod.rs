@@ -53,6 +53,10 @@ impl<O> OperationToShard<O> {
         Self::ByShard(operations.into_iter().collect())
     }
 
+    pub fn to_none() -> Self {
+        Self::ByShard(Vec::new())
+    }
+
     pub fn to_all(operation: O) -> Self {
         Self::ToAll(operation)
     }
