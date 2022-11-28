@@ -10,7 +10,7 @@ use storage::content_manager::toc::TableOfContent;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_set_payload, do_upsert_points, CreateFieldIndex,
+    do_overwrite_payload, do_set_payload, do_upsert_points, CreateFieldIndex,
 };
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -63,6 +63,23 @@ pub async fn set_payload(
     let timing = Instant::now();
 
     let response = do_set_payload(toc.get_ref(), &collection_name, operation, None, wait).await;
+    process_response(response, timing)
+}
+
+#[put("/collections/{name}/points/payload")]
+pub async fn overwrite_payload(
+    toc: web::Data<TableOfContent>,
+    path: web::Path<String>,
+    operation: web::Json<SetPayload>,
+    params: Query<UpdateParam>,
+) -> impl Responder {
+    let collection_name = path.into_inner();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let timing = Instant::now();
+
+    let response =
+        do_overwrite_payload(toc.get_ref(), &collection_name, operation, None, wait).await;
     process_response(response, timing)
 }
 
@@ -133,6 +150,7 @@ pub fn config_update_api(cfg: &mut web::ServiceConfig) {
     cfg.service(upsert_points)
         .service(delete_points)
         .service(set_payload)
+        .service(overwrite_payload)
         .service(delete_payload)
         .service(clear_payload)
         .service(create_field_index)

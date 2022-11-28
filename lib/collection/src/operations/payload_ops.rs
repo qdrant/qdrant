@@ -33,6 +33,8 @@ pub enum PayloadOps {
     ClearPayload { points: Vec<PointIdType> },
     /// Clear all Payload values by given filter criteria.
     ClearPayloadByFilter(Filter),
+    /// Overwrite full payload with given keys
+    OverwritePayload(SetPayload),
 }
 
 impl PayloadOps {
@@ -42,6 +44,7 @@ impl PayloadOps {
             PayloadOps::DeletePayload(_) => false,
             PayloadOps::ClearPayload { .. } => false,
             PayloadOps::ClearPayloadByFilter(_) => false,
+            PayloadOps::OverwritePayload(_) => true,
         }
     }
 }
@@ -58,6 +61,9 @@ impl SplitByShard for PayloadOps {
             PayloadOps::ClearPayload { points } => split_iter_by_shard(points, |id| *id, ring)
                 .map(|points| PayloadOps::ClearPayload { points }),
             operation @ PayloadOps::ClearPayloadByFilter(_) => OperationToShard::to_all(operation),
+            PayloadOps::OverwritePayload(operation) => operation
+                .split_by_shard(ring)
+                .map(PayloadOps::OverwritePayload),
         }
     }
 }

@@ -65,6 +65,19 @@ pub async fn do_set_payload(
         .await
 }
 
+pub async fn do_overwrite_payload(
+    toc: &TableOfContent,
+    collection_name: &str,
+    operation: SetPayload,
+    shard_selection: Option<ShardId>,
+    wait: bool,
+) -> Result<UpdateResult, StorageError> {
+    let collection_operation =
+        CollectionUpdateOperations::PayloadOperation(PayloadOps::OverwritePayload(operation));
+    toc.update(collection_name, collection_operation, shard_selection, wait)
+        .await
+}
+
 pub async fn do_delete_payload(
     toc: &TableOfContent,
     collection_name: &str,
