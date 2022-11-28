@@ -109,10 +109,8 @@ pub fn internal_set_payload(
             })),
         })
     } else {
-        set_payload.filter.map(|filter| {
-            PointsSelector {
-                points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
-            }
+        set_payload.filter.map(|filter| PointsSelector {
+            points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
         })
     };
 
@@ -142,10 +140,8 @@ pub fn internal_delete_payload(
             })),
         })
     } else {
-        delete_payload.filter.map(|filter| {
-            PointsSelector {
-                points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
-            }
+        delete_payload.filter.map(|filter| PointsSelector {
+            points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
         })
     };
 
