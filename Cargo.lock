@@ -813,7 +813,7 @@ dependencies = [
  "atomicwrites",
  "chrono",
  "criterion",
- "env_logger 0.10.0",
+ "env_logger",
  "fs_extra",
  "futures",
  "hashring",
@@ -1163,19 +1163,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9852635589dc9f9ea1b6fe9f05b50ef208c85c834a562f0c6abb1c475736ec2b"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
-dependencies = [
- "atty",
- "humantime",
- "log 0.4.17",
- "regex",
- "termcolor",
 ]
 
 [[package]]
@@ -2874,7 +2861,7 @@ dependencies = [
  "collection",
  "colored",
  "config",
- "env_logger 0.10.0",
+ "env_logger",
  "futures",
  "futures-util",
  "itertools",
@@ -4322,12 +4309,13 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=0dd3943113ff7ec2fbc5428bb77ba206c8492fa9#0dd3943113ff7ec2fbc5428bb77ba206c8492fa9"
+source = "git+https://github.com/qdrant/wal.git?rev=94edd02ee2f7daa7054c8689b8f4fd5202690a81#94edd02ee2f7daa7054c8689b8f4fd5202690a81"
 dependencies = [
  "byteorder",
  "crc",
+ "crossbeam-channel",
  "docopt",
- "env_logger 0.9.3",
+ "env_logger",
  "eventual",
  "fs2",
  "log 0.4.17",
