@@ -1013,7 +1013,8 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | keys | [string](#string) | repeated | List of keys to delete |
-| points | [PointId](#qdrant-PointId) | repeated | Affected points |
+| points | [PointId](#qdrant-PointId) | repeated | Affected points, deprecated |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 
 
 
@@ -1656,7 +1657,8 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | payload | [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry) | repeated | New payload values |
-| points | [PointId](#qdrant-PointId) | repeated | List of point to modify |
+| points | [PointId](#qdrant-PointId) | repeated | List of point to modify, deprecated |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 
 
 
@@ -1870,6 +1872,7 @@ The JSON representation for `Value` is JSON value.
 | Delete | [DeletePoints](#qdrant-DeletePoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete points |
 | Get | [GetPoints](#qdrant-GetPoints) | [GetResponse](#qdrant-GetResponse) | Retrieve points |
 | SetPayload | [SetPayloadPoints](#qdrant-SetPayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Set payload for points |
+| OverwritePayload | [SetPayloadPoints](#qdrant-SetPayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Overwrite payload for points |
 | DeletePayload | [DeletePayloadPoints](#qdrant-DeletePayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete specified key payload for points |
 | ClearPayload | [ClearPayloadPoints](#qdrant-ClearPayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Remove all payload for specified points |
 | CreateFieldIndex | [CreateFieldIndexCollection](#qdrant-CreateFieldIndexCollection) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Create index for field in collection |

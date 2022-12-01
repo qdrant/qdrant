@@ -99,13 +99,29 @@ pub fn internal_set_payload(
     shard: &RemoteShard,
     wait: bool,
 ) -> SetPayloadPointsInternal {
+    let mut selected_points = vec![];
+
+    let points_selector = if let Some(points) = set_payload.points {
+        selected_points = points.into_iter().map(|id| id.into()).collect();
+        Some(PointsSelector {
+            points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
+                ids: selected_points.clone(),
+            })),
+        })
+    } else {
+        set_payload.filter.map(|filter| PointsSelector {
+            points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
+        })
+    };
+
     SetPayloadPointsInternal {
         shard_id: shard.id,
         set_payload_points: Some(SetPayloadPoints {
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             payload: payload_to_proto(set_payload.payload),
-            points: set_payload.points.into_iter().map(|id| id.into()).collect(),
+            points: selected_points, // ToDo: Deprecated
+            points_selector,
         }),
     }
 }
@@ -115,17 +131,28 @@ pub fn internal_delete_payload(
     shard: &RemoteShard,
     wait: bool,
 ) -> DeletePayloadPointsInternal {
+    let mut selected_points = vec![];
+    let points_selector = if let Some(points) = delete_payload.points {
+        selected_points = points.into_iter().map(|id| id.into()).collect();
+        Some(PointsSelector {
+            points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
+                ids: selected_points.clone(),
+            })),
+        })
+    } else {
+        delete_payload.filter.map(|filter| PointsSelector {
+            points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
+        })
+    };
+
     DeletePayloadPointsInternal {
         shard_id: shard.id,
         delete_payload_points: Some(DeletePayloadPoints {
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             keys: delete_payload.keys,
-            points: delete_payload
-                .points
-                .into_iter()
-                .map(|id| id.into())
-                .collect(),
+            points: selected_points, // ToDo: Deprecated
+            points_selector,
         }),
     }
 }

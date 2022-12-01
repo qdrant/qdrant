@@ -231,6 +231,18 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
+    where
+        F: FnMut(&RwLockReadGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
+    {
+        let mut processed_segments = 0;
+        for segment in self.segments.values() {
+            let is_applied = f(&segment.get().read())?;
+            processed_segments += is_applied as usize;
+        }
+        Ok(processed_segments)
+    }
+
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
     where
         F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,

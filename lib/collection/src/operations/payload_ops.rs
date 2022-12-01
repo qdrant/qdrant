@@ -8,17 +8,81 @@ use crate::hash_ring::HashRing;
 use crate::shards::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(try_from = "SetPayloadShadow")]
 pub struct SetPayload {
     pub payload: Payload,
     /// Assigns payload to each point in this list
-    pub points: Vec<PointIdType>, // ToDo: replace with point selector
+    pub points: Option<Vec<PointIdType>>,
+    /// Assigns payload to each point that satisfy this filter condition
+    pub filter: Option<Filter>,
+}
+
+#[derive(Deserialize)]
+struct SetPayloadShadow {
+    pub payload: Payload,
+    pub points: Option<Vec<PointIdType>>,
+    pub filter: Option<Filter>,
+}
+
+pub struct PointsSelectorValidationError;
+
+impl std::fmt::Display for PointsSelectorValidationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Either list of point ids or filter must be provided"
+        )
+    }
+}
+
+impl TryFrom<SetPayloadShadow> for SetPayload {
+    type Error = PointsSelectorValidationError;
+
+    fn try_from(value: SetPayloadShadow) -> Result<Self, Self::Error> {
+        if value.points.is_some() || value.filter.is_some() {
+            Ok(SetPayload {
+                payload: value.payload,
+                points: value.points,
+                filter: value.filter,
+            })
+        } else {
+            Err(PointsSelectorValidationError)
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(try_from = "DeletePayloadShadow")]
 pub struct DeletePayload {
+    /// List of payload keys to remove from payload
     pub keys: Vec<PayloadKeyType>,
     /// Deletes values from each point in this list
-    pub points: Vec<PointIdType>, // ToDo: replace with point selector
+    pub points: Option<Vec<PointIdType>>,
+    /// Deletes values from points that satisfy this filter condition
+    pub filter: Option<Filter>,
+}
+
+#[derive(Deserialize)]
+struct DeletePayloadShadow {
+    pub keys: Vec<PayloadKeyType>,
+    pub points: Option<Vec<PointIdType>>,
+    pub filter: Option<Filter>,
+}
+
+impl TryFrom<DeletePayloadShadow> for DeletePayload {
+    type Error = PointsSelectorValidationError;
+
+    fn try_from(value: DeletePayloadShadow) -> Result<Self, Self::Error> {
+        if value.points.is_some() || value.filter.is_some() {
+            Ok(DeletePayload {
+                keys: value.keys,
+                points: value.points,
+                filter: value.filter,
+            })
+        } else {
+            Err(PointsSelectorValidationError)
+        }
+    }
 }
 
 /// Define operations description for point payloads manipulation
@@ -70,19 +134,35 @@ impl SplitByShard for PayloadOps {
 
 impl SplitByShard for DeletePayload {
     fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
-        split_iter_by_shard(self.points, |id| *id, ring).map(|points| DeletePayload {
-            points,
-            keys: self.keys.clone(),
-        })
+        match (&self.points, &self.filter) {
+            (Some(_), _) => {
+                split_iter_by_shard(self.points.unwrap(), |id| *id, ring).map(|points| {
+                    DeletePayload {
+                        points: Some(points),
+                        keys: self.keys.clone(),
+                        filter: self.filter.clone(),
+                    }
+                })
+            }
+            (None, Some(_)) => OperationToShard::to_all(self),
+            (None, None) => OperationToShard::to_none(),
+        }
     }
 }
 
 impl SplitByShard for SetPayload {
     fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
-        split_iter_by_shard(self.points, |id| *id, ring).map(|points| SetPayload {
-            points,
-            payload: self.payload.clone(),
-        })
+        match (&self.points, &self.filter) {
+            (Some(_), _) => {
+                split_iter_by_shard(self.points.unwrap(), |id| *id, ring).map(|points| SetPayload {
+                    points: Some(points),
+                    payload: self.payload.clone(),
+                    filter: self.filter.clone(),
+                })
+            }
+            (None, Some(_)) => OperationToShard::to_all(self),
+            (None, None) => OperationToShard::to_none(),
+        }
     }
 }
 
@@ -92,6 +172,28 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct TextSelector {
+        pub points: Vec<PointIdType>,
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct TextSelectorOpt {
+        pub points: Option<Vec<PointIdType>>,
+        pub filter: Option<Filter>,
+    }
+
+    #[test]
+    fn test_replace_with_opt_in_cbor() {
+        let obj1 = TextSelector {
+            points: vec![1.into(), 2.into(), 3.into()],
+        };
+        let raw_cbor = serde_cbor::to_vec(&obj1).unwrap();
+        let obj2 = serde_cbor::from_slice::<TextSelectorOpt>(&raw_cbor).unwrap();
+        eprintln!("obj2 = {:#?}", obj2);
+        assert_eq!(obj1.points, obj2.points.unwrap());
+    }
 
     #[test]
     fn test_serialization() {
