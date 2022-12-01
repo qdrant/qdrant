@@ -4298,7 +4298,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=94edd02ee2f7daa7054c8689b8f4fd5202690a81#94edd02ee2f7daa7054c8689b8f4fd5202690a81"
+source = "git+https://github.com/qdrant/wal.git?rev=90471ad737dbd90c49bb8944cb8aeb5ad8664d30#90471ad737dbd90c49bb8944cb8aeb5ad8664d30"
 dependencies = [
  "byteorder",
  "crc",
