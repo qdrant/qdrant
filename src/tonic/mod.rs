@@ -98,7 +98,7 @@ pub fn init_internal(
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     internal_grpc_port: u16,
-    to_consensus: std::sync::mpsc::SyncSender<crate::consensus::Message>,
+    to_consensus: tokio::sync::mpsc::Sender<crate::consensus::Message>,
 ) -> std::io::Result<()> {
     use ::api::grpc::qdrant::raft_server::RaftServer;
 
