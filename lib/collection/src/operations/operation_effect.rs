@@ -78,15 +78,33 @@ impl EstimateOperationEffectArea for PayloadOps {
     fn estimate_effect_area(&self) -> OperationEffectArea {
         match self {
             PayloadOps::SetPayload(set_payload) => {
-                OperationEffectArea::Points(set_payload.points.clone())
+                if let Some(points) = &set_payload.points {
+                    OperationEffectArea::Points(points.clone())
+                } else if let Some(filter) = &set_payload.filter {
+                    OperationEffectArea::Filter(filter.clone())
+                } else {
+                    OperationEffectArea::Empty
+                }
             }
             PayloadOps::DeletePayload(delete_payload) => {
-                OperationEffectArea::Points(delete_payload.points.clone())
+                if let Some(points) = &delete_payload.points {
+                    OperationEffectArea::Points(points.clone())
+                } else if let Some(filter) = &delete_payload.filter {
+                    OperationEffectArea::Filter(filter.clone())
+                } else {
+                    OperationEffectArea::Empty
+                }
             }
             PayloadOps::ClearPayload { points } => OperationEffectArea::Points(points.clone()),
             PayloadOps::ClearPayloadByFilter(filter) => OperationEffectArea::Filter(filter.clone()),
             PayloadOps::OverwritePayload(set_payload) => {
-                OperationEffectArea::Points(set_payload.points.clone())
+                if let Some(points) = &set_payload.points {
+                    OperationEffectArea::Points(points.clone())
+                } else if let Some(filter) = &set_payload.filter {
+                    OperationEffectArea::Filter(filter.clone())
+                } else {
+                    OperationEffectArea::Empty
+                }
             }
         }
     }

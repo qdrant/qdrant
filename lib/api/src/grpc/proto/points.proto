@@ -48,14 +48,16 @@ message SetPayloadPoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   map<string, Value> payload = 3; // New payload values
-  repeated PointId points = 4; // List of point to modify
+  repeated PointId points = 4; // List of point to modify, deprecated
+  optional PointsSelector points_selector = 5; // Affected points
 }
 
 message DeletePayloadPoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   repeated string keys = 3; // List of keys to delete
-  repeated PointId points = 4; // Affected points
+  repeated PointId points = 4; // Affected points, deprecated
+  optional PointsSelector points_selector = 5; // Affected points
 }
 
 message ClearPayloadPoints {

@@ -162,3 +162,117 @@ def test_payload_operations():
     assert len(response.json()['result']['payload']) == 1
     assert response.json()['result']['payload']["key2"] == "eee"
 
+    #
+    # Check set and update of payload by filter
+    #
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"key4": "aaa"},
+            "points": [1, 2, 3]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "key": "key4",
+                        "match": {
+                            "value": "aaa"
+                        }
+                    }
+                ]
+            }
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 3
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"key5": "bbb"},
+            "filter": {
+                "must": [
+                    {
+                        "key": "key4",
+                        "match": {
+                            "value": "aaa"
+                        }
+                    }
+                ]
+            }
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "key": "key5",
+                        "match": {
+                            "value": "bbb"
+                        }
+                    }
+                ]
+            }
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 3
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload/delete',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "keys": ["key5"],
+            "filter": {
+                "must": [
+                    {
+                        "key": "key5",
+                        "match": {
+                            "value": "bbb"
+                        }
+                    }
+                ]
+            }
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "key": "key5",
+                        "match": {
+                            "value": "bbb"
+                        }
+                    }
+                ]
+            }
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 0
+

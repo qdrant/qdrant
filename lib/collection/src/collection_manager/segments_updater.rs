@@ -66,6 +66,16 @@ pub(crate) fn overwrite_payload(
     Ok(updated_points.len())
 }
 
+pub(crate) fn overwrite_payload_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    payload: &Payload,
+    filter: &Filter,
+) -> CollectionResult<usize> {
+    let affected_points = points_by_filter(segments, filter)?;
+    overwrite_payload(segments, op_num, payload, &affected_points)
+}
+
 pub(crate) fn set_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -80,6 +90,29 @@ pub(crate) fn set_payload(
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
+}
+
+fn points_by_filter(
+    segments: &SegmentHolder,
+    filter: &Filter,
+) -> CollectionResult<Vec<PointIdType>> {
+    let mut affected_points: Vec<PointIdType> = Vec::new();
+    segments.for_each_segment(|s| {
+        let points = s.read_filtered(None, None, Some(filter));
+        affected_points.extend_from_slice(points.as_slice());
+        Ok(true)
+    })?;
+    Ok(affected_points)
+}
+
+pub(crate) fn set_payload_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    payload: &Payload,
+    filter: &Filter,
+) -> CollectionResult<usize> {
+    let affected_points = points_by_filter(segments, filter)?;
+    set_payload(segments, op_num, payload, &affected_points)
 }
 
 pub(crate) fn delete_payload(
@@ -99,6 +132,16 @@ pub(crate) fn delete_payload(
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
+}
+
+pub(crate) fn delete_payload_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    filter: &Filter,
+    keys: &[PayloadKeyType],
+) -> CollectionResult<usize> {
+    let affected_points = points_by_filter(segments, filter)?;
+    delete_payload(segments, op_num, &affected_points, keys)
 }
 
 pub(crate) fn clear_payload(
@@ -121,13 +164,7 @@ pub(crate) fn clear_payload_by_filter(
     op_num: SeqNumberType,
     filter: &Filter,
 ) -> CollectionResult<usize> {
-    let mut points_to_clear: Vec<PointIdType> = Vec::new();
-
-    segments.apply_segments(|s| {
-        let points = s.read_filtered(None, None, Some(filter));
-        points_to_clear.extend_from_slice(points.as_slice());
-        Ok(true)
-    })?;
+    let points_to_clear = points_by_filter(segments, filter)?;
 
     let updated_points = segments.apply_points_to_appendable(
         op_num,
@@ -378,10 +415,26 @@ pub(crate) fn process_payload_operation(
     match payload_operation {
         PayloadOps::SetPayload(sp) => {
             let payload: Payload = sp.payload;
-            set_payload(&segments.read(), op_num, &payload, &sp.points)
+            if let Some(points) = sp.points {
+                set_payload(&segments.read(), op_num, &payload, &points)
+            } else if let Some(filter) = sp.filter {
+                set_payload_by_filter(&segments.read(), op_num, &payload, &filter)
+            } else {
+                Err(CollectionError::BadRequest {
+                    description: "No points or filter specified".to_string(),
+                })
+            }
         }
         PayloadOps::DeletePayload(dp) => {
-            delete_payload(&segments.read(), op_num, &dp.points, &dp.keys)
+            if let Some(points) = dp.points {
+                delete_payload(&segments.read(), op_num, &points, &dp.keys)
+            } else if let Some(filter) = dp.filter {
+                delete_payload_by_filter(&segments.read(), op_num, &filter, &dp.keys)
+            } else {
+                Err(CollectionError::BadRequest {
+                    description: "No points or filter specified".to_string(),
+                })
+            }
         }
         PayloadOps::ClearPayload { ref points, .. } => {
             clear_payload(&segments.read(), op_num, points)
@@ -391,7 +444,15 @@ pub(crate) fn process_payload_operation(
         }
         PayloadOps::OverwritePayload(sp) => {
             let payload: Payload = sp.payload;
-            overwrite_payload(&segments.read(), op_num, &payload, &sp.points)
+            if let Some(points) = sp.points {
+                overwrite_payload(&segments.read(), op_num, &payload, &points)
+            } else if let Some(filter) = sp.filter {
+                overwrite_payload_by_filter(&segments.read(), op_num, &payload, &filter)
+            } else {
+                Err(CollectionError::BadRequest {
+                    description: "No points or filter specified".to_string(),
+                })
+            }
         }
     }
 }

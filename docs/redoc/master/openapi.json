@@ -4688,8 +4688,7 @@
       "SetPayload": {
         "type": "object",
         "required": [
-          "payload",
-          "points"
+          "payload"
         ],
         "properties": {
           "payload": {
@@ -4700,18 +4699,30 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
-            }
+            },
+            "nullable": true
+          },
+          "filter": {
+            "description": "Assigns payload to each point that satisfy this filter condition",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
       "DeletePayload": {
         "type": "object",
         "required": [
-          "keys",
-          "points"
+          "keys"
         ],
         "properties": {
           "keys": {
+            "description": "List of payload keys to remove from payload",
             "type": "array",
             "items": {
               "type": "string"
@@ -4722,7 +4733,19 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
-            }
+            },
+            "nullable": true
+          },
+          "filter": {
+            "description": "Deletes values from points that satisfy this filter condition",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
