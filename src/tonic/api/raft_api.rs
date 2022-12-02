@@ -1,5 +1,3 @@
-use std::sync::mpsc::SyncSender;
-
 use api::grpc::qdrant::raft_server::Raft;
 use api::grpc::qdrant::{
     AddPeerToKnownMessage, AllPeers, Peer, PeerId, RaftMessage as RaftMessageBytes, Uri as UriStr,
@@ -8,21 +6,21 @@ use itertools::Itertools;
 use raft::eraftpb::Message as RaftMessage;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::ConsensusOperations;
-use tokio::sync::Mutex;
+use tokio::sync::mpsc::Sender;
 use tonic::transport::Uri;
 use tonic::{async_trait, Request, Response, Status};
 
 use crate::consensus;
 
 pub struct RaftService {
-    message_sender: Mutex<SyncSender<consensus::Message>>,
+    message_sender: Sender<consensus::Message>,
     consensus_state: ConsensusStateRef,
 }
 
 impl RaftService {
-    pub fn new(sender: SyncSender<consensus::Message>, consensus_state: ConsensusStateRef) -> Self {
+    pub fn new(sender: Sender<consensus::Message>, consensus_state: ConsensusStateRef) -> Self {
         Self {
-            message_sender: Mutex::new(sender),
+            message_sender: sender,
             consensus_state,
         }
     }
@@ -36,9 +34,8 @@ impl Raft for RaftService {
                 Status::invalid_argument(format!("Failed to parse raft message: {err}"))
             })?;
         self.message_sender
-            .lock()
-            .await
             .send(consensus::Message::FromPeer(Box::new(message)))
+            .await
             .map_err(|_| Status::internal("Can't send Raft message over channel"))?;
         Ok(Response::new(()))
     }

@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::thread::JoinHandle;
@@ -22,6 +21,7 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::PeerAddressById;
 use tokio::runtime::Runtime;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tonic::transport::Uri;
 
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
@@ -96,7 +96,7 @@ impl Consensus {
             .spawn(move || {
                 while let Ok(entry) = propose_receiver.recv() {
                     if message_sender_moved
-                        .send(Message::FromClient(entry))
+                        .blocking_send(Message::FromClient(entry))
                         .is_err()
                     {
                         log::error!("Can not forward new entry to consensus as it was stopped.");
@@ -132,7 +132,7 @@ impl Consensus {
         p2p_port: u16,
         config: ConsensusConfig,
         channel_service: ChannelService,
-    ) -> anyhow::Result<(Self, SyncSender<Message>)> {
+    ) -> anyhow::Result<(Self, Sender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
         let raft_config = Config {
@@ -159,7 +159,8 @@ impl Consensus {
             })
             .enable_all()
             .build()?;
-        let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
+        // bounded channel for backpressure
+        let (sender, receiver) = tokio::sync::mpsc::channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
         if state_ref.is_new_deployment() {
             let leader_established_in_ms =
@@ -399,8 +400,14 @@ impl Consensus {
 
     /// Listens for the next proposal and sends it to the Raft node.
     fn propose_updates(&mut self, timeout: Duration) -> anyhow::Result<()> {
-        match self.receiver.recv_timeout(timeout) {
-            Ok(Message::FromPeer(message)) => {
+        // Poll the async. channel on the consensus runtime.
+        // https://docs.rs/tokio/1.22.0/tokio/sync/mpsc/index.html#communicating-between-sync-and-async-code
+        let received = self.runtime.block_on(async {
+            // Wait for the next proposal during `timeout`.
+            tokio::time::timeout(timeout, self.receiver.recv()).await
+        });
+        match received {
+            Ok(Some(Message::FromPeer(message))) => {
                 if message.get_msg_type() == MessageType::MsgHeartbeat
                     || message.get_msg_type() == MessageType::MsgHeartbeatResponse
                 {
@@ -416,7 +423,7 @@ impl Consensus {
                     log::warn!("Failed to step message: {:?}", error);
                 }
             }
-            Ok(Message::FromClient(operation)) => {
+            Ok(Some(Message::FromClient(operation))) => {
                 let result = match operation {
                     ConsensusOperations::RemovePeer(peer_id) => {
                         let mut change = ConfChangeV2::default();
@@ -458,11 +465,11 @@ impl Consensus {
                     }
                 }
             }
-            Err(RecvTimeoutError::Timeout) => (),
-            Err(RecvTimeoutError::Disconnected) => {
+            Ok(None) => {
                 log::warn!("Stopping Raft as message sender was dropped");
                 return Ok(());
             }
+            Err(_timeout_elapsed) => (), // recv. timeout
         }
         Ok(())
     }
@@ -841,7 +848,7 @@ mod tests {
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {
                 if message_sender
-                    .send(super::Message::FromClient(entry))
+                    .blocking_send(super::Message::FromClient(entry))
                     .is_err()
                 {
                     log::error!("Can not forward new entry to consensus as it was stopped.");
