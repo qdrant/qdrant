@@ -900,7 +900,8 @@ impl ShardReplicaSet {
             // report all failing peers to consensus
             for (peer_id, err) in &failures {
                 log::warn!(
-                    "Failed to update shard {} on peer {}, error: {:?}",
+                    "Failed to update shard {}:{} on peer {}, error: {:?}",
+                    self.collection_id,
                     self.shard_id,
                     peer_id,
                     err
