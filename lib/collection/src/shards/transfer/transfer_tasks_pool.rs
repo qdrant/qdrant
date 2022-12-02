@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
 use crate::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
+use crate::shards::CollectionId;
 
-#[derive(Default)]
 pub struct TransferTasksPool {
+    collection_id: CollectionId,
     tasks: HashMap<ShardTransferKey, StoppableAsyncTaskHandle<bool>>,
 }
 
@@ -23,6 +24,13 @@ impl TaskResult {
 }
 
 impl TransferTasksPool {
+    pub fn new(collection_id: CollectionId) -> Self {
+        Self {
+            collection_id,
+            tasks: HashMap::new(),
+        }
+    }
+
     /// Returns true if the task was actually stopped
     /// Returns false if the task was not found
     pub async fn stop_if_exists(&mut self, transfer_key: &ShardTransferKey) -> TaskResult {
@@ -31,14 +39,16 @@ impl TransferTasksPool {
                 Ok(res) => {
                     if res {
                         log::info!(
-                            "Transfer of shard {} -> {} finished",
+                            "Transfer of shard {}:{} -> {} finished",
+                            self.collection_id,
                             transfer_key.shard_id,
                             transfer_key.to
                         );
                         TaskResult::Finished
                     } else {
                         log::info!(
-                            "Transfer of shard {} -> {} stopped",
+                            "Transfer of shard {}:{} -> {} stopped",
+                            self.collection_id,
                             transfer_key.shard_id,
                             transfer_key.to
                         );
@@ -47,7 +57,8 @@ impl TransferTasksPool {
                 }
                 Err(err) => {
                     log::warn!(
-                        "Transfer task for shard {} -> {} failed: {}",
+                        "Transfer task for shard {}:{} -> {} failed: {}",
+                        self.collection_id,
                         transfer_key.shard_id,
                         transfer_key.to,
                         err
