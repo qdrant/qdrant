@@ -34,7 +34,6 @@ pub(crate) fn check_unprocessed_points(
         None => Ok(processed.len()),
         Some(missed_point) => Err(CollectionError::PointNotFound {
             missed_point_id: missed_point,
-            context: "check_unprocessed_points".to_string(),
         }),
     }
 }
@@ -304,7 +303,7 @@ pub(crate) fn upsert_points<'a, T>(
 where
     T: IntoIterator<Item = &'a PointStruct>,
 {
-    let mut points_map: HashMap<PointIdType, &PointStruct> =
+    let points_map: HashMap<PointIdType, &PointStruct> =
         points.into_iter().map(|p| (p.id, p)).collect();
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 

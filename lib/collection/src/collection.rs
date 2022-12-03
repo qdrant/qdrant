@@ -757,7 +757,6 @@ impl Collection {
                 if !all_vectors_map.contains_key(&point_id) {
                     return Err(CollectionError::PointNotFound {
                         missed_point_id: point_id,
-                        context: "recommend_batch_by".to_string(),
                     });
                 }
             }
