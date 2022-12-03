@@ -227,6 +227,7 @@ impl Segment {
             Some(internal_id) => Ok(internal_id),
             None => Err(OperationError::PointIdError {
                 missed_point_id: point_id,
+                context: "lookup_internal_id".to_string(),
             }),
         }
     }

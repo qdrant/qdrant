@@ -346,8 +346,8 @@ pub enum CollectionError {
     BadInput { description: String },
     #[error("{what} not found")]
     NotFound { what: String },
-    #[error("No point with id {missed_point_id} found")]
-    PointNotFound { missed_point_id: PointIdType },
+    #[error("No point with id {missed_point_id} found, context: {context}")]
+    PointNotFound { missed_point_id: PointIdType, context: String },
     #[error("Service internal error: {error}")]
     ServiceError { error: String },
     #[error("Bad request: {description}")]
@@ -410,8 +410,8 @@ impl From<OperationError> for CollectionError {
             OperationError::MissedVectorName { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
-            OperationError::PointIdError { missed_point_id } => {
-                Self::PointNotFound { missed_point_id }
+            OperationError::PointIdError { missed_point_id, context } => {
+                Self::PointNotFound { missed_point_id, context }
             }
             OperationError::ServiceError { description } => {
                 Self::ServiceError { error: description }
