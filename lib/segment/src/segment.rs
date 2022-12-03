@@ -1,3 +1,4 @@
+use std::backtrace::Backtrace;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename, File};
@@ -225,10 +226,13 @@ impl Segment {
         let internal_id_opt = self.id_tracker.borrow().internal_id(point_id);
         match internal_id_opt {
             Some(internal_id) => Ok(internal_id),
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-                context: "lookup_internal_id".to_string(),
-            }),
+            None => {
+                log::warn!("Custom backtrace: {}", Backtrace::force_capture());
+                Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                    context: "lookup_internal_id".to_string(),
+                })
+            }
         }
     }
 
