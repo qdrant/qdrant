@@ -31,7 +31,10 @@ pub enum OperationError {
     #[error("Missed vector name error: {received_name}")]
     MissedVectorName { received_name: String },
     #[error("No point with id {missed_point_id} found: {context}")]
-    PointIdError { missed_point_id: PointIdType, context: String },
+    PointIdError {
+        missed_point_id: PointIdType,
+        context: String,
+    },
     #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]
     TypeError {
         field_name: PayloadKeyType,
