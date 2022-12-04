@@ -34,7 +34,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     deleted: BitVec,
     deleted_count: usize,
     db_wrapper: DatabaseColumnWrapper,
-    gpu_worker: Arc<Mutex<KnnWorker>>,
+    gpu_worker: Option<Mutex<Box<KnnWorker>>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -95,16 +95,20 @@ pub fn open_simple_vector_storage(
     database_column_name: &str,
     dim: usize,
     distance: Distance,
+    use_gpu: bool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
     let debug_messenger = PanicIfErrorMessenger {};
-    let instance = Arc::new(GpuInstance::new("qdrant", Some(&debug_messenger), false).unwrap());
-    let device =
-        Arc::new(GpuDevice::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
-    let gpu_worker = Arc::new(Mutex::new(knn_rust_vulkan::knn_worker::KnnWorker::new(
-        device.clone(),
-        dim,
-        128 * 1024,
-    )));
+
+    let gpu_worker = if use_gpu {
+        let instance = Arc::new(GpuInstance::new("qdrant", Some(&debug_messenger), false).unwrap());
+        let device =
+            Arc::new(GpuDevice::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
+        Some(Mutex::new(Box::new(
+            knn_rust_vulkan::knn_worker::KnnWorker::new(device.clone(), dim, 128 * 1024),
+        )))
+    } else {
+        None
+    };
 
     let mut vectors = ChunkedVectors::new(dim);
     let mut deleted = BitVec::new();
@@ -126,13 +130,17 @@ pub fn open_simple_vector_storage(
 
         deleted.set(point_id as usize, stored_record.deleted);
         vectors.insert(point_id, &stored_record.vector);
-        if !stored_record.deleted {
-            gpu_worker
-                .lock()
-                .add_vector(&stored_record.vector, point_id as usize);
+        if let Some(gpu_worker) = &gpu_worker {
+            if !stored_record.deleted {
+                gpu_worker
+                    .lock()
+                    .add_vector(&stored_record.vector, point_id as usize);
+            }
         }
     }
-    gpu_worker.lock().flush();
+    if let Some(gpu_worker) = &gpu_worker {
+        gpu_worker.lock().flush();
+    }
 
     debug!("Segment vectors: {}", vectors.len());
     debug!(
@@ -184,10 +192,14 @@ where
     fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
         let v = self.vectors.get(point_id);
         let deleted = self.deleted[point_id as usize];
-        if deleted {
-            self.gpu_worker.lock().remove_vector(point_id as usize);
-        } else {
-            self.gpu_worker.lock().add_vector(v, point_id as usize);
+        if let Some(gpu_worker) = &self.gpu_worker {
+            if deleted {
+                gpu_worker.lock().remove_vector(point_id as usize);
+            } else {
+                let mut locked = gpu_worker.lock();
+                locked.add_vector(v, point_id as usize);
+                locked.flush();
+            }
         }
 
         let record = StoredRecord {
@@ -293,7 +305,6 @@ where
     }
 
     fn flusher(&self) -> Flusher {
-        self.gpu_worker.lock().flush();
         self.db_wrapper.flusher()
     }
 
@@ -337,16 +348,19 @@ where
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
 
-        let reversed: Vec<_> = preprocessed_vector.iter().map(|x| -x).collect();
-        let knn = self.gpu_worker.lock().knn(&reversed, top);
-        //log::info!("GPU search: {:?}", &knn);
-        let result: Vec<_> = knn
-            .iter()
-            .map(|score| ScoredPointOffset {
-                idx: score.index as PointOffsetType,
-                score: score.score,
-            })
-            .collect();
+        if let Some(gpu_worker) = &self.gpu_worker {
+            if self.vectors.len() > 100 {
+                let reversed: Vec<_> = preprocessed_vector.iter().map(|x| -x).collect();
+                let knn = gpu_worker.lock().knn(&reversed, top);
+                return knn
+                    .iter()
+                    .map(|score| ScoredPointOffset {
+                        idx: score.index as PointOffsetType,
+                        score: -score.score,
+                    })
+                    .collect();
+            }
+        }
 
         let scores = (0..self.vectors.len())
             .filter(|point_id| !self.deleted[*point_id])
@@ -358,13 +372,7 @@ where
                     score: TMetric::similarity(&preprocessed_vector, other_vector),
                 }
             });
-        let check = peek_top_largest_iterable(scores, top);
-        //log::info!("orig search: {:?}", &check);
-        assert_eq!(
-            result.iter().map(|a| a.idx).collect::<Vec<_>>(),
-            check.iter().map(|a| a.idx).collect::<Vec<_>>(),
-        );
-        result
+        peek_top_largest_iterable(scores, top)
     }
 
     fn score_internal(
@@ -391,7 +399,7 @@ mod tests {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
         let distance = Distance::Dot;
         let dim = 4;
-        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, distance).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, distance, false).unwrap();
         let mut borrowed_storage = storage.borrow_mut();
 
         let vec0 = vec![1.0, 0.0, 1.0, 1.0];

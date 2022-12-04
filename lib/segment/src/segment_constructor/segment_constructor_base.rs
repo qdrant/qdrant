@@ -41,6 +41,14 @@ fn create_segment(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
+    let segment_type = match config.index {
+        Indexes::Plain { .. } => SegmentType::Plain,
+        Indexes::Hnsw { .. } => SegmentType::Indexed,
+    };
+
+    let appendable_flag =
+        segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
+
     let get_vector_name_with_prefix = |prefix: &str, vector_name: &str| {
         if !vector_name.is_empty() {
             format!("{}-{}", prefix, vector_name)
@@ -85,6 +93,7 @@ fn create_segment(
                     &db_column_name,
                     vector_config.size,
                     vector_config.distance,
+                    appendable_flag,
                 )?
             }
             StorageType::Mmap => open_memmap_vector_storage(
@@ -126,14 +135,6 @@ fn create_segment(
             },
         );
     }
-
-    let segment_type = match config.index {
-        Indexes::Plain { .. } => SegmentType::Plain,
-        Indexes::Hnsw { .. } => SegmentType::Indexed,
-    };
-
-    let appendable_flag =
-        segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
     Ok(Segment {
         version,
