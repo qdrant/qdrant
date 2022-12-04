@@ -15,7 +15,7 @@ rand_distr = "0.4.3"
 walkdir = "2.3.2"
 
 [dependencies]
-
+knn-rust-vulkan = { git = "https://github.com/IvanPleshkov/knn-rust-vulkan.git" }
 parking_lot = "0.12"
 rayon = "1.6.0"
 num_cpus = "1.14"

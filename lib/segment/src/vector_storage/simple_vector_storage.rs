@@ -5,8 +5,12 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitVec;
+use knn_rust_vulkan::debug_messenger::PanicIfErrorMessenger;
+use knn_rust_vulkan::gpu_device::GpuDevice;
+use knn_rust_vulkan::gpu_instance::GpuInstance;
+use knn_rust_vulkan::knn_worker::KnnWorker;
 use log::debug;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +34,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     deleted: BitVec,
     deleted_count: usize,
     db_wrapper: DatabaseColumnWrapper,
+    gpu_worker: Arc<Mutex<KnnWorker>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -91,6 +96,16 @@ pub fn open_simple_vector_storage(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
+    let debug_messenger = PanicIfErrorMessenger {};
+    let instance = Arc::new(GpuInstance::new("qdrant", Some(&debug_messenger), false).unwrap());
+    let device =
+        Arc::new(GpuDevice::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
+    let gpu_worker = Arc::new(Mutex::new(knn_rust_vulkan::knn_worker::KnnWorker::new(
+        device.clone(),
+        dim,
+        5 * 1024 * 1024,
+    )));
+
     let mut vectors = ChunkedVectors::new(dim);
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
@@ -129,6 +144,7 @@ pub fn open_simple_vector_storage(
             deleted,
             deleted_count,
             db_wrapper,
+            gpu_worker,
         }))),
         Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
             EuclidMetric,
@@ -139,6 +155,7 @@ pub fn open_simple_vector_storage(
             deleted,
             deleted_count,
             db_wrapper,
+            gpu_worker,
         }))),
         Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
             DotProductMetric,
@@ -149,6 +166,7 @@ pub fn open_simple_vector_storage(
             deleted,
             deleted_count,
             db_wrapper,
+            gpu_worker,
         }))),
     }
 }
@@ -204,6 +222,7 @@ where
     fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         assert_eq!(self.dim, vector.len());
         let new_id = self.vectors.push(&vector);
+        self.gpu_worker.lock().add_vector(&vector, new_id as usize);
         self.deleted.push(false);
         self.update_stored(new_id)?;
         Ok(new_id)
@@ -219,6 +238,7 @@ where
             self.deleted.resize(key as usize + 1, true);
         }
         self.deleted.set(key as usize, false);
+        self.gpu_worker.lock().add_vector(&vector, key as usize);
         self.update_stored(key)?;
         Ok(())
     }
@@ -305,18 +325,13 @@ where
 
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
-
-        let scores = (0..self.vectors.len())
-            .filter(|point_id| !self.deleted[*point_id])
-            .map(|point_id| {
-                let point_id = point_id as PointOffsetType;
-                let other_vector = &self.vectors.get(point_id);
-                ScoredPointOffset {
-                    idx: point_id,
-                    score: TMetric::similarity(&preprocessed_vector, other_vector),
-                }
-            });
-        peek_top_largest_iterable(scores, top)
+        let knn = self.gpu_worker.lock().knn(&preprocessed_vector, top);
+        knn.iter()
+            .map(|(point_id, score)| ScoredPointOffset {
+                idx: *point_id as PointOffsetType,
+                score: *score,
+            })
+            .collect()
     }
 
     fn score_internal(
