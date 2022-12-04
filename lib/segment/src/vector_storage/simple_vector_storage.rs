@@ -103,7 +103,7 @@ pub fn open_simple_vector_storage(
     let gpu_worker = Arc::new(Mutex::new(knn_rust_vulkan::knn_worker::KnnWorker::new(
         device.clone(),
         dim,
-        5 * 1024 * 1024,
+        128 * 1024,
     )));
 
     let mut vectors = ChunkedVectors::new(dim);
@@ -126,7 +126,11 @@ pub fn open_simple_vector_storage(
 
         deleted.set(point_id as usize, stored_record.deleted);
         vectors.insert(point_id, &stored_record.vector);
+        gpu_worker
+            .lock()
+            .add_vector(&stored_record.vector, point_id as usize);
     }
+    gpu_worker.lock().flush();
 
     debug!("Segment vectors: {}", vectors.len());
     debug!(
@@ -177,6 +181,7 @@ where
 {
     fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
         let v = self.vectors.get(point_id);
+        self.gpu_worker.lock().add_vector(v, point_id as usize);
 
         let record = StoredRecord {
             deleted: self.deleted[point_id as usize],
@@ -222,7 +227,6 @@ where
     fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         assert_eq!(self.dim, vector.len());
         let new_id = self.vectors.push(&vector);
-        self.gpu_worker.lock().add_vector(&vector, new_id as usize);
         self.deleted.push(false);
         self.update_stored(new_id)?;
         Ok(new_id)
@@ -238,7 +242,6 @@ where
             self.deleted.resize(key as usize + 1, true);
         }
         self.deleted.set(key as usize, false);
-        self.gpu_worker.lock().add_vector(&vector, key as usize);
         self.update_stored(key)?;
         Ok(())
     }
@@ -283,6 +286,7 @@ where
     }
 
     fn flusher(&self) -> Flusher {
+        self.gpu_worker.lock().flush();
         self.db_wrapper.flusher()
     }
 
@@ -325,13 +329,35 @@ where
 
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
-        let knn = self.gpu_worker.lock().knn(&preprocessed_vector, top);
-        knn.iter()
+
+        let reversed: Vec<_> = preprocessed_vector.iter().map(|x| -x).collect();
+        let knn = self.gpu_worker.lock().knn(&reversed, top);
+        //log::info!("GPU search: {:?}", &knn);
+        let result: Vec<_> = knn
+            .iter()
             .map(|score| ScoredPointOffset {
                 idx: score.index as PointOffsetType,
                 score: score.score,
             })
-            .collect()
+            .collect();
+
+        let scores = (0..self.vectors.len())
+            .filter(|point_id| !self.deleted[*point_id])
+            .map(|point_id| {
+                let point_id = point_id as PointOffsetType;
+                let other_vector = &self.vectors.get(point_id);
+                ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&preprocessed_vector, other_vector),
+                }
+            });
+        let check = peek_top_largest_iterable(scores, top);
+        //log::info!("orig search: {:?}", &check);
+        assert_eq!(
+            result.iter().map(|a| a.idx).collect::<Vec<_>>(),
+            check.iter().map(|a| a.idx).collect::<Vec<_>>(),
+        );
+        result
     }
 
     fn score_internal(
