@@ -1,3 +1,4 @@
+use std::backtrace::Backtrace;
 use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::path::{Path, PathBuf};
@@ -42,7 +43,10 @@ pub enum OperationError {
     /// Service Error prevents further update of the collection until it is fixed.
     /// Should only be used for hardware, data corruption, IO, or other unexpected internal errors.
     #[error("Service runtime error: {description}")]
-    ServiceError { description: String },
+    ServiceError {
+        description: String,
+        backtrace: Option<String>,
+    },
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
 }
@@ -51,6 +55,7 @@ impl OperationError {
     pub fn service_error(description: &str) -> OperationError {
         OperationError::ServiceError {
             description: description.to_string(),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -67,6 +72,7 @@ impl From<semver::Error> for OperationError {
     fn from(error: semver::Error) -> Self {
         OperationError::ServiceError {
             description: error.to_string(),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -75,6 +81,7 @@ impl From<ThreadPoolBuildError> for OperationError {
     fn from(error: ThreadPoolBuildError) -> Self {
         OperationError::ServiceError {
             description: format!("{}", error),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }

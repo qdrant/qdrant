@@ -81,18 +81,19 @@ impl SegmentBuilder {
                 let mut payload_index = self_segment.payload_index.borrow_mut();
 
                 if vector_storages.len() != other_vector_storages.len() {
-                    return Err(OperationError::ServiceError {
-                        description: format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
-                    });
+                    return Err(OperationError::service_error(
+                        &format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
+                    ));
                 }
 
                 let mut internal_id_iter = None;
                 for (vector_name, vector_storage) in &mut vector_storages {
                     let other_vector_storage = other_vector_storages.get(vector_name);
                     if other_vector_storage.is_none() {
-                        return Err(OperationError::ServiceError {
-                            description: format!("Cannot update from other segment because if missing vector name {}", vector_name),
-                        });
+                        return Err(OperationError::service_error(&format!(
+                            "Cannot update from other segment because if missing vector name {}",
+                            vector_name
+                        )));
                     }
                     let other_vector_storage = other_vector_storage.unwrap();
                     let new_internal_range = vector_storage.update_from(&**other_vector_storage)?;
@@ -100,11 +101,9 @@ impl SegmentBuilder {
                         Some(new_internal_range.zip(other_vector_storage.iter_ids()));
                 }
                 if internal_id_iter.is_none() {
-                    return Err(OperationError::ServiceError {
-                        description:
-                            "Empty intersection between self segment names and other segment names"
-                                .to_owned(),
-                    });
+                    return Err(OperationError::service_error(
+                        "Empty intersection between self segment names and other segment names",
+                    ));
                 }
 
                 for (new_internal_id, old_internal_id) in internal_id_iter.unwrap() {
