@@ -327,9 +327,9 @@ where
         let preprocessed_vector = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
         let knn = self.gpu_worker.lock().knn(&preprocessed_vector, top);
         knn.iter()
-            .map(|(point_id, score)| ScoredPointOffset {
-                idx: *point_id as PointOffsetType,
-                score: *score,
+            .map(|score| ScoredPointOffset {
+                idx: score.index as PointOffsetType,
+                score: score.score,
             })
             .collect()
     }
