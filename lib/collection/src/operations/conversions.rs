@@ -32,6 +32,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             full_scan_threshold: value.full_scan_threshold.map(|v| v as usize),
             max_indexing_threads: value.max_indexing_threads.map(|v| v as usize),
             on_disk: value.on_disk,
+            payload_m: value.payload_m.map(|v| v as usize),
         }
     }
 }
@@ -152,6 +153,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     full_scan_threshold: Some(config.hnsw_config.full_scan_threshold as u64),
                     max_indexing_threads: Some(config.hnsw_config.max_indexing_threads as u64),
                     on_disk: config.hnsw_config.on_disk,
+                    payload_m: config.hnsw_config.payload_m.map(|v| v as u64),
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
                     deleted_threshold: Some(config.optimizer_config.deleted_threshold),

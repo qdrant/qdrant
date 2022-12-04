@@ -72,6 +72,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 hnsw_config.ef_construct,
                 indexing_threshold,
                 hnsw_config.max_indexing_threads,
+                hnsw_config.payload_m,
             )
         };
 
@@ -321,34 +322,38 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             HNSW_USE_HEURISTIC,
         );
 
-        let mut ids = vec![];
-        for vector_id in vector_storage.iter_ids() {
-            let level = graph_layers_builder.get_random_layer(&mut rng);
-            graph_layers_builder.set_levels(vector_id, level);
-            ids.push(vector_id);
-        }
-
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(self.config.max_rayon_threads())
             .build()?;
 
-        pool.install(|| {
-            ids.into_par_iter().try_for_each(|vector_id| {
-                if stopped.load(Ordering::Relaxed) {
-                    return Err(OperationError::Cancelled {
-                        description: "Cancelled by external thread".to_string(),
-                    });
-                }
-                let vector = vector_storage.get_vector(vector_id).unwrap();
-                let raw_scorer = vector_storage.raw_scorer(vector);
-                let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+        for vector_id in vector_storage.iter_ids() {
+            let level = graph_layers_builder.get_random_layer(&mut rng);
+            graph_layers_builder.set_levels(vector_id, level);
+        }
 
-                graph_layers_builder.link_new_point(vector_id, points_scorer);
-                Ok(())
-            })
-        })?;
+        if self.config.m > 0 {
+            let ids: Vec<_> = vector_storage.iter_ids().collect();
 
-        debug!("finish main graph");
+            pool.install(|| {
+                ids.into_par_iter().try_for_each(|vector_id| {
+                    if stopped.load(Ordering::Relaxed) {
+                        return Err(OperationError::Cancelled {
+                            description: "Cancelled by external thread".to_string(),
+                        });
+                    }
+                    let vector = vector_storage.get_vector(vector_id).unwrap();
+                    let raw_scorer = vector_storage.raw_scorer(vector);
+                    let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+
+                    graph_layers_builder.link_new_point(vector_id, points_scorer);
+                    Ok(())
+                })
+            })?;
+
+            debug!("finish main graph");
+        } else {
+            debug!("skip building main HNSW graph");
+        }
 
         let total_vectors_count = vector_storage.total_vector_count();
         let mut block_filter_list = VisitedList::new(total_vectors_count);
@@ -363,7 +368,11 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             // So blocks larger than $1/m$ are not needed.
             // We add multiplier for the extra safety.
             let percolation_multiplier = 2;
-            let max_block_size = total_points / self.config.m * percolation_multiplier;
+            let max_block_size = if self.config.m > 0 {
+                total_points / self.config.m * percolation_multiplier
+            } else {
+                usize::MAX
+            };
             let min_block_size = self.config.indexing_threshold;
 
             for payload_block in payload_index.payload_blocks(&field, min_block_size) {
@@ -378,8 +387,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // ToDo: re-use graph layer for same payload
                 let mut additional_graph = GraphLayersBuilder::new_with_params(
                     self.vector_storage.borrow().total_vector_count(),
-                    self.config.m,
-                    self.config.m0,
+                    self.config.payload_m.unwrap_or(self.config.m),
+                    self.config.payload_m0.unwrap_or(self.config.m0),
                     self.config.ef_construct,
                     1,
                     HNSW_USE_HEURISTIC,

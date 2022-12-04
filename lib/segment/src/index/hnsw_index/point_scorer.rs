@@ -58,9 +58,13 @@ impl<'a> FilteredScorer<'a> {
                 &point_ids[0..filtered_len]
             }
         };
-
-        self.points_buffer
-            .resize(limit, ScoredPointOffset::default());
+        if limit == 0 {
+            self.points_buffer
+                .resize(filtered_point_ids.len(), ScoredPointOffset::default());
+        } else {
+            self.points_buffer
+                .resize(limit, ScoredPointOffset::default());
+        }
         let count = self
             .raw_scorer
             .score_points(filtered_point_ids, &mut self.points_buffer);

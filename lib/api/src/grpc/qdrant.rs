@@ -90,6 +90,10 @@ pub struct HnswConfigDiff {
     ///Store HNSW index on disk. If set to false, index will be stored in RAM.
     #[prost(bool, optional, tag="5")]
     pub on_disk: ::core::option::Option<bool>,
+    ///
+    ///Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
+    #[prost(uint64, optional, tag="6")]
+    pub payload_m: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WalConfigDiff {

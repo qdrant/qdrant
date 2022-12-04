@@ -819,6 +819,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             full_scan_threshold: hnsw_config.full_scan_threshold.unwrap_or_default() as usize,
             max_indexing_threads: hnsw_config.max_indexing_threads.unwrap_or_default() as usize,
             on_disk: hnsw_config.on_disk,
+            payload_m: hnsw_config.payload_m.map(|x| x as usize),
         }
     }
 }

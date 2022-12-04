@@ -20,6 +20,10 @@ pub struct HnswGraphConfig {
     pub indexing_threshold: usize,
     #[serde(default)]
     pub max_indexing_threads: usize,
+    #[serde(default)]
+    pub payload_m: Option<usize>,
+    #[serde(default)]
+    pub payload_m0: Option<usize>,
 }
 
 impl HnswGraphConfig {
@@ -28,6 +32,7 @@ impl HnswGraphConfig {
         ef_construct: usize,
         indexing_threshold: usize,
         max_indexing_threads: usize,
+        payload_m: Option<usize>,
     ) -> Self {
         HnswGraphConfig {
             m,
@@ -36,6 +41,8 @@ impl HnswGraphConfig {
             ef: ef_construct,
             indexing_threshold,
             max_indexing_threads,
+            payload_m,
+            payload_m0: payload_m.map(|v| v * 2),
         }
     }
 
