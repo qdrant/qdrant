@@ -126,9 +126,11 @@ pub fn open_simple_vector_storage(
 
         deleted.set(point_id as usize, stored_record.deleted);
         vectors.insert(point_id, &stored_record.vector);
-        gpu_worker
-            .lock()
-            .add_vector(&stored_record.vector, point_id as usize);
+        if !stored_record.deleted {
+            gpu_worker
+                .lock()
+                .add_vector(&stored_record.vector, point_id as usize);
+        }
     }
     gpu_worker.lock().flush();
 
@@ -181,10 +183,15 @@ where
 {
     fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
         let v = self.vectors.get(point_id);
-        self.gpu_worker.lock().add_vector(v, point_id as usize);
+        let deleted = self.deleted[point_id as usize];
+        if deleted {
+            self.gpu_worker.lock().remove_vector(point_id as usize);
+        } else {
+            self.gpu_worker.lock().add_vector(v, point_id as usize);
+        }
 
         let record = StoredRecord {
-            deleted: self.deleted[point_id as usize],
+            deleted,
             vector: v.to_vec(), // ToDo: try to reduce number of vector copies
         };
 
