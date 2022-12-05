@@ -1389,7 +1389,11 @@ impl Collection {
         Ok(snapshot_path)
     }
 
-    pub async fn create_snapshot(&self, temp_dir: &Path, this_peer_id: PeerId) -> CollectionResult<SnapshotDescription> {
+    pub async fn create_snapshot(
+        &self,
+        temp_dir: &Path,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
             "{}-{}-{}.snapshot",
             self.name(),
