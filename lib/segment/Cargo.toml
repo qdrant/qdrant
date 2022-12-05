@@ -16,6 +16,7 @@ walkdir = "2.3.2"
 
 [dependencies]
 knn-rust-vulkan = { git = "https://github.com/IvanPleshkov/knn-rust-vulkan.git" }
+#knn-rust-vulkan = { path = "../../../knn-rust-vulkan" }
 parking_lot = "0.12"
 rayon = "1.6.0"
 num_cpus = "1.14"

@@ -104,7 +104,7 @@ pub fn open_simple_vector_storage(
         let device =
             Arc::new(GpuDevice::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
         Some(Mutex::new(Box::new(
-            knn_rust_vulkan::knn_worker::KnnWorker::new(device.clone(), dim, 128 * 1024),
+            knn_rust_vulkan::knn_worker::KnnWorker::new(device.clone(), dim),
         )))
     } else {
         None
