@@ -360,49 +360,55 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
         let payload_index = self.payload_index.borrow();
 
-        for (field, _) in payload_index.indexed_fields() {
-            debug!("building additional index for field {}", &field);
+        let payload_m = self.config.payload_m.unwrap_or(self.config.m);
 
-            // It is expected, that graph will become disconnected less than
-            // $1/m$ points left.
-            // So blocks larger than $1/m$ are not needed.
-            // We add multiplier for the extra safety.
-            let percolation_multiplier = 2;
-            let max_block_size = if self.config.m > 0 {
-                total_points / self.config.m * percolation_multiplier
-            } else {
-                usize::MAX
-            };
-            let min_block_size = self.config.indexing_threshold;
+        if payload_m > 0 {
+            for (field, _) in payload_index.indexed_fields() {
+                debug!("building additional index for field {}", &field);
 
-            for payload_block in payload_index.payload_blocks(&field, min_block_size) {
-                if stopped.load(Ordering::Relaxed) {
-                    return Err(OperationError::Cancelled {
-                        description: "Cancelled by external thread".to_string(),
-                    });
+                // It is expected, that graph will become disconnected less than
+                // $1/m$ points left.
+                // So blocks larger than $1/m$ are not needed.
+                // We add multiplier for the extra safety.
+                let percolation_multiplier = 2;
+                let max_block_size = if self.config.m > 0 {
+                    total_points / self.config.m * percolation_multiplier
+                } else {
+                    usize::MAX
+                };
+                let min_block_size = self.config.indexing_threshold;
+
+                for payload_block in payload_index.payload_blocks(&field, min_block_size) {
+                    if stopped.load(Ordering::Relaxed) {
+                        return Err(OperationError::Cancelled {
+                            description: "Cancelled by external thread".to_string(),
+                        });
+                    }
+                    if payload_block.cardinality > max_block_size {
+                        continue;
+                    }
+                    // ToDo: re-use graph layer for same payload
+                    let mut additional_graph = GraphLayersBuilder::new_with_params(
+                        self.vector_storage.borrow().total_vector_count(),
+                        payload_m,
+                        self.config.payload_m0.unwrap_or(self.config.m0),
+                        self.config.ef_construct,
+                        1,
+                        HNSW_USE_HEURISTIC,
+                        false,
+                    );
+                    self.build_filtered_graph(
+                        &pool,
+                        stopped,
+                        &mut additional_graph,
+                        payload_block.condition,
+                        &mut block_filter_list,
+                    )?;
+                    graph_layers_builder.merge_from_other(additional_graph);
                 }
-                if payload_block.cardinality > max_block_size {
-                    continue;
-                }
-                // ToDo: re-use graph layer for same payload
-                let mut additional_graph = GraphLayersBuilder::new_with_params(
-                    self.vector_storage.borrow().total_vector_count(),
-                    self.config.payload_m.unwrap_or(self.config.m),
-                    self.config.payload_m0.unwrap_or(self.config.m0),
-                    self.config.ef_construct,
-                    1,
-                    HNSW_USE_HEURISTIC,
-                    false,
-                );
-                self.build_filtered_graph(
-                    &pool,
-                    stopped,
-                    &mut additional_graph,
-                    payload_block.condition,
-                    &mut block_filter_list,
-                )?;
-                graph_layers_builder.merge_from_other(additional_graph);
             }
+        } else {
+            debug!("skip building additional HNSW links");
         }
 
         let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(&self.path);
