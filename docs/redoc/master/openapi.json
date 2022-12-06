@@ -6153,8 +6153,19 @@
             "description": "Examples: - URL `http://localhost:8080/collections/my_collection/snapshots/my_snapshot` - Local path `file:///qdrant/snapshots/test_collection-2022-08-04-10-49-10.snapshot`",
             "type": "string",
             "format": "uri"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/SnapshotPriority"
           }
         }
+      },
+      "SnapshotPriority": {
+        "description": "Defines source of truth for snapshot recovery `Snapshot` means - prefer snapshot data over the current state `Replica` means - prefer existing data over the snapshot",
+        "type": "string",
+        "enum": [
+          "snapshot",
+          "replica"
+        ]
       }
     }
   }

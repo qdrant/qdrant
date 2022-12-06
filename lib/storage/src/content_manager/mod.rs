@@ -19,12 +19,13 @@ pub mod consensus_ops {
     use collection::shards::replica_set::ReplicaState;
     use collection::shards::shard::PeerId;
     use collection::shards::transfer::shard_transfer::ShardTransfer;
-    use collection::shards::CollectionId;
+    use collection::shards::{replica_set, CollectionId};
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
 
     use crate::content_manager::collection_meta_ops::{
-        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations,
+        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations, UpdateCollection,
+        UpdateCollectionOperation,
     };
 
     /// Operation that should pass consensus
@@ -79,6 +80,26 @@ pub mod consensus_ops {
                     state,
                 })
                 .into(),
+            )
+        }
+
+        pub fn remove_replica(
+            collection_name: CollectionId,
+            shard_id: u32,
+            peer_id: PeerId,
+        ) -> Self {
+            let mut operation = UpdateCollectionOperation::new(
+                collection_name,
+                UpdateCollection {
+                    optimizers_config: None,
+                    params: None,
+                },
+            );
+            operation
+                .set_shard_replica_changes(vec![replica_set::Change::Remove(shard_id, peer_id)]);
+
+            ConsensusOperations::CollectionMeta(
+                CollectionMetaOperations::UpdateCollection(operation).into(),
             )
         }
 
