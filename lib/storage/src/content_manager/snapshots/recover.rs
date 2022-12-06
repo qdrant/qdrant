@@ -17,8 +17,6 @@ async fn activate_shard(
     peer_id: PeerId,
     shard_id: &ShardId,
 ) -> Result<(), StorageError> {
-    // No other active replicas, we can activate this shard
-    // as there is no de-sync possible
     if toc.is_distributed() {
         log::debug!(
             "Activating shard {} of collection {} with consensus",
@@ -169,6 +167,8 @@ pub async fn do_recover_from_snapshot(
                 .collect();
 
             if other_active_replicas.is_empty() {
+                // No other active replicas, we can activate this shard
+                // as there is no de-sync possible
                 activate_shard(toc, &collection, this_peer_id, shard_id).await?;
             } else {
                 match priority {
@@ -176,25 +176,28 @@ pub async fn do_recover_from_snapshot(
                         // Snapshot is the source of truth, we need to remove all other replicas
                         activate_shard(toc, &collection, this_peer_id, shard_id).await?;
 
-                        let mut replicas_to_keep = state.config.params.replication_factor.get() - 1;
+                        let replicas_to_keep = state.config.params.replication_factor.get() - 1;
+                        let mut replicas_to_remove = other_active_replicas
+                            .len()
+                            .saturating_sub(replicas_to_keep as usize);
 
                         for (peer_id, _) in other_active_replicas {
-                            if replicas_to_keep > 0 {
+                            if replicas_to_remove > 0 {
                                 // Keep this replica
-                                replicas_to_keep -= 1;
+                                replicas_to_remove -= 1;
 
-                                toc.send_set_replica_state_proposal(
-                                    collection_name.to_string(),
-                                    *peer_id,
-                                    *shard_id,
-                                    ReplicaState::Dead,
-                                )?;
-                            } else {
                                 // Don't need more replicas, remove this one
                                 toc.request_remove_replica(
                                     collection_name.to_string(),
                                     *shard_id,
                                     *peer_id,
+                                )?;
+                            } else {
+                                toc.send_set_replica_state_proposal(
+                                    collection_name.to_string(),
+                                    *peer_id,
+                                    *shard_id,
+                                    ReplicaState::Dead,
                                 )?;
                             }
                         }
