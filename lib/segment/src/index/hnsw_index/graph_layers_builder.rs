@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
@@ -122,7 +122,7 @@ impl GraphLayersBuilder {
             m,
             m0,
             ef_construct,
-            level_factor: 1.0 / (m as f64).ln(),
+            level_factor: 1.0 / (max(m, 2) as f64).ln(),
             use_heuristic,
             links_layers,
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),

@@ -3080,6 +3080,13 @@
             "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
             "type": "boolean",
             "nullable": true
+          },
+          "payload_m": {
+            "description": "Custom M param for hnsw graph built for payload index. If not set, default M will be used.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -4262,6 +4269,14 @@
             "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
             "default": null,
             "type": "boolean",
+            "nullable": true
+          },
+          "payload_m": {
+            "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
             "nullable": true
           }
         }

@@ -275,6 +275,10 @@ pub struct HnswConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub on_disk: Option<bool>,
+    /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    pub payload_m: Option<usize>,
 }
 
 fn default_max_indexing_threads() -> usize {
@@ -291,6 +295,7 @@ impl Default for HnswConfig {
             full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
             max_indexing_threads: 0,
             on_disk: Some(false),
+            payload_m: None,
         }
     }
 }
