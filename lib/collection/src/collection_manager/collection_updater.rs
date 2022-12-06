@@ -31,7 +31,7 @@ impl CollectionUpdater {
                 }
             }
             Err(collection_error) => match collection_error {
-                CollectionError::ServiceError { error } => {
+                CollectionError::ServiceError { error, .. } => {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
                     log::error!("Update operation failed: {}", error)

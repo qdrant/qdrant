@@ -398,9 +398,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                         )
                     } else {
                         // Should not be reachable as it is checked in API
-                        return Err(StorageError::ServiceError {
-                            description: "Failed to parse peer uri".to_string(),
-                        });
+                        return Err(StorageError::service_error("Failed to parse peer uri"));
                     }
                 }
             }
@@ -445,9 +443,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn apply_snapshot(&self, snapshot: &raft::eraftpb::Snapshot) -> Result<(), StorageError> {
         let meta = snapshot.get_metadata();
         if raft::Storage::first_index(self)? > meta.index {
-            return Err(StorageError::ServiceError {
-                description: "Snapshot out of date".to_string(),
-            });
+            return Err(StorageError::service_error("Snapshot out of date"));
         }
         let data: SnapshotData = snapshot.get_data().try_into()?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
@@ -509,11 +505,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         tokio::time::timeout(wait_timeout, receiver)
             .await
             .map_err(
-                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
-                    description: format!(
+                |_: Elapsed| {
+                    StorageError::service_error(&format!(
                         "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
                         wait_timeout.as_secs_f64()
-                    ),
+                    ))
                 },
                 // ??? - forwards 2 possible errors: sender dropped, operation failed
             )??
