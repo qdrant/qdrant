@@ -303,12 +303,9 @@ pub(crate) fn upsert_points<'a, T>(
 where
     T: IntoIterator<Item = &'a PointStruct>,
 {
-    let mut ids: Vec<PointIdType> = vec![];
-    let mut points_map: HashMap<PointIdType, &PointStruct> = Default::default();
-    points.into_iter().for_each(|p| {
-        ids.push(p.id);
-        points_map.insert(p.id, p);
-    });
+    let points_map: HashMap<PointIdType, &PointStruct> =
+        points.into_iter().map(|p| (p.id, p)).collect();
+    let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
     // Update points in writable segments
     let updated_points =
