@@ -1107,7 +1107,9 @@ impl TableOfContent {
         // snapshot directory is mounted as network share and multiple writes to it could be slow
         let tmp_dir = Path::new(&self.storage_config.storage_path).join(SNAPSHOTS_TMP_DIR);
         tokio::fs::create_dir_all(&tmp_dir).await?;
-        Ok(collection.create_snapshot(&tmp_dir).await?)
+        Ok(collection
+            .create_snapshot(&tmp_dir, self.this_peer_id)
+            .await?)
     }
 
     pub async fn suggest_shard_distribution(
