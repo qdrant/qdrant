@@ -54,6 +54,9 @@ pub struct HnswConfigDiff {
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     #[serde(default)]
     pub on_disk: Option<bool>,
+    /// Custom M param for additional payload-aware HNSW links. If not set, default M will be used.
+    #[serde(default)]
+    pub payload_m: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]
