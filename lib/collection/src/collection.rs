@@ -1388,10 +1388,15 @@ impl Collection {
         Ok(snapshot_path)
     }
 
-    pub async fn create_snapshot(&self, temp_dir: &Path) -> CollectionResult<SnapshotDescription> {
+    pub async fn create_snapshot(
+        &self,
+        temp_dir: &Path,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
-            "{}-{}.snapshot",
+            "{}-{}-{}.snapshot",
             self.name(),
+            this_peer_id,
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
         let snapshot_path = self.snapshots_path.join(&snapshot_name);
