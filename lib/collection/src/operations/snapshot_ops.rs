@@ -9,12 +9,29 @@ use url::Url;
 
 use crate::operations::types::CollectionResult;
 
+/// Defines source of truth for snapshot recovery
+/// `Snapshot` means - prefer snapshot data over the current state
+/// `Replica` means - prefer existing data over the snapshot
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum SnapshotPriority {
+    Snapshot,
+    #[default]
+    Replica,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotRecover {
     /// Examples:
     /// - URL `http://localhost:8080/collections/my_collection/snapshots/my_snapshot`
     /// - Local path `file:///qdrant/snapshots/test_collection-2022-08-04-10-49-10.snapshot`
     pub location: Url,
+
+    /// Defines which data should be used as a source of truth if there are other replicas in the cluster.
+    /// If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten.
+    /// If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.
+    #[serde(default)]
+    pub priority: SnapshotPriority,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

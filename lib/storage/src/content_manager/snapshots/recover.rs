@@ -2,20 +2,52 @@ use std::path::Path;
 
 use collection::collection::Collection;
 use collection::config::CollectionConfig;
-use collection::operations::snapshot_ops::SnapshotRecover;
+use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_config::ShardType;
 use collection::shards::shard_versioning::latest_shard_paths;
 
 use crate::content_manager::snapshots::download::{download_snapshot, downloaded_snapshots_dir};
 use crate::{StorageError, TableOfContent};
 
+async fn activate_shard(
+    toc: &TableOfContent,
+    collection: &Collection,
+    peer_id: PeerId,
+    shard_id: &ShardId,
+) -> Result<(), StorageError> {
+    if toc.is_distributed() {
+        log::debug!(
+            "Activating shard {} of collection {} with consensus",
+            shard_id,
+            &collection.name()
+        );
+        toc.send_set_replica_state_proposal(
+            collection.name(),
+            peer_id,
+            *shard_id,
+            ReplicaState::Active,
+        )?;
+    } else {
+        log::debug!(
+            "Activating shard {} of collection {} locally",
+            shard_id,
+            &collection.name()
+        );
+        collection
+            .set_shard_replica_state(*shard_id, peer_id, ReplicaState::Active)
+            .await?;
+    }
+    Ok(())
+}
+
 pub async fn do_recover_from_snapshot(
     toc: &TableOfContent,
     collection_name: &str,
     source: SnapshotRecover,
 ) -> Result<bool, StorageError> {
-    let SnapshotRecover { location } = source;
+    let SnapshotRecover { location, priority } = source;
 
     let collection = toc.get_collection(collection_name).await?;
 
@@ -137,45 +169,60 @@ pub async fn do_recover_from_snapshot(
             if other_active_replicas.is_empty() {
                 // No other active replicas, we can activate this shard
                 // as there is no de-sync possible
-                if toc.is_distributed() {
-                    log::debug!(
-                        "Activating shard {} of collection {} with consensus",
-                        shard_id,
-                        collection_name
-                    );
-                    toc.send_set_replica_state_proposal(
-                        collection_name.to_string(),
-                        this_peer_id,
-                        *shard_id,
-                        ReplicaState::Active,
-                    )?;
-                } else {
-                    log::debug!(
-                        "Activating shard {} of collection {} locally",
-                        shard_id,
-                        collection_name
-                    );
-                    collection
-                        .set_shard_replica_state(*shard_id, this_peer_id, ReplicaState::Active)
-                        .await?;
-                }
+                activate_shard(toc, &collection, this_peer_id, shard_id).await?;
             } else {
-                let (replica_peer_id, _state) = other_active_replicas.into_iter().next().unwrap();
-                log::debug!(
-                    "Running synchronization for shard {} of collection {} from {}",
-                    shard_id,
-                    collection_name,
-                    replica_peer_id
-                );
+                match priority {
+                    SnapshotPriority::Snapshot => {
+                        // Snapshot is the source of truth, we need to remove all other replicas
+                        activate_shard(toc, &collection, this_peer_id, shard_id).await?;
 
-                // assume that if there is another peers, the server is distributed
-                toc.request_shard_transfer(
-                    collection_name.to_string(),
-                    *shard_id,
-                    *replica_peer_id,
-                    this_peer_id,
-                    true,
-                )?;
+                        let replicas_to_keep = state.config.params.replication_factor.get() - 1;
+                        let mut replicas_to_remove = other_active_replicas
+                            .len()
+                            .saturating_sub(replicas_to_keep as usize);
+
+                        for (peer_id, _) in other_active_replicas {
+                            if replicas_to_remove > 0 {
+                                // Keep this replica
+                                replicas_to_remove -= 1;
+
+                                // Don't need more replicas, remove this one
+                                toc.request_remove_replica(
+                                    collection_name.to_string(),
+                                    *shard_id,
+                                    *peer_id,
+                                )?;
+                            } else {
+                                toc.send_set_replica_state_proposal(
+                                    collection_name.to_string(),
+                                    *peer_id,
+                                    *shard_id,
+                                    ReplicaState::Dead,
+                                )?;
+                            }
+                        }
+                    }
+                    SnapshotPriority::Replica => {
+                        // Replica is the source of truth, we need to sync recovered data with this replica
+                        let (replica_peer_id, _state) =
+                            other_active_replicas.into_iter().next().unwrap();
+                        log::debug!(
+                            "Running synchronization for shard {} of collection {} from {}",
+                            shard_id,
+                            collection_name,
+                            replica_peer_id
+                        );
+
+                        // assume that if there is another peers, the server is distributed
+                        toc.request_shard_transfer(
+                            collection_name.to_string(),
+                            *shard_id,
+                            *replica_peer_id,
+                            this_peer_id,
+                            true,
+                        )?;
+                    }
+                }
             }
         }
     }
