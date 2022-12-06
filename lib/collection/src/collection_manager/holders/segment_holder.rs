@@ -1,12 +1,12 @@
 use std::cmp::{max, min};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::ops::Mul;
+use std::ops::{Deref, Mul};
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
@@ -222,12 +222,10 @@ impl<'s> SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(&self, ids: &[PointIdType], segment: &LockedSegment) -> Vec<PointIdType> {
-        let segment_arc = segment.get();
-        let entry = segment_arc.read();
+    fn segment_points(&self, ids: &[PointIdType], segment: &dyn SegmentEntry) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
-            .filter(|id| entry.has_point(*id))
+            .filter(|id| segment.has_point(*id))
             .collect()
     }
 
@@ -266,10 +264,11 @@ impl<'s> SegmentHolder {
         let mut applied_points = 0;
         for (idx, segment) in &self.segments {
             // Collect affected points first, we want to lock segment for writing as rare as possible
-            let segment_points = self.segment_points(ids, segment);
+            let segment_arc = segment.get();
+            let segment_lock = segment_arc.upgradable_read();
+            let segment_points = self.segment_points(ids, segment_lock.deref());
             if !segment_points.is_empty() {
-                let segment_arc = segment.get();
-                let mut write_segment = segment_arc.write();
+                let mut write_segment = RwLockUpgradableReadGuard::upgrade(segment_lock);
                 for point_id in segment_points {
                     let is_applied = f(point_id, *idx, &mut write_segment)?;
                     applied_points += is_applied as usize;
