@@ -190,11 +190,11 @@ impl TableOfContent {
         );
         tokio::fs::create_dir_all(&snapshots_path)
             .await
-            .map_err(|err| StorageError::ServiceError {
-                description: format!(
+            .map_err(|err| {
+                StorageError::service_error(&format!(
                     "Can't create directory for snapshots {}. Error: {}",
                     collection_name, err
-                ),
+                ))
             })?;
 
         Ok(snapshots_path)
@@ -203,14 +203,12 @@ impl TableOfContent {
     async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = self.get_collection_path(collection_name);
 
-        tokio::fs::create_dir_all(&path)
-            .await
-            .map_err(|err| StorageError::ServiceError {
-                description: format!(
-                    "Can't create directory for collection {}. Error: {}",
-                    collection_name, err
-                ),
-            })?;
+        tokio::fs::create_dir_all(&path).await.map_err(|err| {
+            StorageError::service_error(&format!(
+                "Can't create directory for collection {}. Error: {}",
+                collection_name, err
+            ))
+        })?;
 
         Ok(path)
     }
@@ -516,11 +514,11 @@ impl TableOfContent {
             removed.before_drop().await;
             let path = self.get_collection_path(collection_name);
             drop(removed);
-            remove_dir_all(path).map_err(|err| StorageError::ServiceError {
-                description: format!(
+            remove_dir_all(path).map_err(|err| {
+                StorageError::service_error(&format!(
                     "Can't delete collection {}, error: {}",
                     collection_name, err
-                ),
+                ))
             })?;
             Ok(true)
         } else {
@@ -668,9 +666,9 @@ impl TableOfContent {
         {
             proposal_sender
         } else {
-            return Err(StorageError::ServiceError {
-                description: "Can't handle transfer, this is a single node deployment".to_string(),
-            });
+            return Err(StorageError::service_error(
+                "Can't handle transfer, this is a single node deployment",
+            ));
         };
 
         match transfer_operation {

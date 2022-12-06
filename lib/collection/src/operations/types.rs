@@ -1,6 +1,6 @@
+use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU64;
-use std::result;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
@@ -349,7 +349,10 @@ pub enum CollectionError {
     #[error("No point with id {missed_point_id} found")]
     PointNotFound { missed_point_id: PointIdType },
     #[error("Service internal error: {error}")]
-    ServiceError { error: String },
+    ServiceError {
+        error: String,
+        backtrace: Option<String>,
+    },
     #[error("Bad request: {description}")]
     BadRequest { description: String },
     #[error("Operation Cancelled: {description}")]
@@ -368,7 +371,10 @@ pub enum CollectionError {
 
 impl CollectionError {
     pub fn service_error(error: String) -> CollectionError {
-        CollectionError::ServiceError { error }
+        CollectionError::ServiceError {
+            error,
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
     }
 
     pub fn bad_input(description: String) -> CollectionError {
@@ -388,13 +394,17 @@ impl From<SystemTimeError> for CollectionError {
     fn from(error: SystemTimeError) -> CollectionError {
         CollectionError::ServiceError {
             error: format!("System time error: {}", error),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
 
 impl From<String> for CollectionError {
     fn from(error: String) -> CollectionError {
-        CollectionError::ServiceError { error }
+        CollectionError::ServiceError {
+            error,
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
     }
 }
 
@@ -413,9 +423,13 @@ impl From<OperationError> for CollectionError {
             OperationError::PointIdError { missed_point_id } => {
                 Self::PointNotFound { missed_point_id }
             }
-            OperationError::ServiceError { description } => {
-                Self::ServiceError { error: description }
-            }
+            OperationError::ServiceError {
+                description,
+                backtrace,
+            } => Self::ServiceError {
+                error: description,
+                backtrace,
+            },
             OperationError::TypeError { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
@@ -431,6 +445,7 @@ impl From<OneshotRecvError> for CollectionError {
     fn from(err: OneshotRecvError) -> Self {
         Self::ServiceError {
             error: format!("{}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -439,6 +454,7 @@ impl From<JoinError> for CollectionError {
     fn from(err: JoinError) -> Self {
         Self::ServiceError {
             error: format!("{}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -447,6 +463,7 @@ impl From<WalError> for CollectionError {
     fn from(err: WalError) -> Self {
         Self::ServiceError {
             error: format!("{}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -455,6 +472,7 @@ impl<T> From<SendError<T>> for CollectionError {
     fn from(err: SendError<T>) -> Self {
         Self::ServiceError {
             error: format!("Can't reach one of the workers: {}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -463,6 +481,7 @@ impl From<JsonError> for CollectionError {
     fn from(err: JsonError) -> Self {
         CollectionError::ServiceError {
             error: format!("Json error: {}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -471,6 +490,7 @@ impl From<io::Error> for CollectionError {
     fn from(err: io::Error) -> Self {
         CollectionError::ServiceError {
             error: format!("File IO error: {}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -479,6 +499,7 @@ impl From<tonic::transport::Error> for CollectionError {
     fn from(err: tonic::transport::Error) -> Self {
         CollectionError::ServiceError {
             error: format!("Tonic transport error: {}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -487,6 +508,7 @@ impl From<InvalidUri> for CollectionError {
     fn from(err: InvalidUri) -> Self {
         CollectionError::ServiceError {
             error: format!("Invalid URI error: {}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -502,9 +524,11 @@ impl From<tonic::Status> for CollectionError {
             },
             tonic::Code::Internal => CollectionError::ServiceError {
                 error: format!("Internal error: {}", err),
+                backtrace: Some(Backtrace::force_capture().to_string()),
             },
             other => CollectionError::ServiceError {
                 error: format!("Tonic status error: {}", other),
+                backtrace: Some(Backtrace::force_capture().to_string()),
             },
         }
     }
@@ -514,6 +538,7 @@ impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
     fn from(err: std::sync::PoisonError<Guard>) -> Self {
         CollectionError::ServiceError {
             error: format!("Mutex lock poisoned: {}", err),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
@@ -547,11 +572,12 @@ impl From<save_on_disk::Error> for CollectionError {
     fn from(err: save_on_disk::Error) -> Self {
         CollectionError::ServiceError {
             error: err.to_string(),
+            backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 }
 
-pub type CollectionResult<T> = result::Result<T, CollectionError>;
+pub type CollectionResult<T> = Result<T, CollectionError>;
 
 pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
     match err {

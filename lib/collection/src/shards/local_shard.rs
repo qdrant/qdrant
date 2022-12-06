@@ -290,19 +290,21 @@ impl LocalShard {
 
         let wal_path = shard_path.join("wal");
 
-        create_dir_all(&wal_path)
-            .await
-            .map_err(|err| CollectionError::ServiceError {
-                error: format!("Can't create shard wal directory. Error: {}", err),
-            })?;
+        create_dir_all(&wal_path).await.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't create shard wal directory. Error: {}",
+                err
+            ))
+        })?;
 
         let segments_path = shard_path.join("segments");
 
-        create_dir_all(&segments_path)
-            .await
-            .map_err(|err| CollectionError::ServiceError {
-                error: format!("Can't create shard segments directory. Error: {}", err),
-            })?;
+        create_dir_all(&segments_path).await.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't create shard segments directory. Error: {}",
+                err
+            ))
+        })?;
 
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
@@ -342,7 +344,7 @@ impl LocalShard {
                 } else {
                     "Segment DB create failed with unknown reason".to_string()
                 };
-                CollectionError::ServiceError { error: error_msg }
+                CollectionError::service_error(error_msg)
             })??;
             segment_holder.add(segment);
         }
@@ -398,7 +400,7 @@ impl LocalShard {
         // ToDo: Start from minimal applied version
         for (op_num, update) in wal.read_all() {
             // Panic only in case of internal error. If wrong formatting - skip
-            if let Err(CollectionError::ServiceError { error }) =
+            if let Err(CollectionError::ServiceError { error, .. }) =
                 CollectionUpdater::update(segments, op_num, update)
             {
                 panic!("Can't apply WAL operation: {}", error)
@@ -478,9 +480,9 @@ impl LocalShard {
                     .file_stem()
                     .map(|s| s.to_str().unwrap().to_owned());
                 if segment_id_opt.is_none() {
-                    return Err(CollectionError::ServiceError {
-                        error: "Segment ID is empty".to_string(),
-                    });
+                    return Err(CollectionError::service_error(
+                        "Segment ID is empty".to_string(),
+                    ));
                 }
                 let segment_id = segment_id_opt.unwrap();
                 Segment::restore_snapshot(&entry_path, &segment_id)?;

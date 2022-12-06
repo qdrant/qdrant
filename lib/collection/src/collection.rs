@@ -1233,12 +1233,11 @@ impl Collection {
 
             let target_shards = shards_holder.target_shard(shard_selection)?;
 
-            let first_shard =
-                *target_shards
-                    .first()
-                    .ok_or_else(|| CollectionError::ServiceError {
-                        error: "There are no shards for selected collection".to_string(),
-                    })?;
+            let first_shard = *target_shards.first().ok_or_else(|| {
+                CollectionError::service_error(
+                    "There are no shards for selected collection".to_string(),
+                )
+            })?;
 
             let info = first_shard.info().await?;
             let info_futures = target_shards.into_iter().skip(1).map(|shard| shard.info());
