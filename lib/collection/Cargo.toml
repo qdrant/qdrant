@@ -7,48 +7,48 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-tempfile = "3.3.0"
 criterion = "0.4"
 pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
+tempfile = "3.3.0"
 
 [dependencies]
 
 parking_lot = "0.12"
 
-rand = "0.8.5"
-thiserror = "1.0"
-serde = { version = "~1.0", features = ["derive"] }
-serde_json = { version = "~1.0", features = ["std"] }
-serde_cbor = "0.11.2"
-rmp-serde = "~1.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "90471ad737dbd90c49bb8944cb8aeb5ad8664d30" }
-ordered-float = "3.4"
 hashring = "0.3.0"
+ordered-float = "3.4"
+rand = "0.8.5"
+rmp-serde = "~1.1"
+serde = { version = "~1.0", features = ["derive"] }
+serde_cbor = "0.11.2"
+serde_json = { version = "~1.0", features = ["std"] }
+thiserror = "1.0"
+wal = { git = "https://github.com/qdrant/wal.git", rev = "90471ad737dbd90c49bb8944cb8aeb5ad8664d30" }
 
-tokio = {version = "~1.23", features = ["full"]}
-futures = "0.3.25"
-atomicwrites = "0.3.1"
-log = "0.4"
-env_logger = "0.10.0"
-merge = "0.1.0"
-async-trait = "0.1.59"
 arc-swap = "1.5.1"
+async-trait = "0.1.59"
+atomicwrites = "0.3.1"
+env_logger = "0.10.0"
+futures = "0.3.25"
+log = "0.4"
+merge = "0.1.0"
+tokio = { version = "~1.23", features = ["full"] }
 tonic = "0.7.2"
 tower = "0.4.13"
-uuid = { version = "1.2", features = ["v4", "serde"] }
 url = { version = "2", features = ["serde"] }
+uuid = { version = "1.2", features = ["v4", "serde"] }
 
-segment = {path = "../segment"}
-api = {path = "../api"}
+api = { path = "../api" }
+segment = { path = "../segment" }
 
-itertools = "0.10"
-indicatif = "0.17.2"
 chrono = { version = "~0.4", features = ["serde"] }
-schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono", "url"] }
-num_cpus = "1.14.0"
-tar = "0.4.38"
 fs_extra = "1.2.0"
+indicatif = "0.17.2"
+itertools = "0.10"
+num_cpus = "1.14.0"
+schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono", "url"] }
 semver = "1.0.14"
+tar = "0.4.38"
 
 [[bench]]
 name = "hash_ring_bench"

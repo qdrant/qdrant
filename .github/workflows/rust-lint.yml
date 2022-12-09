@@ -28,6 +28,11 @@ jobs:
         toolchain: stable
         override: true
         components: rustfmt, clippy
+    - name: Install taplo
+      uses: actions-rs/cargo@v1
+      with:
+        command: install
+        args: taplo-cli
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
       with:
@@ -41,3 +46,6 @@ jobs:
       run: cargo +nightly fmt --all -- --check
     - name: Check cargo clippy warnings
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+    - name: Check toml format
+      shell: bash
+      run: taplo fmt --check
