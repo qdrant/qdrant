@@ -15,13 +15,15 @@
     <a href="https://qdrant.to/roadmap"><img src="https://img.shields.io/badge/Roadmap-v1.0-bc1439.svg" alt="Roadmap v1.0"></a>
 </p>
 
-Qdrant (read: _quadrant_ ) is a vector similarity search engine.
+**Qdrant** (read: _quadrant_ ) is a vector similarity search engine and vector database.
 It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
 Qdrant is tailored to extended filtering support.  It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications. 
 
 Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load.
 
 With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
+
+Also available as managed solution in the **Qdrant Cloud** https://qdrant.to/cloud ⛅
 
 ## Demo Projects
 
