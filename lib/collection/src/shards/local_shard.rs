@@ -101,7 +101,7 @@ impl LocalShard {
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
         wal: SerdeWal<CollectionUpdateOperations>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
-        collection_path: &Path,
+        shard_path: &Path,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = shared_config.read().await;
@@ -147,7 +147,7 @@ impl LocalShard {
             update_handler: Arc::new(Mutex::new(update_handler)),
             runtime_handle: Some(optimize_runtime),
             update_sender: ArcSwap::from_pointee(update_sender),
-            path: collection_path.to_owned(),
+            path: shard_path.to_owned(),
             before_drop_called: false,
             optimizers,
         }
@@ -251,19 +251,6 @@ impl LocalShard {
 
     pub fn segments_path(shard_path: &Path) -> PathBuf {
         shard_path.join("segments")
-    }
-
-    pub async fn build_temp(
-        id: ShardId,
-        collection_id: CollectionId,
-        shard_path: &Path,
-        shared_config: Arc<TokioRwLock<CollectionConfig>>,
-    ) -> CollectionResult<LocalShard> {
-        // initialize temporary shard config file
-        let temp_shard_config = ShardConfig::new_temp();
-        let shard = Self::build(id, collection_id, shard_path, shared_config).await?;
-        temp_shard_config.save(shard_path)?;
-        Ok(shard)
     }
 
     pub async fn build_local(

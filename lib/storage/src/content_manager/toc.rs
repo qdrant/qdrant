@@ -541,7 +541,11 @@ impl TableOfContent {
             removed.before_drop().await;
             let path = self.get_collection_path(collection_name);
             drop(removed);
-            remove_dir_all(path).map_err(|err| {
+
+            // Move collection to ".deleted" folder to prevent accidental reuse
+            let deleted_path = path.with_extension("deleted");
+            tokio::fs::rename(path, &deleted_path).await?;
+            remove_dir_all(deleted_path).map_err(|err| {
                 StorageError::service_error(&format!(
                     "Can't delete collection {}, error: {}",
                     collection_name, err

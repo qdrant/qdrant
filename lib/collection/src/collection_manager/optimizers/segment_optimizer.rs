@@ -33,6 +33,15 @@ pub struct OptimizerThresholds {
     pub indexing_threshold: usize,
 }
 
+fn check_stopped(stopped: &AtomicBool) -> CollectionResult<()> {
+    if stopped.load(Ordering::Relaxed) {
+        return Err(CollectionError::Cancelled {
+            description: "optimization cancelled by service".to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
 ///
 /// It provides functions which allow to re-build specified segments into a new, better one.
@@ -422,6 +431,8 @@ pub trait SegmentOptimizer {
         };
 
         // ---- SLOW PART ENDS HERE -----
+
+        check_stopped(stopped)?;
 
         {
             // This block locks all operations with collection. It should be fast
