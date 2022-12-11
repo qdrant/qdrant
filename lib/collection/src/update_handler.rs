@@ -308,8 +308,8 @@ impl UpdateHandler {
                 }
                 OptimizerSignal::Stop => {
                     debug!("Stopping optimization_worker_fn");
-                    break
-                }, // Stop gracefully
+                    break;
+                } // Stop gracefully
             }
         }
     }
