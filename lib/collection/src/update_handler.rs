@@ -306,7 +306,10 @@ impl UpdateHandler {
                     )
                     .await;
                 }
-                OptimizerSignal::Stop => break, // Stop gracefully
+                OptimizerSignal::Stop => {
+                    debug!("Stopping optimization_worker_fn");
+                    break
+                }, // Stop gracefully
             }
         }
     }
@@ -342,6 +345,7 @@ impl UpdateHandler {
                     };
                 }
                 UpdateSignal::Stop => {
+                    debug!("Stopping update_worker_fn");
                     optimize_sender
                         .send(OptimizerSignal::Stop)
                         .await
