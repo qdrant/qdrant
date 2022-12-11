@@ -402,6 +402,7 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART -----
 
+        log::debug!("start build_new_segment");
         let mut optimized_segment = match self.build_new_segment(
             &optimizing_segments,
             proxy_deleted_points.clone(),
@@ -418,6 +419,8 @@ pub trait SegmentOptimizer {
             }
         };
 
+        log::debug!("finish build_new_segment");
+
         // Avoid unnecessary point removing in the critical section:
         // - save already removed points while avoiding long read locks
         // - exclude already removed points from post-optimization removing
@@ -431,6 +434,8 @@ pub trait SegmentOptimizer {
         };
 
         // ---- SLOW PART ENDS HERE -----
+
+        log::debug!("finish SLOW PART");
 
         check_stopped(stopped)?;
 
@@ -490,6 +495,7 @@ pub trait SegmentOptimizer {
                 tmp_segment.drop_data()?;
             }
         }
+        log::debug!("finish segment optimization");
         timer.set_success(true);
         Ok(true)
     }
