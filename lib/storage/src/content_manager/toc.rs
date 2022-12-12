@@ -29,6 +29,7 @@ use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
+use uuid::Uuid;
 
 use super::collection_meta_ops::{
     CreateCollectionOperation, SetShardReplicaState, ShardTransferOperations,
@@ -543,7 +544,13 @@ impl TableOfContent {
             drop(removed);
 
             // Move collection to ".deleted" folder to prevent accidental reuse
-            let deleted_path = path.with_extension("deleted");
+            let uuid = Uuid::new_v4().to_string();
+            let removed_collections_path = Path::new(&self.storage_config.storage_path)
+                .join(".deleted");
+            tokio::fs::create_dir_all(&removed_collections_path).await?;
+            let deleted_path = removed_collections_path
+                .join(collection_name)
+                .with_extension(uuid);
             tokio::fs::rename(path, &deleted_path).await?;
             remove_dir_all(deleted_path).map_err(|err| {
                 StorageError::service_error(&format!(
