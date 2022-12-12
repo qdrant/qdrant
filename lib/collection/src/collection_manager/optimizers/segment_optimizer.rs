@@ -361,6 +361,8 @@ pub trait SegmentOptimizer {
             return Ok(false);
         }
 
+        check_stopped(stopped)?;
+
         let tmp_segment = self.temp_segment()?;
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
@@ -401,6 +403,11 @@ pub trait SegmentOptimizer {
             }
             proxy_ids
         };
+
+        check_stopped(stopped).map_err(|error| {
+            self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
+            error
+        })?;
 
         // ---- SLOW PART -----
 

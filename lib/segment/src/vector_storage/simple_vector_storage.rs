@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ops::Range;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -227,9 +228,18 @@ where
         self.vectors.len() as PointOffsetType
     }
 
-    fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>> {
+    fn update_from(
+        &mut self,
+        other: &VectorStorageSS,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
         for point_id in other.iter_ids() {
+            if stopped.load(Ordering::Relaxed) {
+                return Err(OperationError::Cancelled {
+                    description: "stopped externally".to_string(),
+                });
+            }
             let other_vector = other.get_vector(point_id).unwrap();
             // Do not perform preprocessing - vectors should be already processed
             self.deleted.push(false);
