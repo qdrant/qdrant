@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -16,7 +16,7 @@ use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::entry::entry_point::{check_optimization_stopped, OperationError, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -235,11 +235,7 @@ where
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
         for point_id in other.iter_ids() {
-            if stopped.load(Ordering::Relaxed) {
-                return Err(OperationError::Cancelled {
-                    description: "stopped externally".to_string(),
-                });
-            }
+            check_optimization_stopped(stopped)?;
             let other_vector = other.get_vector(point_id).unwrap();
             // Do not perform preprocessing - vectors should be already processed
             self.deleted.push(false);

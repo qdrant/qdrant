@@ -4,14 +4,14 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::entry::entry_point::{check_optimization_stopped, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -191,11 +191,7 @@ where
                 .open(&self.vectors_path)?;
 
             for id in other.iter_ids() {
-                if stopped.load(Ordering::Relaxed) {
-                    return Err(OperationError::Cancelled {
-                        description: "stopped externally".to_string(),
-                    });
-                }
+                check_optimization_stopped(stopped)?;
                 let vector = &other.get_vector(id).unwrap();
                 let raw_bites = vf_to_u8(vector);
                 file.write_all(raw_bites)?;
