@@ -214,6 +214,15 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .map(|vector| self.search_with_graph(vector, filter, top, params))
             .collect()
     }
+
+    fn check_stopped(stopped: &AtomicBool) -> OperationResult<()> {
+        if stopped.load(Ordering::Relaxed) {
+            return Err(OperationError::Cancelled {
+                description: "Cancelled by external thread".to_string(),
+            });
+        }
+        Ok(())
+    }
 }
 
 impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
@@ -327,6 +336,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .build()?;
 
         for vector_id in vector_storage.iter_ids() {
+            Self::check_stopped(stopped)?;
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(vector_id, level);
         }
@@ -336,11 +346,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
             pool.install(|| {
                 ids.into_par_iter().try_for_each(|vector_id| {
-                    if stopped.load(Ordering::Relaxed) {
-                        return Err(OperationError::Cancelled {
-                            description: "Cancelled by external thread".to_string(),
-                        });
-                    }
+                    Self::check_stopped(stopped)?;
                     let vector = vector_storage.get_vector(vector_id).unwrap();
                     let raw_scorer = vector_storage.raw_scorer(vector);
                     let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
@@ -379,11 +385,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 let min_block_size = self.config.indexing_threshold;
 
                 for payload_block in payload_index.payload_blocks(&field, min_block_size) {
-                    if stopped.load(Ordering::Relaxed) {
-                        return Err(OperationError::Cancelled {
-                            description: "Cancelled by external thread".to_string(),
-                        });
-                    }
+                    Self::check_stopped(stopped)?;
                     if payload_block.cardinality > max_block_size {
                         continue;
                     }
