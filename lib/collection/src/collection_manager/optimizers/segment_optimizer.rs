@@ -8,7 +8,7 @@ use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{check_optimization_stopped, SegmentEntry};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -31,15 +31,6 @@ pub struct OptimizerThresholds {
     pub max_segment_size: usize,
     pub memmap_threshold: usize,
     pub indexing_threshold: usize,
-}
-
-fn check_stopped(stopped: &AtomicBool) -> CollectionResult<()> {
-    if stopped.load(Ordering::Relaxed) {
-        return Err(CollectionError::Cancelled {
-            description: "optimization cancelled by service".to_string(),
-        });
-    }
-    Ok(())
 }
 
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
@@ -330,6 +321,8 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
+        check_optimization_stopped(stopped)?;
+
         let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());
         timer.set_success(false);
 
@@ -358,6 +351,8 @@ pub trait SegmentOptimizer {
             // Cancel the optimization
             return Ok(false);
         }
+
+        check_optimization_stopped(stopped)?;
 
         let tmp_segment = self.temp_segment()?;
 
@@ -400,6 +395,11 @@ pub trait SegmentOptimizer {
             proxy_ids
         };
 
+        check_optimization_stopped(stopped).map_err(|error| {
+            self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
+            error
+        })?;
+
         // ---- SLOW PART -----
 
         let mut optimized_segment = match self.build_new_segment(
@@ -432,7 +432,10 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
-        check_stopped(stopped)?;
+        check_optimization_stopped(stopped).map_err(|error| {
+            self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
+            error
+        })?;
 
         {
             // This block locks all operations with collection. It should be fast
