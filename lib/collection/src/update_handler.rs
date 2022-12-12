@@ -217,6 +217,7 @@ impl UpdateHandler {
                     }
                     let callback_cloned = callback.clone();
 
+                    log::debug!("schedule spawn_stoppable in launch_optimization");
                     handles.push(spawn_stoppable(move |stopped| {
                         match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
                             Ok(result) => {
