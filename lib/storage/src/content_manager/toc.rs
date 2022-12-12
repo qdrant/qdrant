@@ -538,12 +538,9 @@ impl TableOfContent {
 
     async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
         if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
-            log::debug!("Removing collection {}, before_drop", collection_name);
             removed.before_drop().await;
-            log::debug!("Removing collection {}, after before_drop", collection_name);
             let path = self.get_collection_path(collection_name);
             drop(removed);
-            log::debug!("Removing collection {}, dropped", collection_name);
 
             // Move collection to ".deleted" folder to prevent accidental reuse
             let deleted_path = path.with_extension("deleted");

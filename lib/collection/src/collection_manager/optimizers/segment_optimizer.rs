@@ -322,7 +322,6 @@ pub trait SegmentOptimizer {
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
         check_optimization_stopped(stopped)?;
-        log::debug!("Start segment optimization");
 
         let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());
         timer.set_success(false);
@@ -403,7 +402,6 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART -----
 
-        log::debug!("start build_new_segment");
         let mut optimized_segment = match self.build_new_segment(
             &optimizing_segments,
             proxy_deleted_points.clone(),
@@ -420,8 +418,6 @@ pub trait SegmentOptimizer {
             }
         };
 
-        log::debug!("finish build_new_segment");
-
         // Avoid unnecessary point removing in the critical section:
         // - save already removed points while avoiding long read locks
         // - exclude already removed points from post-optimization removing
@@ -435,8 +431,6 @@ pub trait SegmentOptimizer {
         };
 
         // ---- SLOW PART ENDS HERE -----
-
-        log::debug!("finish SLOW PART");
 
         check_optimization_stopped(stopped).map_err(|error| {
             self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
@@ -499,7 +493,6 @@ pub trait SegmentOptimizer {
                 tmp_segment.drop_data()?;
             }
         }
-        log::debug!("finish segment optimization");
         timer.set_success(true);
         Ok(true)
     }

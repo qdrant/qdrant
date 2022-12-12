@@ -217,7 +217,6 @@ impl UpdateHandler {
                     }
                     let callback_cloned = callback.clone();
 
-                    log::debug!("schedule spawn_stoppable in launch_optimization");
                     handles.push(spawn_stoppable(move |stopped| {
                         match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
                             Ok(result) => {
@@ -307,10 +306,7 @@ impl UpdateHandler {
                     )
                     .await;
                 }
-                OptimizerSignal::Stop => {
-                    debug!("Stopping optimization_worker_fn");
-                    break;
-                } // Stop gracefully
+                OptimizerSignal::Stop => break, // Stop gracefully
             }
         }
     }
@@ -346,7 +342,6 @@ impl UpdateHandler {
                     };
                 }
                 UpdateSignal::Stop => {
-                    debug!("Stopping update_worker_fn");
                     optimize_sender
                         .send(OptimizerSignal::Stop)
                         .await
