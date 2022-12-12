@@ -545,8 +545,8 @@ impl TableOfContent {
 
             // Move collection to ".deleted" folder to prevent accidental reuse
             let uuid = Uuid::new_v4().to_string();
-            let removed_collections_path = Path::new(&self.storage_config.storage_path)
-                .join(".deleted");
+            let removed_collections_path =
+                Path::new(&self.storage_config.storage_path).join(".deleted");
             tokio::fs::create_dir_all(&removed_collections_path).await?;
             let deleted_path = removed_collections_path
                 .join(collection_name)
