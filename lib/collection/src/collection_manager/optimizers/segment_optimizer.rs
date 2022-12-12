@@ -330,6 +330,7 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
+        check_stopped(stopped)?;
         log::debug!("Start segment optimization");
 
         let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());

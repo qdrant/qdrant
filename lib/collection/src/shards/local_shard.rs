@@ -432,9 +432,12 @@ impl LocalShard {
 
         self.stop_flush_worker().await;
 
+        log::debug!("Waiting for wait_update_workers_stop");
+
         if let Err(err) = self.wait_update_workers_stop().await {
             log::warn!("Update workers failed with: {}", err);
         }
+        log::debug!("Waiting for runtime_handle join");
 
         match self.runtime_handle.take() {
             None => {}
