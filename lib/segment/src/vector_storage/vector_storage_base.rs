@@ -65,7 +65,11 @@ pub trait VectorStorage {
     ) -> OperationResult<()>;
     /// Returns next available id
     fn next_id(&self) -> PointOffsetType;
-    fn update_from(&mut self, other: &VectorStorageSS, stopped: &AtomicBool) -> OperationResult<Range<PointOffsetType>>;
+    fn update_from(
+        &mut self,
+        other: &VectorStorageSS,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>>;
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn is_deleted(&self, key: PointOffsetType) -> bool;
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
