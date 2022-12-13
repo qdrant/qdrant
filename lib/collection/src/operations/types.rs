@@ -519,8 +519,11 @@ impl From<tonic::Status> for CollectionError {
             tonic::Code::InvalidArgument => CollectionError::BadInput {
                 description: format!("InvalidArgument: {}", err),
             },
-            tonic::Code::NotFound => CollectionError::BadRequest {
-                description: format!("NotFound: {}", err),
+            tonic::Code::AlreadyExists => CollectionError::BadInput {
+                description: format!("AlreadyExists: {}", err),
+            },
+            tonic::Code::NotFound => CollectionError::NotFound {
+                what: format!("{}", err),
             },
             tonic::Code::Internal => CollectionError::ServiceError {
                 error: format!("Internal error: {}", err),
