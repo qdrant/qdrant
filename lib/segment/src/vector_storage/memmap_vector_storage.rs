@@ -11,7 +11,7 @@ use atomic_refcell::AtomicRefCell;
 
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{check_optimization_stopped, OperationResult};
+use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -191,7 +191,7 @@ where
                 .open(&self.vectors_path)?;
 
             for id in other.iter_ids() {
-                check_optimization_stopped(stopped)?;
+                check_process_stopped(stopped)?;
                 let vector = &other.get_vector(id).unwrap();
                 let raw_bites = vf_to_u8(vector);
                 file.write_all(raw_bites)?;

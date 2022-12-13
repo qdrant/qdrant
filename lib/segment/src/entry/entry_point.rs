@@ -61,10 +61,10 @@ impl OperationError {
     }
 }
 
-pub fn check_optimization_stopped(stopped: &AtomicBool) -> OperationResult<()> {
+pub fn check_process_stopped(stopped: &AtomicBool) -> OperationResult<()> {
     if stopped.load(Ordering::Relaxed) {
         return Err(OperationError::Cancelled {
-            description: "optimization cancelled by service".to_string(),
+            description: "process cancelled by service".to_string(),
         });
     }
     Ok(())

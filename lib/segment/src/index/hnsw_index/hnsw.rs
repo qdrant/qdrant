@@ -16,7 +16,7 @@ use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{check_optimization_stopped, OperationError, OperationResult};
+use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -153,7 +153,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             points_to_index
                 .into_par_iter()
                 .try_for_each(|block_point_id| {
-                    check_optimization_stopped(stopped)?;
+                    check_process_stopped(stopped)?;
 
                     let vector = vector_storage.get_vector(block_point_id).unwrap();
                     let raw_scorer = vector_storage.raw_scorer(vector);
@@ -324,7 +324,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .build()?;
 
         for vector_id in vector_storage.iter_ids() {
-            check_optimization_stopped(stopped)?;
+            check_process_stopped(stopped)?;
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(vector_id, level);
         }
@@ -334,7 +334,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
             pool.install(|| {
                 ids.into_par_iter().try_for_each(|vector_id| {
-                    check_optimization_stopped(stopped)?;
+                    check_process_stopped(stopped)?;
                     let vector = vector_storage.get_vector(vector_id).unwrap();
                     let raw_scorer = vector_storage.raw_scorer(vector);
                     let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
@@ -373,7 +373,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 let min_block_size = self.config.indexing_threshold;
 
                 for payload_block in payload_index.payload_blocks(&field, min_block_size) {
-                    check_optimization_stopped(stopped)?;
+                    check_process_stopped(stopped)?;
                     if payload_block.cardinality > max_block_size {
                         continue;
                     }

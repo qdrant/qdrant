@@ -8,7 +8,7 @@ use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::entry::entry_point::{check_optimization_stopped, SegmentEntry};
+use segment::entry::entry_point::{check_process_stopped, SegmentEntry};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -321,7 +321,7 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
-        check_optimization_stopped(stopped)?;
+        check_process_stopped(stopped)?;
 
         let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());
         timer.set_success(false);
@@ -352,7 +352,7 @@ pub trait SegmentOptimizer {
             return Ok(false);
         }
 
-        check_optimization_stopped(stopped)?;
+        check_process_stopped(stopped)?;
 
         let tmp_segment = self.temp_segment()?;
 
@@ -395,7 +395,7 @@ pub trait SegmentOptimizer {
             proxy_ids
         };
 
-        check_optimization_stopped(stopped).map_err(|error| {
+        check_process_stopped(stopped).map_err(|error| {
             self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
             error
         })?;
@@ -432,7 +432,7 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
-        check_optimization_stopped(stopped).map_err(|error| {
+        check_process_stopped(stopped).map_err(|error| {
             self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
             error
         })?;
