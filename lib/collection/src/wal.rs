@@ -63,6 +63,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         })
     }
 
+    /// Write a record to the WAL but does guarantee durability.
     pub fn write(&mut self, entity: &R) -> Result<u64> {
         // ToDo: Replace back to faster rmp, once this https://github.com/serde-rs/serde/issues/2055 solved
         let binary_entity = serde_cbor::to_vec(&entity).unwrap();
