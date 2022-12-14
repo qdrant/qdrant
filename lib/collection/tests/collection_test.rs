@@ -329,14 +329,8 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
             RecommendRequest {
                 positive: vec![0.into()],
                 negative: vec![8.into()],
-                filter: None,
-                params: None,
                 limit: 5,
-                offset: 0,
-                with_payload: None,
-                with_vector: None,
-                score_threshold: None,
-                using: None,
+                ..Default::default()
             },
             &Handle::current(),
             None,

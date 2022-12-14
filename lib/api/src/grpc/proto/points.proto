@@ -181,6 +181,7 @@ message RecommendPoints {
   optional uint64 offset = 10; // Offset of the result
   optional string using = 11; // Define which vector to use for recommendation, if not specified - default vector
   optional WithVectorsSelector with_vectors = 12; // Options for specifying which vectors to include into response
+  optional string from_collection = 13; // Name of the collection to use for points lookup, if not specified - use current collection
 }
 
 message RecommendBatchPoints {

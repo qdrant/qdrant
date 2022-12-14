@@ -274,12 +274,13 @@ impl From<String> for UsingVector {
 /// Service should look for the points which are closer to positive examples and at the same time
 /// further to negative examples. The concrete way of how to compare negative and positive distances
 /// is up to implementation in `segment` crate.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
     /// Look for vectors closest to those
     pub positive: Vec<PointIdType>,
     /// Try to avoid vectors like this
+    #[serde(default)]
     pub negative: Vec<PointIdType>,
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
@@ -306,6 +307,10 @@ pub struct RecommendRequest {
     /// Define which vector to use for recommendation, if not specified - try to use default vector
     #[serde(default)]
     pub using: Option<UsingVector>,
+    /// Use other collection for vector lookup. If not specified - use current collection
+    /// Note: the other collection should have the same vector schema as the current collection
+    #[serde(default)]
+    pub from_collection: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

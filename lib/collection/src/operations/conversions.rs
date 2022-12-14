@@ -610,6 +610,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
             ),
             score_threshold: value.score_threshold,
             using: value.using.map(|name| name.into()),
+            from_collection: value.from_collection,
         })
     }
 }

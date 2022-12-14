@@ -1702,6 +1702,9 @@ pub struct RecommendPoints {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag="12")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Name of the collection to use for points lookup, if not specified - use current collection
+    #[prost(string, optional, tag="13")]
+    pub from_collection: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchPoints {

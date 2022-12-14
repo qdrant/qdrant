@@ -510,6 +510,7 @@ pub async fn recommend(
         score_threshold,
         using,
         with_vectors,
+        from_collection,
     } = recommend_points;
 
     let request = collection::operations::types::RecommendRequest {
@@ -533,6 +534,7 @@ pub async fn recommend(
         ),
         score_threshold,
         using: using.map(|u| u.into()),
+        from_collection,
     };
 
     let timing = Instant::now();

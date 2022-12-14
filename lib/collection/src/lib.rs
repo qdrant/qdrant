@@ -13,6 +13,7 @@ pub mod shards;
 pub mod telemetry;
 mod update_handler;
 pub mod wal;
+pub mod recommendations;
 
 #[cfg(test)]
 mod tests;
