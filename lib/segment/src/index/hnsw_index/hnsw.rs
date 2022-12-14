@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -16,7 +16,7 @@ use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -153,11 +153,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             points_to_index
                 .into_par_iter()
                 .try_for_each(|block_point_id| {
-                    if stopped.load(Ordering::Relaxed) {
-                        return Err(OperationError::Cancelled {
-                            description: "Cancelled by external thread".to_string(),
-                        });
-                    }
+                    check_process_stopped(stopped)?;
+
                     let vector = vector_storage.get_vector(block_point_id).unwrap();
                     let raw_scorer = vector_storage.raw_scorer(vector);
                     let block_condition_checker = BuildConditionChecker {
@@ -327,6 +324,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .build()?;
 
         for vector_id in vector_storage.iter_ids() {
+            check_process_stopped(stopped)?;
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(vector_id, level);
         }
@@ -336,17 +334,13 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
             pool.install(|| {
                 ids.into_par_iter().try_for_each(|vector_id| {
-                    if stopped.load(Ordering::Relaxed) {
-                        return Err(OperationError::Cancelled {
-                            description: "Cancelled by external thread".to_string(),
-                        });
-                    }
+                    check_process_stopped(stopped)?;
                     let vector = vector_storage.get_vector(vector_id).unwrap();
                     let raw_scorer = vector_storage.raw_scorer(vector);
                     let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
                     graph_layers_builder.link_new_point(vector_id, points_scorer);
-                    Ok(())
+                    Ok::<_, OperationError>(())
                 })
             })?;
 
@@ -379,11 +373,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 let min_block_size = self.config.indexing_threshold;
 
                 for payload_block in payload_index.payload_blocks(&field, min_block_size) {
-                    if stopped.load(Ordering::Relaxed) {
-                        return Err(OperationError::Cancelled {
-                            description: "Cancelled by external thread".to_string(),
-                        });
-                    }
+                    check_process_stopped(stopped)?;
                     if payload_block.cardinality > max_block_size {
                         continue;
                     }

@@ -2,10 +2,12 @@ use core::cmp;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use crate::common::error_logging::LogError;
-use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use crate::entry::entry_point::{
+    check_process_stopped, OperationError, OperationResult, SegmentEntry,
+};
 use crate::index::PayloadIndex;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
@@ -88,6 +90,7 @@ impl SegmentBuilder {
 
                 let mut internal_id_iter = None;
                 for (vector_name, vector_storage) in &mut vector_storages {
+                    check_process_stopped(stopped)?;
                     let other_vector_storage = other_vector_storages.get(vector_name);
                     if other_vector_storage.is_none() {
                         return Err(OperationError::service_error(&format!(
@@ -96,7 +99,8 @@ impl SegmentBuilder {
                         )));
                     }
                     let other_vector_storage = other_vector_storage.unwrap();
-                    let new_internal_range = vector_storage.update_from(&**other_vector_storage)?;
+                    let new_internal_range =
+                        vector_storage.update_from(&**other_vector_storage, stopped)?;
                     internal_id_iter =
                         Some(new_internal_range.zip(other_vector_storage.iter_ids()));
                 }
@@ -107,11 +111,8 @@ impl SegmentBuilder {
                 }
 
                 for (new_internal_id, old_internal_id) in internal_id_iter.unwrap() {
-                    if stopped.load(Ordering::Relaxed) {
-                        return Err(OperationError::Cancelled {
-                            description: "Cancelled by external thread".to_string(),
-                        });
-                    }
+                    check_process_stopped(stopped)?;
+
                     let external_id =
                         if let Some(external_id) = other_id_tracker.external_id(old_internal_id) {
                             external_id
@@ -183,11 +184,7 @@ impl SegmentBuilder {
 
             for (field, payload_schema) in &self.indexed_fields {
                 segment.create_field_index(segment.version(), field, Some(payload_schema))?;
-                if stopped.load(Ordering::Relaxed) {
-                    return Err(OperationError::Cancelled {
-                        description: "Cancelled by external thread".to_string(),
-                    });
-                }
+                check_process_stopped(stopped)?;
             }
 
             for vector_data in segment.vector_data.values_mut() {

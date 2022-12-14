@@ -4,13 +4,14 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -169,7 +170,11 @@ where
         panic!("There are no available for insertion ids in mmap storage")
     }
 
-    fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>> {
+    fn update_from(
+        &mut self,
+        other: &VectorStorageSS,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
 
         let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
@@ -186,6 +191,7 @@ where
                 .open(&self.vectors_path)?;
 
             for id in other.iter_ids() {
+                check_process_stopped(stopped)?;
                 let vector = &other.get_vector(id).unwrap();
                 let raw_bites = vf_to_u8(vector);
                 file.write_all(raw_bites)?;
@@ -349,7 +355,9 @@ mod tests {
                 borrowed_storage2.put_vector(vec2.clone()).unwrap();
                 borrowed_storage2.put_vector(vec3.clone()).unwrap();
             }
-            borrowed_storage.update_from(&*storage2.borrow()).unwrap();
+            borrowed_storage
+                .update_from(&*storage2.borrow(), &Default::default())
+                .unwrap();
         }
 
         assert_eq!(borrowed_storage.vector_count(), 3);
@@ -371,7 +379,9 @@ mod tests {
                 borrowed_storage2.put_vector(vec4).unwrap();
                 borrowed_storage2.put_vector(vec5).unwrap();
             }
-            borrowed_storage.update_from(&*storage2.borrow()).unwrap();
+            borrowed_storage
+                .update_from(&*storage2.borrow(), &Default::default())
+                .unwrap();
         }
 
         assert_eq!(borrowed_storage.vector_count(), 4);
@@ -417,7 +427,9 @@ mod tests {
                 borrowed_storage2.put_vector(vec4).unwrap();
                 borrowed_storage2.put_vector(vec5).unwrap();
             }
-            borrowed_storage.update_from(&*storage2.borrow()).unwrap();
+            borrowed_storage
+                .update_from(&*storage2.borrow(), &Default::default())
+                .unwrap();
         }
 
         let query = vec![-1.0, -1.0, -1.0, -1.0];
