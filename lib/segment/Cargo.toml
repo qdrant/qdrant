@@ -17,7 +17,7 @@ walkdir = "2.3.2"
 [dependencies]
 
 parking_lot = "0.12"
-rayon = "1.6.0"
+rayon = "1.6.1"
 num_cpus = "1.14"
 itertools = "0.10"
 rocksdb = { version = "0.19.0", default-features = false, features = [ "snappy" ] }
