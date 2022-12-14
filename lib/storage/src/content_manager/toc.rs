@@ -838,12 +838,10 @@ impl TableOfContent {
         request: RecommendRequest,
         _shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        recommend_by(
-            request,
-            self.search_runtime.handle(),
-            collection_name,
-            |name| self.get_collection_opt(name),
-        )
+        let collection = self.get_collection(collection_name).await?;
+        recommend_by(request, self.search_runtime.handle(), &collection, |name| {
+            self.get_collection_opt(name)
+        })
         .await
         .map_err(|err| err.into())
     }
@@ -864,12 +862,10 @@ impl TableOfContent {
         request: RecommendRequestBatch,
         _shard_selection: Option<ShardId>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        recommend_batch_by(
-            request,
-            self.search_runtime.handle(),
-            collection_name,
-            |name| self.get_collection_opt(name),
-        )
+        let collection = self.get_collection(collection_name).await?;
+        recommend_batch_by(request, self.search_runtime.handle(), &collection, |name| {
+            self.get_collection_opt(name)
+        })
         .await
         .map_err(|err| err.into())
     }

@@ -10,11 +10,9 @@ use std::time::Duration;
 use futures::future::{join_all, try_join_all};
 use itertools::Itertools;
 use segment::common::version::StorageVersion;
-use segment::data_types::vectors::{NamedVector, VectorElementType, DEFAULT_VECTOR_NAME};
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint,
-    WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
@@ -31,9 +29,8 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
-    CountResult, LocalShardInfo, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
-    RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
-    UsingVector,
+    CountResult, LocalShardInfo, PointRequest, Record, RemoteShardInfo, ScrollRequest,
+    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;

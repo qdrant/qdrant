@@ -3979,7 +3979,6 @@
         "type": "object",
         "required": [
           "limit",
-          "negative",
           "positive"
         ],
         "properties": {
@@ -3992,6 +3991,7 @@
           },
           "negative": {
             "description": "Try to avoid vectors like this",
+            "default": [],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
@@ -4072,6 +4072,12 @@
                 "nullable": true
               }
             ]
+          },
+          "from_collection": {
+            "description": "Use other collection for vector lookup. If not specified - use current collection Note: the other collection should have the same vector schema as the current collection",
+            "default": null,
+            "type": "string",
+            "nullable": true
           }
         }
       },
