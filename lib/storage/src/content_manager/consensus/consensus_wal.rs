@@ -148,10 +148,8 @@ impl ConsensusOpWal {
 
             let mut buf = vec![];
             entry.encode(&mut buf)?;
-            eprintln!("append entry: {:?}", entry);
             #[allow(unused_variables)]
             let wal_index = self.0.append(&buf)?;
-            eprintln!("wal index: {} {:?}", wal_index, self.0);
             #[cfg(debug_assertions)]
             if let Some(offset) = index_offset {
                 debug_assert!(wal_index == index - offset);
@@ -173,6 +171,7 @@ mod tests {
 
     #[test]
     fn test_log_rewrite() {
+        env_logger::init();
         let entries_orig = vec![
             Entry {
                 entry_type: 0,
@@ -233,9 +232,7 @@ mod tests {
         assert_eq!(result_entries[2].data, vec![3, 3, 3]);
 
         wal.clear().unwrap();
-        eprintln!("before");
         wal.append_entries(entries_new).unwrap();
-        eprintln!("after");
         assert_eq!(wal.index_offset().unwrap(), Some(2));
 
         let broken_entry = vec![Entry {
