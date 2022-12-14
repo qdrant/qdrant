@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::path::{Path, PathBuf};
 use std::result;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomicwrites::Error as AtomicIoError;
 use rayon::ThreadPoolBuildError;
@@ -58,6 +59,15 @@ impl OperationError {
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
+}
+
+pub fn check_process_stopped(stopped: &AtomicBool) -> OperationResult<()> {
+    if stopped.load(Ordering::Relaxed) {
+        return Err(OperationError::Cancelled {
+            description: "process cancelled by service".to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, read_dir, remove_dir_all};
+use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -29,6 +29,7 @@ use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
+use uuid::Uuid;
 
 use super::collection_meta_ops::{
     CreateCollectionOperation, SetShardReplicaState, ShardTransferOperations,
@@ -541,12 +542,28 @@ impl TableOfContent {
             removed.before_drop().await;
             let path = self.get_collection_path(collection_name);
             drop(removed);
-            remove_dir_all(path).map_err(|err| {
-                StorageError::service_error(&format!(
-                    "Can't delete collection {}, error: {}",
-                    collection_name, err
-                ))
-            })?;
+
+            // Move collection to ".deleted" folder to prevent accidental reuse
+            let uuid = Uuid::new_v4().to_string();
+            let removed_collections_path =
+                Path::new(&self.storage_config.storage_path).join(".deleted");
+            tokio::fs::create_dir_all(&removed_collections_path).await?;
+            let deleted_path = removed_collections_path
+                .join(collection_name)
+                .with_extension(uuid);
+            tokio::fs::rename(path, &deleted_path).await?;
+            // At this point collection is removed from memory and moved to ".deleted" folder.
+            // Next time we load service the collection will not appear in the list of collections.
+            // We can take our time to delete the collection from disk.
+            tokio::spawn(async move {
+                if let Err(error) = tokio::fs::remove_dir_all(&deleted_path).await {
+                    log::error!(
+                        "Can't delete collection {} from disk. Error: {}",
+                        deleted_path.display(),
+                        error
+                    );
+                }
+            });
             Ok(true)
         } else {
             Ok(false)

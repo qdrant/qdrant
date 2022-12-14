@@ -546,8 +546,6 @@ impl Collection {
     }
 
     /// Initiate local partial shard
-    ///
-    /// Drops existing temporary shards for `shard_id`.
     pub async fn initiate_local_partial_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
         let shards_holder = self.shards_holder.read().await;
         let replica_set = match shards_holder.get_shard(&shard_id) {
