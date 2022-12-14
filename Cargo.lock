@@ -4298,7 +4298,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?branch=flushing-investigation#46d825dbb213e16dc7cbfe4ff12550f1077ac6d1"
+source = "git+https://github.com/qdrant/wal.git?rev=0e652e4180be376081fb6a3f2c04fa770d4868a8#0e652e4180be376081fb6a3f2c04fa770d4868a8"
 dependencies = [
  "byteorder",
  "crc",

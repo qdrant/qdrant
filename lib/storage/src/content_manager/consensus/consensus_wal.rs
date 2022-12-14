@@ -160,8 +160,7 @@ impl ConsensusOpWal {
             }
         }
         // flush consensus WAL to disk
-        eprintln!("flush");
-        self.0.flush_open_segments()?;
+        self.0.flush_open_segment()?;
         Ok(())
     }
 }

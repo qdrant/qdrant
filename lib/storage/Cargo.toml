@@ -13,7 +13,7 @@ proptest = "1.0.0"
 num_cpus = "1.14"
 thiserror = "1.0"
 rand = "0.8.5"
-wal = { git = "https://github.com/qdrant/wal.git", branch = "flushing-investigation" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "0e652e4180be376081fb6a3f2c04fa770d4868a8" }
 tokio = { version = "~1.23", features = ["rt-multi-thread"] }
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
