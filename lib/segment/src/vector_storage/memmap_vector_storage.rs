@@ -257,14 +257,6 @@ where
         })
     }
 
-    fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
-        Box::new(MemmapRawScorer::<TMetric> {
-            query: self.get_vector(point_id).unwrap(),
-            metric: PhantomData,
-            mmap_store: self.mmap_store.as_ref().unwrap(),
-        })
-    }
-
     fn score_points(
         &self,
         vector: &[VectorElementType],

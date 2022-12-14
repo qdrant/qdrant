@@ -77,8 +77,6 @@ pub trait VectorStorage {
 
     /// Generate a `RawScorer` object which contains all required context for searching similar vector
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
-    /// Same as `raw_scorer` but uses internal vector for search, avoids double pre-processing
-    fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_>;
 
     fn score_points(
         &self,

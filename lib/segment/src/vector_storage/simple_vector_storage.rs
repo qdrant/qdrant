@@ -281,15 +281,6 @@ where
         })
     }
 
-    fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
-        Box::new(SimpleRawScorer::<TMetric> {
-            query: self.vectors.get(point_id).to_vec(),
-            vectors: &self.vectors,
-            deleted: &self.deleted,
-            metric: PhantomData,
-        })
-    }
-
     fn score_points(
         &self,
         vector: &[VectorElementType],
