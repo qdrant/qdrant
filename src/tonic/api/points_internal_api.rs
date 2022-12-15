@@ -185,13 +185,14 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<RecommendResponse>, Status> {
         let RecommendPointsInternal {
             recommend_points,
-            shard_id,
+            ..  // shard_id - is not used in internal API,
+            // because it is transformed into regular search requests on the first node
         } = request.into_inner();
 
         let recommend_points = recommend_points
             .ok_or_else(|| Status::invalid_argument("RecommendPoints is missing"))?;
 
-        recommend(self.toc.as_ref(), recommend_points, Some(shard_id)).await
+        recommend(self.toc.as_ref(), recommend_points).await
     }
 
     async fn scroll(

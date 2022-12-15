@@ -118,7 +118,7 @@ impl Points for PointsService {
         &self,
         request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
-        recommend(self.toc.as_ref(), request.into_inner(), None).await
+        recommend(self.toc.as_ref(), request.into_inner()).await
     }
 
     async fn recommend_batch(
@@ -129,7 +129,7 @@ impl Points for PointsService {
             collection_name,
             recommend_points,
         } = request.into_inner();
-        recommend_batch(self.toc.as_ref(), collection_name, recommend_points, None).await
+        recommend_batch(self.toc.as_ref(), collection_name, recommend_points).await
     }
 
     async fn count(

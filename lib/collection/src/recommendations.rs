@@ -101,6 +101,19 @@ async fn retrieve_points_with_locked_collection(
     }
 }
 
+fn get_search_vector_name(request: &RecommendRequest) -> String {
+    match &request.lookup_from {
+        None => match &request.using {
+            None => DEFAULT_VECTOR_NAME.to_owned(),
+            Some(UsingVector::Name(vector_name)) => vector_name.clone(),
+        },
+        Some(lookup_from) => match &lookup_from.vector {
+            None => DEFAULT_VECTOR_NAME.to_owned(),
+            Some(vector_name) => vector_name.clone(),
+        },
+    }
+}
+
 /// Search points in a collection by already existing points in this or another collection.
 ///
 /// Function works in following stages:
@@ -132,10 +145,8 @@ where
         return Ok(vec![]);
     }
     // pack all reference vector ids
-    let mut all_reference_vectors_ids: HashMap<Option<&str>, HashSet<PointIdType>> =
-        Default::default();
-    let mut vector_names_per_collection: HashMap<Option<&str>, HashSet<String>> =
-        Default::default();
+    let mut all_reference_vectors_ids: HashMap<_, HashSet<PointIdType>> = Default::default();
+    let mut vector_names_per_collection: HashMap<_, HashSet<String>> = Default::default();
 
     for request in &request_batch.searches {
         if request.positive.is_empty() {
@@ -143,7 +154,8 @@ where
                 description: "At least one positive vector ID required".to_owned(),
             });
         }
-        let collection_name = request.from_collection.as_deref();
+        let collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
+
         let reference_vectors_ids = all_reference_vectors_ids
             .entry(collection_name)
             .or_insert_with(HashSet::new);
@@ -152,19 +164,14 @@ where
             .entry(collection_name)
             .or_insert_with(HashSet::new);
 
-        match &request.using {
-            None => {
-                vector_names.insert(DEFAULT_VECTOR_NAME.to_owned());
-            }
-            Some(UsingVector::Name(name)) => {
-                vector_names.insert(name.to_string());
-            }
-        }
+        vector_names.insert(get_search_vector_name(request));
 
         for point_id in request.positive.iter().chain(&request.negative) {
             reference_vectors_ids.insert(*point_id);
         }
     }
+
+    debug_assert!(all_reference_vectors_ids.len() == vector_names_per_collection.len());
 
     let mut collections_names: Vec<_> = Default::default();
     let mut vector_retrieves: Vec<_> = Default::default();
@@ -214,6 +221,8 @@ where
         }
     }
 
+    eprintln!("all_vectors_records_map = {:#?}", all_vectors_records_map);
+
     let mut searches = Vec::with_capacity(request_batch.searches.len());
 
     for request in &request_batch.searches {
@@ -222,6 +231,8 @@ where
             Some(UsingVector::Name(name)) => name,
         };
 
+        let lookup_vector_name = get_search_vector_name(request);
+
         let reference_vectors_ids = request
             .positive
             .iter()
@@ -229,7 +240,7 @@ where
             .cloned()
             .collect_vec();
 
-        let request_from_collection = request.from_collection.as_deref();
+        let request_from_collection = request.lookup_from.as_ref().map(|x| &x.collection);
 
         for &point_id in &reference_vectors_ids {
             if !all_vectors_records_map.contains_key(&(request_from_collection, point_id)) {
@@ -243,7 +254,7 @@ where
             let rec = all_vectors_records_map
                 .get(&(request_from_collection, *vid))
                 .unwrap();
-            rec.get_vector_by_name(vector_name)
+            rec.get_vector_by_name(&lookup_vector_name)
         }));
 
         let search_vector = if request.negative.is_empty() {
@@ -253,7 +264,7 @@ where
                 let rec = all_vectors_records_map
                     .get(&(request_from_collection, *vid))
                     .unwrap();
-                rec.get_vector_by_name(vector_name)
+                rec.get_vector_by_name(&lookup_vector_name)
             }));
 
             avg_positive

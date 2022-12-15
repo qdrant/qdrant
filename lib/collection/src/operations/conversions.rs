@@ -18,8 +18,9 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
 };
 use crate::operations::types::{
-    CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, RecommendRequest, Record,
-    SearchRequest, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
+    CollectionInfo, CollectionStatus, CountResult, LookupLocation, OptimizersStatus,
+    RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus, VectorParams,
+    VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionSearchRequest;
@@ -582,6 +583,15 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
     }
 }
 
+impl From<api::grpc::qdrant::LookupLocation> for LookupLocation {
+    fn from(value: api::grpc::qdrant::LookupLocation) -> Self {
+        Self {
+            collection: value.collection_name,
+            vector: value.vector_name,
+        }
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
     type Error = Status;
 
@@ -610,7 +620,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
             ),
             score_threshold: value.score_threshold,
             using: value.using.map(|name| name.into()),
-            from_collection: value.from_collection,
+            lookup_from: value.lookup_from.map(|x| x.into()),
         })
     }
 }

@@ -4073,11 +4073,17 @@
               }
             ]
           },
-          "from_collection": {
-            "description": "Use other collection for vector lookup. If not specified - use current collection Note: the other collection should have the same vector schema as the current collection",
+          "lookup_from": {
+            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
             "default": null,
-            "type": "string",
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LookupLocation"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -4087,6 +4093,25 @@
             "type": "string"
           }
         ]
+      },
+      "LookupLocation": {
+        "description": "Defines a location to use for looking up the vector. Specifies collection and vector field name.",
+        "type": "object",
+        "required": [
+          "collection"
+        ],
+        "properties": {
+          "collection": {
+            "description": "Name of the collection used for lookup",
+            "type": "string"
+          },
+          "vector": {
+            "description": "Optional name of the vector field within the collection. If not provided, the default vector field will be used.",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "ScrollRequest": {
         "description": "Scroll request - paginate over all points which matches given condition",

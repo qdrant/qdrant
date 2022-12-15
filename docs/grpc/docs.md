@@ -71,6 +71,7 @@
     - [GetResponse](#qdrant-GetResponse)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
+    - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
     - [NamedVectors](#qdrant-NamedVectors)
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
@@ -1188,6 +1189,22 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-LookupLocation"></a>
+
+### LookupLocation
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  |  |
+| vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
+
+
+
+
+
+
 <a name="qdrant-Match"></a>
 
 ### Match
@@ -1432,6 +1449,7 @@ The JSON representation for `Value` is JSON value.
 | offset | [uint64](#uint64) | optional | Offset of the result |
 | using | [string](#string) | optional | Define which vector to use for recommendation, if not specified - default vector |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
 
 
 

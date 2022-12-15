@@ -836,7 +836,6 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: RecommendRequest,
-        _shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         recommend_by(request, self.search_runtime.handle(), &collection, |name| {
@@ -860,7 +859,6 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: RecommendRequestBatch,
-        _shard_selection: Option<ShardId>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         recommend_batch_by(request, self.search_runtime.handle(), &collection, |name| {
