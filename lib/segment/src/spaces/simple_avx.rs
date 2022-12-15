@@ -165,24 +165,24 @@ pub(crate) unsafe fn dot_similarity_chunk_avx(
     let mut sum_3 = _mm256_setzero_ps();
     for _ in 0..dim / 16 {
         let q_0 = _mm256_loadu_ps(q_ptr);
-        let q_1 = _mm256_loadu_ps(q_ptr.add(1));
-        q_ptr = q_ptr.add(2);
+        let q_1 = _mm256_loadu_ps(q_ptr.add(8));
+        q_ptr = q_ptr.add(16);
 
         let v0_0 = _mm256_loadu_ps(v_ptrs[0]);
-        let v0_1 = _mm256_loadu_ps(v_ptrs[0].add(1));
-        v_ptrs[0] = v_ptrs[0].add(2);
+        let v0_1 = _mm256_loadu_ps(v_ptrs[0].add(8));
+        v_ptrs[0] = v_ptrs[0].add(16);
 
         let v1_0 = _mm256_loadu_ps(v_ptrs[1]);
-        let v1_1 = _mm256_loadu_ps(v_ptrs[1].add(1));
-        v_ptrs[1] = v_ptrs[1].add(2);
+        let v1_1 = _mm256_loadu_ps(v_ptrs[1].add(8));
+        v_ptrs[1] = v_ptrs[1].add(16);
 
         let v2_0 = _mm256_loadu_ps(v_ptrs[2]);
-        let v2_1 = _mm256_loadu_ps(v_ptrs[2].add(1));
-        v_ptrs[2] = v_ptrs[2].add(2);
+        let v2_1 = _mm256_loadu_ps(v_ptrs[2].add(8));
+        v_ptrs[2] = v_ptrs[2].add(16);
 
         let v3_0 = _mm256_loadu_ps(v_ptrs[3]);
-        let v3_1 = _mm256_loadu_ps(v_ptrs[3].add(1));
-        v_ptrs[3] = v_ptrs[3].add(2);
+        let v3_1 = _mm256_loadu_ps(v_ptrs[3].add(8));
+        v_ptrs[3] = v_ptrs[3].add(16);
 
         sum_0 = _mm256_fmadd_ps(q_0, v0_0, sum_0);
         sum_0 = _mm256_fmadd_ps(q_1, v0_1, sum_0);
@@ -250,6 +250,64 @@ mod tests {
             let cosine_simd = unsafe { cosine_preprocess_avx(&v1) };
             let cosine = cosine_preprocess(&v1);
             assert_eq!(cosine_simd, cosine);
+        } else {
+            println!("avx test skipped");
+        }
+    }
+
+    #[test]
+    fn test_chunk_avx() {
+        use super::*;
+        use crate::spaces::simple::*;
+
+        if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
+            let v1: Vec<f32> = vec![
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                26., 27., 28., 29., 30., 31.,
+            ];
+            let v2: Vec<f32> = vec![
+                40., 41., 42., 43., 44., 45., 46., 47., 48., 49., 50., 51., 52., 53., 54., 55.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                56., 57., 58., 59., 60., 61.,
+            ];
+            let v3: Vec<f32> = vec![
+                40., 41., 42., 43., 44., 45., 46., 47., 48., 49., 50., 51., 52., 53., 54., 55.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                56., 57., 58., 59., 60., 61.,
+            ];
+            let v4: Vec<f32> = vec![
+                40., 41., 42., 43., 44., 45., 46., 47., 48., 49., 50., 51., 52., 53., 54., 55.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                56., 57., 58., 59., 60., 61.,
+            ];
+            let ptrs = [v1.as_ptr(), v2.as_ptr(), v3.as_ptr(), v4.as_ptr()];
+            let q: Vec<f32> = vec![
+                40., 41., 42., 43., 44., 45., 46., 47., 48., 49., 50., 51., 52., 53., 54., 55.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                56., 57., 58., 59., 60., 61.,
+            ];
+            let q_ptr = q.as_ptr();
+            let scores = unsafe { dot_similarity_chunk_avx(q_ptr, ptrs, q.len()) };
+            let check = unsafe {
+                [
+                    dot_similarity_avx(&q, &v1),
+                    dot_similarity_avx(&q, &v2),
+                    dot_similarity_avx(&q, &v3),
+                    dot_similarity_avx(&q, &v4),
+                ]
+            };
+            assert_eq!(scores, check);
         } else {
             println!("avx test skipped");
         }
