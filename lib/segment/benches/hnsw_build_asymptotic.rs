@@ -123,6 +123,10 @@ impl Metric for FakeMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
         score
     }
+
+    fn similarity_chunk(_q_ptr: *const f32, _v_ptrs: [*const f32; 4], _dim: usize) -> [f32; 4] {
+        unreachable!("FakeMetric::similarity_chunk")
+    }
 }
 
 fn scoring_vectors(c: &mut Criterion) {

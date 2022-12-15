@@ -152,6 +152,70 @@ pub(crate) unsafe fn dot_similarity_avx(
     result
 }
 
+#[target_feature(enable = "avx")]
+#[target_feature(enable = "fma")]
+pub(crate) unsafe fn dot_similarity_chunk_avx(
+    mut q_ptr: *const f32,
+    mut v_ptrs: [*const f32; 4],
+    dim: usize,
+) -> [f32; 4] {
+    let mut sum_0 = _mm256_setzero_ps();
+    let mut sum_1 = _mm256_setzero_ps();
+    let mut sum_2 = _mm256_setzero_ps();
+    let mut sum_3 = _mm256_setzero_ps();
+    for _ in 0..dim / 16 {
+        let q_0 = _mm256_loadu_ps(q_ptr);
+        let q_1 = _mm256_loadu_ps(q_ptr.add(1));
+        q_ptr = q_ptr.add(2);
+
+        let v0_0 = _mm256_loadu_ps(v_ptrs[0]);
+        let v0_1 = _mm256_loadu_ps(v_ptrs[0].add(1));
+        v_ptrs[0] = v_ptrs[0].add(2);
+
+        let v1_0 = _mm256_loadu_ps(v_ptrs[1]);
+        let v1_1 = _mm256_loadu_ps(v_ptrs[1].add(1));
+        v_ptrs[1] = v_ptrs[1].add(2);
+
+        let v2_0 = _mm256_loadu_ps(v_ptrs[2]);
+        let v2_1 = _mm256_loadu_ps(v_ptrs[2].add(1));
+        v_ptrs[2] = v_ptrs[2].add(2);
+
+        let v3_0 = _mm256_loadu_ps(v_ptrs[3]);
+        let v3_1 = _mm256_loadu_ps(v_ptrs[3].add(1));
+        v_ptrs[3] = v_ptrs[3].add(2);
+
+        sum_0 = _mm256_fmadd_ps(q_0, v0_0, sum_0);
+        sum_0 = _mm256_fmadd_ps(q_1, v0_1, sum_0);
+
+        sum_1 = _mm256_fmadd_ps(q_0, v1_0, sum_1);
+        sum_1 = _mm256_fmadd_ps(q_1, v1_1, sum_1);
+
+        sum_2 = _mm256_fmadd_ps(q_0, v2_0, sum_2);
+        sum_2 = _mm256_fmadd_ps(q_1, v2_1, sum_2);
+
+        sum_3 = _mm256_fmadd_ps(q_0, v3_0, sum_3);
+        sum_3 = _mm256_fmadd_ps(q_1, v3_1, sum_3);
+    }
+    let mut result = [
+        hsum256_ps_avx(sum_0),
+        hsum256_ps_avx(sum_1),
+        hsum256_ps_avx(sum_2),
+        hsum256_ps_avx(sum_3),
+    ];
+    for _ in 0..dim % 16 {
+        result[0] += *q_ptr * *v_ptrs[0];
+        result[1] += *q_ptr * *v_ptrs[1];
+        result[2] += *q_ptr * *v_ptrs[2];
+        result[3] += *q_ptr * *v_ptrs[3];
+        q_ptr = q_ptr.add(1);
+        v_ptrs[0] = v_ptrs[0].add(1);
+        v_ptrs[1] = v_ptrs[1].add(1);
+        v_ptrs[2] = v_ptrs[2].add(1);
+        v_ptrs[3] = v_ptrs[3].add(1);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

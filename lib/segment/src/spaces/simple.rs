@@ -67,6 +67,38 @@ impl Metric for EuclidMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
         score.abs().sqrt()
     }
+
+    fn similarity_chunk(
+        mut q_ptr: *const f32,
+        mut v_ptrs: [*const f32; 4],
+        dim: usize,
+    ) -> [f32; 4] {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && dim >= MIN_DIM_SIZE_AVX
+            {
+                return unsafe { dot_similarity_chunk_avx(q_ptr, v_ptrs, dim) };
+            }
+        }
+
+        let mut result = [0.0; 4];
+        for _ in 0..dim {
+            unsafe {
+                result[0] -= (*q_ptr - *v_ptrs[0]) * (*q_ptr - *v_ptrs[0]);
+                result[1] -= (*q_ptr - *v_ptrs[1]) * (*q_ptr - *v_ptrs[1]);
+                result[2] -= (*q_ptr - *v_ptrs[2]) * (*q_ptr - *v_ptrs[2]);
+                result[3] -= (*q_ptr - *v_ptrs[3]) * (*q_ptr - *v_ptrs[3]);
+                q_ptr = q_ptr.add(1);
+                v_ptrs[0] = v_ptrs[0].add(1);
+                v_ptrs[1] = v_ptrs[1].add(1);
+                v_ptrs[2] = v_ptrs[2].add(1);
+                v_ptrs[3] = v_ptrs[3].add(1);
+            }
+        }
+        result
+    }
 }
 
 impl Metric for DotProductMetric {
@@ -108,6 +140,38 @@ impl Metric for DotProductMetric {
 
     fn postprocess(score: ScoreType) -> ScoreType {
         score
+    }
+
+    fn similarity_chunk(
+        mut q_ptr: *const f32,
+        mut v_ptrs: [*const f32; 4],
+        dim: usize,
+    ) -> [f32; 4] {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && dim >= MIN_DIM_SIZE_AVX
+            {
+                return unsafe { dot_similarity_chunk_avx(q_ptr, v_ptrs, dim) };
+            }
+        }
+
+        let mut result = [0.0; 4];
+        for _ in 0..dim {
+            unsafe {
+                result[0] += *q_ptr * *v_ptrs[0];
+                result[1] += *q_ptr * *v_ptrs[1];
+                result[2] += *q_ptr * *v_ptrs[2];
+                result[3] += *q_ptr * *v_ptrs[3];
+                q_ptr = q_ptr.add(1);
+                v_ptrs[0] = v_ptrs[0].add(1);
+                v_ptrs[1] = v_ptrs[1].add(1);
+                v_ptrs[2] = v_ptrs[2].add(1);
+                v_ptrs[3] = v_ptrs[3].add(1);
+            }
+        }
+        result
     }
 }
 
@@ -175,6 +239,38 @@ impl Metric for CosineMetric {
 
     fn postprocess(score: ScoreType) -> ScoreType {
         score
+    }
+
+    fn similarity_chunk(
+        mut q_ptr: *const f32,
+        mut v_ptrs: [*const f32; 4],
+        dim: usize,
+    ) -> [f32; 4] {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && dim >= MIN_DIM_SIZE_AVX
+            {
+                return unsafe { dot_similarity_chunk_avx(q_ptr, v_ptrs, dim) };
+            }
+        }
+
+        let mut result = [0.0; 4];
+        for _ in 0..dim {
+            unsafe {
+                result[0] += *q_ptr * *v_ptrs[0];
+                result[1] += *q_ptr * *v_ptrs[1];
+                result[2] += *q_ptr * *v_ptrs[2];
+                result[3] += *q_ptr * *v_ptrs[3];
+                q_ptr = q_ptr.add(1);
+                v_ptrs[0] = v_ptrs[0].add(1);
+                v_ptrs[1] = v_ptrs[1].add(1);
+                v_ptrs[2] = v_ptrs[2].add(1);
+                v_ptrs[3] = v_ptrs[3].add(1);
+            }
+        }
+        result
     }
 }
 

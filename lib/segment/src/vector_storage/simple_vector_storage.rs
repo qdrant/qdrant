@@ -51,23 +51,48 @@ where
     TMetric: Metric,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        const CHUNK_SIZE: usize = 4;
+
         let mut size: usize = 0;
+        let mut unscored_size: usize = 0;
         for point_id in points.iter().copied() {
             if self.deleted[point_id as usize] {
                 continue;
             }
-            let other_vector = self.vectors.get(point_id);
-            scores[size] = ScoredPointOffset {
+            scores[size + unscored_size] = ScoredPointOffset {
                 idx: point_id,
-                score: TMetric::similarity(&self.query, other_vector),
+                score: 0.0,
             };
 
-            size += 1;
-            if size == scores.len() {
-                return size;
+            unscored_size += 1;
+            if unscored_size == CHUNK_SIZE {
+                let mut v_ptrs = [
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                ];
+                for i in 0..CHUNK_SIZE {
+                    v_ptrs[i] = self.vectors.get(scores[size + i].idx).as_ptr();
+                }
+                let chunk_scores =
+                    TMetric::similarity_chunk(self.query.as_ptr(), v_ptrs, self.query.len());
+                for i in 0..CHUNK_SIZE {
+                    scores[size + i].score = chunk_scores[i];
+                }
+                size += unscored_size;
+                unscored_size = 0;
+            }
+
+            if size + unscored_size == scores.len() {
+                break;
             }
         }
-        size
+        for i in 0..unscored_size {
+            let other_vector = self.vectors.get(scores[size + i].idx);
+            scores[size + i].score = TMetric::similarity(&self.query, other_vector);
+        }
+        size + unscored_size
     }
 
     fn check_point(&self, point: PointOffsetType) -> bool {

@@ -1,6 +1,8 @@
 use crate::data_types::vectors::VectorElementType;
 use crate::types::{Distance, ScoreType};
 
+pub const METRIC_SCORING_CHUNK: usize = 4;
+
 /// Defines how to compare vectors
 pub trait Metric {
     fn distance() -> Distance;
@@ -14,4 +16,6 @@ pub trait Metric {
 
     /// correct metric score for displaying
     fn postprocess(score: ScoreType) -> ScoreType;
+
+    fn similarity_chunk(q_ptr: *const f32, v_ptrs: [*const f32; 4], dim: usize) -> [f32; 4];
 }
