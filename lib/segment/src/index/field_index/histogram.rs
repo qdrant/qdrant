@@ -1,4 +1,4 @@
-use std::cmp::{max, min, Ordering};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 use std::ops::Bound;
@@ -61,7 +61,7 @@ impl Histogram {
 
     pub fn current_bucket_size(&self) -> usize {
         let bucket_size = (self.total_count as f64 * self.precision) as usize;
-        min(max(MIN_BUCKET_SIZE, bucket_size), self.max_bucket_size)
+        bucket_size.clamp(MIN_BUCKET_SIZE, self.max_bucket_size)
     }
 
     pub fn get_total_count(&self) -> usize {

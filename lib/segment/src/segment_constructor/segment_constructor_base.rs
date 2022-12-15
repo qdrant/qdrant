@@ -50,8 +50,8 @@ fn create_segment(
     };
     let vector_db_names: Vec<String> = config
         .vector_data
-        .iter()
-        .map(|(vector_name, _)| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name))
+        .keys()
+        .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name))
         .collect();
     let database = open_db(segment_path, &vector_db_names)
         .map_err(|err| OperationError::service_error(&format!("RocksDB open error: {}", err)))?;
@@ -73,9 +73,9 @@ fn create_segment(
     let mut vector_data = HashMap::new();
     for (vector_name, vector_config) in &config.vector_data {
         let vector_storage_path =
-            segment_path.join(&get_vector_name_with_prefix("vector_storage", vector_name));
+            segment_path.join(get_vector_name_with_prefix("vector_storage", vector_name));
         let vector_index_path =
-            segment_path.join(&get_vector_name_with_prefix("vector_index", vector_name));
+            segment_path.join(get_vector_name_with_prefix("vector_index", vector_name));
 
         let vector_storage: Arc<AtomicRefCell<VectorStorageSS>> = match config.storage_type {
             StorageType::InMemory => {

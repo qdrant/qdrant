@@ -118,7 +118,7 @@ impl ValueIndexer<String> for FullTextIndex {
                 .unwrap(),
         )?;
 
-        self.db_wrapper.put(&db_idx, &db_document)?;
+        self.db_wrapper.put(db_idx, db_document)?;
 
         Ok(())
     }
@@ -138,7 +138,7 @@ impl ValueIndexer<String> for FullTextIndex {
         }
 
         let db_doc_id = Self::store_key(&id);
-        self.db_wrapper.remove(&db_doc_id)?;
+        self.db_wrapper.remove(db_doc_id)?;
 
         Ok(())
     }

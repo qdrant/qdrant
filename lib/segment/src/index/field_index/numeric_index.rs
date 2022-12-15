@@ -207,6 +207,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         self.point_to_values.get(idx as usize)
     }
 
+    #[allow(clippy::manual_clamp)] // false positive
     fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
         let lbound = if let Some(lte) = range.lte {
             Included(lte)

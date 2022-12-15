@@ -167,8 +167,8 @@ where
         };
 
         self.db_wrapper.put(
-            &bincode::serialize(&point_id).unwrap(),
-            &bincode::serialize(&record).unwrap(),
+            bincode::serialize(&point_id).unwrap(),
+            bincode::serialize(&record).unwrap(),
         )?;
 
         Ok(())

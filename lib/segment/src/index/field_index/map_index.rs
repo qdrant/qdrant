@@ -121,7 +121,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             entry.insert(idx);
 
             let db_record = Self::encode_db_record(value, idx);
-            self.db_wrapper.put(&db_record, [])?;
+            self.db_wrapper.put(db_record, [])?;
         }
         self.indexed_points += 1;
         Ok(())
@@ -172,7 +172,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
                 vals.remove(&idx);
             }
             let key = MapIndex::encode_db_record(value, idx);
-            self.db_wrapper.remove(&key)?;
+            self.db_wrapper.remove(key)?;
         }
 
         Ok(())

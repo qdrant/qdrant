@@ -177,8 +177,8 @@ impl IdTracker for SimpleIdTracker {
             }
             self.internal_to_version[internal_id as usize] = version;
             self.versions_db_wrapper.put(
-                &Self::store_key(&external_id),
-                &bincode::serialize(&version).unwrap(),
+                Self::store_key(&external_id),
+                bincode::serialize(&version).unwrap(),
             )?;
         }
         Ok(())
@@ -223,14 +223,14 @@ impl IdTracker for SimpleIdTracker {
             self.deleted.resize(internal_id + 1, true);
         }
         self.internal_to_external[internal_id] = external_id;
-        if self.deleted[internal_id as usize] {
+        if self.deleted[internal_id] {
             self.points_count += 1;
         }
         self.deleted.set(internal_id, false);
 
         self.mapping_db_wrapper.put(
-            &Self::store_key(&external_id),
-            &bincode::serialize(&internal_id).unwrap(),
+            Self::store_key(&external_id),
+            bincode::serialize(&internal_id).unwrap(),
         )?;
         Ok(())
     }
@@ -248,9 +248,9 @@ impl IdTracker for SimpleIdTracker {
             self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
         }
         self.mapping_db_wrapper
-            .remove(&Self::store_key(&external_id))?;
+            .remove(Self::store_key(&external_id))?;
         self.versions_db_wrapper
-            .remove(&Self::store_key(&external_id))?;
+            .remove(Self::store_key(&external_id))?;
         Ok(())
     }
 

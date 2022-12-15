@@ -508,7 +508,7 @@ impl LocalShard {
         let _wal_guard = self.wal.lock();
         let source_wal_path = self.path.join("wal");
         let options = fs_extra::dir::CopyOptions::new();
-        fs_extra::dir::copy(&source_wal_path, snapshot_shard_path, &options).map_err(|err| {
+        fs_extra::dir::copy(source_wal_path, snapshot_shard_path, &options).map_err(|err| {
             CollectionError::service_error(format!(
                 "Error while copy WAL {:?} {}",
                 snapshot_shard_path, err
