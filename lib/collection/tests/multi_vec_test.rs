@@ -232,8 +232,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     match recommend_result {
         Ok(_) => panic!("Error expected"),
         Err(err) => match err {
-            CollectionError::BadRequest { .. } => {},
-            CollectionError::BadInput { .. } => {},
+            CollectionError::BadRequest { .. } => {}
+            CollectionError::BadInput { .. } => {}
             error => panic!("Unexpected error {}", error),
         },
     }
