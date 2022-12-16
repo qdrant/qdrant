@@ -540,7 +540,7 @@ impl GraphLinks for GraphLinksMmap {
 
     fn get_links_range(&self, idx: usize) -> Range<usize> {
         let offsets_slice = self.get_offsets_slice();
-        offsets_slice[idx as usize] as usize..offsets_slice[idx as usize + 1] as usize
+        offsets_slice[idx] as usize..offsets_slice[idx + 1] as usize
     }
 
     fn get_level_offset(&self, level: usize) -> usize {

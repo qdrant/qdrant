@@ -58,7 +58,7 @@ pub fn open_db<T: AsRef<str>>(
     for vector_path in vector_pathes {
         column_families.push(vector_path.as_ref());
     }
-    let db = DB::open_cf(&db_options(), path, &column_families)?;
+    let db = DB::open_cf(&db_options(), path, column_families)?;
     Ok(Arc::new(RwLock::new(db)))
 }
 
@@ -73,7 +73,7 @@ pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<RwLock<DB>>, rocksdb:
     } else {
         vec![]
     };
-    let db = DB::open_cf(&db_options(), path, &existing_column_families)?;
+    let db = DB::open_cf(&db_options(), path, existing_column_families)?;
     Ok(Arc::new(RwLock::new(db)))
 }
 

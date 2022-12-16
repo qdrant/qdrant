@@ -88,7 +88,7 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
 
     fn save_data_to(path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {
         let path: PathBuf = path.into();
-        AtomicFile::new(&path, AllowOverwrite).write(|file| {
+        AtomicFile::new(path, AllowOverwrite).write(|file| {
             let writer = BufWriter::new(file);
             serde_json::to_writer(writer, data)
         })?;
@@ -164,7 +164,7 @@ mod tests {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
         let counter: Arc<SaveOnDisk<u32>> =
-            Arc::new(SaveOnDisk::load_or_init(&counter_file).unwrap());
+            Arc::new(SaveOnDisk::load_or_init(counter_file).unwrap());
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
             sleep(Duration::from_millis(100));
@@ -183,7 +183,7 @@ mod tests {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
         let counter: Arc<SaveOnDisk<u32>> =
-            Arc::new(SaveOnDisk::load_or_init(&counter_file).unwrap());
+            Arc::new(SaveOnDisk::load_or_init(counter_file).unwrap());
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
             sleep(Duration::from_millis(200));

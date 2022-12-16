@@ -266,7 +266,7 @@ mod tests {
                     <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
                         .vector_storage
                         .borrow()
-                        .vector_count() as usize,
+                        .vector_count(),
                 "{:#?}",
                 estimation
             );
@@ -341,7 +341,7 @@ mod tests {
                     <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
                         .vector_storage
                         .borrow()
-                        .vector_count() as usize,
+                        .vector_count(),
                 "{:#?}",
                 estimation
             );
@@ -370,7 +370,7 @@ mod tests {
                     <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
                         .vector_storage
                         .borrow()
-                        .vector_count() as usize,
+                        .vector_count(),
                 "{:#?}",
                 estimation
             );

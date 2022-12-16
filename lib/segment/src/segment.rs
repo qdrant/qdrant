@@ -878,8 +878,8 @@ impl SegmentEntry for Segment {
 
         let vector_storage_flushers: Vec<_> = self
             .vector_data
-            .iter()
-            .map(|(_, v)| v.vector_storage.borrow().flusher())
+            .values()
+            .map(|v| v.vector_storage.borrow().flusher())
             .collect();
         let state = self.get_state();
         let current_path = self.current_path.clone();

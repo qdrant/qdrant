@@ -301,7 +301,7 @@ impl SegmentsSearcher {
             }
             Ok(true)
         })?;
-        Ok(point_records.into_iter().map(|(_, r)| r).collect())
+        Ok(point_records.into_values().collect())
     }
 }
 

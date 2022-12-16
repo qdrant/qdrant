@@ -24,7 +24,7 @@ impl OnDiskPayloadStorage {
 
     pub fn remove_from_storage(&self, point_id: PointOffsetType) -> OperationResult<()> {
         self.db_wrapper
-            .remove(&serde_cbor::to_vec(&point_id).unwrap())
+            .remove(serde_cbor::to_vec(&point_id).unwrap())
     }
 
     pub fn update_storage(
@@ -33,8 +33,8 @@ impl OnDiskPayloadStorage {
         payload: &Payload,
     ) -> OperationResult<()> {
         self.db_wrapper.put(
-            &serde_cbor::to_vec(&point_id).unwrap(),
-            &serde_cbor::to_vec(payload).unwrap(),
+            serde_cbor::to_vec(&point_id).unwrap(),
+            serde_cbor::to_vec(payload).unwrap(),
         )
     }
 
