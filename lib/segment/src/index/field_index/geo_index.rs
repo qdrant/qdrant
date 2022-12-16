@@ -248,7 +248,7 @@ impl GeoMapIndex {
             if let Some(ref offsets) = hash_points {
                 for point_offset in offsets.iter() {
                     let key = Self::encode_db_key(removed_geo_hash, *point_offset);
-                    self.db_wrapper.remove(&key)?;
+                    self.db_wrapper.remove(key)?;
                 }
             }
 
@@ -310,7 +310,7 @@ impl GeoMapIndex {
 
             geo_hashes.push(added_geo_hash);
 
-            self.db_wrapper.put(&key, value)?;
+            self.db_wrapper.put(key, value)?;
         }
 
         for geo_hash in &geo_hashes {

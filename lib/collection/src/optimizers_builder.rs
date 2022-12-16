@@ -1,4 +1,3 @@
-use std::cmp::{max, min};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -80,7 +79,7 @@ impl OptimizersConfig {
             let num_cpus = num_cpus::get();
             // Do not configure less than 2 and more than 8 segments
             // until it is not explicitly requested
-            min(max(2, num_cpus), 8)
+            num_cpus.clamp(2, 8)
         } else {
             self.default_segment_number
         }

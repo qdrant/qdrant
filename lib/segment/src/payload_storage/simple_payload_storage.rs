@@ -38,10 +38,10 @@ impl SimplePayloadStorage {
         match self.payload.get(point_id) {
             None => self
                 .db_wrapper
-                .remove(&serde_cbor::to_vec(&point_id).unwrap()),
+                .remove(serde_cbor::to_vec(&point_id).unwrap()),
             Some(payload) => self.db_wrapper.put(
-                &serde_cbor::to_vec(&point_id).unwrap(),
-                &serde_cbor::to_vec(payload).unwrap(),
+                serde_cbor::to_vec(&point_id).unwrap(),
+                serde_cbor::to_vec(payload).unwrap(),
             ),
         }
     }

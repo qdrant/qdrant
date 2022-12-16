@@ -78,7 +78,7 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
 
     // Read configuration file with snapshot-to-collection mapping
     let config_path = temporary_dir.join("config.json");
-    let config_file = std::fs::File::open(&config_path).unwrap();
+    let config_file = std::fs::File::open(config_path).unwrap();
     let config_json: SnapshotConfig = serde_json::from_reader(config_file).unwrap();
 
     // Create mapping from the configuration file
