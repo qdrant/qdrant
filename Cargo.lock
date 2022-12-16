@@ -4299,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?branch=flush-after-truncation#ae8d75276d6fe801e61b365b7e3f116f5fe92a63"
+source = "git+https://github.com/qdrant/wal.git?branch=flush-after-truncation#209dbc425f98570c3ff047e31a70549991a1c5f2"
 dependencies = [
  "byteorder",
  "crc",
