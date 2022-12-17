@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tonic = { version = "0.7.2", features = ["compression"] }
-prost = "0.10.1"
-prost-types = "0.10.1"
+tonic = { version = "0.8.3", features = ["gzip"] }
+prost = "0.11.3"
+prost-types = "0.11.2"
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
 schemars = { version = "0.8.11", features = ["uuid1", "preserve_order"] }
@@ -22,4 +22,4 @@ thiserror = "1.0"
 segment = {path = "../segment"}
 
 [build-dependencies]
-tonic-build = { version = "0.7.2", features = ["prost", "compression"] }
+tonic-build = { version = "0.8.4", features = ["prost"] }
