@@ -527,6 +527,8 @@ impl Consensus {
     /// Returns `true` if consensus should be stopped, `false` otherwise.
     fn on_ready(&mut self) -> anyhow::Result<bool> {
         if !self.node.has_ready() {
+            // No updates to process
+            self.store().sync_local_state()?;
             return Ok(false);
         }
         self.store().record_consensus_working();

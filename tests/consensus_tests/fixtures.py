@@ -11,13 +11,13 @@ def random_vector():
     return [random.random() for _ in range(4)]
 
 
-def upsert_random_points(peer_url, num, collection_name="test_collection", fail_on_error=True):
+def upsert_random_points(peer_url, num, collection_name="test_collection", fail_on_error=True, offset=0):
     # Create points in first peer's collection
     r_batch = requests.put(
         f"{peer_url}/collections/{collection_name}/points?wait=true", json={
             "points": [
                 {
-                    "id": i,
+                    "id": i + offset,
                     "vector": random_vector(),
                     "payload": {"city": random.choice(CITIES)}
                 } for i in range(num)
