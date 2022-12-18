@@ -407,6 +407,28 @@ impl TableOfContent {
         proposal_sender.send(operation)
     }
 
+    fn on_transfer_failure_callback(
+        proposal_sender: Option<OperationSender>,
+    ) -> collection::collection::OnTransferFailure {
+        Arc::new(move |transfer, collection_name, reason| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let operation = ConsensusOperations::abort_transfer(
+                    collection_name.clone(),
+                    transfer.clone(),
+                    reason,
+                );
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to abort transfer of shard {} of collection {}. Error: {}",
+                        transfer.shard_id,
+                        collection_name,
+                        send_error
+                    );
+                }
+            }
+        })
+    }
+
     fn on_peer_failure_callback(
         proposal_sender: Option<OperationSender>,
         collection_name: String,
@@ -1313,7 +1335,17 @@ impl CollectionContainer for TableOfContent {
     }
 
     fn sync_local_state(&self) -> Result<(), StorageError> {
-        todo!()
+        self.collection_management_runtime.block_on(async {
+            let collections = self.collections.read().await;
+            let transfer_failure_callback =
+                Self::on_transfer_failure_callback(self.consensus_proposal_sender.clone());
+            for collection in collections.values() {
+                collection
+                    .sync_local_state(transfer_failure_callback.clone())
+                    .await?;
+            }
+            Ok(())
+        })
     }
 }
 

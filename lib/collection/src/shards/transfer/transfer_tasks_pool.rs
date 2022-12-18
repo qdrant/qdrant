@@ -34,7 +34,7 @@ impl TransferTasksPool {
     /// Returns true if transfer task is still running
     pub fn check_if_still_running(&self, transfer_key: &ShardTransferKey) -> bool {
         if let Some(task) = self.tasks.get(transfer_key) {
-            task.is_finished()
+            !task.is_finished()
         } else {
             false
         }
