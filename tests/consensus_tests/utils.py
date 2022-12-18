@@ -324,6 +324,22 @@ def wait_for(condition: Callable[..., bool], *args):
             time.sleep(RETRY_INTERVAL_SEC)
 
 
+def peer_is_online(peer_api_uri: str) -> bool:
+    try:
+        r = requests.get(f"{peer_api_uri}")
+        return r.status_code == 200
+    except:
+        return False
+
+
+def wait_for_peer_online(peer_api_uri: str):
+    try:
+        wait_for(peer_is_online, peer_api_uri)
+    except Exception as e:
+        print_clusters_info([peer_api_uri])
+        raise e
+
+
 def wait_collection_on_all_peers(collection_name: str, peer_api_uris: [str], max_wait=30):
     # Check that it exists on all peers
     while True:

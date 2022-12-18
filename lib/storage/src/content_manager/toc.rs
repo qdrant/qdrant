@@ -1311,6 +1311,10 @@ impl CollectionContainer for TableOfContent {
             Ok(())
         })
     }
+
+    fn sync_local_state(&self) -> Result<(), StorageError> {
+        todo!()
+    }
 }
 
 // `TableOfContent` should not be dropped from async context.

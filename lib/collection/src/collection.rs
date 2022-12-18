@@ -359,12 +359,23 @@ impl Collection {
 
     pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
         let shard_holder_read = self.shards_holder.read().await;
-        let transfers = shard_holder_read
+        let matched = shard_holder_read
             .shard_transfers
             .read()
             .iter()
             .any(|transfer| transfer_key.check(transfer));
-        transfers
+        matched
+    }
+
+    pub async fn get_transfer(&self, transfer_key: &ShardTransferKey) -> Option<ShardTransfer> {
+        let shard_holder_read = self.shards_holder.read().await;
+        let transfer = shard_holder_read
+            .shard_transfers
+            .read()
+            .iter()
+            .find(|transfer| transfer_key.check(transfer))
+            .cloned();
+        transfer
     }
 
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
@@ -534,7 +545,13 @@ impl Collection {
                 )));
             };
 
-        replica_set.remove_peer(transfer_key.to).await?;
+        let transfer = self.get_transfer(&transfer_key).await;
+
+        if transfer.map(|x| x.sync).unwrap_or(false) {
+            replica_set.set_replica_state(&transfer_key.to, ReplicaState::Dead)?;
+        } else {
+            replica_set.remove_peer(transfer_key.to).await?;
+        }
 
         if self.this_peer_id == transfer_key.from {
             revert_proxy_shard_to_local(&shard_holder_guard, transfer_key.shard_id).await?;

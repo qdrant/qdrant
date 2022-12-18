@@ -14,6 +14,7 @@ pub mod errors;
 pub mod shard_distribution;
 pub mod snapshots;
 pub mod toc;
+pub mod collection_container_impl;
 
 pub mod consensus_ops {
     use collection::shards::replica_set::ReplicaState;
@@ -141,4 +142,6 @@ pub trait CollectionContainer {
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
+
+    fn sync_local_state(&self) -> Result<(), StorageError>;
 }
