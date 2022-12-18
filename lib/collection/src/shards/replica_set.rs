@@ -300,7 +300,9 @@ impl ShardReplicaSet {
                 }
             })?;
         }
-        self.locally_disabled_peers.write().remove(&self.this_peer_id());
+        self.locally_disabled_peers
+            .write()
+            .remove(&self.this_peer_id());
         Ok(old_shard)
     }
 
