@@ -414,6 +414,11 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     spawn_async_stoppable(move |stopped| async move {
+        log::debug!(
+            "Starting transfer task for shard {} from peer {}",
+            transfer.shard_id,
+            transfer.from
+        );
         let mut tries = MAX_RETRY_COUNT;
         let mut finished = false;
         while !finished && tries > 0 {
@@ -459,6 +464,11 @@ where
         } else {
             on_error.await;
         }
+        log::debug!(
+            "Finished transfer task for shard {} from peer {}",
+            transfer.shard_id,
+            transfer.from
+        );
         finished
     })
 }

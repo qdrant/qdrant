@@ -54,6 +54,7 @@ use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
 use crate::telemetry::CollectionTelemetry;
 
 pub type VectorLookupFuture<'a> = Box<dyn Future<Output = CollectionResult<Vec<Record>>> + 'a>;
+pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
 struct CollectionVersion;
@@ -1371,6 +1372,32 @@ impl Collection {
         for (_shard_id, replica_set) in shard_holder.get_shards() {
             replica_set.remove_peer(peer_id).await?;
         }
+        Ok(())
+    }
+
+    pub async fn sync_local_state(
+        &self,
+        on_transfer_failure: OnTransferFailure,
+    ) -> CollectionResult<()> {
+        // Check for disabled replicas
+        let shard_holder = self.shards_holder.read().await;
+        for replica_set in shard_holder.all_shards() {
+            replica_set.sync_local_state().await?;
+        }
+
+        // Check for un-reported finished transfers
+        let outgoing_transfers = self.get_outgoing_transfers(&self.this_peer_id).await;
+        let tasks_lock = self.transfer_tasks.lock().await;
+        for transfer in outgoing_transfers {
+            if !tasks_lock.check_if_still_running(&transfer.key()) {
+                log::debug!(
+                    "Transfer {:?} is not running, but not reported as finished. Reporting now.",
+                    transfer.key()
+                );
+                on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+            }
+        }
+
         Ok(())
     }
 }

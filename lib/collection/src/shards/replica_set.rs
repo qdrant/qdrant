@@ -243,6 +243,8 @@ impl ShardReplicaSet {
             rs.set_peer_state(peer_id, state);
         })?;
 
+        self.locally_disabled_peers.write().remove(&peer_id);
+
         let mut remotes = self.remotes.write().await;
 
         // check remote already exists
@@ -267,7 +269,9 @@ impl ShardReplicaSet {
             rs.remove_peer_state(&this_peer_id);
         })?;
 
-        self.locally_disabled_peers.write().remove(&self.this_peer_id());
+        self.locally_disabled_peers
+            .write()
+            .remove(&self.this_peer_id());
 
         let removing_local = {
             let mut local = self.local.write().await;
@@ -296,6 +300,7 @@ impl ShardReplicaSet {
                 }
             })?;
         }
+        self.locally_disabled_peers.write().remove(&self.this_peer_id());
         Ok(old_shard)
     }
 
@@ -882,11 +887,27 @@ impl ShardReplicaSet {
                     }
                     _ => {}
                 }
+                log::debug!(
+                    "Deactivating peer {} because of failed update of shard {}:{}",
+                    peer_id,
+                    self.collection_id,
+                    self.shard_id
+                );
                 self.locally_disabled_peers.write().insert(*peer_id);
                 self.notify_peer_failure(*peer_id);
             }
         }
         wait_for_deactivation
+    }
+
+    /// Check if the are any locally disabled peers
+    /// And if so, report them to the consensus
+    pub async fn sync_local_state(&self) -> CollectionResult<()> {
+        for failed_peer in self.locally_disabled_peers.read().iter() {
+            log::debug!("Peer {} is locally disabled, reporting", failed_peer);
+            self.notify_peer_failure(*failed_peer);
+        }
+        Ok(())
     }
 
     pub async fn update(
