@@ -41,7 +41,7 @@ use crate::shards::telemetry::ReplicaSetTelemetry;
 pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
-const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 const READ_REMOTE_REPLICAS: u32 = 2;
 

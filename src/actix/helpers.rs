@@ -39,7 +39,7 @@ where
                 StorageError::BadInput { .. } => HttpResponse::BadRequest(),
                 StorageError::NotFound { .. } => HttpResponse::NotFound(),
                 StorageError::ServiceError { .. } => {
-                    log::warn!("error processing request: {:?}", err);
+                    log::warn!("error processing request: {}", err);
                     HttpResponse::InternalServerError()
                 }
                 StorageError::BadRequest { .. } => HttpResponse::BadRequest(),
