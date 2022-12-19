@@ -3,7 +3,7 @@ import os
 import shutil
 from subprocess import Popen
 import time
-from typing import Tuple, Callable
+from typing import Tuple, Callable, Dict
 import requests
 import socket
 from contextlib import closing
@@ -32,7 +32,7 @@ def get_port() -> int:
         return s.getsockname()[1]
 
 
-def get_env(p2p_port: int, grpc_port: int, http_port: int) -> dict[str, str]:
+def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env = os.environ.copy()
     env["QDRANT__CLUSTER__ENABLED"] = "true"
     env["QDRANT__CLUSTER__P2P__PORT"] = str(p2p_port)
