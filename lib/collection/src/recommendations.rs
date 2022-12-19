@@ -221,8 +221,6 @@ where
         }
     }
 
-    eprintln!("all_vectors_records_map = {:#?}", all_vectors_records_map);
-
     let mut searches = Vec::with_capacity(request_batch.searches.len());
 
     for request in &request_batch.searches {
