@@ -38,7 +38,7 @@ segment = { path = "../segment" }
 collection = { path = "../collection" }
 api = { path = "../api" }
 futures = "0.3.25"
-anyhow = "1.0.66"
+anyhow = "1.0.68"
 uuid = "1.2.1"
 url = "2.3.1"
 reqwest = { version = "0.11", features = ["stream", "rustls-tls"] }
