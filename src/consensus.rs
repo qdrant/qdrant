@@ -789,6 +789,7 @@ async fn send_message(
 
     if let Err(err) = transport_channel_pool
         .with_channel(&address, |channel| async move {
+            log::debug!("Sending raft message to {address} with channel");
             let mut client = RaftClient::new(channel);
             client.send(tonic::Request::new(message.clone())).await
         })
