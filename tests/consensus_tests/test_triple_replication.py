@@ -61,17 +61,23 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
 
     upload_process.terminate()
 
-    all_active = True
-    for peer_api_uri in peer_api_uris:
-        res = check_collection_cluster(peer_api_uri, "test_collection")
-        print(peer_api_uri, res)
-        if res['state'] != 'Active':
-            all_active = False
+    timeout = 10
+    while True:
+        if timeout < 0:
+            raise Exception("Timeout waiting for all replicas to be active")
 
-    if not all_active:
-        time.sleep(2)
-        print("-----------------")
-
+        all_active = True
+        points_counts = set()
         for peer_api_uri in peer_api_uris:
             res = check_collection_cluster(peer_api_uri, "test_collection")
-            print(peer_api_uri, res)
+            points_counts.add(res['points_count'])
+            if res['state'] != 'Active':
+                all_active = False
+
+        if all_active:
+            assert len(points_counts) == 1
+            break
+
+        time.sleep(1)
+        timeout -= 1
+
