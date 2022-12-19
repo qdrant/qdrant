@@ -705,6 +705,7 @@ impl Consensus {
         let future = async move {
             let mut send_futures = Vec::new();
             for (message, address) in messages_with_address {
+                log::debug!("Sending message: {message:?} to {address:?}");
                 let address = match address {
                     Some(address) => address,
                     None => match who_is(
@@ -793,8 +794,10 @@ async fn send_message(
         })
         .await
     {
+        log::debug!("Failed to send message to {address}: {err}");
         store.record_message_send_failure(&address, err);
     } else {
+        log::debug!("Message sent to {address}");
         store.record_message_send_success(&address)
     }
 }
