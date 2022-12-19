@@ -46,7 +46,7 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
 
     time.sleep(0.3)
 
-    # Kill last peer
+    # Kill leader peer
     killed_id = 0
     p = processes.pop(killed_id)
     p.kill()
