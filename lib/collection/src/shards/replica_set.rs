@@ -906,7 +906,6 @@ impl ShardReplicaSet {
     /// And if so, report them to the consensus
     pub async fn sync_local_state(&self) -> CollectionResult<()> {
         for failed_peer in self.locally_disabled_peers.read().iter() {
-            log::debug!("Peer {} is locally disabled, reporting", failed_peer);
             self.notify_peer_failure(*failed_peer);
         }
         Ok(())
