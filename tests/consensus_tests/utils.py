@@ -3,7 +3,7 @@ import os
 import shutil
 from subprocess import Popen
 import time
-from typing import Tuple, Callable, Dict
+from typing import Tuple, Callable, Dict, List
 import requests
 import socket
 from contextlib import closing
@@ -121,7 +121,7 @@ def make_peer_folder(base_path: Path, peer_number: int) -> Path:
     return peer_dir
 
 
-def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
+def make_peer_folders(base_path: Path, n_peers: int) -> List[Path]:
     peer_dirs = []
     for i in range(n_peers):
         peer_dir = make_peer_folder(base_path, i)
