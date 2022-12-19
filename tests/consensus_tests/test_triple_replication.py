@@ -31,7 +31,7 @@ def run_update_points_in_background(peer_url, collection_name):
     return p
 
 
-def test_recover_dead_node(tmp_path: pathlib.Path):
+def test_triple_replication(tmp_path: pathlib.Path):
     assert_project_root()
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
