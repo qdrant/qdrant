@@ -14,7 +14,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
-use raft::{SoftState, StateRole};
+use raft::{SoftState, StateRole, INVALID_ID};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
@@ -374,7 +374,10 @@ impl Consensus {
                 .map_err(|err| anyhow!("Failed to promote learner: {}", err))?
             {
                 // If learner promotion was proposed - do not add other proposals.
-                self.propose_updates(timeout)?;
+                let have_changes = self.propose_updates(timeout)?;
+                if !have_changes {
+                    self.try_sync_local_state()?;
+                }
             }
             let d = t.elapsed();
             t = Instant::now();
@@ -398,8 +401,22 @@ impl Consensus {
         }
     }
 
+    fn try_sync_local_state(&mut self) -> anyhow::Result<()> {
+        if !self.node.has_ready() {
+            // No updates to process
+            let store = self.node.store();
+            if store.is_leader_established.check_ready() {
+                // If leader is established and there is nothing else to do on this iteration,
+                // then we can check if there are any un-synchronized local state left.
+                store.sync_local_state()?;
+            }
+        }
+        Ok(())
+    }
+
     /// Listens for the next proposal and sends it to the Raft node.
-    fn propose_updates(&mut self, timeout: Duration) -> anyhow::Result<()> {
+    /// Returns `true` if something happened and `false` if timeout was reached.
+    fn propose_updates(&mut self, timeout: Duration) -> anyhow::Result<bool> {
         // Poll the async. channel on the consensus runtime.
         // https://docs.rs/tokio/1.22.0/tokio/sync/mpsc/index.html#communicating-between-sync-and-async-code
         let received = self.runtime.block_on(async {
@@ -422,6 +439,7 @@ impl Consensus {
                 if let Err(error) = self.node.step(*message) {
                     log::warn!("Failed to step message: {:?}", error);
                 }
+                Ok(true)
             }
             Ok(Some(Message::FromClient(operation))) => {
                 let result = match operation {
@@ -448,7 +466,7 @@ impl Consensus {
                             Ok(message) => message,
                             Err(err) => {
                                 log::error!("Failed to serialize operation: {}", err);
-                                return Ok(());
+                                return Ok(true);
                             }
                         };
                         log::trace!("Proposing entry from client with length: {}", message.len());
@@ -461,17 +479,16 @@ impl Consensus {
                     Err(consensus_err) => {
                         // Do not stop consensus if client proposal failed.
                         log::error!("Failed to propose entry: {:?}", consensus_err);
-                        return Ok(());
                     }
                 }
+                Ok(true)
             }
             Ok(None) => {
                 log::warn!("Stopping Raft as message sender was dropped");
-                return Ok(());
+                Ok(true)
             }
-            Err(_timeout_elapsed) => (), // recv. timeout
+            Err(_timeout_elapsed) => Ok(false), // recv. timeout
         }
-        Ok(())
     }
 
     /// Returns `true` if learner promotion was proposed, `false` otherwise.
@@ -528,12 +545,6 @@ impl Consensus {
     fn on_ready(&mut self) -> anyhow::Result<bool> {
         if !self.node.has_ready() {
             // No updates to process
-            let store = self.node.store();
-            if store.is_leader_established.check_ready() {
-                // If leader is established and there is nothing else to do on this iteration,
-                // then we can check if there are any un-synchronized local state left.
-                store.sync_local_state()?;
-            }
             return Ok(false);
         }
         self.store().record_consensus_working();
@@ -559,7 +570,11 @@ impl Consensus {
                 self.store().is_leader_established.make_not_ready()
             }
             StateRole::Leader | StateRole::Follower => {
-                self.store().is_leader_established.make_ready()
+                if self.node.raft.leader_id != INVALID_ID {
+                    self.store().is_leader_established.make_ready()
+                } else {
+                    self.store().is_leader_established.make_not_ready()
+                }
             }
         }
     }
