@@ -46,18 +46,18 @@ tokio = { version = "~1.23", features = ["full"] }
 actix-web = { version = "4.2.1", optional = true }
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
-tonic = { version = "0.7.2", features = ["compression"] }
+tonic = { version = "0.8.3", features = ["gzip"] }
 tower = "0.4.13"
 tower-layer = "0.3.2"
 num-traits = "0.2.15"
 tar = "0.4.38"
 
 # Consensus related crates
-raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false }
+raft = { git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false }
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
-prost = "=0.9.0"
-raft-proto = {  git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false}
+prost = "0.11.3"
+raft-proto = {  git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false}
 
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }

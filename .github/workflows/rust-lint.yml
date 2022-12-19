@@ -33,10 +33,7 @@ jobs:
       with:
         key: clippy
     - name: Install dependencies
-      run: sudo apt-get install clang
-    - name: Install protoc
-      run: .github/scripts/protoc.sh
-      shell: bash
+      run: sudo apt-get install clang protobuf-compiler
     - name: Check code formatting
       run: cargo +nightly fmt --all -- --check
     - name: Check cargo clippy warnings

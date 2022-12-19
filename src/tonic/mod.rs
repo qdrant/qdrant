@@ -17,6 +17,7 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tokio::{runtime, signal};
+use tonic::codec::CompressionEncoding;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
@@ -70,17 +71,25 @@ pub fn init(
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
-                .add_service(QdrantServer::new(qdrant_service).send_gzip().accept_gzip())
+                .add_service(
+                    QdrantServer::new(qdrant_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip),
+                )
                 .add_service(
                     CollectionsServer::new(collections_service)
-                        .send_gzip()
-                        .accept_gzip(),
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip),
                 )
-                .add_service(PointsServer::new(points_service).send_gzip().accept_gzip())
+                .add_service(
+                    PointsServer::new(points_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip),
+                )
                 .add_service(
                     SnapshotsServer::new(snapshot_service)
-                        .send_gzip()
-                        .accept_gzip(),
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip),
                 )
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
@@ -128,18 +137,26 @@ pub fn init_internal(
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
-                .add_service(QdrantServer::new(qdrant_service).send_gzip().accept_gzip())
+                .add_service(
+                    QdrantServer::new(qdrant_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip),
+                )
                 .add_service(
                     CollectionsInternalServer::new(collections_internal_service)
-                        .send_gzip()
-                        .accept_gzip(),
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip),
                 )
                 .add_service(
                     PointsInternalServer::new(points_internal_service)
-                        .send_gzip()
-                        .accept_gzip(),
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip),
                 )
-                .add_service(RaftServer::new(raft_service).send_gzip().accept_gzip())
+                .add_service(
+                    RaftServer::new(raft_service)
+                        .send_compressed(CompressionEncoding::Gzip)
+                        .accept_compressed(CompressionEncoding::Gzip),
+                )
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
                     log::debug!("Stopping internal gRPC");
