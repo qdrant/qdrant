@@ -22,7 +22,7 @@ schemars = { version = "0.8.11", features = ["uuid1", "preserve_order"] }
 itertools = "0.10"
 async-trait = "0.1.60"
 log = "0.4"
-tonic = { version = "0.7.2", features = ["compression"] }
+tonic = { version = "0.8.3", features = ["gzip"] }
 http = "0.2"
 parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
 tar = "0.4.38"
@@ -30,8 +30,8 @@ chrono = { version = "~0.4", features = ["serde"] }
 
 # Consensus related
 atomicwrites = { version = "0.3.1" }
-raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false }
-prost = { version = "=0.9.0" } # version of prost used by raft
+raft = { git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false }
+prost = { version = "0.11.3" } # version of prost used by raft
 serde_cbor = { version = "0.11.2" }
 
 segment = { path = "../segment" }
