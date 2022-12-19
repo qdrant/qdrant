@@ -3660,6 +3660,7 @@ dependencies = [
  "atomicwrites",
  "chrono",
  "collection",
+ "env_logger",
  "futures",
  "http",
  "itertools",
@@ -4298,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=90471ad737dbd90c49bb8944cb8aeb5ad8664d30#90471ad737dbd90c49bb8944cb8aeb5ad8664d30"
+source = "git+https://github.com/qdrant/wal.git?rev=3bfa813f494638c0f5afbca744b45e1c380827bf#3bfa813f494638c0f5afbca744b45e1c380827bf"
 dependencies = [
  "byteorder",
  "crc",

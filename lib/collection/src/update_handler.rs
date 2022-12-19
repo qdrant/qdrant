@@ -403,7 +403,7 @@ impl UpdateHandler {
         }
     }
 
-    /// Returns confirmed version after flush of all segements
+    /// Returns confirmed version after flush of all segments
     ///
     /// # Errors
     /// Returns an error on flush failure
