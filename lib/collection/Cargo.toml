@@ -21,7 +21,7 @@ serde = { version = "~1.0", features = ["derive"] }
 serde_json = { version = "~1.0", features = ["std"] }
 serde_cbor = "0.11.2"
 rmp-serde = "~1.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "90471ad737dbd90c49bb8944cb8aeb5ad8664d30" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "3bfa813f494638c0f5afbca744b45e1c380827bf"}
 ordered-float = "3.4"
 hashring = "0.3.0"
 

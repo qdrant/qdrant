@@ -8,12 +8,13 @@ edition = "2021"
 [dev-dependencies]
 tempfile = "3.3.0"
 proptest = "1.0.0"
+env_logger = "0.10.0"
 
 [dependencies]
 num_cpus = "1.14"
 thiserror = "1.0"
 rand = "0.8.5"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "90471ad737dbd90c49bb8944cb8aeb5ad8664d30" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "3bfa813f494638c0f5afbca744b45e1c380827bf" }
 tokio = { version = "~1.23", features = ["rt-multi-thread"] }
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
