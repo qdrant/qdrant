@@ -786,10 +786,10 @@ async fn send_message(
         format!("Failed to serialize Raft message: {err}");
     }
     let message = &GrpcRaftMessage { message: bytes };
-
+    let ref_to_address = &address;
     if let Err(err) = transport_channel_pool
         .with_channel(&address, |channel| async move {
-            log::debug!("Sending raft message to {address} with channel");
+            log::debug!("Sending raft message to {} with channel", ref_to_address);
             let mut client = RaftClient::new(channel);
             client.send(tonic::Request::new(message.clone())).await
         })
