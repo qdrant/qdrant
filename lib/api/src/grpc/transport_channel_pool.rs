@@ -114,7 +114,7 @@ impl TransportChannelPool {
     /// Initialize a pool for the URI and return a clone of the first channel.
     /// Does not fail if the pool already exist.
     async fn init_pool_for_uri(&self, uri: Uri) -> Result<Channel, TonicError> {
-        eprintln!("Initializing connection pool for {}", uri);
+        log::debug!("Initializing connection pool for {}", uri);
         let mut guard = self.uri_to_pool.write().await;
         match guard.get(&uri) {
             None => {
