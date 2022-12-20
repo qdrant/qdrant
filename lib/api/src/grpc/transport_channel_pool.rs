@@ -202,7 +202,7 @@ impl TransportChannelPool {
             res = self.check_connectability(uri) => {
                Err(res)
             }
-            res = tokio::time::sleep(max_timeout) => {
+            _res = tokio::time::sleep(max_timeout) => {
                 Err(Status::deadline_exceeded("Timeout exceeded"))
             }
         };
