@@ -793,7 +793,9 @@ async fn send_message(
     let with_channel_future = transport_channel_pool.with_channel(&address, |channel| async move {
         let mut client = RaftClient::new(channel);
         log::debug!("Sending raft message to {} with channel", ref_to_address);
-        client.send(tonic::Request::new(message.clone())).await
+        let mut request = tonic::Request::new(message.clone());
+        request.set_timeout(Duration::from_millis(200));
+        client.send(request).await
     });
     let with_channel_future_timeout =
         tokio::time::timeout(Duration::from_millis(500), with_channel_future);
