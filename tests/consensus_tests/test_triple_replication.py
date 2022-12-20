@@ -84,10 +84,12 @@ def test_triple_replication(tmp_path: pathlib.Path):
                     for peer_api_uri in peer_api_uris:
                         res = requests.get(f"{peer_api_uri}/cluster", timeout=10)
                         f.write(f"{peer_api_uri} {res.json()['result']}\n")
-                        
+
                 for peer_api_uri in peer_api_uris:
                     res = requests.post(f"{peer_api_uri}/collections/test_collection/points/count", json={"exact": True})
                     print(res.json())
+
+                processes.clear()
 
                 assert False, f"Points count is not equal on all peers: {points_counts}"
             break
