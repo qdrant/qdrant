@@ -12,11 +12,11 @@ pub fn setup_logger(log_level: &str) {
         // Timestamp in millis
         .format_timestamp_millis()
         // Parse user defined log level configuration
-        .parse_filters(log_level)
+        .parse_filters(log_level);
         // h2 is very verbose and we have many network operations,
         // so it is limited to only errors
-        .filter_module("h2", LevelFilter::Error)
-        .filter_module("tower", LevelFilter::Warn);
+        // .filter_module("h2", LevelFilter::Error)
+        // .filter_module("tower", LevelFilter::Warn);
 
     if is_info {
         // Additionally filter verbose modules if no extended logging configuration is provided
