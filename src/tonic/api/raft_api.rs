@@ -29,6 +29,7 @@ impl RaftService {
 #[async_trait]
 impl Raft for RaftService {
     async fn send(&self, mut request: Request<RaftMessageBytes>) -> Result<Response<()>, Status> {
+        log::debug!("Got raft message from: {:?}", request.remote_addr());
         let message = <RaftMessage as prost::Message>::decode(&request.get_mut().message[..])
             .map_err(|err| {
                 Status::invalid_argument(format!("Failed to parse raft message: {err}"))
