@@ -111,8 +111,8 @@ impl TransportChannelPool {
         );
         let endpoint = Channel::builder(uri)
             .timeout(grpc_timeout)
-            .connect_timeout(connection_timeout)
-            .keep_alive_while_idle(true);
+            .connect_timeout(connection_timeout);
+            // .keep_alive_while_idle(true);
         // `connect` is using the `Reconnect` network service internally to handle dropped connections
         endpoint.connect().await
     }
