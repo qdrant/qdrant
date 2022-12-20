@@ -203,6 +203,7 @@ impl TransportChannelPool {
                Err(res)
             }
             _res = tokio::time::sleep(max_timeout) => {
+                log::debug!("Timeout reached for uri: {}", uri);
                 Err(Status::deadline_exceeded("Timeout exceeded"))
             }
         };
@@ -216,6 +217,7 @@ impl TransportChannelPool {
                         self.get_created_at(uri).await.unwrap_or_else(Instant::now),
                     );
                     if channel_uptime > CHANNEL_TTL {
+                        log::debug!("dropping channel pool for uri: {}", uri);
                         self.drop_pool(uri).await;
                         let channel = self.get_or_create_pooled_channel(uri).await?;
                         f(channel).await.map_err(RequestError::FromClosure)
