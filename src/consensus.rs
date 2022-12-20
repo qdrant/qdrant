@@ -7,12 +7,12 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
-use futures_util::future::err;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
+use futures_util::future::err;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole, INVALID_ID};
@@ -789,31 +789,27 @@ async fn send_message(
     let message = &GrpcRaftMessage { message: bytes };
     let ref_to_address = &address;
 
-    let with_channel_future = transport_channel_pool
-        .with_channel(&address, |channel| async move {
-            let mut client = RaftClient::new(channel);
-            log::debug!("Sending raft message to {} with channel", ref_to_address);
-            client.send(tonic::Request::new(message.clone())).await
-        });
-    let with_channel_future_timeout = tokio::time::timeout(
-        Duration::from_millis(500),
-        with_channel_future,
-    );
+    let with_channel_future = transport_channel_pool.with_channel(&address, |channel| async move {
+        let mut client = RaftClient::new(channel);
+        log::debug!("Sending raft message to {} with channel", ref_to_address);
+        client.send(tonic::Request::new(message.clone())).await
+    });
+    let with_channel_future_timeout =
+        tokio::time::timeout(Duration::from_millis(500), with_channel_future);
 
     match with_channel_future_timeout.await {
         Ok(Err(err)) => {
             log::debug!("Failed to send message to {address}: {err}");
             store.record_message_send_failure(&address, err);
-        },
+        }
         Ok(Ok(_res)) => {
             log::debug!("Message sent to {address}");
             store.record_message_send_success(&address)
-        },
+        }
         Err(elapsed) => {
             log::debug!("Message sendign timeed-out {address}: {elapsed:?}");
         }
     }
-
 }
 
 #[cfg(test)]
