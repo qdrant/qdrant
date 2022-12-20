@@ -76,10 +76,10 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None) -> 
 
 
 # Starts a peer and returns its api_uri and p2p_uri
-def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
-    p2p_port = get_port()
-    grpc_port = get_port()
-    http_port = get_port()
+def start_first_peer(peer_dir: Path, log_file: str, port=None) -> Tuple[str, str]:
+    p2p_port = get_port() if port is None else port + 0
+    grpc_port = get_port() if port is None else port + 1
+    http_port = get_port() if port is None else port + 2
     env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     bootstrap_uri = get_uri(p2p_port)
@@ -98,7 +98,7 @@ def start_cluster(tmp_path, num_peers):
     peer_api_uris = []
 
     # Start bootstrap
-    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log")
+    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log", port=10000)
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
