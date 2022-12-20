@@ -811,7 +811,7 @@ async fn send_message(
         }
         Err(elapsed) => {
             log::debug!("Message sendign timeed-out {address}: {elapsed:?}, fuck this pool");
-            transport_channel_pool.drop_pool(&address);
+            transport_channel_pool.drop_pool(&address).await;
         }
     }
 }
