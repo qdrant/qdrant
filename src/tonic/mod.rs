@@ -134,9 +134,9 @@ pub fn init_internal(
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
             Server::builder()
-                .layer(tonic_telemetry::TonicTelemetryLayer::new(
-                    telemetry_collector,
-                ))
+                // .layer(tonic_telemetry::TonicTelemetryLayer::new(
+                //     telemetry_collector,
+                // ))
                 .add_service(
                     QdrantServer::new(qdrant_service)
                         .send_compressed(CompressionEncoding::Gzip)
