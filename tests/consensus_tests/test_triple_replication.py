@@ -61,6 +61,8 @@ def test_triple_replication(tmp_path: pathlib.Path):
 
     upload_process.terminate()
 
+    time.sleep(0.3)
+
     timeout = 10
     while True:
         if timeout < 0:
