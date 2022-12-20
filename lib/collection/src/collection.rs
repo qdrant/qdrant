@@ -1540,17 +1540,17 @@ impl Collection {
         }
 
         // Check for un-reported finished transfers
-        let outgoing_transfers = self.get_outgoing_transfers(&self.this_peer_id).await;
-        let tasks_lock = self.transfer_tasks.lock().await;
-        for transfer in outgoing_transfers {
-            if !tasks_lock.check_if_still_running(&transfer.key()) {
-                log::debug!(
-                    "Transfer {:?} is not running, but not reported as finished. Reporting now.",
-                    transfer.key()
-                );
-                on_transfer_failure(transfer, self.name(), "transfer task does not exist");
-            }
-        }
+        // let outgoing_transfers = self.get_outgoing_transfers(&self.this_peer_id).await;
+        // let tasks_lock = self.transfer_tasks.lock().await;
+        // for transfer in outgoing_transfers {
+        //     if !tasks_lock.check_if_still_running(&transfer.key()) {
+        //         log::debug!(
+        //             "Transfer {:?} is not running, but not reported as finished. Reporting now.",
+        //             transfer.key()
+        //         );
+        //         on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+        //     }
+        // }
 
         Ok(())
     }

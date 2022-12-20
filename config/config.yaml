@@ -113,6 +113,8 @@ service:
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false
+  grpc_timeout_ms: 100
+  connection_timeout_ms: 100
 
   # Configuration of the inter-cluster communication
   p2p:
