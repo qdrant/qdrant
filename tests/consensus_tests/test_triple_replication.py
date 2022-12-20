@@ -89,8 +89,6 @@ def test_triple_replication(tmp_path: pathlib.Path):
                     res = requests.post(f"{peer_api_uri}/collections/test_collection/points/count", json={"exact": True})
                     print(res.json())
 
-                processes.clear()
-
                 assert False, f"Points count is not equal on all peers: {points_counts}"
             break
 
