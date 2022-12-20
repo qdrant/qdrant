@@ -4706,6 +4706,7 @@ pub mod raft_client {
             &mut self,
             request: impl tonic::IntoRequest<super::RaftMessage>,
         ) -> Result<tonic::Response<()>, tonic::Status> {
+            log::debug!("send request: start");
             self.inner
                 .ready()
                 .await
@@ -4715,6 +4716,7 @@ pub mod raft_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
+            log::debug!("send request: inner.ready() done");
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Raft/Send");
             self.inner.unary(request.into_request(), path, codec).await
