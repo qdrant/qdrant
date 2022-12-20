@@ -15,7 +15,7 @@ use crate::grpc::qdrant::HealthCheckRequest;
 const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 
-const SMART_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
+const SMART_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 const DEFAULT_POOL_SIZE: usize = 1;
 const CHANNEL_TTL: Duration = Duration::from_secs(5);
 
