@@ -52,7 +52,7 @@ def test_triple_replication(tmp_path: pathlib.Path):
     p.kill()
     peer_api_uris.pop(killed_id)
 
-    new_url = start_peer(peer_dirs[killed_id], f"peer_{killed_id}_restarted.log", bootstrap_uri)
+    new_url = start_peer(peer_dirs[killed_id], f"peer_{killed_id}_restarted.log", bootstrap_uri, port=20000)
     peer_api_uris.append(new_url)
 
     wait_for_peer_online(new_url)

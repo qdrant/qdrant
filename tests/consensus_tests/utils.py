@@ -106,7 +106,7 @@ def start_cluster(tmp_path, num_peers):
 
     # Start other peers
     for i in range(1, len(peer_dirs)):
-        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
+        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, port=10000 + i * 100))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader)
