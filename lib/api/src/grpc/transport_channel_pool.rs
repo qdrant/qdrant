@@ -186,14 +186,16 @@ impl TransportChannelPool {
     }
 
     // Allows to use channel to `uri`. If there is no channels to specified uri - they will be created.
-    pub async fn with_channel<T, O: Future<Output = Result<T, Status>>>(
+    pub async fn with_channel_timeout<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
         f: impl Fn(Channel) -> O,
+        timeout: Option<Duration>,
     ) -> Result<T, RequestError<Status>> {
         let channel = self.get_or_create_pooled_channel(uri).await?;
-        let time_epsilon = Duration::from_millis(100);
-        let max_timeout = self.grpc_timeout + self.connection_timeout + time_epsilon;
+        let max_timeout = timeout.unwrap_or_else(|| {
+            self.grpc_timeout + self.connection_timeout
+        });
 
         let result: Result<T, Status> = select! {
             res = f(channel) => {
@@ -228,5 +230,14 @@ impl TransportChannelPool {
                 _ => Err(RequestError::FromClosure(err)),
             },
         }
+    }
+
+    // Allows to use channel to `uri`. If there is no channels to specified uri - they will be created.
+    pub async fn with_channel<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        uri: &Uri,
+        f: impl Fn(Channel) -> O,
+    ) -> Result<T, RequestError<Status>> {
+        self.with_channel_timeout(uri, f, None).await
     }
 }
