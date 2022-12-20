@@ -103,6 +103,12 @@ impl TransportChannelPool {
         connection_timeout: Duration,
         uri: Uri,
     ) -> Result<Channel, TonicError> {
+        log::debug!(
+            "make_channel {}, grpc_timeout: {}, connection_timeout: {}",
+            uri,
+            grpc_timeout.as_millis(),
+            connection_timeout.as_millis()
+        );
         let endpoint = Channel::builder(uri)
             .timeout(grpc_timeout)
             .connect_timeout(connection_timeout)
@@ -114,7 +120,6 @@ impl TransportChannelPool {
     /// Initialize a pool for the URI and return a clone of the first channel.
     /// Does not fail if the pool already exist.
     async fn init_pool_for_uri(&self, uri: Uri) -> Result<Channel, TonicError> {
-        log::debug!("Initializing connection pool for {}", uri);
         let mut guard = self.uri_to_pool.write().await;
         match guard.get(&uri) {
             None => {
