@@ -193,9 +193,7 @@ impl TransportChannelPool {
         timeout: Option<Duration>,
     ) -> Result<T, RequestError<Status>> {
         let channel = self.get_or_create_pooled_channel(uri).await?;
-        let max_timeout = timeout.unwrap_or_else(|| {
-            self.grpc_timeout + self.connection_timeout
-        });
+        let max_timeout = timeout.unwrap_or_else(|| self.grpc_timeout + self.connection_timeout);
 
         let result: Result<T, Status> = select! {
             res = f(channel) => {
