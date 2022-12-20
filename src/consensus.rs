@@ -370,6 +370,7 @@ impl Consensus {
         let mut timeout = Duration::from_millis(self.config.tick_period_ms);
 
         loop {
+            log::debug!("Consensus tick");
             if !self
                 .try_promote_learner()
                 .map_err(|err| anyhow!("Failed to promote learner: {}", err))?
