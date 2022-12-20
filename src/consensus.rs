@@ -810,7 +810,8 @@ async fn send_message(
             store.record_message_send_success(&address)
         }
         Err(elapsed) => {
-            log::debug!("Message sendign timeed-out {address}: {elapsed:?}");
+            log::debug!("Message sendign timeed-out {address}: {elapsed:?}, fuck this pool");
+            transport_channel_pool.drop_pool(&address);
         }
     }
 }
