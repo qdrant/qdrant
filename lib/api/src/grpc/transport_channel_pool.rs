@@ -192,6 +192,8 @@ impl TransportChannelPool {
         f: impl Fn(Channel) -> O,
     ) -> Result<T, RequestError<Status>> {
         let channel = self.get_or_create_pooled_channel(uri).await?;
+        let time_epsilon = Duration::from_millis(100);
+        let max_timeout = self.grpc_timeout + self.connection_timeout + time_epsilon;
 
         let result: Result<T, Status> = select! {
             res = f(channel) => {
@@ -200,13 +202,16 @@ impl TransportChannelPool {
             res = self.check_connectability(uri) => {
                Err(res)
             }
+            res = tokio::time::sleep(max_timeout) => {
+                Err(Status::deadline_exceeded("Timeout exceeded"))
+            }
         };
 
         // Reconnect on failure to handle the case with domain name change.
         match result {
             Ok(res) => Ok(res),
             Err(err) => match err.code() {
-                Code::Internal | Code::Unavailable | Code::Cancelled => {
+                Code::Internal | Code::Unavailable | Code::Cancelled | Code::DeadlineExceeded => {
                     let channel_uptime = Instant::now().duration_since(
                         self.get_created_at(uri).await.unwrap_or_else(Instant::now),
                     );
