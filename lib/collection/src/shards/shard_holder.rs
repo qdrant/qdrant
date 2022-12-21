@@ -139,7 +139,11 @@ impl ShardHolder {
         shard_transfers
     }
 
-    pub fn get_related_transfers(&self, shard_id: &ShardId, peer_id: &PeerId) -> Vec<ShardTransfer> {
+    pub fn get_related_transfers(
+        &self,
+        shard_id: &ShardId,
+        peer_id: &PeerId,
+    ) -> Vec<ShardTransfer> {
         self.shard_transfers
             .read()
             .iter()
