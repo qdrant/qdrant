@@ -4,6 +4,7 @@ mod tonic_telemetry;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
@@ -35,8 +36,10 @@ pub struct QdrantService {}
 impl Qdrant for QdrantService {
     async fn health_check(
         &self,
-        _request: Request<HealthCheckRequest>,
+        request: Request<HealthCheckRequest>,
     ) -> Result<Response<HealthCheckReply>, Status> {
+        // consuming request
+        let _x = request.into_inner();
         Ok(Response::new(VersionInfo::default().into()))
     }
 }
@@ -68,6 +71,7 @@ pub fn init(
             log::info!("Qdrant gRPC listening on {}", grpc_port);
 
             Server::builder()
+                .http2_keepalive_interval(Some(Duration::from_secs(1)))
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
@@ -134,6 +138,7 @@ pub fn init_internal(
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
             Server::builder()
+                .http2_keepalive_interval(Some(Duration::from_secs(1)))
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
