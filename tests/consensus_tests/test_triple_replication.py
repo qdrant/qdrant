@@ -11,7 +11,11 @@ N_REPLICA = 3
 
 
 def check_collection_cluster(peer_url, collection_name):
-    res = requests.get(f"{peer_url}/collections/{collection_name}/cluster", timeout=10)
+    try:
+        res = requests.get(f"{peer_url}/collections/{collection_name}/cluster", timeout=10)
+    except Exception as e:
+        print(f"Could not contact peer {peer_url} to fetch collection `{collection_name}` cluster info")
+        raise e
     assert_http_ok(res)
     return res.json()["result"]['local_shards'][0]
 

@@ -4,6 +4,7 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::collection_state;
@@ -29,6 +30,7 @@ use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::time::error::Elapsed;
 use uuid::Uuid;
 
 use super::collection_meta_ops::{
@@ -810,7 +812,15 @@ impl TableOfContent {
         &self,
         collection_name: &str,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
-        let read_collection = self.collections.read().await;
+        let timeout = Duration::from_secs(3);
+        let read_collection = tokio::time::timeout(timeout, self.collections.read())
+            .await
+            .map_err(|_: Elapsed| {
+                StorageError::service_error(&format!(
+                    "Could not access collections read lock after {} seconds",
+                    timeout.as_secs()
+                ))
+            })?;
         let real_collection_name = self.resolve_name(collection_name).await?;
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(RwLockReadGuard::map(read_collection, |collection| {

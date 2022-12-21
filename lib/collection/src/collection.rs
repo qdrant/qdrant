@@ -21,6 +21,7 @@ use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
+use tokio::time::error::Elapsed;
 
 use crate::collection_state::{ShardInfo, State};
 use crate::config::CollectionConfig;
@@ -1286,7 +1287,15 @@ impl Collection {
     }
 
     pub async fn cluster_info(&self, peer_id: PeerId) -> CollectionResult<CollectionClusterInfo> {
-        let shards_holder = self.shards_holder.read().await;
+        let timeout = Duration::from_secs(3);
+        let shards_holder = tokio::time::timeout(timeout, self.shards_holder.read())
+            .await
+            .map_err(|_: Elapsed| {
+                CollectionError::service_error(format!(
+                    "Could not access shard_holder read lock after {} seconds",
+                    timeout.as_secs()
+                ))
+            })?;
         let shard_count = shards_holder.len();
         let mut local_shards = Vec::new();
         let mut remote_shards = Vec::new();
