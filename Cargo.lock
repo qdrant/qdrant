@@ -307,6 +307,8 @@ name = "api"
 version = "0.11.1"
 dependencies = [
  "chrono",
+ "env_logger",
+ "log 0.4.17",
  "prost",
  "prost-types",
  "rand",

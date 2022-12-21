@@ -59,7 +59,7 @@ def test_triple_replication(tmp_path: pathlib.Path):
 
     time.sleep(0.3)
 
-    upload_process.terminate()
+    upload_process.kill()
 
     timeout = 10
     while True:
@@ -75,7 +75,21 @@ def test_triple_replication(tmp_path: pathlib.Path):
                 all_active = False
 
         if all_active:
-            assert len(points_counts) == 1
+            if len(points_counts) != 1:
+                with open("test_triple_replication.log", "w") as f:
+                    for peer_api_uri in peer_api_uris:
+                        collection_name = "test_collection"
+                        res = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster", timeout=10)
+                        f.write(f"{peer_api_uri} {res.json()['result']}\n")
+                    for peer_api_uri in peer_api_uris:
+                        res = requests.get(f"{peer_api_uri}/cluster", timeout=10)
+                        f.write(f"{peer_api_uri} {res.json()['result']}\n")
+
+                for peer_api_uri in peer_api_uris:
+                    res = requests.post(f"{peer_api_uri}/collections/test_collection/points/count", json={"exact": True})
+                    print(res.json())
+
+                assert False, f"Points count is not equal on all peers: {points_counts}"
             break
 
         time.sleep(1)

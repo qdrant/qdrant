@@ -700,6 +700,7 @@ impl Consensus {
             .collect();
         let bootstrap_uri = self.bootstrap_uri.clone();
         let consensus_config_arc = Arc::new(self.config.clone());
+        let message_timeout = Duration::from_millis(consensus_config_arc.tick_period_ms * 2);
         let pool = self.channel_service.channel_pool.clone();
         let store = self.store();
         let future = async move {
@@ -724,7 +725,13 @@ impl Consensus {
                         }
                     },
                 };
-                send_futures.push(send_message(address, message, pool.clone(), store.clone()));
+                send_futures.push(send_message(
+                    address,
+                    message,
+                    pool.clone(),
+                    store.clone(),
+                    message_timeout,
+                ));
             }
             futures::future::join_all(send_futures).await;
         };
@@ -779,6 +786,7 @@ async fn send_message(
     message: RaftMessage,
     transport_channel_pool: Arc<TransportChannelPool>,
     store: ConsensusStateRef,
+    timeout: Duration,
 ) {
     let mut bytes = Vec::new();
     if let Err(err) = <RaftMessage as prost::Message>::encode(&message, &mut bytes) {
@@ -787,10 +795,16 @@ async fn send_message(
     let message = &GrpcRaftMessage { message: bytes };
 
     if let Err(err) = transport_channel_pool
-        .with_channel(&address, |channel| async move {
-            let mut client = RaftClient::new(channel);
-            client.send(tonic::Request::new(message.clone())).await
-        })
+        .with_channel_timeout(
+            &address,
+            |channel| async move {
+                let mut client = RaftClient::new(channel);
+                let mut request = tonic::Request::new(message.clone());
+                request.set_timeout(timeout);
+                client.send(request).await
+            },
+            Some(timeout),
+        )
         .await
     {
         store.record_message_send_failure(&address, err);
