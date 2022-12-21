@@ -71,6 +71,7 @@ pub fn init(
             log::info!("Qdrant gRPC listening on {}", grpc_port);
 
             Server::builder()
+                .tcp_keepalive(Some(Duration::from_secs(1)))
                 .http2_keepalive_interval(Some(Duration::from_secs(1)))
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
@@ -138,6 +139,7 @@ pub fn init_internal(
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
             Server::builder()
+                .tcp_keepalive(Some(Duration::from_secs(1)))
                 .http2_keepalive_interval(Some(Duration::from_secs(1)))
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,

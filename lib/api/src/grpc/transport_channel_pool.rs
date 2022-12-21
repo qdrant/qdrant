@@ -106,6 +106,7 @@ impl TransportChannelPool {
         let endpoint = Channel::builder(uri)
             .timeout(grpc_timeout)
             .connect_timeout(connection_timeout)
+            .tcp_keepalive(Some(Duration::from_secs(2)))
             .keep_alive_timeout(Duration::from_secs(3))
             .http2_keep_alive_interval(Duration::from_secs(1))
             .keep_alive_while_idle(true);
