@@ -455,7 +455,7 @@ where
                     false
                 }
             };
-            if stopped.load(Ordering::Relaxed) {
+            if stopped.load(std::sync::atomic::Ordering::Relaxed) {
                 return false;
             }
             if !finished {
