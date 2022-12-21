@@ -528,6 +528,16 @@ impl ShardReplicaSet {
         self.peer_state(peer_id) == Some(ReplicaState::Active) && !self.is_locally_disabled(peer_id)
     }
 
+    pub fn peer_is_active_or_pending(&self, peer_id: &PeerId) -> bool {
+        let res = match self.peer_state(peer_id) {
+            Some(ReplicaState::Active) => true,
+            Some(ReplicaState::Partial) => true,
+            Some(ReplicaState::Dead) => false,
+            None => false,
+        };
+        res && !self.is_locally_disabled(peer_id)
+    }
+
     pub fn peer_state(&self, peer_id: &PeerId) -> Option<ReplicaState> {
         self.replica_state.read().get_peer_state(peer_id).copied()
     }
@@ -920,14 +930,15 @@ impl ShardReplicaSet {
             let local = self.local.read().await;
             let remotes = self.remotes.read().await;
 
-            // target all remote peers that are active
+            // target all remote peers that can receive updates
             let active_remote_shards: Vec<_> = remotes
                 .iter()
-                .filter(|rs| self.peer_is_active(&rs.peer_id))
+                .filter(|rs| self.peer_is_active_or_pending(&rs.peer_id))
                 .collect();
 
-            // local is defined AND the peer itself is active
-            let local_is_active = local.is_some() && self.peer_is_active(&self.this_peer_id());
+            // local is defined AND the peer itself can receive updates
+            let local_is_active =
+                local.is_some() && self.peer_is_active_or_pending(&self.this_peer_id());
 
             if active_remote_shards.is_empty() && !local_is_active {
                 return Err(CollectionError::service_error(format!(
@@ -949,7 +960,7 @@ impl ShardReplicaSet {
             }
 
             match local.deref() {
-                Some(local) if self.peer_is_active(&self.this_peer_id()) => {
+                Some(local) if self.peer_is_active_or_pending(&self.this_peer_id()) => {
                     let local_update = async move {
                         local
                             .get()
