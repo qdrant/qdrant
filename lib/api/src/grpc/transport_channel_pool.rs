@@ -196,7 +196,14 @@ impl TransportChannelPool {
     ) -> Result<T, RequestError<Status>> {
         let channel = self.get_or_create_pooled_channel(uri).await?;
 
-        let result: Result<T, Status> = f(channel).await;
+        let result: Result<T, Status> = select! {
+           res = f(channel) => {
+               res
+           }
+           res = self.check_connectability(uri) => {
+              Err(res)
+           }
+        };
 
         // Reconnect on failure to handle the case with domain name change.
         match result {
