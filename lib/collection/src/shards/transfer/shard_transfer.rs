@@ -443,6 +443,9 @@ where
             finished = match transfer_result {
                 Ok(()) => true,
                 Err(error) => {
+                    if matches!(error, CollectionError::Cancelled { .. }) {
+                        return false;
+                    }
                     log::error!(
                         "Failed to transfer shard {} -> {}: {}",
                         transfer.shard_id,
@@ -452,6 +455,9 @@ where
                     false
                 }
             };
+            if stopped.load(Ordering::Relaxed) {
+                return false;
+            }
             if !finished {
                 tries -= 1;
                 log::warn!(
