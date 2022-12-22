@@ -10,11 +10,9 @@ use std::time::Duration;
 use futures::future::{join_all, try_join_all};
 use itertools::Itertools;
 use segment::common::version::StorageVersion;
-use segment::data_types::vectors::{NamedVector, VectorElementType, DEFAULT_VECTOR_NAME};
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, WithPayload,
-    WithPayloadInterface, WithVector,
+    ExtendedPointId, Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use semver::Version;
 use tar::Builder as TarBuilder;
@@ -31,9 +29,8 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
-    CountResult, LocalShardInfo, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
-    RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
-    UsingVector,
+    CountResult, LocalShardInfo, PointRequest, Record, RemoteShardInfo, ScrollRequest,
+    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -56,6 +53,7 @@ use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool
 use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
 use crate::telemetry::CollectionTelemetry;
 
+pub type VectorLookupFuture<'a> = Box<dyn Future<Output = CollectionResult<Vec<Record>>> + 'a>;
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
 struct CollectionVersion;
@@ -662,158 +660,6 @@ impl Collection {
             // At least one result is always present.
             results.pop().unwrap()
         }
-    }
-
-    pub async fn recommend_by(
-        &self,
-        request: RecommendRequest,
-        search_runtime_handle: &Handle,
-        shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        if request.limit == 0 {
-            return Ok(vec![]);
-        }
-        // `recommend_by` is a special case of recommend_by_batch with a single batch
-        let request_batch = RecommendRequestBatch {
-            searches: vec![request],
-        };
-        let results = self
-            .recommend_batch_by(request_batch, search_runtime_handle, shard_selection)
-            .await?;
-        Ok(results.into_iter().next().unwrap())
-    }
-
-    pub async fn recommend_batch_by(
-        &self,
-        request_batch: RecommendRequestBatch,
-        search_runtime_handle: &Handle,
-        shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        // shortcuts batch if all requests with limit=0
-        if request_batch.searches.iter().all(|s| s.limit == 0) {
-            return Ok(vec![]);
-        }
-        // pack all reference vector ids
-        let mut all_reference_vectors_ids = HashSet::new();
-        for request in &request_batch.searches {
-            if request.positive.is_empty() {
-                return Err(CollectionError::BadRequest {
-                    description: "At least one positive vector ID required".to_owned(),
-                });
-            }
-            for point_id in request.positive.iter().chain(&request.negative) {
-                all_reference_vectors_ids.insert(*point_id);
-            }
-        }
-
-        // batch vector retrieval
-        let all_vectors = self
-            .retrieve(
-                PointRequest {
-                    ids: all_reference_vectors_ids.into_iter().collect(),
-                    with_payload: Some(WithPayloadInterface::Bool(true)),
-                    with_vector: true.into(),
-                },
-                shard_selection,
-            )
-            .await?;
-
-        let mut searches = Vec::with_capacity(request_batch.searches.len());
-
-        for request in request_batch.searches {
-            let vector_name = match request.using {
-                None => DEFAULT_VECTOR_NAME.to_owned(),
-                Some(UsingVector::Name(name)) => name,
-            };
-
-            //let rec_vectors = rec.get
-            let mut all_vectors_map = HashMap::new();
-
-            for rec in all_vectors.iter() {
-                let vector = rec.get_vector_by_name(&vector_name);
-                if let Some(vector) = vector {
-                    all_vectors_map.insert(rec.id, vector);
-                } else {
-                    return Err(CollectionError::BadRequest {
-                        description: format!(
-                            "Vector '{}' not found, expected one of {:?}",
-                            vector_name,
-                            rec.vector_names()
-                        ),
-                    });
-                }
-            }
-
-            let reference_vectors_ids = request
-                .positive
-                .iter()
-                .chain(&request.negative)
-                .cloned()
-                .collect_vec();
-
-            for &point_id in &reference_vectors_ids {
-                if !all_vectors_map.contains_key(&point_id) {
-                    return Err(CollectionError::PointNotFound {
-                        missed_point_id: point_id,
-                    });
-                }
-            }
-
-            let avg_positive = avg_vectors(
-                request
-                    .positive
-                    .iter()
-                    .map(|vid| *all_vectors_map.get(vid).unwrap()),
-            );
-
-            let search_vector = if request.negative.is_empty() {
-                avg_positive
-            } else {
-                let avg_negative = avg_vectors(
-                    request
-                        .negative
-                        .iter()
-                        .map(|vid| *all_vectors_map.get(vid).unwrap()),
-                );
-
-                avg_positive
-                    .iter()
-                    .cloned()
-                    .zip(avg_negative.iter().cloned())
-                    .map(|(pos, neg)| pos + pos - neg)
-                    .collect()
-            };
-
-            let search_request = SearchRequest {
-                vector: NamedVector {
-                    name: vector_name,
-                    vector: search_vector,
-                }
-                .into(),
-                filter: Some(Filter {
-                    should: None,
-                    must: request
-                        .filter
-                        .clone()
-                        .map(|filter| vec![Condition::Filter(filter)]),
-                    must_not: Some(vec![Condition::HasId(HasIdCondition {
-                        has_id: reference_vectors_ids.iter().cloned().collect(),
-                    })]),
-                }),
-                with_payload: request.with_payload.clone(),
-                with_vector: request.with_vector,
-                params: request.params,
-                limit: request.limit,
-                score_threshold: request.score_threshold,
-                offset: request.offset,
-            };
-            searches.push(search_request)
-        }
-
-        let search_batch_request = SearchRequestBatch { searches };
-
-        self.search_batch(search_batch_request, search_runtime_handle, shard_selection)
-            .await
     }
 
     pub async fn search_batch(
@@ -1524,27 +1370,4 @@ impl Drop for Collection {
             }
         }
     }
-}
-
-fn avg_vectors<'a>(
-    vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
-) -> Vec<VectorElementType> {
-    let mut count: usize = 0;
-    let mut avg_vector: Vec<VectorElementType> = vec![];
-    for vector in vectors {
-        count += 1;
-        for i in 0..vector.len() {
-            if i >= avg_vector.len() {
-                avg_vector.push(vector[i])
-            } else {
-                avg_vector[i] += vector[i];
-            }
-        }
-    }
-
-    for item in &mut avg_vector {
-        *item /= count as VectorElementType;
-    }
-
-    avg_vector
 }

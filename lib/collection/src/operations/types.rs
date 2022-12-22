@@ -267,6 +267,19 @@ impl From<String> for UsingVector {
     }
 }
 
+/// Defines a location to use for looking up the vector.
+/// Specifies collection and vector field name.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct LookupLocation {
+    /// Name of the collection used for lookup
+    pub collection: String,
+    /// Optional name of the vector field within the collection.
+    /// If not provided, the default vector field will be used.
+    #[serde(default)]
+    pub vector: Option<String>,
+}
+
 /// Recommendation request.
 /// Provides positive and negative examples of the vectors, which
 /// are already stored in the collection.
@@ -274,12 +287,13 @@ impl From<String> for UsingVector {
 /// Service should look for the points which are closer to positive examples and at the same time
 /// further to negative examples. The concrete way of how to compare negative and positive distances
 /// is up to implementation in `segment` crate.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
     /// Look for vectors closest to those
     pub positive: Vec<PointIdType>,
     /// Try to avoid vectors like this
+    #[serde(default)]
     pub negative: Vec<PointIdType>,
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
@@ -306,6 +320,10 @@ pub struct RecommendRequest {
     /// Define which vector to use for recommendation, if not specified - try to use default vector
     #[serde(default)]
     pub using: Option<UsingVector>,
+    /// The location used to lookup vectors. If not specified - use current collection.
+    /// Note: the other collection should have the same vector size as the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

@@ -12,7 +12,7 @@ async fn do_recommend_points(
     collection_name: &str,
     request: RecommendRequest,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.recommend(collection_name, request, None).await
+    toc.recommend(collection_name, request).await
 }
 
 #[post("/collections/{name}/points/recommend")]
@@ -34,7 +34,7 @@ async fn do_recommend_batch_points(
     collection_name: &str,
     request: RecommendRequestBatch,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.recommend_batch(collection_name, request, None).await
+    toc.recommend_batch(collection_name, request).await
 }
 
 #[post("/collections/{name}/points/recommend/batch")]

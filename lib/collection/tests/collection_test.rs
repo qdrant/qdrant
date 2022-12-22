@@ -6,6 +6,7 @@ use collection::operations::types::{
     CountRequest, PointRequest, RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus,
 };
 use collection::operations::CollectionUpdateOperations;
+use collection::recommendations::recommend_by;
 use itertools::Itertools;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
@@ -324,25 +325,19 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         .update_from_client(insert_points, true)
         .await
         .unwrap();
-    let result = collection
-        .recommend_by(
-            RecommendRequest {
-                positive: vec![0.into()],
-                negative: vec![8.into()],
-                filter: None,
-                params: None,
-                limit: 5,
-                offset: 0,
-                with_payload: None,
-                with_vector: None,
-                score_threshold: None,
-                using: None,
-            },
-            &Handle::current(),
-            None,
-        )
-        .await
-        .unwrap();
+    let result = recommend_by(
+        RecommendRequest {
+            positive: vec![0.into()],
+            negative: vec![8.into()],
+            limit: 5,
+            ..Default::default()
+        },
+        &Handle::current(),
+        &collection,
+        |_name| async { unreachable!("Should not be called in this test") },
+    )
+    .await
+    .unwrap();
     assert!(!result.is_empty());
     let top1 = &result[0];
 

@@ -1804,6 +1804,14 @@ pub struct ScrollPoints {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LookupLocation {
+    #[prost(string, tag="1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Which vector to use for search, if not specified - use default vector
+    #[prost(string, optional, tag="2")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
@@ -1838,6 +1846,9 @@ pub struct RecommendPoints {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "12")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Name of the collection to use for points lookup, if not specified - use current collection
+    #[prost(message, optional, tag="13")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
