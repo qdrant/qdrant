@@ -19,6 +19,7 @@ use collection::operations::types::{
     UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
+use collection::recommendations::{recommend_batch_by, recommend_by};
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
@@ -784,6 +785,13 @@ impl TableOfContent {
         Ok(())
     }
 
+    async fn get_collection_opt(
+        &self,
+        collection_name: String,
+    ) -> Option<RwLockReadGuard<Collection>> {
+        self.get_collection(&collection_name).await.ok()
+    }
+
     pub async fn get_collection(
         &self,
         collection_name: &str,
@@ -828,16 +836,16 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: RecommendRequest,
-        shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        collection
-            .recommend_by(request, self.search_runtime.handle(), shard_selection)
-            .await
-            .map_err(|err| err.into())
+        recommend_by(request, self.search_runtime.handle(), &collection, |name| {
+            self.get_collection_opt(name)
+        })
+        .await
+        .map_err(|err| err.into())
     }
 
-    /// Recommend points in a batchi fashion using positive and negative example from the request
+    /// Recommend points in a batchig fashion using positive and negative example from the request
     ///
     /// # Arguments
     ///
@@ -851,13 +859,13 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: RecommendRequestBatch,
-        shard_selection: Option<ShardId>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        collection
-            .recommend_batch_by(request, self.search_runtime.handle(), shard_selection)
-            .await
-            .map_err(|err| err.into())
+        recommend_batch_by(request, self.search_runtime.handle(), &collection, |name| {
+            self.get_collection_opt(name)
+        })
+        .await
+        .map_err(|err| err.into())
     }
 
     /// Search for the closest points using vector similarity with given restrictions defined

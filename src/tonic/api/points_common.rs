@@ -496,7 +496,6 @@ pub async fn search_batch(
 pub async fn recommend(
     toc: &TableOfContent,
     recommend_points: RecommendPoints,
-    shard_selection: Option<ShardId>,
 ) -> Result<Response<RecommendResponse>, Status> {
     let RecommendPoints {
         collection_name,
@@ -510,6 +509,7 @@ pub async fn recommend(
         score_threshold,
         using,
         with_vectors,
+        lookup_from,
     } = recommend_points;
 
     let request = collection::operations::types::RecommendRequest {
@@ -533,11 +533,12 @@ pub async fn recommend(
         ),
         score_threshold,
         using: using.map(|u| u.into()),
+        lookup_from: lookup_from.map(|l| l.into()),
     };
 
     let timing = Instant::now();
     let recommended_points = toc
-        .recommend(&collection_name, request, shard_selection)
+        .recommend(&collection_name, request)
         .await
         .map_err(error_to_status)?;
 
@@ -556,7 +557,6 @@ pub async fn recommend_batch(
     toc: &TableOfContent,
     collection_name: String,
     recommend_points: Vec<RecommendPoints>,
-    shard_selection: Option<ShardId>,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> = recommend_points
         .into_iter()
@@ -568,7 +568,7 @@ pub async fn recommend_batch(
 
     let timing = Instant::now();
     let scored_points = toc
-        .recommend_batch(&collection_name, recommend_batch, shard_selection)
+        .recommend_batch(&collection_name, recommend_batch)
         .await
         .map_err(error_to_status)?;
 

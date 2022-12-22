@@ -11,6 +11,7 @@ use collection::operations::types::{
     CollectionError, PointRequest, RecommendRequest, SearchRequest, VectorParams, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
+use collection::recommendations::recommend_by;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{NamedVector, VectorStruct};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
@@ -214,52 +215,44 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         }
     }
 
-    let recommend_result = collection
-        .recommend_by(
-            RecommendRequest {
-                positive: vec![6.into()],
-                negative: vec![],
-                with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: Some(WithVector::Selector(vec![VEC_NAME2.to_string()])),
-                score_threshold: None,
-                limit: 10,
-                offset: 0,
-                filter: None,
-                params: None,
-                using: None,
-            },
-            &Handle::current(),
-            None,
-        )
-        .await;
+    let recommend_result = recommend_by(
+        RecommendRequest {
+            positive: vec![6.into()],
+            with_payload: Some(WithPayloadInterface::Bool(false)),
+            with_vector: Some(WithVector::Selector(vec![VEC_NAME2.to_string()])),
+            limit: 10,
+            ..Default::default()
+        },
+        &Handle::current(),
+        &collection,
+        |_name| async { unreachable!("should not be called in this test") },
+    )
+    .await;
 
     match recommend_result {
         Ok(_) => panic!("Error expected"),
         Err(err) => match err {
             CollectionError::BadRequest { .. } => {}
-            _ => panic!("Unexpected error"),
+            CollectionError::BadInput { .. } => {}
+            error => panic!("Unexpected error {}", error),
         },
     }
 
-    let recommend_result = collection
-        .recommend_by(
-            RecommendRequest {
-                positive: vec![6.into()],
-                negative: vec![],
-                with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: Some(WithVector::Selector(vec![VEC_NAME2.to_string()])),
-                score_threshold: None,
-                limit: 10,
-                offset: 0,
-                filter: None,
-                params: None,
-                using: Some(VEC_NAME1.to_string().into()),
-            },
-            &Handle::current(),
-            None,
-        )
-        .await
-        .unwrap();
+    let recommend_result = recommend_by(
+        RecommendRequest {
+            positive: vec![6.into()],
+            with_payload: Some(WithPayloadInterface::Bool(false)),
+            with_vector: Some(WithVector::Selector(vec![VEC_NAME2.to_string()])),
+            limit: 10,
+            using: Some(VEC_NAME1.to_string().into()),
+            ..Default::default()
+        },
+        &Handle::current(),
+        &collection,
+        |_name| async { unreachable!("should not be called in this test") },
+    )
+    .await
+    .unwrap();
 
     assert_eq!(recommend_result.len(), 10);
     for hit in recommend_result {

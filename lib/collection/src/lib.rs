@@ -8,6 +8,7 @@ pub mod config;
 pub mod hash_ring;
 pub mod operations;
 pub mod optimizers_builder;
+pub mod recommendations;
 pub mod save_on_disk;
 pub mod shards;
 pub mod telemetry;
