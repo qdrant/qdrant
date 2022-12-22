@@ -139,6 +139,20 @@ impl ShardHolder {
         shard_transfers
     }
 
+    pub fn get_related_transfers(
+        &self,
+        shard_id: &ShardId,
+        peer_id: &PeerId,
+    ) -> Vec<ShardTransfer> {
+        self.shard_transfers
+            .read()
+            .iter()
+            .filter(|transfer| transfer.shard_id == *shard_id)
+            .filter(|transfer| transfer.from == *peer_id || transfer.to == *peer_id)
+            .cloned()
+            .collect()
+    }
+
     pub fn set_shard_replica_state(
         &self,
         shard_id: ShardId,

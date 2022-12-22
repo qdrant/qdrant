@@ -186,12 +186,14 @@ impl TransportChannelPool {
     }
 
     // Allows to use channel to `uri`. If there is no channels to specified uri - they will be created.
-    pub async fn with_channel<T, O: Future<Output = Result<T, Status>>>(
+    pub async fn with_channel_timeout<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
         f: impl Fn(Channel) -> O,
+        timeout: Option<Duration>,
     ) -> Result<T, RequestError<Status>> {
         let channel = self.get_or_create_pooled_channel(uri).await?;
+        let max_timeout = timeout.unwrap_or_else(|| self.grpc_timeout + self.connection_timeout);
 
         let result: Result<T, Status> = select! {
             res = f(channel) => {
@@ -200,17 +202,22 @@ impl TransportChannelPool {
             res = self.check_connectability(uri) => {
                Err(res)
             }
+            _res = tokio::time::sleep(max_timeout) => {
+                log::debug!("Timeout reached for uri: {}", uri);
+                Err(Status::deadline_exceeded("Timeout exceeded"))
+            }
         };
 
         // Reconnect on failure to handle the case with domain name change.
         match result {
             Ok(res) => Ok(res),
             Err(err) => match err.code() {
-                Code::Internal | Code::Unavailable | Code::Cancelled => {
+                Code::Internal | Code::Unavailable | Code::Cancelled | Code::DeadlineExceeded => {
                     let channel_uptime = Instant::now().duration_since(
                         self.get_created_at(uri).await.unwrap_or_else(Instant::now),
                     );
                     if channel_uptime > CHANNEL_TTL {
+                        log::debug!("dropping channel pool for uri: {}", uri);
                         self.drop_pool(uri).await;
                         let channel = self.get_or_create_pooled_channel(uri).await?;
                         f(channel).await.map_err(RequestError::FromClosure)
@@ -221,5 +228,14 @@ impl TransportChannelPool {
                 _ => Err(RequestError::FromClosure(err)),
             },
         }
+    }
+
+    // Allows to use channel to `uri`. If there is no channels to specified uri - they will be created.
+    pub async fn with_channel<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        uri: &Uri,
+        f: impl Fn(Channel) -> O,
+    ) -> Result<T, RequestError<Status>> {
+        self.with_channel_timeout(uri, f, None).await
     }
 }

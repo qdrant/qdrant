@@ -419,19 +419,23 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-        let result = if let ConsensusOperations::CollectionMeta(operation) = operation {
-            self.toc.perform_collection_meta_op(*operation)
-        } else {
-            // RemovePeer or AddPeer should be converted into native ConfChangeV2 message before sending to the Raft.
-            // So we do not expect to receive these operations as a normal entry.
-            // This is a debug assert so production migrations should be ok.
-            // TODO: parse into CollectionMetaOperation as we will not handle other cases here, but this removes compatibility with previous entry storage
-            debug_assert!(
-                false,
-                "Do not expect RemovePeer or AddPeer to be directly proposed"
-            );
-            Ok(false)
+        let result = match operation {
+            ConsensusOperations::CollectionMeta(operation) => {
+                self.toc.perform_collection_meta_op(*operation)
+            }
+            ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
+                // RemovePeer or AddPeer should be converted into native ConfChangeV2 message before sending to the Raft.
+                // So we do not expect to receive these operations as a normal entry.
+                // This is a debug assert so production migrations should be ok.
+                // TODO: parse into CollectionMetaOperation as we will not handle other cases here, but this removes compatibility with previous entry storage
+                debug_assert!(
+                    false,
+                    "Do not expect RemovePeer or AddPeer to be directly proposed"
+                );
+                Ok(false)
+            }
         };
+
         if let Some(on_apply) = on_apply {
             if on_apply.send(result.clone()).is_err() {
                 log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
@@ -616,6 +620,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     pub fn last_applied_entry(&self) -> Option<u64> {
         self.persistent.read().last_applied_entry()
+    }
+
+    pub fn sync_local_state(&self) -> Result<(), StorageError> {
+        self.toc.sync_local_state()
     }
 }
 
@@ -890,6 +898,10 @@ mod tests {
             &self,
             _peer_id: PeerId,
         ) -> Result<(), crate::content_manager::errors::StorageError> {
+            Ok(())
+        }
+
+        fn sync_local_state(&self) -> Result<(), crate::content_manager::errors::StorageError> {
             Ok(())
         }
     }
