@@ -227,6 +227,20 @@ pub async fn transfer_shard(
     transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await
 }
 
+pub fn validate_transfer_exists(
+    transfer_key: &ShardTransferKey,
+    current_transfers: &HashSet<ShardTransfer>,
+) -> CollectionResult<()> {
+    if !current_transfers.iter().any(|t| &t.key() == transfer_key) {
+        return Err(CollectionError::bad_request(format!(
+            "There is no transfer for shard {} from {} to {}",
+            transfer_key.shard_id, transfer_key.from, transfer_key.to
+        )));
+    }
+
+    Ok(())
+}
+
 /// Confirms that the transfer makes sense with the current state cluster
 ///
 /// Checks:
@@ -429,6 +443,9 @@ where
             finished = match transfer_result {
                 Ok(()) => true,
                 Err(error) => {
+                    if matches!(error, CollectionError::Cancelled { .. }) {
+                        return false;
+                    }
                     log::error!(
                         "Failed to transfer shard {} -> {}: {}",
                         transfer.shard_id,
@@ -438,6 +455,9 @@ where
                     false
                 }
             };
+            if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+                return false;
+            }
             if !finished {
                 tries -= 1;
                 log::warn!(

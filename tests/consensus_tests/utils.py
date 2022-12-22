@@ -3,7 +3,7 @@ import os
 import shutil
 from subprocess import Popen
 import time
-from typing import Tuple, Callable
+from typing import Tuple, Callable, Dict, List
 import requests
 import socket
 from contextlib import closing
@@ -32,7 +32,7 @@ def get_port() -> int:
         return s.getsockname()[1]
 
 
-def get_env(p2p_port: int, grpc_port: int, http_port: int) -> dict[str, str]:
+def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env = os.environ.copy()
     env["QDRANT__CLUSTER__ENABLED"] = "true"
     env["QDRANT__CLUSTER__P2P__PORT"] = str(p2p_port)
@@ -76,10 +76,10 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None) -> 
 
 
 # Starts a peer and returns its api_uri and p2p_uri
-def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
-    p2p_port = get_port()
-    grpc_port = get_port()
-    http_port = get_port()
+def start_first_peer(peer_dir: Path, log_file: str, port=None) -> Tuple[str, str]:
+    p2p_port = get_port() if port is None else port + 0
+    grpc_port = get_port() if port is None else port + 1
+    http_port = get_port() if port is None else port + 2
     env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     bootstrap_uri = get_uri(p2p_port)
@@ -90,7 +90,7 @@ def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
     return get_uri(http_port), bootstrap_uri
 
 
-def start_cluster(tmp_path, num_peers):
+def start_cluster(tmp_path, num_peers, port_seed=None):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, num_peers)
 
@@ -98,15 +98,18 @@ def start_cluster(tmp_path, num_peers):
     peer_api_uris = []
 
     # Start bootstrap
-    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log")
+    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log", port=port_seed)
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
     leader = wait_peer_added(bootstrap_api_uri)
 
+    port = None
     # Start other peers
     for i in range(1, len(peer_dirs)):
-        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
+        if port_seed is not None:
+            port = port_seed + i * 100
+        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, port=port))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader)
@@ -121,7 +124,7 @@ def make_peer_folder(base_path: Path, peer_number: int) -> Path:
     return peer_dir
 
 
-def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
+def make_peer_folders(base_path: Path, n_peers: int) -> List[Path]:
     peer_dirs = []
     for i in range(n_peers):
         peer_dir = make_peer_folder(base_path, i)
@@ -254,7 +257,7 @@ def check_some_replicas_not_active(peer_api_uri: str, collection_name: str) -> b
     return not check_all_replicas_active(peer_api_uri, collection_name)
 
 
-WAIT_TIME_SEC = 15
+WAIT_TIME_SEC = 30
 RETRY_INTERVAL_SEC = 0.5
 
 
@@ -322,6 +325,22 @@ def wait_for(condition: Callable[..., bool], *args):
                 f"Timeout waiting for condition {condition.__name__} to be satisfied in {WAIT_TIME_SEC} seconds")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
+
+
+def peer_is_online(peer_api_uri: str) -> bool:
+    try:
+        r = requests.get(f"{peer_api_uri}")
+        return r.status_code == 200
+    except:
+        return False
+
+
+def wait_for_peer_online(peer_api_uri: str):
+    try:
+        wait_for(peer_is_online, peer_api_uri)
+    except Exception as e:
+        print_clusters_info([peer_api_uri])
+        raise e
 
 
 def wait_collection_on_all_peers(collection_name: str, peer_api_uris: [str], max_wait=30):

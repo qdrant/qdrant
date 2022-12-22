@@ -54,6 +54,7 @@ use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
 use crate::telemetry::CollectionTelemetry;
 
 pub type VectorLookupFuture<'a> = Box<dyn Future<Output = CollectionResult<Vec<Record>>> + 'a>;
+pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
 struct CollectionVersion;
@@ -318,6 +319,15 @@ impl Collection {
             .ensure_replica_with_state(&peer_id, state)
             .await?;
 
+        if state == ReplicaState::Dead {
+            // Terminate transfer if source or target replicas are now dead
+            let related_transfers = shard_holder.get_related_transfers(&shard_id, &peer_id);
+            for transfer in related_transfers {
+                self._abort_shard_transfer(transfer.key(), &shard_holder)
+                    .await?;
+            }
+        }
+
         // Try to request shard transfer if replicas on the current peer are dead
         if state == ReplicaState::Dead && self.this_peer_id == peer_id {
             let transfer_from = replica_set
@@ -357,12 +367,23 @@ impl Collection {
 
     pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
         let shard_holder_read = self.shards_holder.read().await;
-        let transfers = shard_holder_read
+        let matched = shard_holder_read
             .shard_transfers
             .read()
             .iter()
             .any(|transfer| transfer_key.check(transfer));
-        transfers
+        matched
+    }
+
+    pub async fn get_transfer(&self, transfer_key: &ShardTransferKey) -> Option<ShardTransfer> {
+        let shard_holder_read = self.shards_holder.read().await;
+        let transfer = shard_holder_read
+            .shard_transfers
+            .read()
+            .iter()
+            .find(|transfer| transfer_key.check(transfer))
+            .cloned();
+        transfer
     }
 
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
@@ -502,15 +523,10 @@ impl Collection {
         Ok(())
     }
 
-    /// Handles abort of the transfer
-    ///
-    /// 1. Unregister the transfer
-    /// 2. Stop transfer task
-    /// 3. Unwrap the proxy
-    /// 4. Remove temp shard
-    pub async fn abort_shard_transfer(
+    async fn _abort_shard_transfer(
         &self,
         transfer_key: ShardTransferKey,
+        shard_holder_guard: &ShardHolder,
     ) -> CollectionResult<()> {
         let _transfer_finished = self
             .transfer_tasks
@@ -519,8 +535,6 @@ impl Collection {
             .stop_if_exists(&transfer_key)
             .await
             .is_finished();
-
-        let shard_holder_guard = self.shards_holder.read().await;
 
         let replica_set =
             if let Some(replica_set) = shard_holder_guard.get_shard(&transfer_key.shard_id) {
@@ -532,15 +546,37 @@ impl Collection {
                 )));
             };
 
-        replica_set.remove_peer(transfer_key.to).await?;
+        let transfer = self.get_transfer(&transfer_key).await;
+
+        if transfer.map(|x| x.sync).unwrap_or(false) {
+            replica_set.set_replica_state(&transfer_key.to, ReplicaState::Dead)?;
+        } else {
+            replica_set.remove_peer(transfer_key.to).await?;
+        }
 
         if self.this_peer_id == transfer_key.from {
-            revert_proxy_shard_to_local(&shard_holder_guard, transfer_key.shard_id).await?;
+            revert_proxy_shard_to_local(shard_holder_guard, transfer_key.shard_id).await?;
         }
 
         let _finish_was_registered = shard_holder_guard.register_finish_transfer(&transfer_key)?;
 
         Ok(())
+    }
+
+    /// Handles abort of the transfer
+    ///
+    /// 1. Unregister the transfer
+    /// 2. Stop transfer task
+    /// 3. Unwrap the proxy
+    /// 4. Remove temp shard, or mark it as dead
+    pub async fn abort_shard_transfer(
+        &self,
+        transfer_key: ShardTransferKey,
+    ) -> CollectionResult<()> {
+        let shard_holder_guard = self.shards_holder.read().await;
+        // Internal implementation, used to prevents double-read deadlock
+        self._abort_shard_transfer(transfer_key, &shard_holder_guard)
+            .await
     }
 
     /// Initiate local partial shard
@@ -1354,6 +1390,32 @@ impl Collection {
         for (_shard_id, replica_set) in shard_holder.get_shards() {
             replica_set.remove_peer(peer_id).await?;
         }
+        Ok(())
+    }
+
+    pub async fn sync_local_state(
+        &self,
+        on_transfer_failure: OnTransferFailure,
+    ) -> CollectionResult<()> {
+        // Check for disabled replicas
+        let shard_holder = self.shards_holder.read().await;
+        for replica_set in shard_holder.all_shards() {
+            replica_set.sync_local_state().await?;
+        }
+
+        // Check for un-reported finished transfers
+        let outgoing_transfers = self.get_outgoing_transfers(&self.this_peer_id).await;
+        let tasks_lock = self.transfer_tasks.lock().await;
+        for transfer in outgoing_transfers {
+            if !tasks_lock.check_if_still_running(&transfer.key()) {
+                log::debug!(
+                    "Transfer {:?} is not running, but not reported as finished. Reporting now.",
+                    transfer.key()
+                );
+                on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+            }
+        }
+
         Ok(())
     }
 }

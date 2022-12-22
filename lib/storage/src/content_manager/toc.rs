@@ -24,7 +24,9 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::shard_transfer::{validate_transfer, ShardTransfer};
+use collection::shards::transfer::shard_transfer::{
+    validate_transfer, validate_transfer_exists, ShardTransfer,
+};
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
@@ -408,6 +410,28 @@ impl TableOfContent {
         proposal_sender.send(operation)
     }
 
+    fn on_transfer_failure_callback(
+        proposal_sender: Option<OperationSender>,
+    ) -> collection::collection::OnTransferFailure {
+        Arc::new(move |transfer, collection_name, reason| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let operation = ConsensusOperations::abort_transfer(
+                    collection_name.clone(),
+                    transfer.clone(),
+                    reason,
+                );
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to abort transfer of shard {} of collection {}. Error: {}",
+                        transfer.shard_id,
+                        collection_name,
+                        send_error
+                    );
+                }
+            }
+        })
+    }
+
     fn on_peer_failure_callback(
         proposal_sender: Option<OperationSender>,
         collection_name: String,
@@ -775,9 +799,13 @@ impl TableOfContent {
                     .await?;
             }
             ShardTransferOperations::Finish(transfer) => {
+                // Validate transfer exists to prevent double handling
+                validate_transfer_exists(&transfer.key(), &collection.state().await.transfers)?;
                 collection.finish_shard_transfer(transfer).await?;
             }
             ShardTransferOperations::Abort { transfer, reason } => {
+                // Validate transfer exists to prevent double handling
+                validate_transfer_exists(&transfer, &collection.state().await.transfers)?;
                 log::warn!("Aborting shard transfer: {reason}");
                 collection.abort_shard_transfer(transfer).await?;
             }
@@ -1315,6 +1343,20 @@ impl CollectionContainer for TableOfContent {
                 }
             } else {
                 self.channel_service.remove_peer(peer_id).await;
+            }
+            Ok(())
+        })
+    }
+
+    fn sync_local_state(&self) -> Result<(), StorageError> {
+        self.collection_management_runtime.block_on(async {
+            let collections = self.collections.read().await;
+            let transfer_failure_callback =
+                Self::on_transfer_failure_callback(self.consensus_proposal_sender.clone());
+            for collection in collections.values() {
+                collection
+                    .sync_local_state(transfer_failure_callback.clone())
+                    .await?;
             }
             Ok(())
         })

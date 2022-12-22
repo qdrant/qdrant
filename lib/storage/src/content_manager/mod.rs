@@ -141,4 +141,6 @@ pub trait CollectionContainer {
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
+
+    fn sync_local_state(&self) -> Result<(), StorageError>;
 }
