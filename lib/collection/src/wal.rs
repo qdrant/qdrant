@@ -71,7 +71,8 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             .wal
             .append(&binary_entity)
             .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))?;
-        self.wal.flush_open_segment()?;
+        self.wal.flush_open_segment()
+            .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))?;
         Ok(res)
     }
 
