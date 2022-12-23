@@ -58,7 +58,6 @@ pub struct SimpleIdTracker {
     internal_to_version: Vec<SeqNumberType>,
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
-    points_count: usize,
     mapping_db_wrapper: DatabaseColumnWrapper,
     versions_db_wrapper: DatabaseColumnWrapper,
 }
@@ -69,7 +68,6 @@ impl SimpleIdTracker {
         let mut internal_to_external: Vec<PointIdType> = Default::default();
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
-        let mut points_count = 0;
 
         let mapping_db_wrapper = DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF);
         for (key, val) in mapping_db_wrapper.lock_db().iter()? {
@@ -102,8 +100,6 @@ impl SimpleIdTracker {
                         external_to_internal_uuid.remove(&uuid);
                     }
                 }
-            } else {
-                points_count += 1;
             }
             deleted.set(internal_id as usize, false);
 
@@ -139,13 +135,25 @@ impl SimpleIdTracker {
             }
         }
 
+        #[cfg(debug_assertions)]
+        {
+            for (idx, id) in external_to_internal_num.iter() {
+                debug_assert!(
+                    internal_to_external[*id as usize] == PointIdType::NumId(*idx),
+                    "Internal id {} is mapped to external id {}, but should be {}",
+                    id,
+                    internal_to_external[*id as usize],
+                    PointIdType::NumId(*idx)
+                );
+            }
+        }
+
         Ok(SimpleIdTracker {
             deleted,
             internal_to_external,
             internal_to_version,
             external_to_internal_num,
             external_to_internal_uuid,
-            points_count,
             mapping_db_wrapper,
             versions_db_wrapper,
         })
@@ -223,9 +231,6 @@ impl IdTracker for SimpleIdTracker {
             self.deleted.resize(internal_id + 1, true);
         }
         self.internal_to_external[internal_id] = external_id;
-        if self.deleted[internal_id] {
-            self.points_count += 1;
-        }
         self.deleted.set(internal_id, false);
 
         self.mapping_db_wrapper.put(
@@ -241,9 +246,6 @@ impl IdTracker for SimpleIdTracker {
             PointIdType::Uuid(uuid) => self.external_to_internal_uuid.remove(uuid),
         };
         if let Some(internal_id) = internal_id {
-            if !self.deleted[internal_id as usize] {
-                self.points_count -= 1;
-            }
             self.deleted.set(internal_id as usize, true);
             self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
         }
@@ -325,7 +327,7 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn points_count(&self) -> usize {
-        self.points_count
+        self.external_to_internal_num.len() + self.external_to_internal_uuid.len()
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
