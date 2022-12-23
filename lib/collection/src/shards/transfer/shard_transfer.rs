@@ -246,7 +246,7 @@ pub fn validate_transfer_exists(
 /// Checks:
 /// 1. If `from` and `to` exists
 /// 2. If `from` have local shard and it is active
-/// 3. If there is no active transfer from the same shard and peer
+/// 3. If there is no active transfers which involve `from` or `to`
 ///
 /// If validation fails, return `BadRequest` error.
 pub fn validate_transfer(
@@ -285,13 +285,19 @@ pub fn validate_transfer(
         )));
     }
 
-    if current_transfers
+    if let Some(existing_transfer) = current_transfers
         .iter()
-        .any(|t| t.shard_id == transfer.shard_id && t.from == transfer.from)
+        .filter(|t| t.shard_id == transfer.shard_id)
+        .find(|t| {
+            t.from == transfer.from
+                || t.to == transfer.from
+                || t.from == transfer.to
+                || t.to == transfer.to
+        })
     {
         return Err(CollectionError::bad_request(format!(
-            "Shard {} is already being transferred from peer {}",
-            transfer.shard_id, transfer.from
+            "Shard {} is already involved in transfer {} -> {}",
+            transfer.shard_id, existing_transfer.from, existing_transfer.to
         )));
     }
 
