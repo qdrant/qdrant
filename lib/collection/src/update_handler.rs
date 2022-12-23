@@ -388,6 +388,12 @@ impl UpdateHandler {
             };
 
             trace!("Attempting flushing");
+            if let Err(err) = wal.lock().flush() {
+                error!("Failed to flush wal: {}", err);
+                segments.write().report_optimizer_error(err);
+                continue;
+            }
+
             let confirmed_version = Self::flush_segments(segments.clone());
             let confirmed_version = match confirmed_version {
                 Ok(version) => version,

@@ -67,14 +67,9 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn write(&mut self, entity: &R) -> Result<u64> {
         // ToDo: Replace back to faster rmp, once this https://github.com/serde-rs/serde/issues/2055 solved
         let binary_entity = serde_cbor::to_vec(&entity).unwrap();
-        let res = self
-            .wal
-            .append(&binary_entity)
-            .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))?;
         self.wal
-            .flush_open_segment()
-            .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))?;
-        Ok(res)
+            .append(&binary_entity)
+            .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
     }
 
     pub fn read_all(&'s self) -> impl Iterator<Item = (u64, R)> + 's {
@@ -113,6 +108,12 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         self.wal
             .prefix_truncate(until_index)
             .map_err(|err| WalError::TruncateWalError(format!("{:?}", err)))
+    }
+
+    pub fn flush(&mut self) -> Result<()> {
+        self.wal
+            .flush_open_segment()
+            .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
     }
 }
 
