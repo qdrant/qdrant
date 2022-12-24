@@ -915,10 +915,7 @@ impl SegmentEntry for Segment {
             // If Id Tracker flush fails, we are also able to recover data from WAL
             //  by simply overriding data in vector and payload storages.
             // Once versions are saved - points are considered persisted.
-            log::debug!(
-                "id_tracker_versions_flusher {}",
-                &segment_path
-            );
+            log::debug!("id_tracker_versions_flusher {}", &segment_path);
             id_tracker_versions_flusher().map_err(|err| {
                 OperationError::service_error(&format!(
                     "Failed to flush id_tracker versions: {}",
