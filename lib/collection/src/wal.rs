@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::result;
+use std::thread::JoinHandle;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -114,6 +115,10 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         self.wal
             .flush_open_segment()
             .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
+    }
+
+    pub fn flush_async(&mut self) -> JoinHandle<std::io::Result<()>> {
+        self.wal.flush_open_segment_async()
     }
 }
 
