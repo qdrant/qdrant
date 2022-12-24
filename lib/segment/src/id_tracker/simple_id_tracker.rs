@@ -219,6 +219,12 @@ impl IdTracker for SimpleIdTracker {
                 let backtrace = std::backtrace::Backtrace::force_capture().to_string();
                 log::error!("Backtrace: {}", backtrace);
                 log::error!(
+                    "external_id {} cannot be mapped to internal_id {}",
+                    external_id,
+                    internal_id
+                );
+                log::error!("Existing internal_id: {:?}", self.internal_id(external_id));
+                log::error!(
                     "Internal id {} is already mapped to external id {}",
                     internal_id,
                     existing_external_id
