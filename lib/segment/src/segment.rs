@@ -882,8 +882,9 @@ impl SegmentEntry for Segment {
         let payload_index_flusher = self.payload_index.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
+        let segment_path = self.current_path.display().to_string();
         let flush_op = move || {
-            log::debug!("id_tracker_mapping_flusher {}", self.current_path.display());
+            log::debug!("id_tracker_mapping_flusher {}", &segment_path);
 
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
@@ -893,7 +894,7 @@ impl SegmentEntry for Segment {
                 ))
             })?;
 
-            log::debug!("vector_storage_flushers {}", self.current_path.display());
+            log::debug!("vector_storage_flushers {}", &segment_path);
 
             for vector_storage_flusher in vector_storage_flushers {
                 vector_storage_flusher().map_err(|err| {
@@ -904,7 +905,7 @@ impl SegmentEntry for Segment {
                 })?;
             }
 
-            log::debug!("payload_index_flusher {}", self.current_path.display());
+            log::debug!("payload_index_flusher {}", &segment_path);
             payload_index_flusher().map_err(|err| {
                 OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
             })?;
@@ -916,7 +917,7 @@ impl SegmentEntry for Segment {
             // Once versions are saved - points are considered persisted.
             log::debug!(
                 "id_tracker_versions_flusher {}",
-                self.current_path.display()
+                &segment_path
             );
             id_tracker_versions_flusher().map_err(|err| {
                 OperationError::service_error(&format!(
@@ -925,7 +926,7 @@ impl SegmentEntry for Segment {
                 ))
             })?;
 
-            log::debug!("save_state {}", self.current_path.display());
+            log::debug!("save_state {}", &segment_path);
             Self::save_state(&state, &current_path).map_err(|err| {
                 OperationError::service_error(&format!("Failed to flush segment state: {}", err))
             })?;
