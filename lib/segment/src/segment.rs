@@ -883,7 +883,6 @@ impl SegmentEntry for Segment {
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
         let flush_op = move || {
-
             log::debug!("id_tracker_mapping_flusher {}", self.current_path.display());
 
             // Flush mapping first to prevent having orphan internal ids.
@@ -915,7 +914,10 @@ impl SegmentEntry for Segment {
             // If Id Tracker flush fails, we are also able to recover data from WAL
             //  by simply overriding data in vector and payload storages.
             // Once versions are saved - points are considered persisted.
-            log::debug!("id_tracker_versions_flusher {}", self.current_path.display());
+            log::debug!(
+                "id_tracker_versions_flusher {}",
+                self.current_path.display()
+            );
             id_tracker_versions_flusher().map_err(|err| {
                 OperationError::service_error(&format!(
                     "Failed to flush id_tracker versions: {}",
