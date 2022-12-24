@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename, File};
 use std::path::{Path, PathBuf};
@@ -591,11 +590,7 @@ impl SegmentEntry for Segment {
                 segment.update_vector(existing_internal_id, processed_vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let mut new_index = 0;
-                for vector_data in segment.vector_data.values() {
-                    let vector_storage = vector_data.vector_storage.borrow();
-                    new_index = max(new_index, vector_storage.next_id());
-                }
+                let new_index = segment.id_tracker.borrow().internal_size() as PointOffsetType;
 
                 for (vector_name, processed_vector) in processed_vectors {
                     let vector_name: &str = &vector_name;

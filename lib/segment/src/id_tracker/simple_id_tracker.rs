@@ -334,8 +334,8 @@ impl IdTracker for SimpleIdTracker {
         self.iter_internal()
     }
 
-    fn max_id(&self) -> PointOffsetType {
-        std::cmp::max(1, self.internal_to_external.len() as PointOffsetType) - 1
+    fn internal_size(&self) -> usize {
+        self.internal_to_external.len()
     }
 
     fn mapping_flusher(&self) -> Flusher {

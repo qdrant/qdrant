@@ -63,8 +63,6 @@ pub trait VectorStorage {
         key: PointOffsetType,
         vector: Vec<VectorElementType>,
     ) -> OperationResult<()>;
-    /// Returns next available id
-    fn next_id(&self) -> PointOffsetType;
     fn update_from(
         &mut self,
         other: &VectorStorageSS,
