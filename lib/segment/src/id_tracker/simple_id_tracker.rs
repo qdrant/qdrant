@@ -215,7 +215,11 @@ impl IdTracker for SimpleIdTracker {
     ) -> OperationResult<()> {
         if self.internal_to_external.len() > internal_id as usize {
             let existing_external_id = self.internal_to_external[internal_id as usize];
-            if existing_external_id != external_id {
+            let existing_internal_id = self.internal_id(external_id);
+
+            if (existing_external_id != external_id && !self.deleted[internal_id as usize])
+                || existing_internal_id.is_some()
+            {
                 let backtrace = std::backtrace::Backtrace::force_capture().to_string();
                 log::error!("Backtrace: {}", backtrace);
                 log::error!(
@@ -223,7 +227,7 @@ impl IdTracker for SimpleIdTracker {
                     external_id,
                     internal_id
                 );
-                log::error!("Existing internal_id: {:?}", self.internal_id(external_id));
+                log::error!("Existing internal_id: {:?}", existing_internal_id);
                 log::error!(
                     "Internal id {} is already mapped to external id {}",
                     internal_id,

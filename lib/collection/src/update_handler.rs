@@ -388,6 +388,7 @@ impl UpdateHandler {
             };
 
             trace!("Attempting flushing");
+            debug!("Flushing wal");
             let wal_flash_job = wal.lock().flush_async();
 
             if let Err(err) = wal_flash_job.join() {
@@ -400,7 +401,7 @@ impl UpdateHandler {
                     )));
                 continue;
             }
-
+            debug!("Flushing segments");
             let confirmed_version = Self::flush_segments(segments.clone());
             let confirmed_version = match confirmed_version {
                 Ok(version) => version,
