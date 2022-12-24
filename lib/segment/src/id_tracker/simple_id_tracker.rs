@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
 
@@ -135,11 +135,11 @@ impl SimpleIdTracker {
             }
         }
 
-        #[cfg(debug_assertions)]
         {
             for (idx, id) in external_to_internal_num.iter() {
-                debug_assert!(
-                    internal_to_external[*id as usize] == PointIdType::NumId(*idx),
+                assert_eq!(
+                    internal_to_external[*id as usize],
+                    PointIdType::NumId(*idx),
                     "Internal id {} is mapped to external id {}, but should be {}",
                     id,
                     internal_to_external[*id as usize],
@@ -213,6 +213,22 @@ impl IdTracker for SimpleIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
+        if self.internal_to_external.len() > internal_id as usize {
+            let existing_external_id = self.internal_to_external[internal_id as usize];
+            if existing_external_id != external_id {
+                let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+                log::error!("Backtrace: {}", backtrace);
+                log::error!(
+                    "Internal id {} is already mapped to external id {}",
+                    internal_id,
+                    existing_external_id
+                );
+                return Err(OperationError::service_error(
+                    "Internal id {} is already mapped to external id {}",
+                ));
+            }
+        }
+
         match external_id {
             PointIdType::NumId(idx) => {
                 self.external_to_internal_num.insert(idx, internal_id);
