@@ -112,8 +112,8 @@ impl IdTracker for FixtureIdTracker {
         Box::new(self.ids.iter().copied())
     }
 
-    fn max_id(&self) -> PointOffsetType {
-        self.ids.last().copied().unwrap()
+    fn internal_size(&self) -> usize {
+        self.ids.len()
     }
 
     fn mapping_flusher(&self) -> Flusher {

@@ -224,10 +224,6 @@ where
         Ok(())
     }
 
-    fn next_id(&self) -> PointOffsetType {
-        self.vectors.len() as PointOffsetType
-    }
-
     fn update_from(
         &mut self,
         other: &VectorStorageSS,
