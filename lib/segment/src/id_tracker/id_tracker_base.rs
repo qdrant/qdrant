@@ -50,8 +50,8 @@ pub trait IdTracker {
     /// Iterate over all non-removed internal ids (offsets)
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
-    /// Max stored ID
-    fn max_id(&self) -> PointOffsetType;
+    /// Total number of internal ids (offsets), including removed ones
+    fn internal_size(&self) -> usize;
 
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;

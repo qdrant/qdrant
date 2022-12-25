@@ -19,7 +19,7 @@ use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
-use crate::wal::SerdeWal;
+use crate::wal::{SerdeWal, WalError};
 
 pub const UPDATE_QUEUE_SIZE: usize = 100;
 
@@ -388,6 +388,19 @@ impl UpdateHandler {
             };
 
             trace!("Attempting flushing");
+            let wal_flash_job = wal.lock().flush_async();
+
+            if let Err(err) = wal_flash_job.join() {
+                error!("Failed to flush wal: {:?}", err);
+                segments
+                    .write()
+                    .report_optimizer_error(WalError::WriteWalError(format!(
+                        "WAL flush error: {:?}",
+                        err
+                    )));
+                continue;
+            }
+
             let confirmed_version = Self::flush_segments(segments.clone());
             let confirmed_version = match confirmed_version {
                 Ok(version) => version,

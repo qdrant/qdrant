@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename, File};
 use std::path::{Path, PathBuf};
@@ -591,11 +590,7 @@ impl SegmentEntry for Segment {
                 segment.update_vector(existing_internal_id, processed_vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let mut new_index = 0;
-                for vector_data in segment.vector_data.values() {
-                    let vector_storage = vector_data.vector_storage.borrow();
-                    new_index = max(new_index, vector_storage.next_id());
-                }
+                let new_index = segment.id_tracker.borrow().internal_size() as PointOffsetType;
 
                 for (vector_name, processed_vector) in processed_vectors {
                     let vector_name: &str = &vector_name;
@@ -887,6 +882,54 @@ impl SegmentEntry for Segment {
         let payload_index_flusher = self.payload_index.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
+
+        // Flush order is important:
+        //
+        // 1. Flush id mapping. So during recovery the point will be recovered er in proper segment.
+        // 2. Flush vectors and payloads.
+        // 3. Flush id versions last. So presence of version indicates that all other data is up-to-date.
+        //
+        // Example of recovery from WAL in case of partial flush:
+        //
+        // In-memory state:
+        //
+        //     Segment 1                  Segment 2
+        //
+        //    ID-mapping     vst.1       ID-mapping     vst.2
+        //   ext     int
+        //  ┌───┐   ┌───┐   ┌───┐       ┌───┐   ┌───┐   ┌───┐
+        //  │100├───┤1  │   │1  │       │300├───┤1  │   │1  │
+        //  └───┘   └───┘   │2  │       └───┘   └───┘   │2  │
+        //                  │   │                       │   │
+        //  ┌───┐   ┌───┐   │   │       ┌───┐   ┌───┐   │   │
+        //  │200├───┤2  │   │   │       │400├───┤2  │   │   │
+        //  └───┘   └───┘   └───┘       └───┘   └───┘   └───┘
+        //
+        //
+        //  ext - external id
+        //  int - internal id
+        //  vst - vector storage
+        //
+        //  ─────────────────────────────────────────────────
+        //   After flush, segments could be partially preserved:
+        //
+        //  ┌───┐   ┌───┐   ┌───┐       ┌───┐   ┌───┐   ┌───┐
+        //  │100├───┤1  │   │ 1 │       │300├───┤1  │   │ * │
+        //  └───┘   └───┘   │   │       └───┘   └───┘   │ * │
+        //                  │   │                       │ 3 │
+        //                  │   │       ┌───┐   ┌───┐   │   │
+        //                  │   │       │400├───┤2  │   │   │
+        //                  └───┘       └───┘   └───┘   └───┘
+        //  WAL:      ▲
+        //            │                 ┌───┐   ┌───┐
+        //  100───────┘      ┌────────► │200├───┤3  │
+        //                   |          └───┘   └───┘
+        //  200──────────────┘
+        //
+        //  300
+        //
+        //  400
+
         let flush_op = move || {
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {

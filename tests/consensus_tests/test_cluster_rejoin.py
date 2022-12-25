@@ -29,8 +29,8 @@ def test_rejoin_cluster(tmp_path: pathlib.Path):
 
     for i in range(0, 2):
         print(f"creating collection {i}")
-        drop_collection(peer_api_uris[0], timeout=1)
-        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=1)
+        drop_collection(peer_api_uris[0], timeout=3)
+        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3)
         # Collection might not be ready yet, we don't care
         upsert_random_points(peer_api_uris[0], 100)
         print(f"after recovery end {i}")
@@ -42,15 +42,15 @@ def test_rejoin_cluster(tmp_path: pathlib.Path):
         "test_collection2",
         shard_number=N_SHARDS,
         replication_factor=N_REPLICA,
-        timeout=1
+        timeout=3
     )
 
     new_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_uri, port=20000)
 
     for i in range(0, 5):
         print(f"after recovery start {i}")
-        drop_collection(peer_api_uris[0], timeout=1)
-        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=1)
+        drop_collection(peer_api_uris[0], timeout=3)
+        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3)
         upsert_random_points(peer_api_uris[0], 500, fail_on_error=False)
         print(f"after recovery end {i}")
         res = requests.get(f"{new_url}/collections")
