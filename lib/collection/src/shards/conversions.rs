@@ -99,13 +99,10 @@ pub fn internal_set_payload(
     shard: &RemoteShard,
     wait: bool,
 ) -> SetPayloadPointsInternal {
-    let mut selected_points = vec![];
-
     let points_selector = if let Some(points) = set_payload.points {
-        selected_points = points.into_iter().map(|id| id.into()).collect();
         Some(PointsSelector {
             points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
-                ids: selected_points.clone(),
+                ids: points.into_iter().map(|id| id.into()).collect(),
             })),
         })
     } else {
@@ -120,7 +117,6 @@ pub fn internal_set_payload(
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             payload: payload_to_proto(set_payload.payload),
-            points: selected_points, // ToDo: Deprecated
             points_selector,
         }),
     }
@@ -131,12 +127,10 @@ pub fn internal_delete_payload(
     shard: &RemoteShard,
     wait: bool,
 ) -> DeletePayloadPointsInternal {
-    let mut selected_points = vec![];
     let points_selector = if let Some(points) = delete_payload.points {
-        selected_points = points.into_iter().map(|id| id.into()).collect();
         Some(PointsSelector {
             points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
-                ids: selected_points.clone(),
+                ids: points.into_iter().map(|id| id.into()).collect(),
             })),
         })
     } else {
@@ -151,7 +145,6 @@ pub fn internal_delete_payload(
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             keys: delete_payload.keys,
-            points: selected_points, // ToDo: Deprecated
             points_selector,
         }),
     }

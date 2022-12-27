@@ -152,7 +152,6 @@ pub async fn set_payload(
         collection_name,
         wait,
         payload,
-        points,
         points_selector,
     } = set_payload_points;
 
@@ -163,11 +162,7 @@ pub async fn set_payload(
             PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
         }
     } else {
-        let points = points
-            .into_iter()
-            .map(|point| point.try_into())
-            .collect::<Result<_, _>>()?;
-        (Some(points), None)
+        return Err(Status::invalid_argument("points_selector is expected"));
     };
 
     let operation = collection::operations::payload_ops::SetPayload {
@@ -200,7 +195,6 @@ pub async fn overwrite_payload(
         collection_name,
         wait,
         payload,
-        points,
         points_selector,
     } = set_payload_points;
 
@@ -211,11 +205,7 @@ pub async fn overwrite_payload(
             PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
         }
     } else {
-        let points = points
-            .into_iter()
-            .map(|point| point.try_into())
-            .collect::<Result<_, _>>()?;
-        (Some(points), None)
+        return Err(Status::invalid_argument("points_selector is expected"));
     };
 
     let operation = collection::operations::payload_ops::SetPayload {
@@ -248,7 +238,6 @@ pub async fn delete_payload(
         collection_name,
         wait,
         keys,
-        points,
         points_selector,
     } = delete_payload_points;
 
@@ -259,11 +248,7 @@ pub async fn delete_payload(
             PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
         }
     } else {
-        let points = points
-            .into_iter()
-            .map(|point| point.try_into())
-            .collect::<Result<_, _>>()?;
-        (Some(points), None)
+        return Err(Status::invalid_argument("points_selector is expected"));
     };
 
     let operation = DeletePayload {

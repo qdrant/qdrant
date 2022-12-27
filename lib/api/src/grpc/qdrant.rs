@@ -1571,9 +1571,6 @@ pub struct SetPayloadPoints {
     /// New payload values
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    /// List of point to modify, deprecated
-    #[prost(message, repeated, tag = "4")]
-    pub points: ::prost::alloc::vec::Vec<PointId>,
     /// Affected points
     #[prost(message, optional, tag = "5")]
     pub points_selector: ::core::option::Option<PointsSelector>,
@@ -1590,9 +1587,6 @@ pub struct DeletePayloadPoints {
     /// List of keys to delete
     #[prost(string, repeated, tag = "3")]
     pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Affected points, deprecated
-    #[prost(message, repeated, tag = "4")]
-    pub points: ::prost::alloc::vec::Vec<PointId>,
     /// Affected points
     #[prost(message, optional, tag = "5")]
     pub points_selector: ::core::option::Option<PointsSelector>,
@@ -1805,12 +1799,13 @@ pub struct ScrollPoints {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LookupLocation {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
     /// Which vector to use for search, if not specified - use default vector
-    #[prost(string, optional, tag="2")]
+    #[prost(string, optional, tag = "2")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPoints {
     /// name of the collection
@@ -1847,7 +1842,7 @@ pub struct RecommendPoints {
     #[prost(message, optional, tag = "12")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
     /// Name of the collection to use for points lookup, if not specified - use current collection
-    #[prost(message, optional, tag="13")]
+    #[prost(message, optional, tag = "13")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
