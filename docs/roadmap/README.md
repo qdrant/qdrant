@@ -1,4 +1,4 @@
-# Qdrant v1.0 Roadmap
+# Qdrant 2023 Roadmap
 
 Hi!
 This document is our plan for Qdrant development in 2023.
