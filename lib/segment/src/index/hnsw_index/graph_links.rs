@@ -506,6 +506,9 @@ impl GraphLinks for GraphLinksMmap {
             .open(path)?;
 
         let mmap = unsafe { Mmap::map(&file)? };
+
+        mmap.advise(*MMAP_ADVICE.read().unwrap())?;
+
         let header = GraphLinksFileHeader::deserialize_bytes_from(&mmap);
         let level_offsets = level_offsets(&mmap, &header);
 
@@ -554,6 +557,13 @@ impl GraphLinks for GraphLinksMmap {
     fn num_points(&self) -> usize {
         self.header.point_count as usize
     }
+}
+
+pub static MMAP_ADVICE: std::sync::RwLock<memmap2::Advice> =
+    std::sync::RwLock::new(memmap2::Advice::Normal);
+
+pub fn mmap_random() {
+    *MMAP_ADVICE.write().unwrap() = memmap2::Advice::Random;
 }
 
 #[cfg(test)]
