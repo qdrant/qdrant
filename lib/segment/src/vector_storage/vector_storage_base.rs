@@ -75,6 +75,8 @@ pub trait VectorStorage {
 
     /// Generate a `RawScorer` object which contains all required context for searching similar vector
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
+    fn quantized_raw_scorer(&self, vector: &[VectorElementType])
+        -> Option<Box<dyn RawScorer + '_>>;
 
     fn score_points(
         &self,
@@ -102,24 +104,4 @@ pub trait VectorStorage {
     }
 }
 
-trait SuperVectorStorage {}
-
 pub type VectorStorageSS = dyn VectorStorage + Sync + Send;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ordering() {
-        assert!(
-            ScoredPointOffset {
-                idx: 10,
-                score: 0.9
-            } > ScoredPointOffset {
-                idx: 20,
-                score: 0.6
-            }
-        )
-    }
-}

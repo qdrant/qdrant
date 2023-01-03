@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
+use super::quantized_vector_storage::QuantizedRawScorer;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
@@ -251,6 +252,27 @@ where
             metric: PhantomData,
             mmap_store: self.mmap_store.as_ref().unwrap(),
         })
+    }
+
+    fn quantized_raw_scorer(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Box<dyn RawScorer + '_>> {
+        let mmap_store = self.mmap_store.as_ref().unwrap();
+        if let Some(quantized_data) = &mmap_store.quantized_vectors {
+            if let Some(deleted_ram) = &mmap_store.deleted_ram {
+                let query = TMetric::preprocess(&vector).unwrap_or(vector.to_owned());
+                Some(Box::new(QuantizedRawScorer {
+                    query: quantized_data.encode_query(&query),
+                    quantized_data,
+                    deleted: deleted_ram,
+                }))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     fn score_points(

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use atomic_refcell::{AtomicRef, AtomicRefCell};
 use log::debug;
 use parking_lot::Mutex;
 use rand::thread_rng;
@@ -29,7 +29,7 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
@@ -156,7 +156,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     check_process_stopped(stopped)?;
 
                     let vector = vector_storage.get_vector(block_point_id).unwrap();
-                    let raw_scorer = vector_storage.raw_scorer(vector);
+                    let raw_scorer = Self::get_raw_scorer(&vector_storage, &vector);
                     let block_condition_checker = BuildConditionChecker {
                         filter_list: block_filter_list,
                         current_point: block_point_id,
@@ -185,7 +185,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let ef = max(req_ef, top);
 
         let vector_storage = self.vector_storage.borrow();
-        let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
+        let raw_scorer = Self::get_raw_scorer(&vector_storage, vector);
         let payload_index = self.payload_index.borrow();
 
         let filter_context = filter.map(|f| payload_index.filter_context(f));
@@ -210,6 +210,18 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .iter()
             .map(|vector| self.search_with_graph(vector, filter, top, params))
             .collect()
+    }
+
+    fn get_raw_scorer<'a>(
+        vector_storage: &'a AtomicRef<dyn VectorStorage + Send + Sync>,
+        vector: &[VectorElementType],
+    ) -> Box<dyn RawScorer + 'a> {
+        // TODO: provide option for quantization disabling
+        if let Some(raw_scorer) = vector_storage.quantized_raw_scorer(vector) {
+            raw_scorer
+        } else {
+            vector_storage.raw_scorer(vector.to_owned())
+        }
     }
 }
 
@@ -336,7 +348,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 ids.into_par_iter().try_for_each(|vector_id| {
                     check_process_stopped(stopped)?;
                     let vector = vector_storage.get_vector(vector_id).unwrap();
-                    let raw_scorer = vector_storage.raw_scorer(vector);
+                    let raw_scorer = Self::get_raw_scorer(&vector_storage, &vector);
                     let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
                     graph_layers_builder.link_new_point(vector_id, points_scorer);

@@ -4,14 +4,16 @@ use std::mem::{size_of, transmute};
 use std::path::Path;
 use std::sync::Arc;
 
+use bitvec::vec::BitVec;
 use memmap2::{Mmap, MmapMut, MmapOptions};
 use parking_lot::{RwLock, RwLockReadGuard};
 
+use super::quantized_vector_storage::EncodedVectors;
 use crate::common::error_logging::LogError;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
-use crate::types::PointOffsetType;
+use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::types::{Distance, PointOffsetType};
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";
@@ -24,6 +26,8 @@ pub struct MmapVectors {
     mmap: Mmap,
     deleted_mmap: Arc<RwLock<MmapMut>>,
     pub deleted_count: usize,
+    pub deleted_ram: Option<BitVec>,
+    pub quantized_vectors: Option<EncodedVectors>,
 }
 
 fn open_read(path: &Path) -> OperationResult<Mmap> {
@@ -77,7 +81,47 @@ impl MmapVectors {
             mmap,
             deleted_mmap: Arc::new(RwLock::new(deleted_mmap)),
             deleted_count,
+            deleted_ram: None,
+            quantized_vectors: None,
         })
+    }
+
+    fn enable_deleted_ram(&mut self) {
+        if self.deleted_ram.is_some() {
+            return;
+        }
+
+        let mut deleted = BitVec::new();
+        deleted.resize(self.num_vectors, false);
+        for i in 0..self.num_vectors {
+            deleted.set(i, self.deleted(i as PointOffsetType).unwrap_or_default());
+        }
+        self.deleted_ram = Some(deleted);
+    }
+
+    #[allow(dead_code)]
+    fn quantize(&mut self, distance: Distance) -> OperationResult<()> {
+        if self.quantized_vectors.is_some() {
+            return Ok(());
+        }
+
+        self.enable_deleted_ram();
+        self.quantized_vectors = Some(
+            EncodedVectors::encode(
+                (0..self.num_vectors as u32).map(|i| {
+                    let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
+                    self.raw_vector_offset(offset)
+                }),
+                Vec::new(),
+                match distance {
+                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
+                },
+            )
+            .map_err(|_| OperationError::service_error("cannot quantize vector data"))?,
+        );
+        Ok(())
     }
 
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
@@ -113,7 +157,11 @@ impl MmapVectors {
     }
 
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
-        Self::check_deleted(&self.deleted_mmap.read(), key)
+        if let Some(deleted_ram) = &self.deleted_ram {
+            deleted_ram.get(key as usize).map(|x| *x)
+        } else {
+            Self::check_deleted(&self.deleted_mmap.read(), key)
+        }
     }
 
     /// Creates returns owned vector (copy of internal vector)
@@ -130,6 +178,10 @@ impl MmapVectors {
         if key < (self.num_vectors as PointOffsetType) {
             let mut deleted_mmap = self.deleted_mmap.write();
             let flag = deleted_mmap.get_mut((key as usize) + HEADER_SIZE).unwrap();
+
+            if let Some(deleted_ram) = &mut self.deleted_ram {
+                deleted_ram.set(key as usize, true);
+            }
 
             if *flag == 0 {
                 *flag = 1;

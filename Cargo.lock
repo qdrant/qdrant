@@ -2724,6 +2724,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "quantization"
+version = "0.1.0"
+source = "git+https://github.com/qdrant/quantization.git#13b734be5ed139ac4aff70e1f93b32d0ec46cf67"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3239,6 +3247,7 @@ dependencies = [
  "ordered-float",
  "parking_lot",
  "pprof",
+ "quantization",
  "rand",
  "rand_distr",
  "rayon",
