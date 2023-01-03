@@ -12,6 +12,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
+use super::quantized_vector_storage::{EncodedVectors, QuantizedRawScorer};
 use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -30,6 +31,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     vectors: ChunkedVectors,
     deleted: BitVec,
     deleted_count: usize,
+    quantized_vectors: Option<EncodedVectors>,
     db_wrapper: DatabaseColumnWrapper,
 }
 
@@ -129,6 +131,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
+            quantized_vectors: None,
             db_wrapper,
         }))),
         Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
@@ -139,6 +142,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
+            quantized_vectors: None,
             db_wrapper,
         }))),
         Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
@@ -149,6 +153,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
+            quantized_vectors: None,
             db_wrapper,
         }))),
     }
@@ -171,6 +176,27 @@ where
             bincode::serialize(&record).unwrap(),
         )?;
 
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn quantize(&mut self) -> OperationResult<()> {
+        if self.quantized_vectors.is_some() {
+            return Ok(());
+        }
+
+        self.quantized_vectors = Some(
+            EncodedVectors::encode(
+                (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
+                Vec::new(),
+                match TMetric::distance() {
+                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
+                },
+            )
+            .map_err(|_| OperationError::service_error("cannot quantize vector data"))?,
+        );
         Ok(())
     }
 }
@@ -275,6 +301,22 @@ where
             deleted: &self.deleted,
             metric: PhantomData,
         })
+    }
+
+    fn quantized_raw_scorer(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Box<dyn RawScorer + '_>> {
+        if let Some(quantized_data) = &self.quantized_vectors {
+            let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
+            Some(Box::new(QuantizedRawScorer {
+                query: quantized_data.encode_query(&query),
+                quantized_data,
+                deleted: &self.deleted,
+            }))
+        } else {
+            None
+        }
     }
 
     fn score_points(

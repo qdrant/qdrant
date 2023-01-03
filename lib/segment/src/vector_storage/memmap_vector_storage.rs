@@ -261,7 +261,7 @@ where
         let mmap_store = self.mmap_store.as_ref().unwrap();
         if let Some(quantized_data) = &mmap_store.quantized_vectors {
             if let Some(deleted_ram) = &mmap_store.deleted_ram {
-                let query = TMetric::preprocess(&vector).unwrap_or(vector.to_owned());
+                let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
                 Some(Box::new(QuantizedRawScorer {
                     query: quantized_data.encode_query(&query),
                     quantized_data,
