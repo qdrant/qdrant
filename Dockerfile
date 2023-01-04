@@ -32,7 +32,7 @@ RUN cargo chef cook --release --target $(bash target_arch.sh) --recipe-path reci
 COPY . .
 
 # Build actual target here
-RUN cargo build --release --target $(bash target_arch.sh) --bin qdrant
+RUN cargo build -p qdrant --release --target $(bash target_arch.sh)
 
 RUN mv target/$(bash target_arch.sh)/release/qdrant /qdrant/qdrant
 
