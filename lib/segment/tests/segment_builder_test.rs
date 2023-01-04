@@ -38,9 +38,9 @@ mod tests {
             .upsert_vector(100, 3.into(), &only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
 
-        builder.update_from(&segment1, &stopped).unwrap();
-        builder.update_from(&segment2, &stopped).unwrap();
-        builder.update_from(&segment2, &stopped).unwrap();
+        builder.update_from(&segment1, &stopped, false).unwrap();
+        builder.update_from(&segment2, &stopped, false).unwrap();
+        builder.update_from(&segment2, &stopped, false).unwrap();
 
         // Check what happens if segment building fails here
 
@@ -94,7 +94,7 @@ mod tests {
         let mut builder =
             SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config).unwrap();
 
-        builder.update_from(segment, &stopped).unwrap();
+        builder.update_from(segment, &stopped, false).unwrap();
 
         let now = Instant::now();
 

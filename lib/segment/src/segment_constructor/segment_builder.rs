@@ -51,7 +51,7 @@ impl SegmentBuilder {
     ///
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
-    pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
+    pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool, quantize: bool) -> OperationResult<bool> {
         match &mut self.segment {
             None => Err(OperationError::service_error(
                 "Segment building error: created segment not found",
@@ -103,7 +103,9 @@ impl SegmentBuilder {
                         vector_storage.update_from(&**other_vector_storage, stopped)?;
                     internal_id_iter =
                         Some(new_internal_range.zip(other_vector_storage.iter_ids()));
-                    vector_storage.quantize()?;
+                    if quantize {
+                        vector_storage.quantize()?;
+                    }
                 }
                 if internal_id_iter.is_none() {
                     return Err(OperationError::service_error(
