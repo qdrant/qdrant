@@ -34,7 +34,9 @@ fn open_read(path: &Path) -> OperationResult<Mmap> {
         .create(true)
         .open(path)?;
 
-    Ok(unsafe { MmapOptions::new().map(&file)? })
+    let mmap = unsafe { MmapOptions::new().map(&file)? };
+    mmap.advise(crate::get_mmap_advise())?;
+    Ok(mmap)
 }
 
 fn open_write(path: &Path) -> OperationResult<MmapMut> {
@@ -44,7 +46,9 @@ fn open_write(path: &Path) -> OperationResult<MmapMut> {
         .create(false)
         .open(path)?;
 
-    Ok(unsafe { MmapMut::map_mut(&file)? })
+    let mmap = unsafe { MmapMut::map_mut(&file)? };
+    mmap.advise(crate::get_mmap_advise())?;
+    Ok(mmap)
 }
 
 fn ensure_mmap_file_exists(path: &Path, header: &[u8]) -> OperationResult<()> {

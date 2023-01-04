@@ -99,7 +99,7 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     if args.mmap_random {
-        segment::index::hnsw_index::graph_links::mmap_random();
+        segment::set_mmap_advice_random();
     }
 
     let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
