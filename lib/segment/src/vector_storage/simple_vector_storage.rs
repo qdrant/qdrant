@@ -178,27 +178,6 @@ where
 
         Ok(())
     }
-
-    #[allow(dead_code)]
-    fn quantize(&mut self) -> OperationResult<()> {
-        if self.quantized_vectors.is_some() {
-            return Ok(());
-        }
-
-        self.quantized_vectors = Some(
-            EncodedVectors::encode(
-                (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
-                Vec::new(),
-                match TMetric::distance() {
-                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
-                },
-            )
-            .map_err(|_| OperationError::service_error("cannot quantize vector data"))?,
-        );
-        Ok(())
-    }
 }
 
 impl<TMetric> VectorStorage for SimpleVectorStorage<TMetric>
@@ -317,6 +296,26 @@ where
         } else {
             None
         }
+    }
+
+    fn quantize(&mut self) -> OperationResult<()> {
+        if self.quantized_vectors.is_some() {
+            return Ok(());
+        }
+
+        self.quantized_vectors = Some(
+            EncodedVectors::encode(
+                (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
+                Vec::new(),
+                match TMetric::distance() {
+                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
+                },
+            )
+            .map_err(|_| OperationError::service_error("cannot quantize vector data"))?,
+        );
+        Ok(())
     }
 
     fn score_points(

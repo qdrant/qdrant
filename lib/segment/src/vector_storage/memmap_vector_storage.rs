@@ -275,6 +275,11 @@ where
         }
     }
 
+    fn quantize(&mut self) -> OperationResult<()> {
+        let mmap_store = self.mmap_store.as_mut().unwrap();
+        mmap_store.quantize(TMetric::distance())
+    }
+
     fn score_points(
         &self,
         vector: &[VectorElementType],

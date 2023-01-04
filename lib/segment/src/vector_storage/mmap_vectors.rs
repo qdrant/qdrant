@@ -99,8 +99,7 @@ impl MmapVectors {
         self.deleted_ram = Some(deleted);
     }
 
-    #[allow(dead_code)]
-    fn quantize(&mut self, distance: Distance) -> OperationResult<()> {
+    pub fn quantize(&mut self, distance: Distance) -> OperationResult<()> {
         if self.quantized_vectors.is_some() {
             return Ok(());
         }

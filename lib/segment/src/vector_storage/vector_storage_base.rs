@@ -77,6 +77,7 @@ pub trait VectorStorage {
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
     fn quantized_raw_scorer(&self, vector: &[VectorElementType])
         -> Option<Box<dyn RawScorer + '_>>;
+    fn quantize(&mut self) -> OperationResult<()>;
 
     fn score_points(
         &self,
