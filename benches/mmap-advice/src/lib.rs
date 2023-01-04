@@ -7,8 +7,8 @@ use rand::rngs::StdRng;
 pub async fn client(uri: String) -> anyhow::Result<QdrantClient> {
     let config = QdrantClientConfig {
         uri,
-        timeout: time::Duration::from_secs(5),
-        connect_timeout: time::Duration::from_secs(5),
+        timeout: time::Duration::from_secs(20),
+        connect_timeout: time::Duration::from_secs(10),
         keep_alive_while_idle: false,
         api_key: None,
     };
