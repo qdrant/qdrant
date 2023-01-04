@@ -10,19 +10,25 @@ BFB_IMAGE="${BFB_IMAGE:-bfb}"
 
 MMAP_ADVICE_PATH="${MMAP_ADVICE_PATH:-$(dirname "$(realpath -L "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")")}"
 
+CRITERION_BASELINE="${CRITERION_BASELINE:-}"
+CRITERION_WARMUP_TIME="${CRITERION_WARMUP_TIME:-20}"
+CRITERION_MEASUREMENT_TIME="${CRITERION_MEASUREMENT_TIME:-300}"
+CRITERION_SAMPLE_SIZE="${CRITERION_SAMPLE_SIZE:-35}"
+
 ON_DISK_INDEX="${ON_DISK_INDEX:-1}"
 MEMMAP_THRESHOLD="${MEMMAP_THRESHOLD:-20000}"
 
 VECTORS_COUNT="${VECTORS_COUNT:-1000000}"
 VECTORS_DIM="${VECTORS_DIM:-100}"
 
-MEMORY="${MEMORY:-790mb}"
+MEMORY="${MEMORY:-220mb}"
 STORAGE_PATH="${STORAGE_PATH:-$PWD/storage}"
 
 STARTUP_DELAY="${STARTUP_DELAY:-15}"
 
 
 if [[ "$STORAGE_PATH" != "$(realpath -L $STORAGE_PATH)" ]]
+then
 	echo "Storage path `{}` is not an absolute path" >&2
 	exit 1
 fi
@@ -45,16 +51,27 @@ function benchmark {
 		return 1
 	fi
 
-	sync; echo 1 > /proc/sys/vm/drop_caches
+	sudo bash -c 'sync; echo 1 > /proc/sys/vm/drop_caches'
 
 	declare qdrant_container_id; qdrant_container_id="$(qdrant-run "${args[@]}")"
 
-	cd "$MMAP_ADVICE_PATH"
-	QDRANT_DIM="$VECTORS_DIM" cargo bench -p mmap-advice --bench search-points
-	cd -
+	cargo-bench
 
 	# TODO: Use a trap?
 	docker-stop "$qdrant_container_id"
+}
+
+function cargo-bench {
+	declare args=(
+		${CRITERION_BASELINE:+--save-baseline} "$CRITERION_BASELINE"
+		${CRITERION_WARMUP_TIME:+--warm-up-time} "$CRITERION_WARMUP_TIME"
+		${CRITERION_MEASUREMENT_TIME:+--measurement-time} "$CRITERION_MEASUREMENT_TIME"
+		${CRITERION_SAMPLE_SIZE:+--sample-size} "$CRITERION_SAMPLE_SIZE"
+	)
+
+	cd "$MMAP_ADVICE_PATH"
+	QDRANT_DIM="$VECTORS_DIM" cargo bench -p mmap-advice --bench search-points -- "${args[@]}"
+	cd - >/dev/null
 }
 
 
@@ -90,7 +107,7 @@ function bfb {
 		bfb "${args[@]}"
 	elif docker-check-image-exists "$BFB_IMAGE"
 	then
-		docker run --interactive --tty --rm --network=host "$BFB_IMAGE" ./bfb "${args[@]}"
+		sudo docker run --interactive --tty --rm --network=host "$BFB_IMAGE" ./bfb "${args[@]}"
 	else
 		echo "Unable to run `bfb`" >&2
 		return 1
@@ -102,7 +119,7 @@ function qdrant-run {
 	declare args=( "$@" )
 
 	declare qdrant_container_id; qdrant_container_id="$(
-		docker run --detach --rm \
+		sudo docker run --detach --rm \
 			--network=host \
 			--memory "$MEMORY" \
 			-v "$STORAGE_PATH:/qdrant/storage" \
@@ -152,19 +169,19 @@ function qdrant-optimizers-config {
 function docker-stop {
 	declare container_id="$1"
 
-	docker stop "$container_id"
+	sudo docker stop "$container_id" >/dev/null
 }
 
 function docker-check-image-exists {
 	declare tag="$1"
 
-	[[ -n "$(docker images -q "$tag" 2>/dev/null)" ]]
+	[[ -n "$(sudo docker images -q "$tag" 2>/dev/null)" ]]
 }
 
 function docker-check-container-alive {
 	declare container_id="$1"
 
-	[[ -n "$(docker ps -q -f id="$container_id" 2>/dev/null)" ]]
+	[[ -n "$(sudo docker ps -q -f id="$container_id" 2>/dev/null)" ]]
 }
 
 
