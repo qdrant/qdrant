@@ -3,8 +3,7 @@
 
 use std::io;
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
 /// used by all memmaps created by the [`segment`] crate.
@@ -38,7 +37,7 @@ pub fn get_global() -> Advice {
 /// See [`memmap2::Advice`] and [madvise()] man page.
 ///
 /// [madvice()]: https://man7.org/linux/man-pages/man2/madvise.2.html
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Advice {
     /// See [`memmap2::Advice::Normal`].
