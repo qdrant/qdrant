@@ -95,7 +95,7 @@ fn main() -> anyhow::Result<()> {
     setup_panic_hook();
     let args = Args::parse();
 
-    segment::madvise::store_global(settings.storage.mmap_advice);
+    segment::madvise::set_global(settings.storage.mmap_advice);
 
     let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
         recover_full_snapshot(
