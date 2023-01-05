@@ -22,6 +22,7 @@ use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
+use raft::Storage;
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
@@ -187,6 +188,13 @@ fn main() -> anyhow::Result<()> {
             storage_path,
         )
         .into();
+
+        let consensus_last_index = consensus_state.last_index();
+        log::info!(
+            "Consensus state loaded. Last index: {:?}",
+            consensus_last_index
+        );
+
         let is_new_deployment = consensus_state.is_new_deployment();
 
         dispatcher = dispatcher.with_consensus(consensus_state.clone());

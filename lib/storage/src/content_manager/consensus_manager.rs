@@ -459,9 +459,16 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
-        self.persistent
-            .write()
-            .apply_state_update(move |state| state.hard_state = hard_state)
+        let last_index = self.last_index().unwrap_or_default();
+        self.persistent.write().apply_state_update(move |state| {
+            if hard_state.commit > last_index {
+                panic!(
+                    "hardstate.commit {} is out of bound lastindex {}",
+                    hard_state.commit, last_index
+                );
+            }
+            state.hard_state = hard_state
+        })
     }
 
     pub fn set_conf_state(&self, conf_state: raft::eraftpb::ConfState) -> Result<(), StorageError> {
