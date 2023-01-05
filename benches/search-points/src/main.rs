@@ -58,7 +58,7 @@ struct Config {
 
 impl Config {
     pub fn parse() -> Self {
-        let uri = env_var("URI").unwrap_or_else(|| "http://127.0.0.1:6333".into());
+        let uri = env_var("URI").unwrap_or_else(|| "http://127.0.0.1:6334".into());
 
         let timeout = time::Duration::from_secs_f32(parse_or(
             env_var("REQUEST_TIMEOUT").or_else(|| env_var("REQUEST")),
