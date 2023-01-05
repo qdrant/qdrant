@@ -6,6 +6,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::madvise;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
@@ -29,6 +30,7 @@ pub struct StorageConfig {
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
     pub hnsw_index: HnswConfig,
+    pub mmap_advice: madvise::Advice,
 }
 
 fn default_snapshots_path() -> String {
