@@ -299,10 +299,6 @@ where
     }
 
     fn quantize(&mut self) -> OperationResult<()> {
-        if self.quantized_vectors.is_some() {
-            return Ok(());
-        }
-
         self.quantized_vectors = Some(
             EncodedVectors::encode(
                 (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),

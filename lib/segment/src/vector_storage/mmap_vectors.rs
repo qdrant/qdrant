@@ -87,10 +87,6 @@ impl MmapVectors {
     }
 
     fn enable_deleted_ram(&mut self) {
-        if self.deleted_ram.is_some() {
-            return;
-        }
-
         let mut deleted = BitVec::new();
         deleted.resize(self.num_vectors, false);
         for i in 0..self.num_vectors {
@@ -100,10 +96,6 @@ impl MmapVectors {
     }
 
     pub fn quantize(&mut self, distance: Distance) -> OperationResult<()> {
-        if self.quantized_vectors.is_some() {
-            return Ok(());
-        }
-
         self.enable_deleted_ram();
         self.quantized_vectors = Some(
             EncodedVectors::encode(
