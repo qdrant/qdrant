@@ -1,18 +1,15 @@
 [package]
-name = "mmap-advice"
+name = "search-points"
 version = "0.0.0"
 edition = "2021"
 publish = false
 
 [dependencies]
 anyhow = "1.0"
-rand = "0.8"
 qdrant-client = { version = "0.11", default-features = false }
-
-[dev-dependencies]
-criterion = { version = "0.3", features = ["async", "async_tokio"] }
+rand = "0.8"
 tokio = { version = "1.23", features = ["rt"] }
 
-[[bench]]
-name = "search-points"
-harness = false
+[dependencies.criterion]
+version = "0.3"
+features = ["async", "async_tokio", "cargo_bench_support", "html_reports"]

@@ -1,5 +1,5 @@
 /target
-/benches/mmap-advice/target
+/benches/search-points/target
 /.idea
 /storage
 /snapshots

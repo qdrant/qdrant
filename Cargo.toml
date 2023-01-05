@@ -75,4 +75,4 @@ bench = false
 
 [workspace]
 members = ["lib/*"]
-exclude = ["benches/mmap-advice"]
+exclude = ["benches/search-points"]
