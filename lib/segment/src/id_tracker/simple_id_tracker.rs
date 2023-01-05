@@ -240,6 +240,13 @@ impl IdTracker for SimpleIdTracker {
         Ok(())
     }
 
+    fn drop_by_internal_id(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        match self.internal_to_external.get(internal_id as usize) {
+            Some(external_id) => self.drop(*external_id),
+            None => Ok(()),
+        }
+    }
+
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         let internal_id = match &external_id {
             PointIdType::NumId(idx) => self.external_to_internal_num.remove(idx),

@@ -66,6 +66,10 @@ impl IdTracker for FixtureIdTracker {
         Ok(())
     }
 
+    fn drop_by_internal_id(&mut self, _internal_id: PointOffsetType) -> OperationResult<()> {
+        Ok(())
+    }
+
     fn drop(&mut self, _external_id: PointIdType) -> OperationResult<()> {
         Ok(())
     }
