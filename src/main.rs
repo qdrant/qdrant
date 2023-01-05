@@ -86,9 +86,6 @@ struct Args {
     /// Use `/collections/<collection-name>/snapshots/recover` API instead.
     #[arg(long, value_name = "PATH")]
     storage_snapshot: Option<String>,
-
-    #[arg(long)]
-    mmap_random: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -98,9 +95,7 @@ fn main() -> anyhow::Result<()> {
     setup_panic_hook();
     let args = Args::parse();
 
-    if args.mmap_random {
-        segment::set_mmap_advice_random();
-    }
+    segment::madvise::store_global(settings.storage.mmap_advice);
 
     let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
         recover_full_snapshot(
