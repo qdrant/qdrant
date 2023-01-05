@@ -11,6 +11,7 @@ use crate::common::error_logging::LogError;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
+use crate::madvise;
 use crate::types::PointOffsetType;
 
 const HEADER_SIZE: usize = 4;
@@ -35,7 +36,7 @@ fn open_read(path: &Path) -> OperationResult<Mmap> {
         .open(path)?;
 
     let mmap = unsafe { MmapOptions::new().map(&file)? };
-    mmap.advise(crate::get_mmap_advise())?;
+    madvise::madvise(&mmap, madvise::get_global())?;
     Ok(mmap)
 }
 
@@ -47,7 +48,7 @@ fn open_write(path: &Path) -> OperationResult<MmapMut> {
         .open(path)?;
 
     let mmap = unsafe { MmapMut::map_mut(&file)? };
-    mmap.advise(crate::get_mmap_advise())?;
+    madvise::madvise(&mmap, madvise::get_global())?;
     Ok(mmap)
 }
 
