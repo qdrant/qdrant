@@ -74,5 +74,5 @@ test = false
 bench = false
 
 [workspace]
-members = ["lib/*", "benches/mmap-advice"]
-default-members = ["lib/*"]
+members = ["lib/*"]
+exclude = ["benches/mmap-advice"]
