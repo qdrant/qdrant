@@ -663,6 +663,17 @@ impl TableOfContent {
                     ),
                     Some(distribution) => distribution.into(),
                 };
+                if operation.collection_name == "test_collection_fail" {
+                    log::debug!("Creating test collection");
+                    // Return error with 50% probability
+                    if rand::random() {
+                        return Err(StorageError::ServiceError {
+                            description: "expected fail for test".to_string(),
+                            backtrace: None,
+                        });
+                    }
+                }
+
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
