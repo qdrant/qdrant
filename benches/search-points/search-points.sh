@@ -4,7 +4,7 @@ set -euo pipefail
 
 
 function help {
-	# This file has to use tabs for indentation, to not fuck-up the here-doc string...
+	# This file is indented with tabs for the sole purpose of having an indented here-doc...
 
 	cat <<-EOF
 	search-points.sh
