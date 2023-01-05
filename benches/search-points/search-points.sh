@@ -1,191 +1,179 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
 
-QDRANT_IMAGE="${QDRANT_IMAGE:-qdrant-mmap-advice-bench}"
+function help {
+	# This file has to use tabs for indentation, to not fuck-up the here-doc string...
 
-BFB_PATH="${BFB_PATH:-}"
-BFB_IMAGE="${BFB_IMAGE:-bfb}"
-
-MMAP_ADVICE_PATH="${MMAP_ADVICE_PATH:-$(dirname "$(realpath -L "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")")}"
-
-CRITERION_BASELINE="${CRITERION_BASELINE:-}"
-CRITERION_WARMUP_TIME="${CRITERION_WARMUP_TIME:-20}"
-CRITERION_MEASUREMENT_TIME="${CRITERION_MEASUREMENT_TIME:-300}"
-CRITERION_SAMPLE_SIZE="${CRITERION_SAMPLE_SIZE:-35}"
-
-ON_DISK_INDEX="${ON_DISK_INDEX:-1}"
-MEMMAP_THRESHOLD="${MEMMAP_THRESHOLD:-20000}"
-
-VECTORS_COUNT="${VECTORS_COUNT:-1000000}"
-VECTORS_DIM="${VECTORS_DIM:-100}"
-
-MEMORY="${MEMORY:-220mb}"
-STORAGE_PATH="${STORAGE_PATH:-$PWD/storage}"
-
-STARTUP_DELAY="${STARTUP_DELAY:-15}"
-
-
-if [[ "$STORAGE_PATH" != "$(realpath -L $STORAGE_PATH)" ]]
-then
-	echo "Storage path `{}` is not an absolute path" >&2
-	exit 1
-fi
-
-
-function benchmark-normal {
-	benchmark
-}
-
-function benchmark-random {
-	benchmark --mmap-random
-}
-
-function benchmark {
-	declare args=( "$@" )
-
-	if [[ ! -d $STORAGE_PATH ]]
-	then
-		echo "Storage path `$STORAGE_PATH` does not exist or is not a directory" >&2
-		return 1
-	fi
-
-	sudo bash -c 'sync; echo 1 > /proc/sys/vm/drop_caches'
-
-	declare qdrant_container_id; qdrant_container_id="$(qdrant-run "${args[@]}")"
-
-	cargo-bench
-
-	# TODO: Use a trap?
-	docker-stop "$qdrant_container_id"
-}
-
-function cargo-bench {
-	declare args=(
-		${CRITERION_BASELINE:+--save-baseline} "$CRITERION_BASELINE"
-		${CRITERION_WARMUP_TIME:+--warm-up-time} "$CRITERION_WARMUP_TIME"
-		${CRITERION_MEASUREMENT_TIME:+--measurement-time} "$CRITERION_MEASUREMENT_TIME"
-		${CRITERION_SAMPLE_SIZE:+--sample-size} "$CRITERION_SAMPLE_SIZE"
-	)
-
-	cd "$MMAP_ADVICE_PATH"
-	QDRANT_DIM="$VECTORS_DIM" cargo bench -p mmap-advice --bench search-points -- "${args[@]}"
-	cd - >/dev/null
-}
-
-
-function prepare {
-	if [[ -e $STORAGE_PATH && ! -d $STORAGE_PATH ]]
-	then
-		echo "Storage path `$STORAGE_PATH` already exists and is not a directory" >&2
-		return 1
-	elif [[ -d $STORAGE_PATH ]]
-	then
-		echo "Storage directory `$STORAGE_PATH` already exists" >&2
-		return 2
-	fi
-
-	declare qdrant_container_id; qdrant_container_id="$(MEMORY=2048mb STARTUP_DELAY=0 qdrant-run)"
-
-	qdrant-create-collection
-	bfb --skip-create --num-vectors "$VECTORS_COUNT" --dim "$VECTORS_DIM"
-
-	# TODO: Use a trap?
-	docker-stop "$qdrant_container_id"
-}
-
-
-function bfb {
-	declare args=( "$@" )
-
-	if [[ -n $BFB_PATH && -x $BFB_PATH ]]
-	then
-		$BFB_PATH "${args[@]}"
-	elif whence -p bfb &>/dev/null
-	then
-		bfb "${args[@]}"
-	elif docker-check-image-exists "$BFB_IMAGE"
-	then
-		sudo docker run --interactive --tty --rm --network=host "$BFB_IMAGE" ./bfb "${args[@]}"
-	else
-		echo "Unable to run `bfb`" >&2
-		return 1
-	fi
-}
-
-
-function qdrant-run {
-	declare args=( "$@" )
-
-	declare qdrant_container_id; qdrant_container_id="$(
-		sudo docker run --detach --rm \
-			--network=host \
-			--memory "$MEMORY" \
-			-v "$STORAGE_PATH:/qdrant/storage" \
-			"$QDRANT_IMAGE" \
-			./qdrant "${args[@]}"
-	)"
-
-	sleep $STARTUP_DELAY
-
-	docker-check-container-alive "$qdrant_container_id"
-
-	echo "$qdrant_container_id"
-}
-
-function qdrant-create-collection {
-	curl 'http://127.0.0.1:6333/collections/benchmark' \
-		-X PUT \
-		-H 'Content-Type: application/json' \
-		--data-raw "$(qdrant-collection-config)"
-}
-
-function qdrant-collection-config {
 	cat <<-EOF
-		{
-			"vectors": { "size": $VECTORS_DIM, "distance": "Cosine" }
-			$(qdrant-hnsw-config)
-			$(qdrant-optimizers-config)
-		}
+	search-points.sh
+	        simple wrapper to run 'search-points' criterion benchmark as a "standalone" binary
+	        and propagate configurable parameters into the benchmark
+	        (by abusing environment-variables)
+
+	--help
+	        Display this help message
+	--dry-run
+	        Print commands required to run the benchmark without executing anything
+	--criterion-help
+	        Display criterion help message
+
+	--uri URI
+	        Qdrant URI
+	--request-timeout|--timeout REQUEST_TIMEOUT
+	        Request timeout for Qdrant client (in seconds; float-point value)
+	--connection-timeout CONNECTION_TIMEOUT
+	        Connection timeout for Qdrant client (in seconds; float-point value)
+	--api-key API_KEY
+	        API key for Qdrant client
+	--collection-name|--collection COLLECTION_NAME
+	        Name of the collection to query
+	--limit LIMIT
+	        Number of points to query
+	--seed SEED
+	        Random seed for deterministic runs
 	EOF
 }
 
-function qdrant-hnsw-config {
-	if [[ -n "$ON_DISK_INDEX" && "$ON_DISK_INDEX" != 0 ]]
+
+function main {
+	declare -a criterion_args
+
+	while (( $# ))
+	do
+		declare arg="$1"
+
+		case "$arg" in
+			--help)
+				help
+				exit
+			;;
+
+			--dry-run)
+				declare dry_run=1
+				shift
+			;;
+
+			--criterion-help)
+				criterion_args+=( --help )
+				shift
+			;;
+
+			*)
+				if is-option "$arg"
+				then
+					export-value "$@"
+					shift 2
+				else
+					criterion_args+=( "$arg" )
+					shift
+				fi
+			;;
+		esac
+	done
+
+	criterion "${criterion_args[@]}"
+}
+
+
+declare -A OPTIONS=(
+	[--uri]=URI
+	[--request-timeout]=REQUEST_TIMEOUT
+	[--timeout]=REQUEST_TIMEOUT
+	[--connection-timeout]=CONNECTION_TIMEOUT
+	[--api-key]=API_KEY
+	[--collection-name]=COLLECTION_NAME
+	[--collection]=COLLECTION_NAME
+	[--limit]=LIMIT
+	[--seed]=SEED
+)
+
+function is-option {
+	declare option="$1"
+
+	[[ -v OPTIONS[$option] ]]
+}
+
+function export-value {
+	declare option="$1"
+	declare args=( "${@:1}" )
+
+	is-option "$option"
+
+	if ! (( ${#args[@]} ))
 	then
-		echo ', "hnsw_config": { "on_disk": true }'
+		error-missing-value "$option"
 	fi
-}
 
-function qdrant-optimizers-config {
-	if [[ -n "$MEMMAP_THRESHOLD" ]]
+	declare value="${args[1]}"
+
+	if ! is-value "$value" && [[ "$option" != --api-key ]]
 	then
-		echo ', "optimizers_config": { "memmap_threshold_kb": 20000 }'
+		error-missing-value "$option"
 	fi
+
+	export "${OPTIONS[$option]}"="$value"
+}
+
+function is-value {
+	declare value="$1"
+
+	[[ $value != --* ]]
+}
+
+function error-missing-value {
+	declare option="$1"
+
+	echo "ERROR: Missing value for $option option" >&2
+	return 1
 }
 
 
-function docker-stop {
-	declare container_id="$1"
+function criterion {
+	declare parent_dir="$(dirname "$(realpath -L "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")")"
 
-	sudo docker stop "$container_id" >/dev/null
+	dry-run cd "$parent_dir"
+	dry-run $(is-dry-run && env) cargo run --release -- "$@" --bench
+	dry-run cd - >/dev/null
 }
 
-function docker-check-image-exists {
-	declare tag="$1"
 
-	[[ -n "$(sudo docker images -q "$tag" 2>/dev/null)" ]]
+function dry-run {
+	${dry_run:+echo} "$@"
 }
 
-function docker-check-container-alive {
-	declare container_id="$1"
+function is-dry-run {
+	[[ -v dry_run ]]
+}
 
-	[[ -n "$(sudo docker ps -q -f id="$container_id" 2>/dev/null)" ]]
+function env {
+	declare -A env
+	declare var
+
+	for option in "${!OPTIONS[@]}"
+	do
+		var="${OPTIONS[$option]}"
+		env[$var]=1
+	done
+
+	declare filter=''
+
+	for var in "${!env[@]}"
+	do
+		if [[ -n $filter ]]
+		then
+			filter+='|'
+		fi
+
+		filter+="$var"
+	done
+
+	export -p | sed -E 's|declare -x ([^[:space:]]+=)|\1|g' | grep -E "$filter"
 }
 
 
 if ! (return 0 &>/dev/null)
 then
-	"$@"
+	main "$@"
 fi
