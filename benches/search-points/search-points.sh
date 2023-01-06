@@ -2,6 +2,7 @@
 
 set -euo pipefail
 
+# macOS ships with a 15 years old Bash, so you will have to install a more recent version!
 
 function help {
 	# This file is indented with tabs for the sole purpose of having an indented here-doc...
