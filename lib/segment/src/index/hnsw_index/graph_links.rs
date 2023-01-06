@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use memmap2::{Mmap, MmapMut};
 
 use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::madvise;
 use crate::types::PointOffsetType;
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
@@ -506,6 +507,8 @@ impl GraphLinks for GraphLinksMmap {
             .open(path)?;
 
         let mmap = unsafe { Mmap::map(&file)? };
+        madvise::madvise(&mmap, madvise::get_global())?;
+
         let header = GraphLinksFileHeader::deserialize_bytes_from(&mmap);
         let level_offsets = level_offsets(&mmap, &header);
 
