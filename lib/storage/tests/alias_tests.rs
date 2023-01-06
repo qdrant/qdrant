@@ -7,6 +7,7 @@ mod tests {
 
     use collection::operations::types::VectorParams;
     use collection::optimizers_builder::OptimizersConfig;
+    use segment::madvise;
     use segment::types::Distance;
     use storage::content_manager::collection_meta_ops::{
         ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
@@ -47,6 +48,7 @@ mod tests {
                 max_search_threads: 1,
             },
             hnsw_index: Default::default(),
+            mmap_advice: madvise::Advice::Random,
         };
 
         let runtime = Runtime::new().unwrap();

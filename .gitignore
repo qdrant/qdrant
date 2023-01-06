@@ -1,4 +1,5 @@
 /target
+/benches/search-points/target
 /.idea
 /storage
 /snapshots

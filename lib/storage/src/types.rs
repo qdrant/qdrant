@@ -6,6 +6,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::madvise;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
@@ -18,7 +19,7 @@ pub struct PerformanceConfig {
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct StorageConfig {
     pub storage_path: String,
     #[serde(default = "default_snapshots_path")]
@@ -29,6 +30,8 @@ pub struct StorageConfig {
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
     pub hnsw_index: HnswConfig,
+    #[serde(default = "default_mmap_advice")]
+    pub mmap_advice: madvise::Advice,
 }
 
 fn default_snapshots_path() -> String {
@@ -37,6 +40,10 @@ fn default_snapshots_path() -> String {
 
 fn default_on_disk_payload() -> bool {
     false
+}
+
+fn default_mmap_advice() -> madvise::Advice {
+    madvise::Advice::Random
 }
 
 /// Information of a peer in the cluster
