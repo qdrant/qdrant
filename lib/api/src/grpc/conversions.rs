@@ -333,6 +333,7 @@ impl From<SearchParams> for segment::types::SearchParams {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as usize),
             exact: params.exact.unwrap_or(false),
+            ignore_quantization: params.ignore_quantization.unwrap_or(false),
         }
     }
 }
@@ -342,6 +343,7 @@ impl From<segment::types::SearchParams> for SearchParams {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as u64),
             exact: Some(params.exact),
+            ignore_quantization: Some(params.ignore_quantization),
         }
     }
 }

@@ -229,7 +229,7 @@ pub struct SegmentInfo {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
@@ -239,6 +239,10 @@ pub struct SearchParams {
     /// Search without approximation. If set to true, search may run long but with exact results.
     #[serde(default)]
     pub exact: bool,
+
+    /// If set to true, search will ignore quantized vector data
+    #[serde(default)]
+    pub ignore_quantization: bool,
 }
 
 /// Vector index configuration of the segment

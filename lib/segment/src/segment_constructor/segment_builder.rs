@@ -51,7 +51,12 @@ impl SegmentBuilder {
     ///
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
-    pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool, quantize: bool) -> OperationResult<bool> {
+    pub fn update_from(
+        &mut self,
+        other: &Segment,
+        stopped: &AtomicBool,
+        quantize: bool,
+    ) -> OperationResult<bool> {
         match &mut self.segment {
             None => Err(OperationError::service_error(
                 "Segment building error: created segment not found",

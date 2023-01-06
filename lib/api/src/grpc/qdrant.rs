@@ -1737,6 +1737,10 @@ pub struct SearchParams {
     /// Search without approximation. If set to true, search may run long but with exact results.
     #[prost(bool, optional, tag = "2")]
     pub exact: ::core::option::Option<bool>,
+    ///
+    /// If set to true, search will ignore quantized vector data
+    #[prost(bool, optional, tag = "3")]
+    pub ignore_quantization: ::core::option::Option<bool>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

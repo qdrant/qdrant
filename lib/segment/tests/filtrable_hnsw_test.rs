@@ -163,7 +163,7 @@ mod tests {
                 top,
                 Some(&SearchParams {
                     hnsw_ef: Some(ef),
-                    exact: false,
+                    ..Default::default()
                 }),
             );
 
