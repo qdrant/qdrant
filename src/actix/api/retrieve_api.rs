@@ -45,7 +45,7 @@ pub async fn get_point(
             Ok(x) => x,
             Err(_) => {
                 let error = Err(StorageError::BadInput {
-                    description: format!("Can not recognize \"{}\" as point id", point_id_str),
+                    description: format!("Can not recognize \"{point_id_str}\" as point id"),
                 });
                 return process_response(error, timing);
             }
@@ -57,7 +57,7 @@ pub async fn get_point(
     let response = match response {
         Ok(record) => match record {
             None => Err(StorageError::NotFound {
-                description: format!("Point with id {} does not exists!", point_id),
+                description: format!("Point with id {point_id} does not exists!"),
             }),
             Some(record) => Ok(record),
         },

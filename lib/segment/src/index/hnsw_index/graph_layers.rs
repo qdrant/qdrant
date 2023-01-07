@@ -237,8 +237,7 @@ where
             read_bin(graph_path)
         } else {
             Err(FileStorageError::generic_error(&format!(
-                "Links file does not exists: {:?}",
-                links_path
+                "Links file does not exists: {links_path:?}"
             )))
         };
 

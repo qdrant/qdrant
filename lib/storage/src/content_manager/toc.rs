@@ -93,7 +93,7 @@ impl TableOfContent {
             .thread_name_fn(|| {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("toc-{}", id)
+                format!("toc-{id}")
             })
             .build()
             .unwrap();
@@ -123,10 +123,7 @@ impl TableOfContent {
             let collection_snapshots_path =
                 Self::collection_snapshots_path(&snapshots_path, &collection_name);
             create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
-                panic!(
-                    "Can't create a directory for snapshot of {}: {}",
-                    collection_name, e
-                )
+                panic!("Can't create a directory for snapshot of {collection_name}: {e}")
             });
             log::info!("Loading collection: {}", collection_name);
             let collection = collection_management_runtime.block_on(Collection::load(
@@ -196,8 +193,7 @@ impl TableOfContent {
             .await
             .map_err(|err| {
                 StorageError::service_error(&format!(
-                    "Can't create directory for snapshots {}. Error: {}",
-                    collection_name, err
+                    "Can't create directory for snapshots {collection_name}. Error: {err}"
                 ))
             })?;
 
@@ -209,8 +205,7 @@ impl TableOfContent {
 
         tokio::fs::create_dir_all(&path).await.map_err(|err| {
             StorageError::service_error(&format!(
-                "Can't create directory for collection {}. Error: {}",
-                collection_name, err
+                "Can't create directory for collection {collection_name}. Error: {err}"
             ))
         })?;
 

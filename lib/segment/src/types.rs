@@ -50,8 +50,8 @@ pub enum ExtendedPointId {
 impl std::fmt::Display for ExtendedPointId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExtendedPointId::NumId(idx) => write!(f, "{}", idx),
-            ExtendedPointId::Uuid(uuid) => write!(f, "{}", uuid),
+            ExtendedPointId::NumId(idx) => write!(f, "{idx}"),
+            ExtendedPointId::Uuid(uuid) => write!(f, "{uuid}"),
         }
     }
 }
@@ -512,7 +512,7 @@ impl From<Value> for Payload {
     fn from(value: Value) -> Self {
         match value {
             Value::Object(map) => Payload(map),
-            _ => panic!("cannot convert from {:?}", value),
+            _ => panic!("cannot convert from {value:?}"),
         }
     }
 }
@@ -641,8 +641,7 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
             ),
             (data_type, Some(_)) => Err(format!(
-                "Payload field with type {:?} has unexpected params",
-                data_type
+                "Payload field with type {data_type:?} has unexpected params"
             )),
             (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
         }
