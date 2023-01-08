@@ -35,7 +35,7 @@ mod tests {
             let struct_result = (0..NUM_POINTS)
                 .filter(|point_id| struct_filter_context.check(*point_id as PointOffsetType))
                 .collect_vec();
-            assert_eq!(plain_result, struct_result, "filter: {:#?}", filter);
+            assert_eq!(plain_result, struct_result, "filter: {filter:#?}");
         }
     }
 }

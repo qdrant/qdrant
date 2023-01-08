@@ -204,7 +204,7 @@ impl Collection {
             if Self::can_upgrade_storage(&stored_version, &app_version) {
                 log::info!("Migrating collection {stored_version} -> {app_version}");
                 CollectionVersion::save(path)
-                    .unwrap_or_else(|err| panic!("Can't save collection version {}", err));
+                    .unwrap_or_else(|err| panic!("Can't save collection version {err}"));
             } else {
                 log::error!("Cannot upgrade version {stored_version} to {app_version}.");
                 panic!("Cannot upgrade version {stored_version} to {app_version}. Try to use older version of Qdrant first.");
@@ -635,8 +635,7 @@ impl Collection {
             Ok(res)
         } else {
             Err(CollectionError::service_error(format!(
-                "No target shard {} found for update",
-                shard_selection
+                "No target shard {shard_selection} found for update"
             )))
         }
     }
@@ -1040,18 +1039,14 @@ impl Collection {
                     if !peers.contains_key(&peer_id) {
                         return Err(CollectionError::BadRequest {
                             description: format!(
-                                "Peer {} has no replica of shard {}",
-                                peer_id, shard_id
+                                "Peer {peer_id} has no replica of shard {shard_id}"
                             ),
                         });
                     }
 
                     if peers.len() == 1 {
                         return Err(CollectionError::BadRequest {
-                            description: format!(
-                                "Shard {} must have at least one replica",
-                                shard_id
-                            ),
+                            description: format!("Shard {shard_id} must have at least one replica"),
                         });
                     }
 
@@ -1262,7 +1257,7 @@ impl Collection {
         let snapshot_path = self.snapshots_path.join(snapshot_name);
         if !snapshot_path.exists() {
             return Err(CollectionError::NotFound {
-                what: format!("Snapshot {}", snapshot_name),
+                what: format!("Snapshot {snapshot_name}"),
             });
         }
         Ok(snapshot_path)

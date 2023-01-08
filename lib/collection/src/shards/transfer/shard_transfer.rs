@@ -71,8 +71,7 @@ async fn transfer_batches(
             // Forward proxy gone?!
             // That would be a programming error.
             return Err(CollectionError::service_error(format!(
-                "Shard {} is not a forward proxy shard",
-                shard_id
+                "Shard {shard_id} is not a forward proxy shard"
             )));
         }
     }
@@ -101,8 +100,7 @@ async fn transfer_batches(
             // Forward proxy gone?!
             // That would be a programming error.
             return Err(CollectionError::service_error(format!(
-                "Shard {} is not found",
-                shard_id
+                "Shard {shard_id} is not found"
             )));
         }
     }
@@ -218,8 +216,7 @@ pub async fn transfer_shard(
             replica_set.proxify_local(remote_shard).await?;
         } else {
             return Err(CollectionError::service_error(format!(
-                "Shard {} cannot be proxied because it does not exist",
-                shard_id
+                "Shard {shard_id} cannot be proxied because it does not exist"
             )));
         }
     };

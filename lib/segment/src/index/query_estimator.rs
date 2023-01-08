@@ -219,7 +219,7 @@ mod tests {
                     has_id
                         .has_id
                         .iter()
-                        .map(|&x| format!("{}", x).parse().unwrap()) // hack to convert ID as "number"
+                        .map(|&x| format!("{x}").parse().unwrap()) // hack to convert ID as "number"
                         .collect(),
                 )],
                 min: has_id.has_id.len(),
@@ -299,7 +299,7 @@ mod tests {
 
         let estimation = estimate_filter(&test_estimator, &query, TOTAL);
         assert_eq!(estimation.primary_clauses.len(), 0);
-        eprintln!("estimation = {:#?}", estimation);
+        eprintln!("estimation = {estimation:#?}");
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
         assert!(estimation.min <= estimation.exp);
@@ -389,6 +389,6 @@ mod tests {
         }];
 
         let res = combine_must_estimations(&estimations, 10_000);
-        eprintln!("res = {:#?}", res);
+        eprintln!("res = {res:#?}");
     }
 }

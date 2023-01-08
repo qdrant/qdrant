@@ -191,7 +191,7 @@ mod tests {
         };
         let raw_cbor = serde_cbor::to_vec(&obj1).unwrap();
         let obj2 = serde_cbor::from_slice::<TextSelectorOpt>(&raw_cbor).unwrap();
-        eprintln!("obj2 = {:#?}", obj2);
+        eprintln!("obj2 = {obj2:#?}");
         assert_eq!(obj1.points, obj2.points.unwrap());
     }
 

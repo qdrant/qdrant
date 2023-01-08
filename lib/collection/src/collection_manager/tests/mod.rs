@@ -90,7 +90,7 @@ fn test_update_proxy_segments() {
 
     for i in 1..10 {
         let idx = 100 * i + 1;
-        assert!(all_ids.contains(&idx.into()), "Not found {}", idx)
+        assert!(all_ids.contains(&idx.into()), "Not found {idx}")
     }
 }
 
@@ -163,19 +163,19 @@ fn test_move_points_to_copy_on_write() {
         .clone();
     let id_mapper = copy_on_write_segment_read.id_tracker.clone();
 
-    eprintln!("copy_on_write_points = {:#?}", copy_on_write_points);
+    eprintln!("copy_on_write_points = {copy_on_write_points:#?}");
 
     for idx in copy_on_write_points {
         let internal = id_mapper.borrow().internal_id(idx).unwrap();
-        eprintln!("{} -> {}", idx, internal);
+        eprintln!("{idx} -> {internal}");
     }
 
     let internal_ids = vector_storage.borrow().iter_ids().collect_vec();
 
-    eprintln!("internal_ids = {:#?}", internal_ids);
+    eprintln!("internal_ids = {internal_ids:#?}");
 
     for idx in internal_ids {
         let external = id_mapper.borrow().external_id(idx).unwrap();
-        eprintln!("{} -> {}", idx, external);
+        eprintln!("{idx} -> {external}");
     }
 }

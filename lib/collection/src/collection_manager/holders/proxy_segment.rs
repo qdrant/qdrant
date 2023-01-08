@@ -735,8 +735,7 @@ impl SegmentEntry for ProxySegment {
         // load copy of wrapped segment in memory
         let mut in_memory_wrapped_segment = load_segment(&full_copy_path)?.ok_or_else(|| {
             OperationError::service_error(&format!(
-                "Failed to load segment from {:?}",
-                full_copy_path
+                "Failed to load segment from {full_copy_path:?}"
             ))
         })?;
 
@@ -823,7 +822,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let mut seen_points: HashSet<PointIdType> = Default::default();
         for res in search_result {
@@ -890,7 +889,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -904,7 +903,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())
@@ -943,7 +942,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -957,7 +956,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())
@@ -1007,7 +1006,7 @@ mod tests {
             all_single_results.push(res);
         }
 
-        eprintln!("search_result = {:#?}", all_single_results);
+        eprintln!("search_result = {all_single_results:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -1021,7 +1020,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert_eq!(all_single_results, search_batch_result)
     }
@@ -1213,7 +1212,7 @@ mod tests {
 
         // validate that 3 archives were created:
         // wrapped_segment1, wrapped_segment2 & shared write_segment
-        let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();
+        let archive_count = read_dir(&snapshot_dir).unwrap().count();
         assert_eq!(archive_count, 3);
 
         for archive in read_dir(&snapshot_dir).unwrap() {

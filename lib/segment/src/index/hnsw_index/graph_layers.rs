@@ -237,8 +237,7 @@ where
             read_bin(graph_path)
         } else {
             Err(FileStorageError::generic_error(&format!(
-                "Links file does not exists: {:?}",
-                links_path
+                "Links file does not exists: {links_path:?}"
             )))
         };
 
@@ -433,8 +432,8 @@ mod tests {
             .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
             .sum::<usize>();
 
-        eprintln!("total_links_0 = {:#?}", total_links_0);
-        eprintln!("num_vectors = {:#?}", num_vectors);
+        eprintln!("total_links_0 = {total_links_0:#?}");
+        eprintln!("num_vectors = {num_vectors:#?}");
         assert!(total_links_0 > 0);
         assert!(total_links_0 as f64 / num_vectors as f64 > M as f64);
 
@@ -483,11 +482,7 @@ mod tests {
 
         let mut file = File::create("graph.json").unwrap();
         file.write_all(
-            format!(
-                "{{ \"graph\": {}, \n \"vectors\": {} }}",
-                graph_json, vectors_json
-            )
-            .as_bytes(),
+            format!("{{ \"graph\": {graph_json}, \n \"vectors\": {vectors_json} }}").as_bytes(),
         )
         .unwrap();
     }

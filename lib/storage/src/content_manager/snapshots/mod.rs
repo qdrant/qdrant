@@ -30,7 +30,7 @@ pub async fn get_full_snapshot_path(
     let snapshot_path = Path::new(toc.snapshots_path()).join(snapshot_name);
     if !snapshot_path.exists() {
         return Err(StorageError::NotFound {
-            description: format!("Snapshot {} not found", snapshot_name),
+            description: format!("Snapshot {snapshot_name} not found"),
         });
     }
     Ok(snapshot_path)

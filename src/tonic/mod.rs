@@ -53,7 +53,7 @@ pub fn init(
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("tonic-{}", id)
+            format!("tonic-{id}")
         })
         .build()?;
     tonic_runtime
@@ -119,7 +119,7 @@ pub fn init_internal(
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("tonic-internal-{}", id)
+            format!("tonic-internal-{id}")
         })
         .build()?;
     tonic_runtime

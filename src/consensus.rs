@@ -155,7 +155,7 @@ impl Consensus {
             .thread_name_fn(|| {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("consensus-tokio-rt-{}", id)
+                format!("consensus-tokio-rt-{id}")
             })
             .enable_all()
             .build()?;

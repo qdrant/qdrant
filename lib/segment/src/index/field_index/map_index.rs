@@ -135,7 +135,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     fn encode_db_record(value: &N, idx: PointOffsetType) -> String {
-        format!("{}/{}", value, idx)
+        format!("{value}/{idx}")
     }
 
     fn decode_db_record(s: &str) -> OperationResult<(N, PointOffsetType)> {

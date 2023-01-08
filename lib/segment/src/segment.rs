@@ -131,8 +131,7 @@ impl Segment {
             // fail if newer operation is attempted before proper recovery
             if *failed_version < op_num {
                 return Err(OperationError::service_error(&format!(
-                    "Not recovered from previous error: {}",
-                    error
+                    "Not recovered from previous error: {error}"
                 )));
             } // else: Re-try operation
         }
@@ -305,7 +304,7 @@ impl Segment {
         let segment_path = snapshot_path.parent().unwrap().join(segment_id);
         let archive_file = File::open(snapshot_path)?;
         let mut ar = tar::Archive::new(archive_file);
-        ar.unpack(&segment_path)?;
+        ar.unpack(segment_path)?;
         Ok(())
     }
 
@@ -364,8 +363,7 @@ impl Segment {
                 let point_offset = scored_point_offset.idx;
                 let point_version = id_tracker.internal_version(point_offset).ok_or_else(|| {
                     OperationError::service_error(&format!(
-                        "Corrupter id_tracker, no version for point {}",
-                        point_id
+                        "Corrupter id_tracker, no version for point {point_id}"
                     ))
                 })?;
                 let payload = if with_payload.enable {
@@ -462,8 +460,7 @@ impl Segment {
                 id_tracker.external_id(internal_id).ok_or_else(|| {
                     let payload = self.payload_by_offset(internal_id).unwrap();
                     OperationError::service_error(&format!(
-                        "Corrupter id_tracker, no external value for {}, payload: {:?}",
-                        internal_id, payload
+                        "Corrupter id_tracker, no external value for {internal_id}, payload: {payload:?}"
                     ))
                 })?;
             }
@@ -933,21 +930,15 @@ impl SegmentEntry for Segment {
         let flush_op = move || {
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
-                OperationError::service_error(&format!(
-                    "Failed to flush id_tracker mapping: {}",
-                    err
-                ))
+                OperationError::service_error(&format!("Failed to flush id_tracker mapping: {err}"))
             })?;
             for vector_storage_flusher in vector_storage_flushers {
                 vector_storage_flusher().map_err(|err| {
-                    OperationError::service_error(&format!(
-                        "Failed to flush vector_storage: {}",
-                        err
-                    ))
+                    OperationError::service_error(&format!("Failed to flush vector_storage: {err}"))
                 })?;
             }
             payload_index_flusher().map_err(|err| {
-                OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
+                OperationError::service_error(&format!("Failed to flush payload_index: {err}"))
             })?;
             // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
             // This is because vector_storage and payload_index flush are not atomic.
@@ -957,12 +948,11 @@ impl SegmentEntry for Segment {
             // Once versions are saved - points are considered persisted.
             id_tracker_versions_flusher().map_err(|err| {
                 OperationError::service_error(&format!(
-                    "Failed to flush id_tracker versions: {}",
-                    err
+                    "Failed to flush id_tracker versions: {err}"
                 ))
             })?;
             Self::save_state(&state, &current_path).map_err(|err| {
-                OperationError::service_error(&format!("Failed to flush segment state: {}", err))
+                OperationError::service_error(&format!("Failed to flush segment state: {err}"))
             })?;
             *persisted_version.lock() = state.version;
 
@@ -1080,14 +1070,12 @@ impl SegmentEntry for Segment {
         );
         if !snapshot_dir_path.exists() {
             return Err(OperationError::service_error(&format!(
-                "the snapshot path provided {:?} does not exist",
-                snapshot_dir_path
+                "the snapshot path provided {snapshot_dir_path:?} does not exist"
             )));
         }
         if !snapshot_dir_path.is_dir() {
             return Err(OperationError::service_error(&format!(
-                "the snapshot path provided {:?} is not a directory",
-                snapshot_dir_path
+                "the snapshot path provided {snapshot_dir_path:?} is not a directory"
             )));
         }
         // flush segment to capture latest state
@@ -1098,7 +1086,7 @@ impl SegmentEntry for Segment {
             .file_stem()
             .and_then(|f| f.to_str())
             .unwrap();
-        let file_name = format!("{}.tar", segment_id);
+        let file_name = format!("{segment_id}.tar");
         let archive_path = snapshot_dir_path.join(file_name);
 
         // If `archive_path` exists, we still want to overwrite it
@@ -1118,14 +1106,12 @@ impl SegmentEntry for Segment {
         );
         if !target_dir_path.exists() {
             return Err(OperationError::service_error(&format!(
-                "the copy path provided {:?} does not exist",
-                target_dir_path
+                "the copy path provided {target_dir_path:?} does not exist"
             )));
         }
         if !target_dir_path.is_dir() {
             return Err(OperationError::service_error(&format!(
-                "the copy path provided {:?} is not a directory",
-                target_dir_path
+                "the copy path provided {target_dir_path:?} is not a directory"
             )));
         }
 
@@ -1267,7 +1253,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let search_batch_result = segment
             .search_batch(
@@ -1280,7 +1266,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())

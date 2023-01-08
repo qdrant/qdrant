@@ -55,7 +55,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => panic!("operation failed: {err:?}"),
     }
 
     let search_request = SearchRequest {
@@ -79,7 +79,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
             assert_eq!(res[0].id, 2.into());
             assert!(res[0].payload.is_none());
         }
-        Err(err) => panic!("search failed: {:?}", err),
+        Err(err) => panic!("search failed: {err:?}"),
     }
     collection.before_drop().await;
 }
@@ -113,7 +113,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => panic!("operation failed: {err:?}"),
     }
 
     let search_request = SearchRequest {
@@ -141,7 +141,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
                 _ => panic!("vector is not returned"),
             }
         }
-        Err(err) => panic!("search failed: {:?}", err),
+        Err(err) => panic!("search failed: {err:?}"),
     }
 
     let count_request = CountRequest {
@@ -438,7 +438,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => panic!("operation failed: {err:?}"),
     }
 
     // delete points with id (0, 3)
@@ -459,7 +459,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => panic!("operation failed: {err:?}"),
     }
 
     let result = collection
