@@ -117,7 +117,7 @@ fn default_connection_pool_size() -> usize {
 impl Settings {
     #[allow(dead_code)]
     pub fn new(config_path: Option<String>) -> Result<Self, ConfigError> {
-        let config_path = config_path.unwrap_or("config/config".into());
+        let config_path = config_path.unwrap_or_else(|| "config/config".into());
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         let s = Config::builder()
@@ -163,6 +163,6 @@ mod tests {
     fn test_read_default_config() {
         let key = "RUN_MODE";
         env::set_var(key, "TEST");
-        Settings::new(Some("config/config".into())).unwrap();
+        Settings::new(None).unwrap();
     }
 }
