@@ -334,7 +334,7 @@ mod tests {
         let mut wal = ConsensusOpWal::new(temp_dir.path().to_str().unwrap());
 
         // append overlapping entries
-        wal.append_entries(entries_new.clone()).unwrap();
+        wal.append_entries(entries_new).unwrap();
         assert_eq!(wal.0.num_segments(), 1);
         assert_eq!(wal.0.num_entries(), 4);
         assert_eq!(wal.index_offset().unwrap(), Some(1));
