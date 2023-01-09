@@ -86,14 +86,21 @@ struct Args {
     /// Use `/collections/<collection-name>/snapshots/recover` API instead.
     #[arg(long, value_name = "PATH")]
     storage_snapshot: Option<String>,
+
+    /// Path to an alternative configuration file.
+    /// Format: <config_file_path>
+    ///
+    /// Default path : config/config.yaml
+    #[arg(long, value_name = "PATH")]
+    config_path: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
-    let settings = Settings::new().expect("Can't read config.");
+    let args = Args::parse();
+    let settings = Settings::new(args.config_path).expect("Can't read config.");
 
     setup_logger(&settings.log_level);
     setup_panic_hook();
-    let args = Args::parse();
 
     segment::madvise::set_global(settings.storage.mmap_advice);
 
