@@ -1,3 +1,6 @@
+use std::fs::canonicalize;
+use std::io::{Error, ErrorKind};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use schemars::JsonSchema;
@@ -9,6 +12,25 @@ use tokio::runtime::Runtime;
 pub struct LocksOption {
     pub error_message: Option<String>,
     pub write: bool,
+}
+
+pub fn home_dir() -> std::io::Result<PathBuf> {
+    dirs::home_dir().ok_or(Error::new(ErrorKind::Other, "Home directory not found"))
+}
+
+pub fn tilde_expand(path: &str) -> std::io::Result<PathBuf> {
+    match path {
+        "~" => home_dir(),
+        p if p.starts_with("~/") => Ok(home_dir()?.join(&path[2..])),
+        _ => Ok(PathBuf::from(path)),
+    }
+}
+
+// Parsing the given path
+// Ex: ~/a/../foo.txt -> /home/user/foo.txt
+// Return io::ErrorKind::NotFound if the path does not exist
+pub fn parse_path(path: &str) -> std::io::Result<PathBuf> {
+    canonicalize(tilde_expand(path)?)
 }
 
 pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runtime> {
@@ -33,11 +55,13 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::thread;
     use std::thread::sleep;
     use std::time::Duration;
+    use std::{env, thread};
 
     use storage::content_manager::consensus::is_ready::IsReady;
+
+    use super::*;
 
     #[test]
     fn test_is_ready() {
@@ -56,5 +80,20 @@ mod tests {
         is_ready.make_ready();
         sleep(Duration::from_millis(500));
         join.join().unwrap()
+    }
+
+    #[test]
+    fn test_tilde_expansion() {
+        let home_env = "HOME";
+        env::set_var(home_env, "/home/user");
+
+        assert_eq!(
+            tilde_expand("~/qdrant").unwrap(),
+            PathBuf::from("/home/user/qdrant")
+        );
+
+        assert_eq!(tilde_expand("").unwrap(), PathBuf::from(""));
+        assert_eq!(tilde_expand("qdrant").unwrap(), PathBuf::from("qdrant"));
+        assert_eq!(tilde_expand("~").unwrap(), PathBuf::from("/home/user"));
     }
 }
