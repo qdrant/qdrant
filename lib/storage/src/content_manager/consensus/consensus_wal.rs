@@ -169,9 +169,13 @@ mod tests {
 
     use super::*;
 
+    fn init_logger() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
-    fn test_log_rewrite() {
-        env_logger::init();
+    fn test_log_compaction_rewrite() {
+        init_logger();
         let entries_orig = vec![
             Entry {
                 entry_type: 0,
@@ -249,5 +253,108 @@ mod tests {
             wal.append_entries(broken_entry),
             Err(StorageError::ServiceError { .. })
         ));
+    }
+
+    #[test]
+    fn test_log_rewrite() {
+        init_logger();
+        let entries_orig = vec![
+            Entry {
+                entry_type: 0,
+                term: 1,
+                index: 1,
+                data: vec![1, 1, 1],
+                context: vec![],
+                sync_log: false,
+            },
+            Entry {
+                entry_type: 0,
+                term: 1,
+                index: 2,
+                data: vec![1, 1, 1],
+                context: vec![],
+                sync_log: false,
+            },
+            Entry {
+                entry_type: 0,
+                term: 1,
+                index: 3,
+                data: vec![1, 1, 1],
+                context: vec![],
+                sync_log: false,
+            },
+        ];
+
+        let entries_new = vec![
+            Entry {
+                entry_type: 0,
+                term: 1,
+                index: 2,
+                data: vec![2, 2, 2],
+                context: vec![],
+                sync_log: false,
+            },
+            Entry {
+                entry_type: 0,
+                term: 1,
+                index: 3,
+                data: vec![2, 2, 2],
+                context: vec![],
+                sync_log: false,
+            },
+            Entry {
+                entry_type: 0,
+                term: 1,
+                index: 4,
+                data: vec![2, 2, 2],
+                context: vec![],
+                sync_log: false,
+            },
+        ];
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut wal = ConsensusOpWal::new(temp_dir.path().to_str().unwrap());
+
+        // append original entries
+        wal.append_entries(entries_orig).unwrap();
+        assert_eq!(wal.0.num_segments(), 1);
+        assert_eq!(wal.0.num_entries(), 3);
+        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
+        assert_eq!(wal.last_entry().unwrap().unwrap().index, 3);
+
+        let result_entries = wal.entries(1, 4, None).unwrap();
+        assert_eq!(result_entries.len(), 3);
+        assert_eq!(result_entries[0].data, vec![1, 1, 1]);
+        assert_eq!(result_entries[1].data, vec![1, 1, 1]);
+        assert_eq!(result_entries[2].data, vec![1, 1, 1]);
+
+        // drop wal to check persistence
+        drop(wal);
+        let mut wal = ConsensusOpWal::new(temp_dir.path().to_str().unwrap());
+
+        // append overlapping entries
+        wal.append_entries(entries_new).unwrap();
+        assert_eq!(wal.0.num_segments(), 1);
+        assert_eq!(wal.0.num_entries(), 4);
+        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
+        assert_eq!(wal.last_entry().unwrap().unwrap().index, 4);
+
+        let result_entries = wal.entries(1, 5, None).unwrap();
+        assert_eq!(result_entries.len(), 4);
+        assert_eq!(result_entries[0].data, vec![1, 1, 1]); // survived the truncation
+        assert_eq!(result_entries[1].data, vec![2, 2, 2]);
+        assert_eq!(result_entries[2].data, vec![2, 2, 2]);
+        assert_eq!(result_entries[3].data, vec![2, 2, 2]);
+
+        // drop wal to check persistence
+        drop(wal);
+        let wal = ConsensusOpWal::new(temp_dir.path().to_str().unwrap());
+        assert_eq!(wal.0.num_segments(), 1);
+        assert_eq!(wal.0.num_entries(), 4); // fails here because we lost data!
+        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
+        assert_eq!(wal.last_entry().unwrap().unwrap().index, 4);
     }
 }
