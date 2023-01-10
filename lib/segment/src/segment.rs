@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{remove_dir_all, rename, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -383,16 +383,15 @@ impl Segment {
                     WithVector::Selector(vectors) => {
                         let mut result = NamedVectors::default();
                         for vector_name in vectors {
-                            let vector = self.vector_by_offset(vector_name, point_offset)?;
-                            result.insert(
-                                vector_name.clone(),
-                                vector.unwrap_or_else(|| {
-                                    panic!(
-                                        "Vector {} not found at offset {}",
-                                        vector_name, point_offset
-                                    )
-                                }),
-                            );
+                            let vector_opt = self.vector_by_offset(vector_name, point_offset)?;
+                            match vector_opt {
+                                None => {
+                                    return Err(OperationError::service_error(
+                                        "Vector {vector_name} not found at offset {point_offset}",
+                                    ))
+                                }
+                                Some(vector) => result.insert(vector_name.clone(), vector),
+                            }
                         }
                         Some(result.into())
                     }
@@ -458,45 +457,48 @@ impl Segment {
 
     /// Check consistency of the segment's data and repair it if possible.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
-        let mut needs_flushing = false;
-        for (vector_name, vector_storage) in self.vector_data.iter_mut() {
-            let mut id_tracker = self.id_tracker.borrow_mut();
-            let mut vector_storage = vector_storage.vector_storage.borrow_mut();
-            let mut internal_ids_to_delete = Vec::new();
+        let mut internal_ids_to_delete = HashSet::new();
+        for (_vector_name, vector_storage) in self.vector_data.iter() {
+            let id_tracker = self.id_tracker.borrow();
+            let vector_storage = vector_storage.vector_storage.borrow();
             for internal_id in vector_storage.iter_ids() {
                 if id_tracker.external_id(internal_id).is_none() {
-                    internal_ids_to_delete.push(internal_id);
+                    internal_ids_to_delete.insert(internal_id);
                 }
             }
-            // cleanup orphans
-            if !internal_ids_to_delete.is_empty() {
-                log::warn!(
-                    "Found {} points in vector storage {} without external id - those will be deleted",
-                    internal_ids_to_delete.len(),
-                    vector_name
-                );
-
-                for internal_id in internal_ids_to_delete {
+        }
+        if !internal_ids_to_delete.is_empty() {
+            log::info!(
+                "Found {} points in vector storage without external id - those will be deleted",
+                internal_ids_to_delete.len(),
+            );
+            for (vector_name, vector_storage) in self.vector_data.iter_mut() {
+                // cleanup orphans
+                let mut vector_storage_ref = vector_storage.vector_storage.borrow_mut();
+                for internal_id in &internal_ids_to_delete {
                     log::debug!(
                         "Deleting point {} {} without external id",
                         vector_name,
                         internal_id
                     );
                     // delete dangling vectors
-                    vector_storage.delete(internal_id)?;
-                    // delete dangling payload
-                    self.payload_index.borrow_mut().drop(internal_id)?;
-                    // the id_tracker might be in an inconsistent state as well
-                    if let Some(external_id) = id_tracker.external_id(internal_id) {
-                        id_tracker.drop(external_id)?
-                    };
+                    vector_storage_ref.delete(*internal_id)?;
                 }
-                // mark segment as dirty
-                needs_flushing = true;
             }
+
+            for internal_id in &internal_ids_to_delete {
+                self.payload_index.borrow_mut().drop(*internal_id)?;
+            }
+
+            // We do not drop version here, because it is already not loaded into memory.
+            // There are no explicit mapping between internal ID and version, so all dangling
+            // versions will be ignored automatically.
+            // Those versions could be overwritten by new points, but it is not a problem.
+            // They will also be deleted by the next optimization.
         }
+
         // flush entire segment if needed
-        if needs_flushing {
+        if !internal_ids_to_delete.is_empty() {
             self.flush(true)?;
         }
         Ok(())
@@ -730,11 +732,14 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
     ) -> OperationResult<Vec<VectorElementType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.vector_by_offset(vector_name, internal_id).map(|v| {
-            v.unwrap_or_else(|| {
-                panic!("Vector {} not found at offset {}", vector_name, internal_id)
-            })
-        })
+        let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
+        if let Some(vector) = vector_opt {
+            Ok(vector)
+        } else {
+            Err(OperationError::service_error(&format!(
+                "Vector {vector_name} not found at offset {internal_id}"
+            )))
+        }
     }
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
