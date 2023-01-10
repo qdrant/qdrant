@@ -487,7 +487,9 @@ impl Segment {
                     // delete dangling payload
                     self.payload_index.borrow_mut().drop(internal_id)?;
                     // the id_tracker might be in an inconsistent state as well
-                    id_tracker.drop_by_internal_id(internal_id)?;
+                    if let Some(external_id) = id_tracker.external_id(internal_id) {
+                        id_tracker.drop(external_id)?
+                    };
                 }
                 // mark segment as dirty
                 needs_flushing = true;

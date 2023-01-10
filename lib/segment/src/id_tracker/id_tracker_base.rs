@@ -29,9 +29,6 @@ pub trait IdTracker {
         internal_id: PointOffsetType,
     ) -> OperationResult<()>;
 
-    /// Drop mapping by internal id
-    fn drop_by_internal_id(&mut self, internal_id: PointOffsetType) -> OperationResult<()>;
-
     /// Drop mapping
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()>;
 
