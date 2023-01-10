@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{remove_dir_all, rename, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -249,20 +249,16 @@ impl Segment {
 
     /// Retrieve vector by internal ID
     ///
-    /// Panics if vector does not exists or deleted
+    /// Returns None if the vector does not exists or deleted
     #[inline]
     fn vector_by_offset(
         &self,
         vector_name: &str,
         point_offset: PointOffsetType,
-    ) -> OperationResult<Vec<VectorElementType>> {
+    ) -> OperationResult<Option<Vec<VectorElementType>>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        Ok(vector_data
-            .vector_storage
-            .borrow()
-            .get_vector(point_offset)
-            .unwrap())
+        Ok(vector_data.vector_storage.borrow().get_vector(point_offset))
     }
 
     fn all_vectors_by_offset(
@@ -387,10 +383,15 @@ impl Segment {
                     WithVector::Selector(vectors) => {
                         let mut result = NamedVectors::default();
                         for vector_name in vectors {
-                            result.insert(
-                                vector_name.clone(),
-                                self.vector_by_offset(vector_name, point_offset)?,
-                            );
+                            let vector_opt = self.vector_by_offset(vector_name, point_offset)?;
+                            match vector_opt {
+                                None => {
+                                    return Err(OperationError::service_error(
+                                        "Vector {vector_name} not found at offset {point_offset}",
+                                    ))
+                                }
+                                Some(vector) => result.insert(vector_name.clone(), vector),
+                            }
                         }
                         Some(result.into())
                     }
@@ -454,19 +455,51 @@ impl Segment {
             .collect()
     }
 
-    pub fn check_consistency(&self) -> OperationResult<()> {
-        let id_tracker = self.id_tracker.borrow();
+    /// Check consistency of the segment's data and repair it if possible.
+    pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
+        let mut internal_ids_to_delete = HashSet::new();
         for (_vector_name, vector_storage) in self.vector_data.iter() {
+            let id_tracker = self.id_tracker.borrow();
             let vector_storage = vector_storage.vector_storage.borrow();
             for internal_id in vector_storage.iter_ids() {
-                id_tracker.external_id(internal_id).ok_or_else(|| {
-                    let payload = self.payload_by_offset(internal_id).unwrap();
-                    OperationError::service_error(&format!(
-                        "Corrupter id_tracker, no external value for {}, payload: {:?}",
-                        internal_id, payload
-                    ))
-                })?;
+                if id_tracker.external_id(internal_id).is_none() {
+                    internal_ids_to_delete.insert(internal_id);
+                }
             }
+        }
+        if !internal_ids_to_delete.is_empty() {
+            log::info!(
+                "Found {} points in vector storage without external id - those will be deleted",
+                internal_ids_to_delete.len(),
+            );
+            for (vector_name, vector_storage) in self.vector_data.iter_mut() {
+                // cleanup orphans
+                let mut vector_storage_ref = vector_storage.vector_storage.borrow_mut();
+                for internal_id in &internal_ids_to_delete {
+                    log::debug!(
+                        "Deleting point {} {} without external id",
+                        vector_name,
+                        internal_id
+                    );
+                    // delete dangling vectors
+                    vector_storage_ref.delete(*internal_id)?;
+                }
+            }
+
+            for internal_id in &internal_ids_to_delete {
+                self.payload_index.borrow_mut().drop(*internal_id)?;
+            }
+
+            // We do not drop version here, because it is already not loaded into memory.
+            // There are no explicit mapping between internal ID and version, so all dangling
+            // versions will be ignored automatically.
+            // Those versions could be overwritten by new points, but it is not a problem.
+            // They will also be deleted by the next optimization.
+        }
+
+        // flush entire segment if needed
+        if !internal_ids_to_delete.is_empty() {
+            self.flush(true)?;
         }
         Ok(())
     }
@@ -699,7 +732,14 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
     ) -> OperationResult<Vec<VectorElementType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.vector_by_offset(vector_name, internal_id)
+        let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
+        if let Some(vector) = vector_opt {
+            Ok(vector)
+        } else {
+            Err(OperationError::service_error(&format!(
+                "Vector {vector_name} not found at offset {internal_id}"
+            )))
+        }
     }
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
@@ -1190,6 +1230,7 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+    use crate::entry::entry_point::OperationError::PointIdError;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, SegmentConfig, StorageType, VectorDataConfig};
 
@@ -1547,5 +1588,99 @@ mod tests {
 
         // call flush second time to check that background flush finished successful
         segment.flush(true).unwrap();
+    }
+
+    #[test]
+    fn test_check_consistency() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 4;
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                },
+            )]),
+            index: Indexes::Plain {},
+            storage_type: StorageType::InMemory,
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config).unwrap();
+
+        let vec4 = vec![1.1, 1.0, 0.0, 1.0];
+        segment
+            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
+            .unwrap();
+        let vec6 = vec![1.0, 1.0, 0.5, 1.0];
+        segment
+            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
+            .unwrap();
+
+        // first pass on consistent data
+        segment.check_consistency_and_repair().unwrap();
+
+        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let search_result = segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query_vector,
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(search_result.len(), 2);
+        assert_eq!(search_result[0].id, 6.into());
+        assert_eq!(search_result[1].id, 4.into());
+
+        assert!(matches!(
+            segment.vector(DEFAULT_VECTOR_NAME, 6.into()),
+            Ok(_)
+        ));
+
+        let internal_id = segment.lookup_internal_id(6.into()).unwrap();
+
+        // make id_tracker inconsistent
+        segment.id_tracker.borrow_mut().drop(6.into()).unwrap();
+
+        let search_result = segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query_vector,
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+
+        // only one result because of inconsistent id_tracker
+        assert_eq!(search_result.len(), 1);
+        assert_eq!(search_result[0].id, 4.into());
+
+        // querying by external id is broken
+        assert!(
+            matches!(segment.vector(DEFAULT_VECTOR_NAME, 6.into()), Err(PointIdError {missed_point_id }) if missed_point_id == 6.into())
+        );
+
+        // but querying by internal id still works
+        matches!(
+            segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id),
+            Ok(Some(_))
+        );
+
+        // fix segment's data
+        segment.check_consistency_and_repair().unwrap();
+
+        // querying by internal id now consistent
+        matches!(
+            segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id),
+            Ok(None)
+        );
     }
 }
