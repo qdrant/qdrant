@@ -195,7 +195,7 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
 
     let mut segment = create_segment(segment_state.version, path, &segment_state.config)?;
 
-    log::debug!("Checking segment consistency: {}", path.display());
+    info!("Checking segment consistency: {}", path.display());
     segment.check_consistency_and_repair()?;
 
     Ok(Some(segment))

@@ -249,27 +249,9 @@ impl Segment {
 
     /// Retrieve vector by internal ID
     ///
-    /// Panics if vector does not exists or deleted
+    /// Returns None if the vector does not exists or deleted
     #[inline]
     fn vector_by_offset(
-        &self,
-        vector_name: &str,
-        point_offset: PointOffsetType,
-    ) -> OperationResult<Vec<VectorElementType>> {
-        check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data = &self.vector_data[vector_name];
-        Ok(vector_data
-            .vector_storage
-            .borrow()
-            .get_vector(point_offset)
-            .unwrap())
-    }
-
-    /// Retrieve vector by internal ID
-    ///
-    /// Return a None if the vector does not exists or deleted
-    #[cfg(test)]
-    fn vector_by_offset_safe(
         &self,
         vector_name: &str,
         point_offset: PointOffsetType,
@@ -401,9 +383,15 @@ impl Segment {
                     WithVector::Selector(vectors) => {
                         let mut result = NamedVectors::default();
                         for vector_name in vectors {
+                            let vector = self.vector_by_offset(vector_name, point_offset)?;
                             result.insert(
                                 vector_name.clone(),
-                                self.vector_by_offset(vector_name, point_offset)?,
+                                vector.unwrap_or_else(|| {
+                                    panic!(
+                                        "Vector {} not found at offset {}",
+                                        vector_name, point_offset
+                                    )
+                                }),
                             );
                         }
                         Some(result.into())
@@ -489,6 +477,11 @@ impl Segment {
                 );
 
                 for internal_id in internal_ids_to_delete {
+                    log::debug!(
+                        "Deleting point {} {} without external id",
+                        vector_name,
+                        internal_id
+                    );
                     // delete dangling vectors
                     vector_storage.delete(internal_id)?;
                     // delete dangling payload
@@ -737,7 +730,11 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
     ) -> OperationResult<Vec<VectorElementType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.vector_by_offset(vector_name, internal_id)
+        self.vector_by_offset(vector_name, internal_id).map(|v| {
+            v.unwrap_or_else(|| {
+                panic!("Vector {} not found at offset {}", vector_name, internal_id)
+            })
+        })
     }
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
@@ -1668,7 +1665,7 @@ mod tests {
 
         // but querying by internal id still works
         matches!(
-            segment.vector_by_offset_safe(DEFAULT_VECTOR_NAME, internal_id),
+            segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id),
             Ok(Some(_))
         );
 
@@ -1677,7 +1674,7 @@ mod tests {
 
         // querying by internal id now consistent
         matches!(
-            segment.vector_by_offset_safe(DEFAULT_VECTOR_NAME, internal_id),
+            segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id),
             Ok(None)
         );
     }
