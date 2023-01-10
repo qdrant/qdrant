@@ -193,13 +193,10 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
 
     let segment_state = Segment::load_state(path)?;
 
-    let segment = create_segment(segment_state.version, path, &segment_state.config)?;
+    let mut segment = create_segment(segment_state.version, path, &segment_state.config)?;
 
-    #[cfg(debug_assertions)]
-    {
-        log::debug!("Checking segment consistency: {}", path.display());
-        segment.check_consistency()?;
-    }
+    info!("Checking segment consistency: {}", path.display());
+    segment.check_consistency_and_repair()?;
 
     Ok(Some(segment))
 }
