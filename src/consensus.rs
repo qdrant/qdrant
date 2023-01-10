@@ -840,7 +840,7 @@ mod tests {
     fn collection_creation_passes_consensus() {
         // Given
         let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
-        let mut settings = crate::Settings::new().expect("Can't read config.");
+        let mut settings = crate::Settings::new(None).expect("Can't read config.");
         settings.storage.storage_path = storage_dir.path().to_str().unwrap().to_string();
         std::env::set_var("RUST_LOG", log::Level::Debug.as_str());
         env_logger::init();
