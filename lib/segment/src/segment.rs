@@ -459,8 +459,8 @@ impl Segment {
     /// Check consistency of the segment's data and repair it if possible.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
         let mut needs_flushing = false;
-        let mut id_tracker = self.id_tracker.borrow_mut();
         for (vector_name, vector_storage) in self.vector_data.iter_mut() {
+            let mut id_tracker = self.id_tracker.borrow_mut();
             let mut vector_storage = vector_storage.vector_storage.borrow_mut();
             let mut internal_ids_to_delete = Vec::new();
             for internal_id in vector_storage.iter_ids() {
@@ -493,8 +493,6 @@ impl Segment {
                 needs_flushing = true;
             }
         }
-        // explicit drop to avoid `already mutably borrowed` error during flushing
-        drop(id_tracker);
         // flush entire segment if needed
         if needs_flushing {
             self.flush(true)?;
