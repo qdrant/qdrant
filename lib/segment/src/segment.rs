@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{remove_dir_all, rename, File};
+use std::fs::{self, remove_dir_all, rename, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -11,7 +11,7 @@ use rocksdb::DB;
 use tar::Builder;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
-use crate::common::version::StorageVersion;
+use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_vector_name, check_vectors_set};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
@@ -300,8 +300,33 @@ impl Segment {
     pub fn restore_snapshot(snapshot_path: &Path, segment_id: &str) -> OperationResult<()> {
         let segment_path = snapshot_path.parent().unwrap().join(segment_id);
         let archive_file = File::open(snapshot_path)?;
+
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(&segment_path)?;
+
+        let backup_path = segment_path.join("backup");
+
+        let mut backup_engine =
+            rocksdb::backup::BackupEngine::open(&Default::default(), &backup_path).unwrap();
+
+        // `BackupEngine::restore_*` removes all files in `segment_path`, so we have to call
+        // `BackupEngine::restore_*` first and then "move" segment.json and version.info
+        // to the `segment_path`.
+        backup_engine
+            .restore_from_latest_backup(&segment_path, &segment_path, &Default::default())
+            .unwrap();
+
+        fs::rename(
+            backup_path.join(SEGMENT_STATE_FILE),
+            segment_path.join(SEGMENT_STATE_FILE),
+        )?;
+        fs::rename(
+            backup_path.join(VERSION_FILE),
+            segment_path.join(VERSION_FILE),
+        )?;
+
+        fs::remove_dir_all(&backup_path)?;
+
         Ok(())
     }
 
@@ -1130,8 +1155,25 @@ impl SegmentEntry for Segment {
                 snapshot_dir_path
             )));
         }
+
         // flush segment to capture latest state
         self.flush(true)?;
+
+        let backup_path = self.current_path.join("backup");
+
+        {
+            let database = self.database.read();
+
+            if !backup_path.exists() {
+                fs::create_dir(&backup_path)?;
+            }
+
+            let mut backup_engine =
+                rocksdb::backup::BackupEngine::open(&Default::default(), &backup_path).unwrap();
+
+            backup_engine.create_new_backup(&database).unwrap();
+        }
+
         // extract segment id from current path
         let segment_id = self
             .current_path
@@ -1144,9 +1186,23 @@ impl SegmentEntry for Segment {
         // If `archive_path` exists, we still want to overwrite it
         let file = File::create(archive_path)?;
         let mut builder = Builder::new(file);
-        // archive recursively segment directory `current_path` into `archive_path`.
-        builder.append_dir_all(".", &self.current_path)?;
+
+        builder.append_dir_all("backup", &backup_path)?;
+
+        builder.append_path_with_name(
+            self.current_path.join(SEGMENT_STATE_FILE),
+            format!("backup/{SEGMENT_STATE_FILE}"),
+        )?;
+
+        builder.append_path_with_name(
+            self.current_path.join(VERSION_FILE),
+            format!("backup/{VERSION_FILE}"),
+        )?;
+
         builder.finish()?;
+
+        fs::remove_dir_all(&backup_path)?;
+
         Ok(())
     }
 
