@@ -422,4 +422,15 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(),
         }
     }
+
+    fn files(&self) -> Vec<PathBuf> {
+        if self.graph.is_some() {
+            vec![
+                GraphLayers::<TGraphLinks>::get_path(&self.path),
+                GraphLayers::<TGraphLinks>::get_links_path(&self.path),
+            ]
+        } else {
+            vec![]
+        }
+    }
 }

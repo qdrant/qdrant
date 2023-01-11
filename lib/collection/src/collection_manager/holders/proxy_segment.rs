@@ -718,7 +718,7 @@ impl SegmentEntry for ProxySegment {
         create_dir_all(&copy_target_dir)?;
 
         // copy proxy segment current wrapped data
-        let full_copy_path = wrapped_segment_guard.copy_segment_directory(&copy_target_dir)?;
+        let full_copy_path: PathBuf = todo!();
         // snapshot write_segment
         let write_segment_rw = self.write_segment.get();
         let write_segment_guard = write_segment_rw.read();
@@ -750,15 +750,6 @@ impl SegmentEntry for ProxySegment {
         // delete temporary copy
         remove_dir_all(copy_target_dir)?;
         Ok(())
-    }
-
-    /// This implementation delegates to the `wrapped_segment` copy directory
-    /// Other members from the proxy segment won't be copied!
-    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf> {
-        self.wrapped_segment
-            .get()
-            .read()
-            .copy_segment_directory(target_dir_path)
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {

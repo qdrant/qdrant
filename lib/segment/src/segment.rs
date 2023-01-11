@@ -3,9 +3,9 @@ use std::fs::{self, remove_dir_all, rename, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::{fmt, io};
 
 use atomic_refcell::AtomicRefCell;
-use fs_extra::dir::{copy_with_progress, CopyOptions, TransitProcess};
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
@@ -299,33 +299,40 @@ impl Segment {
 
     pub fn restore_snapshot(snapshot_path: &Path, segment_id: &str) -> OperationResult<()> {
         let segment_path = snapshot_path.parent().unwrap().join(segment_id);
-        let archive_file = File::open(snapshot_path)?;
 
-        let mut ar = tar::Archive::new(archive_file);
-        ar.unpack(&segment_path)?;
+        let archive_file = File::open(snapshot_path).map_err(|err| {
+            service_error(format!(
+                "failed to open segment snapshot archive {snapshot_path:?}: {err}"
+            ))
+        })?;
 
-        let backup_path = segment_path.join("backup");
+        tar::Archive::new(archive_file)
+            .unpack(&segment_path)
+            .map_err(|err| {
+                service_error(format!(
+                    "failed to unpack segment snapshot archive {snapshot_path:?}: {err}"
+                ))
+            })?;
 
-        let mut backup_engine =
-            rocksdb::backup::BackupEngine::open(&Default::default(), &backup_path).unwrap();
+        let snapshot_path = segment_path.join("snapshot");
 
-        // `BackupEngine::restore_*` removes all files in `segment_path`, so we have to call
-        // `BackupEngine::restore_*` first and then "move" segment.json and version.info
-        // to the `segment_path`.
-        backup_engine
-            .restore_from_latest_backup(&segment_path, &segment_path, &Default::default())
-            .unwrap();
+        let db_backup_path = snapshot_path.join("db_backup");
+        let payload_index_db_backup = snapshot_path.join("payload_index_db_backup");
 
-        fs::rename(
-            backup_path.join(SEGMENT_STATE_FILE),
-            segment_path.join(SEGMENT_STATE_FILE),
-        )?;
-        fs::rename(
-            backup_path.join(VERSION_FILE),
-            segment_path.join(VERSION_FILE),
-        )?;
+        crate::rocksdb_backup::restore(&db_backup_path, &segment_path)?;
 
-        fs::remove_dir_all(&backup_path)?;
+        if payload_index_db_backup.is_dir() {
+            StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, &segment_path)?;
+        }
+
+        let files_path = snapshot_path.join("files");
+        move_strip_prefix_all(&files_path, &segment_path, &files_path)?;
+
+        fs::remove_dir_all(&snapshot_path).map_err(|err| {
+            service_error(format!(
+                "failed to remove {snapshot_path:?} directory: {err}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -1143,111 +1150,92 @@ impl SegmentEntry for Segment {
             self.current_path,
             snapshot_dir_path
         );
+
         if !snapshot_dir_path.exists() {
-            return Err(OperationError::service_error(&format!(
-                "the snapshot path provided {:?} does not exist",
-                snapshot_dir_path
+            return Err(service_error(format!(
+                "the snapshot path {snapshot_dir_path:?} does not exist"
             )));
         }
+
         if !snapshot_dir_path.is_dir() {
-            return Err(OperationError::service_error(&format!(
-                "the snapshot path provided {:?} is not a directory",
-                snapshot_dir_path
+            return Err(service_error(format!(
+                "the snapshot path {snapshot_dir_path:?} is not a directory",
             )));
         }
 
         // flush segment to capture latest state
         self.flush(true)?;
 
-        let backup_path = self.current_path.join("backup");
+        let tmp_path = self.current_path.join("tmp");
+
+        let db_backup_path = tmp_path.join("db_backup");
+        let payload_index_db_backup_path = tmp_path.join("payload_index_db_backup");
 
         {
-            let database = self.database.read();
-
-            if !backup_path.exists() {
-                fs::create_dir(&backup_path)?;
-            }
-
-            let mut backup_engine =
-                rocksdb::backup::BackupEngine::open(&Default::default(), &backup_path).unwrap();
-
-            backup_engine.create_new_backup(&database).unwrap();
+            let db = self.database.read();
+            crate::rocksdb_backup::create(&db, &db_backup_path)?;
         }
 
-        // extract segment id from current path
+        self.payload_index
+            .borrow()
+            .take_database_snapshot(&payload_index_db_backup_path)?;
+
         let segment_id = self
             .current_path
             .file_stem()
             .and_then(|f| f.to_str())
             .unwrap();
-        let file_name = format!("{}.tar", segment_id);
-        let archive_path = snapshot_dir_path.join(file_name);
+
+        let archive_path = snapshot_dir_path.join(format!("{segment_id}.tar"));
 
         // If `archive_path` exists, we still want to overwrite it
-        let file = File::create(archive_path)?;
+        let file = File::create(&archive_path).map_err(|err| {
+            service_error(format!(
+                "failed to create segment snapshot archive {archive_path:?}: {err}"
+            ))
+        })?;
+
         let mut builder = Builder::new(file);
 
-        builder.append_dir_all("backup", &backup_path)?;
+        builder
+            .append_dir_all("snapshot", &tmp_path)
+            .map_err(|err| failed_to_append_error(&tmp_path, err))?;
 
-        builder.append_path_with_name(
-            self.current_path.join(SEGMENT_STATE_FILE),
-            format!("backup/{SEGMENT_STATE_FILE}"),
+        let files = Path::new("snapshot/files");
+
+        for vector_data in self.vector_data.values() {
+            for file in vector_data.vector_index.borrow().files() {
+                append_path_strip_prefix(&mut builder, &file, &files, &self.current_path)?;
+            }
+
+            for file in vector_data.vector_storage.borrow().files() {
+                append_path_strip_prefix(&mut builder, &file, &files, &self.current_path)?;
+            }
+        }
+
+        for file in self.payload_index.borrow().files() {
+            append_path_strip_prefix(&mut builder, &file, &files, &self.current_path)?;
+        }
+
+        append_path(
+            &mut builder,
+            &self.current_path.join(SEGMENT_STATE_FILE),
+            &files.join(SEGMENT_STATE_FILE),
         )?;
 
-        builder.append_path_with_name(
-            self.current_path.join(VERSION_FILE),
-            format!("backup/{VERSION_FILE}"),
+        append_path(
+            &mut builder,
+            &self.current_path.join(VERSION_FILE),
+            &files.join(VERSION_FILE),
         )?;
 
         builder.finish()?;
 
-        fs::remove_dir_all(&backup_path)?;
+        fs::remove_dir_all(&tmp_path).map_err(|err| {
+            service_error(format!("failed to remove {tmp_path:?} directory: {err}"))
+        })?;
 
         Ok(())
-    }
-
-    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf> {
-        log::info!(
-            "Copying segment {:?} into {:?}",
-            self.current_path,
-            target_dir_path
-        );
-        if !target_dir_path.exists() {
-            return Err(OperationError::service_error(&format!(
-                "the copy path provided {:?} does not exist",
-                target_dir_path
-            )));
-        }
-        if !target_dir_path.is_dir() {
-            return Err(OperationError::service_error(&format!(
-                "the copy path provided {:?} is not a directory",
-                target_dir_path
-            )));
-        }
-
-        // flush segment to capture latest state
-        self.flush(true)?;
-
-        let segment_id = self
-            .current_path
-            .file_stem()
-            .and_then(|f| f.to_str())
-            .unwrap();
-
-        let handle = |process_info: TransitProcess| {
-            log::debug!(
-                "Copying segment {} {}/{}",
-                segment_id,
-                process_info.copied_bytes,
-                process_info.total_bytes
-            );
-            fs_extra::dir::TransitProcessResult::ContinueOrAbort
-        };
-
-        let options = CopyOptions::new();
-        copy_with_progress(&self.current_path, target_dir_path, &options, handle)?;
-
-        Ok(target_dir_path.join(segment_id))
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
@@ -1273,6 +1261,88 @@ impl SegmentEntry for Segment {
 impl Drop for Segment {
     fn drop(&mut self) {
         let _lock = self.lock_flushing();
+    }
+}
+
+fn move_strip_prefix_all(dir: &Path, dest: &Path, prefix: &Path) -> OperationResult<()> {
+    let entries = dir
+        .read_dir()
+        .map_err(|err| failed_to_read_dir_error(dir, err))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|err| failed_to_read_dir_error(dir, err))?;
+
+        let path = entry.path();
+
+        let name =
+            strip_prefix(&path, prefix).map_err(|err| failed_to_move_error(&path, dest, err))?;
+
+        let dest = dest.join(&name);
+
+        if path.is_dir() && dest.exists() {
+            move_strip_prefix_all(&path, &dest, prefix)?;
+        } else {
+            if let Some(dir) = dest.parent() {
+                if !dir.exists() {
+                    fs::create_dir_all(dir).map_err(|err| {
+                        service_error(format!("failed to create {dir:?} directory: {err}"))
+                    })?;
+                }
+            }
+
+            fs::rename(&path, &dest).map_err(|err| failed_to_move_error(&name, &dest, err))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn failed_to_read_dir_error(dir: &Path, err: impl fmt::Display) -> OperationError {
+    service_error(format!("failed to read {dir:?} directory: {err}"))
+}
+
+fn failed_to_move_error(path: &Path, dest: &Path, err: impl fmt::Display) -> OperationError {
+    service_error(format!("failed to move {path:?} to {dest:?}: {err}"))
+}
+
+fn append_path_strip_prefix(
+    builder: &mut Builder<impl io::Write>,
+    path: &Path,
+    dest: &Path,
+    prefix: &Path,
+) -> OperationResult<()> {
+    let name = strip_prefix(path, prefix).map_err(|err| failed_to_append_error(path, err))?;
+    append_path(builder, path, &dest.join(name))
+}
+
+fn append_path(
+    builder: &mut Builder<impl io::Write>,
+    path: &Path,
+    dest: &Path,
+) -> OperationResult<()> {
+    builder
+        .append_path_with_name(path, dest)
+        .map_err(|err| failed_to_append_error(path, err))
+}
+
+fn failed_to_append_error(path: &Path, err: impl fmt::Display) -> OperationError {
+    service_error(format!(
+        "failed to append {path:?} path to the segment snapshot archive: {err}"
+    ))
+}
+
+fn strip_prefix<'a>(path: &'a Path, prefix: &Path) -> OperationResult<&'a Path> {
+    path.strip_prefix(prefix).map_err(|err| {
+        service_error(format!(
+            "failed to strip {prefix:?} prefix from {path:?}: {err}"
+        ))
+    })
+}
+
+fn service_error(description: impl Into<String>) -> OperationError {
+    OperationError::ServiceError {
+        description: description.into(),
+        backtrace: None,
     }
 }
 

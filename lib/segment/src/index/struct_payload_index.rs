@@ -283,6 +283,13 @@ impl StructPayloadIndex {
             })
             .collect()
     }
+
+    pub fn restore_database_snapshot(
+        snapshot_path: &Path,
+        segment_path: &Path,
+    ) -> OperationResult<()> {
+        crate::rocksdb_backup::restore(snapshot_path, &segment_path.join("payload_index"))
+    }
 }
 
 impl PayloadIndex for StructPayloadIndex {
@@ -490,5 +497,13 @@ impl PayloadIndex for StructPayloadIndex {
             Ok(false)
         })?;
         Ok(schema)
+    }
+
+    fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {
+        crate::rocksdb_backup::create(&self.db.read(), path)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.config_path()]
     }
 }

@@ -307,6 +307,10 @@ where
         let vector = self.get_vector(point).unwrap();
         self.score_points(&vector, points, top)
     }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.vectors_path.clone(), self.deleted_path.clone()]
+    }
 }
 
 #[cfg(test)]

@@ -321,6 +321,10 @@ where
         let vector = self.get_vector(point).unwrap();
         self.score_points(&vector, points, top)
     }
+
+    fn files(&self) -> Vec<std::path::PathBuf> {
+        vec![]
+    }
 }
 
 #[cfg(test)]
