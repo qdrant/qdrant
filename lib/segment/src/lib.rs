@@ -16,6 +16,7 @@ pub mod telemetry;
 pub mod data_types;
 #[allow(deprecated)]
 pub mod types;
+pub mod utils;
 pub mod vector_storage;
 
 #[macro_use]

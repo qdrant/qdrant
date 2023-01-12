@@ -3,7 +3,6 @@ use std::fs::{self, remove_dir_all, rename, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::{fmt, io};
 
 use atomic_refcell::AtomicRefCell;
 use parking_lot::{Mutex, RwLock};
@@ -30,6 +29,7 @@ use crate::types::{
     PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
     SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
+use crate::utils;
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -326,7 +326,7 @@ impl Segment {
         }
 
         let files_path = snapshot_path.join("files");
-        move_strip_prefix_all(&files_path, &segment_path, &files_path)?;
+        utils::fs::move_all(&files_path, &segment_path)?;
 
         fs::remove_dir_all(&snapshot_path).map_err(|err| {
             OperationError::service_error(format!(
@@ -1199,31 +1199,46 @@ impl SegmentEntry for Segment {
 
         builder
             .append_dir_all("snapshot", &tmp_path)
-            .map_err(|err| failed_to_append_error(&tmp_path, err))?;
+            .map_err(|err| utils::tar::failed_to_append_error(&tmp_path, err))?;
 
         let files = Path::new("snapshot/files");
 
         for vector_data in self.vector_data.values() {
             for file in vector_data.vector_index.borrow().files() {
-                append_path_strip_prefix(&mut builder, &file, files, &self.current_path)?;
+                utils::tar::append_file_relative_to_base(
+                    &mut builder,
+                    &self.current_path,
+                    &file,
+                    files,
+                )?;
             }
 
             for file in vector_data.vector_storage.borrow().files() {
-                append_path_strip_prefix(&mut builder, &file, files, &self.current_path)?;
+                utils::tar::append_file_relative_to_base(
+                    &mut builder,
+                    &self.current_path,
+                    &file,
+                    files,
+                )?;
             }
         }
 
         for file in self.payload_index.borrow().files() {
-            append_path_strip_prefix(&mut builder, &file, files, &self.current_path)?;
+            utils::tar::append_file_relative_to_base(
+                &mut builder,
+                &self.current_path,
+                &file,
+                files,
+            )?;
         }
 
-        append_path(
+        utils::tar::append_file(
             &mut builder,
             &self.current_path.join(SEGMENT_STATE_FILE),
             &files.join(SEGMENT_STATE_FILE),
         )?;
 
-        append_path(
+        utils::tar::append_file(
             &mut builder,
             &self.current_path.join(VERSION_FILE),
             &files.join(VERSION_FILE),
@@ -1262,83 +1277,6 @@ impl Drop for Segment {
     fn drop(&mut self) {
         let _lock = self.lock_flushing();
     }
-}
-
-fn move_strip_prefix_all(dir: &Path, dest: &Path, prefix: &Path) -> OperationResult<()> {
-    let entries = dir
-        .read_dir()
-        .map_err(|err| failed_to_read_dir_error(dir, err))?;
-
-    for entry in entries {
-        let entry = entry.map_err(|err| failed_to_read_dir_error(dir, err))?;
-
-        let path = entry.path();
-
-        let name =
-            strip_prefix(&path, prefix).map_err(|err| failed_to_move_error(&path, dest, err))?;
-
-        let dest = dest.join(name);
-
-        if path.is_dir() && dest.exists() {
-            move_strip_prefix_all(&path, &dest, prefix)?;
-        } else {
-            if let Some(dir) = dest.parent() {
-                if !dir.exists() {
-                    fs::create_dir_all(dir).map_err(|err| {
-                        OperationError::service_error(format!(
-                            "failed to create {dir:?} directory: {err}"
-                        ))
-                    })?;
-                }
-            }
-
-            fs::rename(&path, &dest).map_err(|err| failed_to_move_error(name, &dest, err))?;
-        }
-    }
-
-    Ok(())
-}
-
-fn failed_to_read_dir_error(dir: &Path, err: impl fmt::Display) -> OperationError {
-    OperationError::service_error(format!("failed to read {dir:?} directory: {err}"))
-}
-
-fn failed_to_move_error(path: &Path, dest: &Path, err: impl fmt::Display) -> OperationError {
-    OperationError::service_error(format!("failed to move {path:?} to {dest:?}: {err}"))
-}
-
-fn append_path_strip_prefix(
-    builder: &mut Builder<impl io::Write>,
-    path: &Path,
-    dest: &Path,
-    prefix: &Path,
-) -> OperationResult<()> {
-    let name = strip_prefix(path, prefix).map_err(|err| failed_to_append_error(path, err))?;
-    append_path(builder, path, &dest.join(name))
-}
-
-fn append_path(
-    builder: &mut Builder<impl io::Write>,
-    path: &Path,
-    dest: &Path,
-) -> OperationResult<()> {
-    builder
-        .append_path_with_name(path, dest)
-        .map_err(|err| failed_to_append_error(path, err))
-}
-
-fn failed_to_append_error(path: &Path, err: impl fmt::Display) -> OperationError {
-    OperationError::service_error(format!(
-        "failed to append {path:?} path to the segment snapshot archive: {err}"
-    ))
-}
-
-fn strip_prefix<'a>(path: &'a Path, prefix: &Path) -> OperationResult<&'a Path> {
-    path.strip_prefix(prefix).map_err(|err| {
-        OperationError::service_error(format!(
-            "failed to strip {prefix:?} prefix from {path:?}: {err}"
-        ))
-    })
 }
 
 #[cfg(test)]
