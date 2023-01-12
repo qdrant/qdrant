@@ -12,18 +12,28 @@ pub fn move_all(dir: &Path, dest_dir: &Path) -> OperationResult<()> {
     assert_is_dir(dir)?;
     assert_is_dir(dest_dir)?;
 
-    move_all_impl(dir, dir, dest_dir)
+    move_all_impl(dir, dir, dest_dir).map_err(|err| failed_to_move_error(dir, dest_dir, err))
 }
 
 fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()> {
-    let entries = dir
-        .read_dir()
-        .map_err(|err| failed_to_read_dir_error(dir, err))?;
+    let entries = dir.read_dir().map_err(|err| {
+        if base != dir {
+            failed_to_read_dir_error(dir, err)
+        } else {
+            err.into()
+        }
+    })?;
 
     for entry in entries {
-        let path = entry
-            .map_err(|err| failed_to_read_dir_error(dir, err))?
-            .path();
+        let entry = entry.map_err(|err| {
+            if base != dir {
+                failed_to_read_dir_error(dir, err)
+            } else {
+                err.into()
+            }
+        })?;
+
+        let path = entry.path();
 
         let name = utils::path::strip_prefix(&path, base)
             .map_err(|err| failed_to_move_error(&path, dest_dir, err))?;
@@ -36,14 +46,16 @@ fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()
             if let Some(dir) = dest.parent() {
                 if !dir.exists() {
                     fs::create_dir_all(dir).map_err(|err| {
-                        OperationError::service_error(format!(
-                            "failed to create {dir:?} directory: {err}"
-                        ))
+                        failed_to_move_error(
+                            &path,
+                            &dest,
+                            format!("failed to create {dir:?} directory: {err}"),
+                        )
                     })?;
                 }
             }
 
-            fs::rename(&path, &dest).map_err(|err| failed_to_move_error(name, &dest, err))?;
+            fs::rename(&path, &dest).map_err(|err| failed_to_move_error(&path, &dest, err))?;
         }
     }
 
