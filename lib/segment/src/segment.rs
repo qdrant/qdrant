@@ -1343,16 +1343,12 @@ fn strip_prefix<'a>(path: &'a Path, prefix: &Path) -> OperationResult<&'a Path> 
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
-    use tar::Archive;
     use tempfile::Builder;
-    use walkdir::WalkDir;
 
     use super::*;
     use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use crate::entry::entry_point::OperationError::PointIdError;
-    use crate::segment_constructor::build_segment;
+    use crate::segment_constructor::{build_segment, load_segment};
     use crate::types::{Distance, Indexes, SegmentConfig, StorageType, VectorDataConfig};
 
     // no longer valid since users are now allowed to store arbitrary json objects.
@@ -1564,32 +1560,19 @@ mod tests {
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
+
         segment
             .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
-        let payload: Payload = serde_json::from_str(data).unwrap();
-        segment.set_full_payload(0, 0.into(), &payload).unwrap();
-        segment.flush(true).unwrap();
-
-        // Recursively count all files and folders in directory and subdirectories:
-        let segment_file_count = WalkDir::new(segment.current_path.clone())
-            .into_iter()
-            .count();
-        assert_eq!(segment_file_count, 20);
+        segment
+            .set_full_payload(1, 0.into(), &serde_json::from_str(data).unwrap())
+            .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
 
         // snapshotting!
-        segment.take_snapshot(snapshot_dir.path()).unwrap();
-
-        // validate that single file has been created
-        let archive = fs::read_dir(snapshot_dir.path())
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path();
+        let archive = segment.take_snapshot(snapshot_dir.path()).unwrap();
         let archive_extension = archive.extension().unwrap();
         let archive_name = archive.file_name().unwrap().to_str().unwrap().to_string();
 
@@ -1604,20 +1587,27 @@ mod tests {
             .unwrap();
         assert!(archive_name.starts_with(segment_id));
 
-        // decompress archive
-        let snapshot_decompress_dir = Builder::new()
-            .prefix("snapshot_decompress_dir")
-            .tempdir()
-            .unwrap();
-        let archive_file = File::open(archive).unwrap();
-        let mut ar = Archive::new(archive_file);
-        ar.unpack(snapshot_decompress_dir.path()).unwrap();
+        // restore snapshot
+        Segment::restore_snapshot(&archive, segment_id).unwrap();
 
-        // validate the decompressed archive the same number of files as in the segment
-        let decompressed_file_count = WalkDir::new(snapshot_decompress_dir.path())
-            .into_iter()
-            .count();
-        assert_eq!(decompressed_file_count, segment_file_count);
+        let restored_segment = load_segment(&snapshot_dir.path().join(segment_id))
+            .unwrap()
+            .unwrap();
+
+        // validate restored snapshot is the same as original segment
+        assert_eq!(segment.vector_dims(), restored_segment.vector_dims());
+
+        assert_eq!(segment.points_count(), restored_segment.points_count());
+
+        for id in segment.iter_points() {
+            let vectors = segment.all_vectors(id).unwrap();
+            let restored_vectors = restored_segment.all_vectors(id).unwrap();
+            assert_eq!(vectors, restored_vectors);
+
+            let payload = segment.payload(id).unwrap();
+            let restored_payload = restored_segment.payload(id).unwrap();
+            assert_eq!(payload, restored_payload);
+        }
     }
 
     #[test]
