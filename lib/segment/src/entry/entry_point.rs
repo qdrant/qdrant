@@ -53,9 +53,9 @@ pub enum OperationError {
 }
 
 impl OperationError {
-    pub fn service_error(description: &str) -> OperationError {
+    pub fn service_error(description: impl Into<String>) -> OperationError {
         OperationError::ServiceError {
-            description: description.to_string(),
+            description: description.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
