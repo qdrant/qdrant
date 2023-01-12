@@ -22,6 +22,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::types::PeerAddressById;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::sleep;
 use tonic::transport::Uri;
 
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
@@ -29,6 +30,9 @@ use crate::settings::ConsensusConfig;
 use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
+
+const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
+const RECOVERY_MAX_RETRY_COUNT: usize = 3;
 
 pub enum Message {
     FromClient(ConsensusOperations),
@@ -296,30 +300,42 @@ impl Consensus {
         };
 
         if do_recover {
-            for (peer_id, peer_uri) in peer_to_uri {
-                let res = Self::add_peer_to_known_for(
-                    this_peer_id,
-                    peer_uri.clone(),
-                    uri.clone(),
-                    p2p_port,
-                    config,
-                )
-                .await;
-                if res.is_err() {
-                    log::warn!(
-                        "Failed to recover from peer with id {} at {} with error {:?}, trying others",
-                        peer_id,
-                        peer_uri,
-                        res
-                    );
-                } else {
-                    log::debug!(
-                        "Successfully recovered from peer with id {} at {}",
-                        peer_id,
-                        peer_uri
-                    );
-                    return Ok(());
+            let mut tries = RECOVERY_MAX_RETRY_COUNT;
+            while tries > 0 {
+                // Try to inform any peer about the change of address
+                for (peer_id, peer_uri) in &peer_to_uri {
+                    let res = Self::add_peer_to_known_for(
+                        this_peer_id,
+                        peer_uri.clone(),
+                        uri.clone(),
+                        p2p_port,
+                        config,
+                    )
+                    .await;
+                    if res.is_err() {
+                        log::warn!(
+                            "Failed to recover from peer with id {} at {} with error {:?}, trying others",
+                            peer_id,
+                            peer_uri,
+                            res
+                        );
+                    } else {
+                        log::debug!(
+                            "Successfully recovered from peer with id {} at {}",
+                            peer_id,
+                            peer_uri
+                        );
+                        return Ok(());
+                    }
                 }
+                tries -= 1;
+                log::warn!(
+                    "Retrying recovering from known peers (retry {})",
+                    RECOVERY_MAX_RETRY_COUNT - tries
+                );
+                let exp_timeout =
+                    RECOVERY_RETRY_TIMEOUT * (RECOVERY_MAX_RETRY_COUNT - tries) as u32;
+                sleep(exp_timeout).await;
             }
             log::error!("Failed to recover from any peer");
         }
