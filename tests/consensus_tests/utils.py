@@ -77,8 +77,8 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None) -> 
     grpc_port = get_port() if port is None else port + 1
     http_port = get_port() if port is None else port + 2
     env = get_env(p2p_port, grpc_port, http_port)
-    test_name = init_pytest_log_folder()
-    log_file = open(f"{test_name}/{log_file}", "w")
+    test_log_folder = init_pytest_log_folder()
+    log_file = open(f"{test_log_folder}/{log_file}", "w")
     print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
@@ -95,8 +95,8 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None) -> Tuple[str, str
     grpc_port = get_port() if port is None else port + 1
     http_port = get_port() if port is None else port + 2
     env = get_env(p2p_port, grpc_port, http_port)
-    test_name = init_pytest_log_folder()
-    log_file = open(f"{test_name}/{log_file}", "w")
+    test_log_folder = init_pytest_log_folder()
+    log_file = open(f"{test_log_folder}/{log_file}", "w")
     bootstrap_uri = get_uri(p2p_port)
     print(f"\nStarting first peer with uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
