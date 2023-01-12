@@ -327,7 +327,10 @@ impl Segment {
             crate::rocksdb_backup::restore(&db_backup_path, &segment_path)?;
 
             if payload_index_db_backup.is_dir() {
-                StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, &segment_path)?;
+                StructPayloadIndex::restore_database_snapshot(
+                    &payload_index_db_backup,
+                    &segment_path,
+                )?;
             }
 
             let files_path = snapshot_path.join(SNAPSHOT_FILES_PATH);
