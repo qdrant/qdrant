@@ -313,9 +313,15 @@ impl Consensus {
                         res
                     );
                 } else {
+                    log::debug!(
+                        "Successfully recovered from peer with id {} at {}",
+                        peer_id,
+                        peer_uri
+                    );
                     return Ok(());
                 }
             }
+            log::error!("Failed to recover from any peer");
         }
 
         Ok(())
