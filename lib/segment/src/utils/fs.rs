@@ -6,7 +6,7 @@ use crate::utils;
 
 /// Move all files and directories from the `dir` directory to the `dest_dir` directory.
 ///
-/// - `<dir>/child/directory` will be merged with `<dest-dir>/child/directory` if one alredy exists
+/// - `<dir>/child/directory` will be merged with `<dest-dir>/child/directory` if one already exists
 /// - `<dir>/some/file` will overwrite `<dest-dir>/some/file` if one already exists
 pub fn move_all(dir: &Path, dest_dir: &Path) -> OperationResult<()> {
     assert_is_dir(dir)?;
