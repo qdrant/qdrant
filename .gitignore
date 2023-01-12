@@ -3,4 +3,5 @@
 /.idea
 /storage
 /snapshots
+/consensus_test_logs
 *.log
