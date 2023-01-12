@@ -301,7 +301,7 @@ impl Segment {
         let segment_path = snapshot_path.parent().unwrap().join(segment_id);
 
         let archive_file = File::open(snapshot_path).map_err(|err| {
-            service_error(format!(
+            OperationError::service_error(format!(
                 "failed to open segment snapshot archive {snapshot_path:?}: {err}"
             ))
         })?;
@@ -309,7 +309,7 @@ impl Segment {
         tar::Archive::new(archive_file)
             .unpack(&segment_path)
             .map_err(|err| {
-                service_error(format!(
+                OperationError::service_error(format!(
                     "failed to unpack segment snapshot archive {snapshot_path:?}: {err}"
                 ))
             })?;
@@ -329,7 +329,7 @@ impl Segment {
         move_strip_prefix_all(&files_path, &segment_path, &files_path)?;
 
         fs::remove_dir_all(&snapshot_path).map_err(|err| {
-            service_error(format!(
+            OperationError::service_error(format!(
                 "failed to remove {snapshot_path:?} directory: {err}"
             ))
         })?;
@@ -1152,13 +1152,13 @@ impl SegmentEntry for Segment {
         );
 
         if !snapshot_dir_path.exists() {
-            return Err(service_error(format!(
+            return Err(OperationError::service_error(format!(
                 "the snapshot path {snapshot_dir_path:?} does not exist"
             )));
         }
 
         if !snapshot_dir_path.is_dir() {
-            return Err(service_error(format!(
+            return Err(OperationError::service_error(format!(
                 "the snapshot path {snapshot_dir_path:?} is not a directory",
             )));
         }
@@ -1190,7 +1190,7 @@ impl SegmentEntry for Segment {
 
         // If `archive_path` exists, we still want to overwrite it
         let file = File::create(&archive_path).map_err(|err| {
-            service_error(format!(
+            OperationError::service_error(format!(
                 "failed to create segment snapshot archive {archive_path:?}: {err}"
             ))
         })?;
@@ -1232,7 +1232,7 @@ impl SegmentEntry for Segment {
         builder.finish()?;
 
         fs::remove_dir_all(&tmp_path).map_err(|err| {
-            service_error(format!("failed to remove {tmp_path:?} directory: {err}"))
+            OperationError::service_error(format!("failed to remove {tmp_path:?} directory: {err}"))
         })?;
 
         Ok(archive_path)
@@ -1285,7 +1285,9 @@ fn move_strip_prefix_all(dir: &Path, dest: &Path, prefix: &Path) -> OperationRes
             if let Some(dir) = dest.parent() {
                 if !dir.exists() {
                     fs::create_dir_all(dir).map_err(|err| {
-                        service_error(format!("failed to create {dir:?} directory: {err}"))
+                        OperationError::service_error(format!(
+                            "failed to create {dir:?} directory: {err}"
+                        ))
                     })?;
                 }
             }
@@ -1298,11 +1300,11 @@ fn move_strip_prefix_all(dir: &Path, dest: &Path, prefix: &Path) -> OperationRes
 }
 
 fn failed_to_read_dir_error(dir: &Path, err: impl fmt::Display) -> OperationError {
-    service_error(format!("failed to read {dir:?} directory: {err}"))
+    OperationError::service_error(format!("failed to read {dir:?} directory: {err}"))
 }
 
 fn failed_to_move_error(path: &Path, dest: &Path, err: impl fmt::Display) -> OperationError {
-    service_error(format!("failed to move {path:?} to {dest:?}: {err}"))
+    OperationError::service_error(format!("failed to move {path:?} to {dest:?}: {err}"))
 }
 
 fn append_path_strip_prefix(
@@ -1326,24 +1328,17 @@ fn append_path(
 }
 
 fn failed_to_append_error(path: &Path, err: impl fmt::Display) -> OperationError {
-    service_error(format!(
+    OperationError::service_error(format!(
         "failed to append {path:?} path to the segment snapshot archive: {err}"
     ))
 }
 
 fn strip_prefix<'a>(path: &'a Path, prefix: &Path) -> OperationResult<&'a Path> {
     path.strip_prefix(prefix).map_err(|err| {
-        service_error(format!(
+        OperationError::service_error(format!(
             "failed to strip {prefix:?} prefix from {path:?}: {err}"
         ))
     })
-}
-
-fn service_error(description: impl Into<String>) -> OperationError {
-    OperationError::ServiceError {
-        description: description.into(),
-        backtrace: None,
-    }
 }
 
 #[cfg(test)]
