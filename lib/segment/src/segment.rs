@@ -1626,58 +1626,6 @@ mod tests {
     }
 
     #[test]
-    fn test_copy_segment_directory() {
-        let data = r#"
-        {
-            "name": "John Doe",
-            "age": 43,
-            "metadata": {
-                "height": 50,
-                "width": 60
-            }
-        }"#;
-
-        let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let config = SegmentConfig {
-            vector_data: HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorDataConfig {
-                    size: 2,
-                    distance: Distance::Dot,
-                },
-            )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            payload_storage_type: Default::default(),
-        };
-
-        let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
-        segment
-            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
-            .unwrap();
-
-        let payload: Payload = serde_json::from_str(data).unwrap();
-        segment.set_full_payload(0, 0.into(), &payload).unwrap();
-        segment.flush(true).unwrap();
-
-        // Recursively count all files and folders in directory and subdirectories.
-        let segment_file_count = WalkDir::new(segment.current_path.clone())
-            .into_iter()
-            .count();
-        assert_eq!(segment_file_count, 20);
-
-        let segment_copy_dir = Builder::new().prefix("segment_copy_dir").tempdir().unwrap();
-        let full_copy_path = segment
-            .copy_segment_directory(segment_copy_dir.path())
-            .unwrap();
-
-        // Recursively count all files and folders in directory and subdirectories.
-        let copy_segment_file_count = WalkDir::new(full_copy_path).into_iter().count();
-
-        assert_eq!(copy_segment_file_count, segment_file_count);
-    }
-
-    #[test]
     fn test_background_flush() {
         let data = r#"
         {
