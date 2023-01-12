@@ -62,8 +62,7 @@ jobs:
         with:
           name: consensus-test-logs
           retention-days: 90 # default max value
-          path: |
-            *.log
+          path: consensus_test_logs
       
   test-consensus-compose:
     
