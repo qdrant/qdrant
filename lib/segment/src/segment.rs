@@ -33,6 +33,10 @@ use crate::utils;
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
+const DB_BACKUP_PATH: &str = "db_backup";
+const PAYLOAD_DB_BACKUP_PATH: &str = "payload_index_db_backup";
+const SNAPSHOT_PATH: &str = "snapshot";
+const SNAPSHOT_FILES_PATH: &str = "files";
 
 pub struct SegmentVersion;
 
@@ -314,25 +318,30 @@ impl Segment {
                 ))
             })?;
 
-        let snapshot_path = segment_path.join("snapshot");
+        let snapshot_path = segment_path.join(SNAPSHOT_PATH);
 
-        let db_backup_path = snapshot_path.join("db_backup");
-        let payload_index_db_backup = snapshot_path.join("payload_index_db_backup");
+        if snapshot_path.exists() {
+            let db_backup_path = snapshot_path.join(DB_BACKUP_PATH);
+            let payload_index_db_backup = snapshot_path.join(PAYLOAD_DB_BACKUP_PATH);
 
-        crate::rocksdb_backup::restore(&db_backup_path, &segment_path)?;
+            crate::rocksdb_backup::restore(&db_backup_path, &segment_path)?;
 
-        if payload_index_db_backup.is_dir() {
-            StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, &segment_path)?;
+            if payload_index_db_backup.is_dir() {
+                StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, &segment_path)?;
+            }
+
+            let files_path = snapshot_path.join(SNAPSHOT_FILES_PATH);
+            utils::fs::move_all(&files_path, &segment_path)?;
+
+            remove_dir_all(&snapshot_path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to remove {snapshot_path:?} directory: {err}"
+                ))
+            })?;
+        } else {
+            log::info!("Attempt to restore legacy snapshot format");
+            // Do nothing, legacy format is just plain archive
         }
-
-        let files_path = snapshot_path.join("files");
-        utils::fs::move_all(&files_path, &segment_path)?;
-
-        fs::remove_dir_all(&snapshot_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to remove {snapshot_path:?} directory: {err}"
-            ))
-        })?;
 
         Ok(())
     }
@@ -1168,8 +1177,8 @@ impl SegmentEntry for Segment {
 
         let tmp_path = self.current_path.join("tmp");
 
-        let db_backup_path = tmp_path.join("db_backup");
-        let payload_index_db_backup_path = tmp_path.join("payload_index_db_backup");
+        let db_backup_path = tmp_path.join(DB_BACKUP_PATH);
+        let payload_index_db_backup_path = tmp_path.join(PAYLOAD_DB_BACKUP_PATH);
 
         {
             let db = self.database.read();
@@ -1198,10 +1207,10 @@ impl SegmentEntry for Segment {
         let mut builder = Builder::new(file);
 
         builder
-            .append_dir_all("snapshot", &tmp_path)
+            .append_dir_all(SNAPSHOT_PATH, &tmp_path)
             .map_err(|err| utils::tar::failed_to_append_error(&tmp_path, err))?;
 
-        let files = Path::new("snapshot/files");
+        let files = Path::new(SNAPSHOT_PATH).join(SNAPSHOT_FILES_PATH);
 
         for vector_data in self.vector_data.values() {
             for file in vector_data.vector_index.borrow().files() {
@@ -1209,7 +1218,7 @@ impl SegmentEntry for Segment {
                     &mut builder,
                     &self.current_path,
                     &file,
-                    files,
+                    &files,
                 )?;
             }
 
@@ -1218,7 +1227,7 @@ impl SegmentEntry for Segment {
                     &mut builder,
                     &self.current_path,
                     &file,
-                    files,
+                    &files,
                 )?;
             }
         }
@@ -1228,7 +1237,7 @@ impl SegmentEntry for Segment {
                 &mut builder,
                 &self.current_path,
                 &file,
-                files,
+                &files,
             )?;
         }
 
