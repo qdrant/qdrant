@@ -130,7 +130,7 @@ impl Segment {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
             if *failed_version < op_num {
-                return Err(OperationError::service_error(&format!(
+                return Err(OperationError::service_error(format!(
                     "Not recovered from previous error: {}",
                     error
                 )));
@@ -391,7 +391,7 @@ impl Segment {
             .map(|(point_id, scored_point_offset)| {
                 let point_offset = scored_point_offset.idx;
                 let point_version = id_tracker.internal_version(point_offset).ok_or_else(|| {
-                    OperationError::service_error(&format!(
+                    OperationError::service_error(format!(
                         "Corrupter id_tracker, no version for point {}",
                         point_id
                     ))
@@ -768,7 +768,7 @@ impl SegmentEntry for Segment {
         if let Some(vector) = vector_opt {
             Ok(vector)
         } else {
-            Err(OperationError::service_error(&format!(
+            Err(OperationError::service_error(format!(
                 "Vector {vector_name} not found at offset {internal_id}"
             )))
         }
@@ -1005,21 +1005,21 @@ impl SegmentEntry for Segment {
         let flush_op = move || {
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
-                OperationError::service_error(&format!(
+                OperationError::service_error(format!(
                     "Failed to flush id_tracker mapping: {}",
                     err
                 ))
             })?;
             for vector_storage_flusher in vector_storage_flushers {
                 vector_storage_flusher().map_err(|err| {
-                    OperationError::service_error(&format!(
+                    OperationError::service_error(format!(
                         "Failed to flush vector_storage: {}",
                         err
                     ))
                 })?;
             }
             payload_index_flusher().map_err(|err| {
-                OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
+                OperationError::service_error(format!("Failed to flush payload_index: {}", err))
             })?;
             // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
             // This is because vector_storage and payload_index flush are not atomic.
@@ -1028,13 +1028,13 @@ impl SegmentEntry for Segment {
             //  by simply overriding data in vector and payload storages.
             // Once versions are saved - points are considered persisted.
             id_tracker_versions_flusher().map_err(|err| {
-                OperationError::service_error(&format!(
+                OperationError::service_error(format!(
                     "Failed to flush id_tracker versions: {}",
                     err
                 ))
             })?;
             Self::save_state(&state, &current_path).map_err(|err| {
-                OperationError::service_error(&format!("Failed to flush segment state: {}", err))
+                OperationError::service_error(format!("Failed to flush segment state: {}", err))
             })?;
             *persisted_version.lock() = state.version;
 
@@ -1061,7 +1061,7 @@ impl SegmentEntry for Segment {
         deleted_path.set_extension("deleted");
         rename(&current_path, &deleted_path)?;
         remove_dir_all(&deleted_path).map_err(|err| {
-            OperationError::service_error(&format!(
+            OperationError::service_error(format!(
                 "Can't remove segment data at {}, error: {}",
                 deleted_path.to_str().unwrap_or_default(),
                 err

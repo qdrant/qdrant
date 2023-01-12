@@ -146,9 +146,8 @@ impl StructPayloadIndex {
             PayloadConfig::default()
         };
 
-        let db = open_db_with_existing_cf(path).map_err(|err| {
-            OperationError::service_error(&format!("RocksDB open error: {}", err))
-        })?;
+        let db = open_db_with_existing_cf(path)
+            .map_err(|err| OperationError::service_error(format!("RocksDB open error: {}", err)))?;
 
         let mut index = StructPayloadIndex {
             payload,
