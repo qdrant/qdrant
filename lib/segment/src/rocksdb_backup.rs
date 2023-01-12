@@ -13,7 +13,7 @@ pub fn create(db: &rocksdb::DB, backup_path: &Path) -> OperationResult<()> {
     }
 
     backup_engine(backup_path)?
-        .create_new_backup(&db)
+        .create_new_backup(db)
         .map_err(|err| service_error(format!("failed to create RocksDB backup: {err}")))
 }
 
@@ -24,7 +24,7 @@ pub fn restore(backup_path: &Path, restore_path: &Path) -> OperationResult<()> {
 }
 
 fn backup_engine(path: &Path) -> OperationResult<rocksdb::backup::BackupEngine> {
-    rocksdb::backup::BackupEngine::open(&Default::default(), &path).map_err(|err| {
+    rocksdb::backup::BackupEngine::open(&Default::default(), path).map_err(|err| {
         service_error(format!(
             "failed to open RocksDB backup engine {path:?}: {err}"
         ))
@@ -32,7 +32,7 @@ fn backup_engine(path: &Path) -> OperationResult<rocksdb::backup::BackupEngine> 
 }
 
 fn create_dir_all(path: &Path) -> OperationResult<()> {
-    fs::create_dir_all(&path).map_err(|err| {
+    fs::create_dir_all(path).map_err(|err| {
         service_error(format!(
             "failed to create RocksDB backup directory {path:?}: {err}"
         ))

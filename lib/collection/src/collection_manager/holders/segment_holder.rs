@@ -427,7 +427,7 @@ impl<'s> SegmentHolder {
         for segment in self.segments.values() {
             let segment_lock = segment.get();
             let read_segment = segment_lock.read();
-            read_segment.take_snapshot(snapshot_dir_path)?
+            read_segment.take_snapshot(snapshot_dir_path)?;
         }
         Ok(())
     }

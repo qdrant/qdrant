@@ -327,7 +327,7 @@ pub trait SegmentEntry {
     /// Take a snapshot of the segment.
     ///
     /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()>;
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf>;
 
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self) -> SegmentTelemetry;

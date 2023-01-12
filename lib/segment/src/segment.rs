@@ -1144,7 +1144,7 @@ impl SegmentEntry for Segment {
             .collect()
     }
 
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf> {
         log::debug!(
             "Taking snapshot of segment {:?} into {:?}",
             self.current_path,
@@ -1205,16 +1205,16 @@ impl SegmentEntry for Segment {
 
         for vector_data in self.vector_data.values() {
             for file in vector_data.vector_index.borrow().files() {
-                append_path_strip_prefix(&mut builder, &file, &files, &self.current_path)?;
+                append_path_strip_prefix(&mut builder, &file, files, &self.current_path)?;
             }
 
             for file in vector_data.vector_storage.borrow().files() {
-                append_path_strip_prefix(&mut builder, &file, &files, &self.current_path)?;
+                append_path_strip_prefix(&mut builder, &file, files, &self.current_path)?;
             }
         }
 
         for file in self.payload_index.borrow().files() {
-            append_path_strip_prefix(&mut builder, &file, &files, &self.current_path)?;
+            append_path_strip_prefix(&mut builder, &file, files, &self.current_path)?;
         }
 
         append_path(
@@ -1235,7 +1235,7 @@ impl SegmentEntry for Segment {
             service_error(format!("failed to remove {tmp_path:?} directory: {err}"))
         })?;
 
-        Ok(())
+        Ok(archive_path)
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
@@ -1277,7 +1277,7 @@ fn move_strip_prefix_all(dir: &Path, dest: &Path, prefix: &Path) -> OperationRes
         let name =
             strip_prefix(&path, prefix).map_err(|err| failed_to_move_error(&path, dest, err))?;
 
-        let dest = dest.join(&name);
+        let dest = dest.join(name);
 
         if path.is_dir() && dest.exists() {
             move_strip_prefix_all(&path, &dest, prefix)?;
@@ -1290,7 +1290,7 @@ fn move_strip_prefix_all(dir: &Path, dest: &Path, prefix: &Path) -> OperationRes
                 }
             }
 
-            fs::rename(&path, &dest).map_err(|err| failed_to_move_error(&name, &dest, err))?;
+            fs::rename(&path, &dest).map_err(|err| failed_to_move_error(name, &dest, err))?;
         }
     }
 

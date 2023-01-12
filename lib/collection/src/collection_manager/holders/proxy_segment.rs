@@ -11,6 +11,7 @@ use segment::entry::entry_point::{
     OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use segment::index::field_index::CardinalityEstimation;
+use segment::segment::Segment;
 use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
@@ -700,7 +701,7 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().vector_dims()
     }
 
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf> {
         log::info!(
             "Taking a snapshot of a proxy segment into {:?}",
             snapshot_dir_path
@@ -713,12 +714,28 @@ impl SegmentEntry for ProxySegment {
         // stable copy of the deleted points at the time of the snapshot
         let deleted_points_copy = deleted_points_guard.clone();
 
-        // create unique dir. to hold data copy of wrapped segment
-        let copy_target_dir = snapshot_dir_path.join(format!("segment_copy_{}", Uuid::new_v4()));
-        create_dir_all(&copy_target_dir)?;
+        // parse wrapped segment id from it's data path
+        let wrapped_segment_id = wrapped_segment_guard
+            .data_path()
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
 
-        // copy proxy segment current wrapped data
-        let full_copy_path: PathBuf = todo!();
+        // create temporary dir for operations on wrapped segment data
+        let tmp_dir_path = snapshot_dir_path.join(format!("segment_copy_{}", Uuid::new_v4()));
+        create_dir_all(&tmp_dir_path)?;
+
+        // snapshot wrapped segment data into the temporary dir
+        let archive_path = wrapped_segment_guard.take_snapshot(&tmp_dir_path)?;
+
+        // restore a copy of the wrapped segment data into the temporary dir
+        Segment::restore_snapshot(&archive_path, &wrapped_segment_id)?;
+
+        // build a path to a copy of the wrapped segment data
+        let full_copy_path = tmp_dir_path.join(&wrapped_segment_id);
+
         // snapshot write_segment
         let write_segment_rw = self.write_segment.get();
         let write_segment_guard = write_segment_rw.read();
@@ -744,12 +761,16 @@ impl SegmentEntry for ProxySegment {
         for deleted_point in deleted_points_copy {
             in_memory_wrapped_segment.delete_point(write_segment_version, deleted_point)?;
         }
-        in_memory_wrapped_segment.take_snapshot(snapshot_dir_path)?;
+
+        let archive_path = in_memory_wrapped_segment.take_snapshot(snapshot_dir_path)?;
+
         // release segment resources
         drop(in_memory_wrapped_segment);
+
         // delete temporary copy
-        remove_dir_all(copy_target_dir)?;
-        Ok(())
+        remove_dir_all(tmp_dir_path)?;
+
+        Ok(archive_path)
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
