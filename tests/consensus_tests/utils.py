@@ -58,13 +58,27 @@ def get_qdrant_exec() -> str:
     return qdrant_exec
 
 
+def get_pytest_current_test_name() -> str:
+    # https://docs.pytest.org/en/latest/example/simple.html#pytest-current-test-environment-variable
+    return os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
+
+
+def init_pytest_log_folder() -> str:
+    test_name = get_pytest_current_test_name()
+    log_folder = f"consensus_test_logs/{test_name}"
+    if not os.path.exists(log_folder):
+        os.makedirs(log_folder)
+    return log_folder
+
+
 # Starts a peer and returns its api_uri
 def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None) -> str:
     p2p_port = get_port() if port is None else port + 0
     grpc_port = get_port() if port is None else port + 1
     http_port = get_port() if port is None else port + 2
     env = get_env(p2p_port, grpc_port, http_port)
-    log_file = open(log_file, "w")
+    test_log_folder = init_pytest_log_folder()
+    log_file = open(f"{test_log_folder}/{log_file}", "w")
     print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
@@ -81,7 +95,8 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None) -> Tuple[str, str
     grpc_port = get_port() if port is None else port + 1
     http_port = get_port() if port is None else port + 2
     env = get_env(p2p_port, grpc_port, http_port)
-    log_file = open(log_file, "w")
+    test_log_folder = init_pytest_log_folder()
+    log_file = open(f"{test_log_folder}/{log_file}", "w")
     bootstrap_uri = get_uri(p2p_port)
     print(f"\nStarting first peer with uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
