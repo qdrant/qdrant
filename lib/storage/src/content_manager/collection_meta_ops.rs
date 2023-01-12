@@ -88,6 +88,13 @@ impl From<RenameAlias> for AliasOperations {
 /// Operation for creating new collection and (optionally) specify index params
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
+pub struct InitFrom {
+    pub collection: CollectionId,
+}
+
+/// Operation for creating new collection and (optionally) specify index params
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
     /// Vector data config.
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
@@ -120,6 +127,9 @@ pub struct CreateCollection {
     pub wal_config: Option<WalConfigDiff>,
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
     pub optimizers_config: Option<OptimizersConfigDiff>,
+    /// Specify other collection to copy data from.
+    #[serde(default)]
+    pub init_from: Option<InitFrom>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params

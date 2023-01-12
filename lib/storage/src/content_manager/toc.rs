@@ -258,6 +258,7 @@ impl TableOfContent {
             optimizers_config: optimizers_config_diff,
             replication_factor,
             write_consistency_factor,
+            init_from: _init_from,
         } = operation;
 
         self.collections
