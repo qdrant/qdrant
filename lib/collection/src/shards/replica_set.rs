@@ -678,11 +678,9 @@ impl ShardReplicaSet {
 
     pub(crate) async fn get_telemetry_data(&self) -> ReplicaSetTelemetry {
         let local_shard = self.local.read().await;
-        let local = if let Some(local_shard) = &*local_shard {
-            Some(local_shard.get_telemetry_data().await)
-        } else {
-            None
-        };
+        let local = local_shard
+            .as_ref()
+            .map(|local_shard| local_shard.get_telemetry_data());
         ReplicaSetTelemetry {
             id: self.shard_id,
             local,
@@ -699,7 +697,7 @@ impl ShardReplicaSet {
 
     /// Returns if local shard was recovered from path
     pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
-        if LocalShard::check_data(replica_path).await {
+        if LocalShard::check_data(replica_path) {
             let mut local = self.local.write().await;
             let removed_local = local.take();
 

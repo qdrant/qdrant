@@ -128,8 +128,8 @@ impl ForwardProxyShard {
         self.wrapped_shard.on_optimizer_config_update().await
     }
 
-    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
-        self.wrapped_shard.get_telemetry_data().await
+    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
+        self.wrapped_shard.get_telemetry_data()
     }
 
     /// Forward `before_drop` to `wrapped_shard`
