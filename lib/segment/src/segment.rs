@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, remove_dir_all, rename, File};
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -33,9 +33,12 @@ use crate::utils;
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
+
+const SNAPSHOT_PATH: &str = "snapshot";
+
+// Sub-directories of `SNAPSHOT_PATH`:
 const DB_BACKUP_PATH: &str = "db_backup";
 const PAYLOAD_DB_BACKUP_PATH: &str = "payload_index_db_backup";
-const SNAPSHOT_PATH: &str = "snapshot";
 const SNAPSHOT_FILES_PATH: &str = "files";
 
 pub struct SegmentVersion;
@@ -336,7 +339,7 @@ impl Segment {
             let files_path = snapshot_path.join(SNAPSHOT_FILES_PATH);
             utils::fs::move_all(&files_path, &segment_path)?;
 
-            remove_dir_all(&snapshot_path).map_err(|err| {
+            fs::remove_dir_all(&snapshot_path).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to remove {snapshot_path:?} directory: {err}"
                 ))
@@ -1071,8 +1074,8 @@ impl SegmentEntry for Segment {
         drop(self);
         let mut deleted_path = current_path.clone();
         deleted_path.set_extension("deleted");
-        rename(&current_path, &deleted_path)?;
-        remove_dir_all(&deleted_path).map_err(|err| {
+        fs::rename(&current_path, &deleted_path)?;
+        fs::remove_dir_all(&deleted_path).map_err(|err| {
             OperationError::service_error(format!(
                 "Can't remove segment data at {}, error: {}",
                 deleted_path.to_str().unwrap_or_default(),
