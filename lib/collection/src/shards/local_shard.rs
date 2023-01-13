@@ -559,18 +559,17 @@ impl LocalShard {
     }
 
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
-        let segments: Vec<_> = self
-            .segments()
-            .read()
+        let segments_read_guard = self.segments.read();
+        let segments: Vec<_> = segments_read_guard
             .iter()
             .map(|(_id, segment)| segment.get().read().get_telemetry_data())
             .collect();
 
-        let optimizer_status = match &self.segments().read().optimizer_errors {
+        let optimizer_status = match &segments_read_guard.optimizer_errors {
             None => OptimizersStatus::Ok,
             Some(error) => OptimizersStatus::Error(error.to_string()),
         };
-
+        drop(segments_read_guard);
         let optimizations = self
             .optimizers
             .iter()
