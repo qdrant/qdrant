@@ -54,7 +54,7 @@ fn create_segment(
         .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name))
         .collect();
     let database = open_db(segment_path, &vector_db_names)
-        .map_err(|err| OperationError::service_error(&format!("RocksDB open error: {}", err)))?;
+        .map_err(|err| OperationError::service_error(format!("RocksDB open error: {}", err)))?;
 
     let payload_storage = match config.payload_storage_type {
         PayloadStorageType::InMemory => sp(SimplePayloadStorage::open(database.clone())?.into()),
@@ -169,7 +169,7 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
 
         if stored_version > app_version {
-            return Err(OperationError::service_error(&format!(
+            return Err(OperationError::service_error(format!(
                 "Data version {} is newer than application version {}. \
                 Please upgrade the application. Compatibility is not guaranteed.",
                 stored_version, app_version
@@ -177,7 +177,7 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
         }
 
         if stored_version.major == 0 && stored_version.minor < 3 {
-            return Err(OperationError::service_error(&format!(
+            return Err(OperationError::service_error(format!(
                 "Segment version({}) is not compatible with current version({})",
                 stored_version, app_version
             )));
@@ -273,7 +273,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
             }
         })
         .map_err(|err| {
-            OperationError::service_error(&format!(
+            OperationError::service_error(format!(
                 "Failed to read segment {}. Error: {}",
                 path.to_str().unwrap(),
                 err

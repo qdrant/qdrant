@@ -53,9 +53,9 @@ pub enum OperationError {
 }
 
 impl OperationError {
-    pub fn service_error(description: &str) -> OperationError {
+    pub fn service_error(description: impl Into<String>) -> OperationError {
         OperationError::ServiceError {
-            description: description.to_string(),
+            description: description.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -100,13 +100,13 @@ impl From<FileStorageError> for OperationError {
     fn from(err: FileStorageError) -> Self {
         match err {
             FileStorageError::IoError { description } => {
-                OperationError::service_error(&format!("IO Error: {}", description))
+                OperationError::service_error(format!("IO Error: {}", description))
             }
             FileStorageError::UserAtomicIoError => {
                 OperationError::service_error("Unknown atomic write error")
             }
             FileStorageError::GenericError { description } => {
-                OperationError::service_error(&description)
+                OperationError::service_error(description)
             }
         }
     }
@@ -114,7 +114,7 @@ impl From<FileStorageError> for OperationError {
 
 impl From<serde_cbor::Error> for OperationError {
     fn from(err: serde_cbor::Error) -> Self {
-        OperationError::service_error(&format!("Failed to parse data: {}", err))
+        OperationError::service_error(format!("Failed to parse data: {}", err))
     }
 }
 
@@ -131,19 +131,19 @@ impl<E> From<AtomicIoError<E>> for OperationError {
 
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
-        OperationError::service_error(&format!("IO Error: {}", err))
+        OperationError::service_error(format!("IO Error: {}", err))
     }
 }
 
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
-        OperationError::service_error(&format!("Json error: {}", err))
+        OperationError::service_error(format!("Json error: {}", err))
     }
 }
 
 impl From<fs_extra::error::Error> for OperationError {
     fn from(err: fs_extra::error::Error) -> Self {
-        OperationError::service_error(&format!("File system error: {}", err))
+        OperationError::service_error(format!("File system error: {}", err))
     }
 }
 
@@ -327,12 +327,7 @@ pub trait SegmentEntry {
     /// Take a snapshot of the segment.
     ///
     /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()>;
-
-    /// Copy the segment directory structure into `target_dir_path`
-    ///
-    /// Return the `Path` of the copy
-    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf>;
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf>;
 
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self) -> SegmentTelemetry;

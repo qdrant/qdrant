@@ -123,7 +123,7 @@ impl DatabaseColumnWrapper {
         let cf_handle = self.get_column_family(&db)?;
         db.put_cf_opt(cf_handle, key, value, &Self::get_write_options())
             .map_err(|err| {
-                OperationError::service_error(&format!("RocksDB put_cf error: {}", err))
+                OperationError::service_error(format!("RocksDB put_cf error: {}", err))
             })?;
         Ok(())
     }
@@ -137,7 +137,7 @@ impl DatabaseColumnWrapper {
         let result = db
             .get_pinned_cf(cf_handle, key)
             .map_err(|err| {
-                OperationError::service_error(&format!("RocksDB get_pinned_cf error: {}", err))
+                OperationError::service_error(format!("RocksDB get_pinned_cf error: {}", err))
             })?
             .map(|value| f(&value));
         Ok(result)
@@ -150,7 +150,7 @@ impl DatabaseColumnWrapper {
         let db = self.database.read();
         let cf_handle = self.get_column_family(&db)?;
         db.delete_cf(cf_handle, key).map_err(|err| {
-            OperationError::service_error(&format!("RocksDB delete_cf error: {}", err))
+            OperationError::service_error(format!("RocksDB delete_cf error: {}", err))
         })?;
         Ok(())
     }
@@ -168,14 +168,14 @@ impl DatabaseColumnWrapper {
         Box::new(move || {
             let db = database.read();
             let column_family = db.cf_handle(&column_name).ok_or_else(|| {
-                OperationError::service_error(&format!(
+                OperationError::service_error(format!(
                     "RocksDB cf_handle error: Cannot find column family {}",
                     &column_name
                 ))
             })?;
 
             db.flush_cf(column_family).map_err(|err| {
-                OperationError::service_error(&format!("RocksDB flush_cf error: {}", err))
+                OperationError::service_error(format!("RocksDB flush_cf error: {}", err))
             })?;
             Ok(())
         })
@@ -186,7 +186,7 @@ impl DatabaseColumnWrapper {
         if db.cf_handle(&self.column_name).is_none() {
             db.create_cf(&self.column_name, &db_options())
                 .map_err(|err| {
-                    OperationError::service_error(&format!("RocksDB create_cf error: {}", err))
+                    OperationError::service_error(format!("RocksDB create_cf error: {}", err))
                 })?;
         }
         Ok(())
@@ -201,7 +201,7 @@ impl DatabaseColumnWrapper {
         let mut db = self.database.write();
         if db.cf_handle(&self.column_name).is_some() {
             db.drop_cf(&self.column_name).map_err(|err| {
-                OperationError::service_error(&format!("RocksDB drop_cf error: {}", err))
+                OperationError::service_error(format!("RocksDB drop_cf error: {}", err))
             })?;
         }
         Ok(())
@@ -224,7 +224,7 @@ impl DatabaseColumnWrapper {
         db: &'a parking_lot::RwLockReadGuard<'b, DB>,
     ) -> OperationResult<&'a ColumnFamily> {
         db.cf_handle(&self.column_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
+            OperationError::service_error(format!(
                 "RocksDB cf_handle error: Cannot find column family {}",
                 &self.column_name
             ))
@@ -241,7 +241,7 @@ impl<'a> LockedDatabaseColumnWrapper<'a> {
 impl<'a> DatabaseColumnIterator<'a> {
     pub fn new(db: &'a DB, column_name: &str) -> OperationResult<DatabaseColumnIterator<'a>> {
         let handle = db.cf_handle(column_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
+            OperationError::service_error(format!(
                 "RocksDB cf_handle error: Cannot find column family {}",
                 column_name
             ))

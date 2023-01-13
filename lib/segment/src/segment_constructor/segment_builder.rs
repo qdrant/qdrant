@@ -84,7 +84,7 @@ impl SegmentBuilder {
 
                 if vector_storages.len() != other_vector_storages.len() {
                     return Err(OperationError::service_error(
-                        &format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
+                        format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
                     ));
                 }
 
@@ -93,7 +93,7 @@ impl SegmentBuilder {
                     check_process_stopped(stopped)?;
                     let other_vector_storage = other_vector_storages.get(vector_name);
                     if other_vector_storage.is_none() {
-                        return Err(OperationError::service_error(&format!(
+                        return Err(OperationError::service_error(format!(
                             "Cannot update from other segment because if missing vector name {}",
                             vector_name
                         )));
@@ -200,7 +200,7 @@ impl SegmentBuilder {
             .describe("Moving segment data after optimization")?;
 
         load_segment(&self.destination_path)?.ok_or_else(|| {
-            OperationError::service_error(&format!(
+            OperationError::service_error(format!(
                 "Segment loading error: {}",
                 self.destination_path.display()
             ))

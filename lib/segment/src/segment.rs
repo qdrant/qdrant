@@ -1,17 +1,16 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{remove_dir_all, rename, File};
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use atomic_refcell::AtomicRefCell;
-use fs_extra::dir::{copy_with_progress, CopyOptions, TransitProcess};
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
-use crate::common::version::StorageVersion;
+use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_vector_name, check_vectors_set};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
@@ -30,9 +29,17 @@ use crate::types::{
     PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
     SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
+use crate::utils;
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
+
+const SNAPSHOT_PATH: &str = "snapshot";
+
+// Sub-directories of `SNAPSHOT_PATH`:
+const DB_BACKUP_PATH: &str = "db_backup";
+const PAYLOAD_DB_BACKUP_PATH: &str = "payload_index_db_backup";
+const SNAPSHOT_FILES_PATH: &str = "files";
 
 pub struct SegmentVersion;
 
@@ -130,7 +137,7 @@ impl Segment {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
             if *failed_version < op_num {
-                return Err(OperationError::service_error(&format!(
+                return Err(OperationError::service_error(format!(
                     "Not recovered from previous error: {}",
                     error
                 )));
@@ -299,9 +306,49 @@ impl Segment {
 
     pub fn restore_snapshot(snapshot_path: &Path, segment_id: &str) -> OperationResult<()> {
         let segment_path = snapshot_path.parent().unwrap().join(segment_id);
-        let archive_file = File::open(snapshot_path)?;
-        let mut ar = tar::Archive::new(archive_file);
-        ar.unpack(&segment_path)?;
+
+        let archive_file = File::open(snapshot_path).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to open segment snapshot archive {snapshot_path:?}: {err}"
+            ))
+        })?;
+
+        tar::Archive::new(archive_file)
+            .unpack(&segment_path)
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to unpack segment snapshot archive {snapshot_path:?}: {err}"
+                ))
+            })?;
+
+        let snapshot_path = segment_path.join(SNAPSHOT_PATH);
+
+        if snapshot_path.exists() {
+            let db_backup_path = snapshot_path.join(DB_BACKUP_PATH);
+            let payload_index_db_backup = snapshot_path.join(PAYLOAD_DB_BACKUP_PATH);
+
+            crate::rocksdb_backup::restore(&db_backup_path, &segment_path)?;
+
+            if payload_index_db_backup.is_dir() {
+                StructPayloadIndex::restore_database_snapshot(
+                    &payload_index_db_backup,
+                    &segment_path,
+                )?;
+            }
+
+            let files_path = snapshot_path.join(SNAPSHOT_FILES_PATH);
+            utils::fs::move_all(&files_path, &segment_path)?;
+
+            fs::remove_dir_all(&snapshot_path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to remove {snapshot_path:?} directory: {err}"
+                ))
+            })?;
+        } else {
+            log::info!("Attempt to restore legacy snapshot format");
+            // Do nothing, legacy format is just plain archive
+        }
+
         Ok(())
     }
 
@@ -359,7 +406,7 @@ impl Segment {
             .map(|(point_id, scored_point_offset)| {
                 let point_offset = scored_point_offset.idx;
                 let point_version = id_tracker.internal_version(point_offset).ok_or_else(|| {
-                    OperationError::service_error(&format!(
+                    OperationError::service_error(format!(
                         "Corrupter id_tracker, no version for point {}",
                         point_id
                     ))
@@ -736,7 +783,7 @@ impl SegmentEntry for Segment {
         if let Some(vector) = vector_opt {
             Ok(vector)
         } else {
-            Err(OperationError::service_error(&format!(
+            Err(OperationError::service_error(format!(
                 "Vector {vector_name} not found at offset {internal_id}"
             )))
         }
@@ -973,21 +1020,21 @@ impl SegmentEntry for Segment {
         let flush_op = move || {
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
-                OperationError::service_error(&format!(
+                OperationError::service_error(format!(
                     "Failed to flush id_tracker mapping: {}",
                     err
                 ))
             })?;
             for vector_storage_flusher in vector_storage_flushers {
                 vector_storage_flusher().map_err(|err| {
-                    OperationError::service_error(&format!(
+                    OperationError::service_error(format!(
                         "Failed to flush vector_storage: {}",
                         err
                     ))
                 })?;
             }
             payload_index_flusher().map_err(|err| {
-                OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
+                OperationError::service_error(format!("Failed to flush payload_index: {}", err))
             })?;
             // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
             // This is because vector_storage and payload_index flush are not atomic.
@@ -996,13 +1043,13 @@ impl SegmentEntry for Segment {
             //  by simply overriding data in vector and payload storages.
             // Once versions are saved - points are considered persisted.
             id_tracker_versions_flusher().map_err(|err| {
-                OperationError::service_error(&format!(
+                OperationError::service_error(format!(
                     "Failed to flush id_tracker versions: {}",
                     err
                 ))
             })?;
             Self::save_state(&state, &current_path).map_err(|err| {
-                OperationError::service_error(&format!("Failed to flush segment state: {}", err))
+                OperationError::service_error(format!("Failed to flush segment state: {}", err))
             })?;
             *persisted_version.lock() = state.version;
 
@@ -1027,9 +1074,9 @@ impl SegmentEntry for Segment {
         drop(self);
         let mut deleted_path = current_path.clone();
         deleted_path.set_extension("deleted");
-        rename(&current_path, &deleted_path)?;
-        remove_dir_all(&deleted_path).map_err(|err| {
-            OperationError::service_error(&format!(
+        fs::rename(&current_path, &deleted_path)?;
+        fs::remove_dir_all(&deleted_path).map_err(|err| {
+            OperationError::service_error(format!(
                 "Can't remove segment data at {}, error: {}",
                 deleted_path.to_str().unwrap_or_default(),
                 err
@@ -1112,86 +1159,113 @@ impl SegmentEntry for Segment {
             .collect()
     }
 
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf> {
         log::debug!(
             "Taking snapshot of segment {:?} into {:?}",
             self.current_path,
             snapshot_dir_path
         );
+
         if !snapshot_dir_path.exists() {
-            return Err(OperationError::service_error(&format!(
-                "the snapshot path provided {:?} does not exist",
-                snapshot_dir_path
+            return Err(OperationError::service_error(format!(
+                "the snapshot path {snapshot_dir_path:?} does not exist"
             )));
         }
+
         if !snapshot_dir_path.is_dir() {
-            return Err(OperationError::service_error(&format!(
-                "the snapshot path provided {:?} is not a directory",
-                snapshot_dir_path
+            return Err(OperationError::service_error(format!(
+                "the snapshot path {snapshot_dir_path:?} is not a directory",
             )));
         }
+
         // flush segment to capture latest state
         self.flush(true)?;
-        // extract segment id from current path
+
+        let tmp_path = self.current_path.join("tmp");
+
+        let db_backup_path = tmp_path.join(DB_BACKUP_PATH);
+        let payload_index_db_backup_path = tmp_path.join(PAYLOAD_DB_BACKUP_PATH);
+
+        {
+            let db = self.database.read();
+            crate::rocksdb_backup::create(&db, &db_backup_path)?;
+        }
+
+        self.payload_index
+            .borrow()
+            .take_database_snapshot(&payload_index_db_backup_path)?;
+
         let segment_id = self
             .current_path
             .file_stem()
             .and_then(|f| f.to_str())
             .unwrap();
-        let file_name = format!("{}.tar", segment_id);
-        let archive_path = snapshot_dir_path.join(file_name);
+
+        let archive_path = snapshot_dir_path.join(format!("{segment_id}.tar"));
 
         // If `archive_path` exists, we still want to overwrite it
-        let file = File::create(archive_path)?;
+        let file = File::create(&archive_path).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to create segment snapshot archive {archive_path:?}: {err}"
+            ))
+        })?;
+
         let mut builder = Builder::new(file);
-        // archive recursively segment directory `current_path` into `archive_path`.
-        builder.append_dir_all(".", &self.current_path)?;
+
+        builder
+            .append_dir_all(SNAPSHOT_PATH, &tmp_path)
+            .map_err(|err| utils::tar::failed_to_append_error(&tmp_path, err))?;
+
+        let files = Path::new(SNAPSHOT_PATH).join(SNAPSHOT_FILES_PATH);
+
+        for vector_data in self.vector_data.values() {
+            for file in vector_data.vector_index.borrow().files() {
+                utils::tar::append_file_relative_to_base(
+                    &mut builder,
+                    &self.current_path,
+                    &file,
+                    &files,
+                )?;
+            }
+
+            for file in vector_data.vector_storage.borrow().files() {
+                utils::tar::append_file_relative_to_base(
+                    &mut builder,
+                    &self.current_path,
+                    &file,
+                    &files,
+                )?;
+            }
+        }
+
+        for file in self.payload_index.borrow().files() {
+            utils::tar::append_file_relative_to_base(
+                &mut builder,
+                &self.current_path,
+                &file,
+                &files,
+            )?;
+        }
+
+        utils::tar::append_file(
+            &mut builder,
+            &self.current_path.join(SEGMENT_STATE_FILE),
+            &files.join(SEGMENT_STATE_FILE),
+        )?;
+
+        utils::tar::append_file(
+            &mut builder,
+            &self.current_path.join(VERSION_FILE),
+            &files.join(VERSION_FILE),
+        )?;
+
         builder.finish()?;
-        Ok(())
-    }
 
-    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf> {
-        log::info!(
-            "Copying segment {:?} into {:?}",
-            self.current_path,
-            target_dir_path
-        );
-        if !target_dir_path.exists() {
-            return Err(OperationError::service_error(&format!(
-                "the copy path provided {:?} does not exist",
-                target_dir_path
-            )));
-        }
-        if !target_dir_path.is_dir() {
-            return Err(OperationError::service_error(&format!(
-                "the copy path provided {:?} is not a directory",
-                target_dir_path
-            )));
-        }
+        fs::remove_dir_all(&tmp_path).map_err(|err| {
+            OperationError::service_error(format!("failed to remove {tmp_path:?} directory: {err}"))
+        })?;
 
-        // flush segment to capture latest state
-        self.flush(true)?;
-
-        let segment_id = self
-            .current_path
-            .file_stem()
-            .and_then(|f| f.to_str())
-            .unwrap();
-
-        let handle = |process_info: TransitProcess| {
-            log::debug!(
-                "Copying segment {} {}/{}",
-                segment_id,
-                process_info.copied_bytes,
-                process_info.total_bytes
-            );
-            fs_extra::dir::TransitProcessResult::ContinueOrAbort
-        };
-
-        let options = CopyOptions::new();
-        copy_with_progress(&self.current_path, target_dir_path, &options, handle)?;
-
-        Ok(target_dir_path.join(segment_id))
+        Ok(archive_path)
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
@@ -1222,16 +1296,12 @@ impl Drop for Segment {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
-    use tar::Archive;
     use tempfile::Builder;
-    use walkdir::WalkDir;
 
     use super::*;
     use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use crate::entry::entry_point::OperationError::PointIdError;
-    use crate::segment_constructor::build_segment;
+    use crate::segment_constructor::{build_segment, load_segment};
     use crate::types::{Distance, Indexes, SegmentConfig, StorageType, VectorDataConfig};
 
     // no longer valid since users are now allowed to store arbitrary json objects.
@@ -1443,32 +1513,19 @@ mod tests {
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
+
         segment
             .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
-        let payload: Payload = serde_json::from_str(data).unwrap();
-        segment.set_full_payload(0, 0.into(), &payload).unwrap();
-        segment.flush(true).unwrap();
-
-        // Recursively count all files and folders in directory and subdirectories:
-        let segment_file_count = WalkDir::new(segment.current_path.clone())
-            .into_iter()
-            .count();
-        assert_eq!(segment_file_count, 20);
+        segment
+            .set_full_payload(1, 0.into(), &serde_json::from_str(data).unwrap())
+            .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
 
         // snapshotting!
-        segment.take_snapshot(snapshot_dir.path()).unwrap();
-
-        // validate that single file has been created
-        let archive = fs::read_dir(snapshot_dir.path())
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path();
+        let archive = segment.take_snapshot(snapshot_dir.path()).unwrap();
         let archive_extension = archive.extension().unwrap();
         let archive_name = archive.file_name().unwrap().to_str().unwrap().to_string();
 
@@ -1483,72 +1540,27 @@ mod tests {
             .unwrap();
         assert!(archive_name.starts_with(segment_id));
 
-        // decompress archive
-        let snapshot_decompress_dir = Builder::new()
-            .prefix("snapshot_decompress_dir")
-            .tempdir()
-            .unwrap();
-        let archive_file = File::open(archive).unwrap();
-        let mut ar = Archive::new(archive_file);
-        ar.unpack(snapshot_decompress_dir.path()).unwrap();
+        // restore snapshot
+        Segment::restore_snapshot(&archive, segment_id).unwrap();
 
-        // validate the decompressed archive the same number of files as in the segment
-        let decompressed_file_count = WalkDir::new(snapshot_decompress_dir.path())
-            .into_iter()
-            .count();
-        assert_eq!(decompressed_file_count, segment_file_count);
-    }
-
-    #[test]
-    fn test_copy_segment_directory() {
-        let data = r#"
-        {
-            "name": "John Doe",
-            "age": 43,
-            "metadata": {
-                "height": 50,
-                "width": 60
-            }
-        }"#;
-
-        let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let config = SegmentConfig {
-            vector_data: HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorDataConfig {
-                    size: 2,
-                    distance: Distance::Dot,
-                },
-            )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            payload_storage_type: Default::default(),
-        };
-
-        let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
-        segment
-            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+        let restored_segment = load_segment(&snapshot_dir.path().join(segment_id))
+            .unwrap()
             .unwrap();
 
-        let payload: Payload = serde_json::from_str(data).unwrap();
-        segment.set_full_payload(0, 0.into(), &payload).unwrap();
-        segment.flush(true).unwrap();
+        // validate restored snapshot is the same as original segment
+        assert_eq!(segment.vector_dims(), restored_segment.vector_dims());
 
-        // Recursively count all files and folders in directory and subdirectories.
-        let segment_file_count = WalkDir::new(segment.current_path.clone())
-            .into_iter()
-            .count();
-        assert_eq!(segment_file_count, 20);
+        assert_eq!(segment.points_count(), restored_segment.points_count());
 
-        let segment_copy_dir = Builder::new().prefix("segment_copy_dir").tempdir().unwrap();
-        let full_copy_path = segment
-            .copy_segment_directory(segment_copy_dir.path())
-            .unwrap();
+        for id in segment.iter_points() {
+            let vectors = segment.all_vectors(id).unwrap();
+            let restored_vectors = restored_segment.all_vectors(id).unwrap();
+            assert_eq!(vectors, restored_vectors);
 
-        // Recursively count all files and folders in directory and subdirectories.
-        let copy_segment_file_count = WalkDir::new(full_copy_path).into_iter().count();
-
-        assert_eq!(copy_segment_file_count, segment_file_count);
+            let payload = segment.payload(id).unwrap();
+            let restored_payload = restored_segment.payload(id).unwrap();
+            assert_eq!(payload, restored_payload);
+        }
     }
 
     #[test]

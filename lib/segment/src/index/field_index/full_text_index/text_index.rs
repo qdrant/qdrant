@@ -36,13 +36,13 @@ impl FullTextIndex {
 
     fn serialize_document(document: &Document) -> OperationResult<Vec<u8>> {
         serde_cbor::to_vec(document).map_err(|e| {
-            OperationError::service_error(&format!("Failed to serialize document: {}", e))
+            OperationError::service_error(format!("Failed to serialize document: {}", e))
         })
     }
 
     fn deserialize_document(data: &[u8]) -> OperationResult<Document> {
         serde_cbor::from_slice(data).map_err(|e| {
-            OperationError::service_error(&format!("Failed to deserialize document: {}", e))
+            OperationError::service_error(format!("Failed to deserialize document: {}", e))
         })
     }
 

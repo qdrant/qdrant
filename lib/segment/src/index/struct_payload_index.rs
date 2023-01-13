@@ -146,9 +146,8 @@ impl StructPayloadIndex {
             PayloadConfig::default()
         };
 
-        let db = open_db_with_existing_cf(path).map_err(|err| {
-            OperationError::service_error(&format!("RocksDB open error: {}", err))
-        })?;
+        let db = open_db_with_existing_cf(path)
+            .map_err(|err| OperationError::service_error(format!("RocksDB open error: {}", err)))?;
 
         let mut index = StructPayloadIndex {
             payload,
@@ -282,6 +281,13 @@ impl StructPayloadIndex {
                     .collect()
             })
             .collect()
+    }
+
+    pub fn restore_database_snapshot(
+        snapshot_path: &Path,
+        segment_path: &Path,
+    ) -> OperationResult<()> {
+        crate::rocksdb_backup::restore(snapshot_path, &segment_path.join("payload_index"))
     }
 }
 
@@ -490,5 +496,13 @@ impl PayloadIndex for StructPayloadIndex {
             Ok(false)
         })?;
         Ok(schema)
+    }
+
+    fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {
+        crate::rocksdb_backup::create(&self.db.read(), path)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.config_path()]
     }
 }

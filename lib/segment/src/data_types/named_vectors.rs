@@ -8,7 +8,7 @@ type CowKey<'a> = Cow<'a, str>;
 type CowValue<'a> = Cow<'a, [VectorElementType]>;
 type TinyMap<'a> = tiny_map::TinyMap<CowKey<'a>, CowValue<'a>>;
 
-#[derive(Clone, PartialEq, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct NamedVectors<'a> {
     map: TinyMap<'a>,
 }
