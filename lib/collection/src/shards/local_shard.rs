@@ -569,7 +569,7 @@ impl LocalShard {
             None => OptimizersStatus::Ok,
             Some(error) => OptimizersStatus::Error(error.to_string()),
         };
-
+        drop(segments_read_guard);
         let optimizations = self
             .optimizers
             .iter()
