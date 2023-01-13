@@ -220,6 +220,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "hozan23",
+      "name": "Hozan",
+      "avatar_url": "https://avatars.githubusercontent.com/u/119854621?v=4",
+      "profile": "http://hozan23.com",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
