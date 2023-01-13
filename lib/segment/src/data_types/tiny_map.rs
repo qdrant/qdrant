@@ -1,20 +1,22 @@
+use std::{borrow, iter, mem, slice};
+
 use tinyvec::TinyVec;
 
 pub const CAPACITY: usize = 3;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct TinyMap<K, V>
 where
-    K: Clone + Default,
-    V: Clone + Default,
+    K: Default,
+    V: Default,
 {
     list: TinyVec<[(K, V); CAPACITY]>,
 }
 
 impl<K, V> TinyMap<K, V>
 where
-    K: Clone + PartialEq + Default,
-    V: Clone + PartialEq + Default,
+    K: Default,
+    V: Default,
 {
     pub fn new() -> Self {
         Self {
@@ -26,11 +28,49 @@ where
         self.list.push((key, value));
     }
 
+    pub fn len(&self) -> usize {
+        self.list.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
+
+    pub fn iter(&self) -> slice::Iter<'_, (K, V)> {
+        self.list.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, (K, V)> {
+        self.list.iter_mut()
+    }
+
+    pub fn clear(&mut self) {
+        self.list.clear();
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
+        self.list.iter().map(|(k, _)| k)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.list.iter().map(|(_, v)| v)
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        self.list.iter_mut().map(|(_, v)| v)
+    }
+}
+
+impl<K, V> TinyMap<K, V>
+where
+    K: Default + Eq,
+    V: Default,
+{
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let found = self.list.iter_mut().find(|(k, _)| k == &key);
         match found {
             Some((_, v)) => {
-                let old = std::mem::replace(v, value);
+                let old = mem::replace(v, value);
                 Some(old)
             }
             None => {
@@ -42,7 +82,7 @@ where
 
     pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
     where
-        K: std::borrow::Borrow<Q>,
+        K: borrow::Borrow<Q>,
         Q: Eq,
     {
         self.list
@@ -53,7 +93,7 @@ where
 
     pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut V>
     where
-        K: std::borrow::Borrow<Q>,
+        K: borrow::Borrow<Q>,
         Q: Eq,
     {
         self.list
@@ -73,61 +113,19 @@ where
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.list.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.list.is_empty()
-    }
-
-    pub fn iter(&self) -> std::slice::Iter<'_, (K, V)> {
-        self.list.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, (K, V)> {
-        self.list.iter_mut()
-    }
-
-    pub fn clear(&mut self) {
-        self.list.clear();
-    }
-
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.list.iter().map(|(k, _)| k)
-    }
-
-    pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.list.iter().map(|(_, v)| v)
-    }
-
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
-        self.list.iter_mut().map(|(_, v)| v)
-    }
-
     pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
     where
-        K: std::borrow::Borrow<Q>,
+        K: borrow::Borrow<Q>,
         Q: Eq,
     {
         self.list.iter().any(|(k, _)| k.borrow() == key)
     }
 }
 
-impl<K, V> Default for TinyMap<K, V>
-where
-    K: Clone + PartialEq + Default,
-    V: Clone + PartialEq + Default,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<K, V> PartialEq for TinyMap<K, V>
 where
-    K: Clone + PartialEq + Eq + Default,
-    V: Clone + PartialEq + Default,
+    K: Default + Eq,
+    V: Default + PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         if self.len() != other.len() {
@@ -146,8 +144,8 @@ where
 
 impl<K, V> IntoIterator for TinyMap<K, V>
 where
-    K: Clone + Default,
-    V: Clone + Default,
+    K: Default,
+    V: Default,
 {
     type Item = (K, V);
 
@@ -158,14 +156,14 @@ where
     }
 }
 
-impl<K, V> std::iter::FromIterator<(K, V)> for TinyMap<K, V>
+impl<K, V> iter::FromIterator<(K, V)> for TinyMap<K, V>
 where
-    K: Clone + Default,
-    V: Clone + Default,
+    K: Default,
+    V: Default,
 {
     fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         Self {
-            list: std::iter::FromIterator::from_iter(iter),
+            list: iter::FromIterator::from_iter(iter),
         }
     }
 }

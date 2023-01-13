@@ -63,7 +63,7 @@ impl LockedSegment {
             LockedSegment::Original(segment) => {
                 match try_unwrap_with_timeout(segment, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
                     Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                    Err(locked_segment) => Err(OperationError::service_error(&format!(
+                    Err(locked_segment) => Err(OperationError::service_error(format!(
                         "Removing segment which is still in use: {:?}",
                         locked_segment.read().data_path()
                     ))),
@@ -72,7 +72,7 @@ impl LockedSegment {
             LockedSegment::Proxy(proxy) => {
                 match try_unwrap_with_timeout(proxy, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
                     Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                    Err(locked_segment) => Err(OperationError::service_error(&format!(
+                    Err(locked_segment) => Err(OperationError::service_error(format!(
                         "Removing segment which is still in use: {:?}",
                         locked_segment.read().data_path()
                     ))),
@@ -427,7 +427,7 @@ impl<'s> SegmentHolder {
         for segment in self.segments.values() {
             let segment_lock = segment.get();
             let read_segment = segment_lock.read();
-            read_segment.take_snapshot(snapshot_dir_path)?
+            read_segment.take_snapshot(snapshot_dir_path)?;
         }
         Ok(())
     }
