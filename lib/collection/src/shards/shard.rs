@@ -48,11 +48,11 @@ impl Shard {
         }
     }
 
-    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
+    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         let mut telemetry = match self {
-            Shard::Local(local_shard) => local_shard.get_telemetry_data().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data().await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data().await,
+            Shard::Local(local_shard) => local_shard.get_telemetry_data(),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(),
         };
         telemetry.variant_name = Some(self.variant_name().to_string());
         telemetry
