@@ -69,7 +69,7 @@ impl LocalShard {
     }
 
     /// Checks if path have local shard data present
-    pub async fn check_data(shard_path: &Path) -> bool {
+    pub fn check_data(shard_path: &Path) -> bool {
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
         wal_path.exists() && segments_path.exists()
@@ -236,7 +236,7 @@ impl LocalShard {
         )
         .await;
 
-        collection.load_from_wal(collection_id).await;
+        collection.load_from_wal(collection_id);
 
         Ok(collection)
     }
@@ -373,7 +373,7 @@ impl LocalShard {
     }
 
     /// Loads latest collection operations from WAL
-    pub async fn load_from_wal(&self, collection_id: CollectionId) {
+    pub fn load_from_wal(&self, collection_id: CollectionId) {
         let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());
 
@@ -491,7 +491,7 @@ impl LocalShard {
             .snapshot_all_segments(&snapshot_segments_shard_path)?;
 
         // snapshot all shard's WAL
-        self.snapshot_wal(snapshot_shard_path).await?;
+        self.snapshot_wal(snapshot_shard_path)?;
 
         // copy shard's config
         let shard_config_path = ShardConfig::get_config_path(&self.path);
@@ -503,7 +503,7 @@ impl LocalShard {
     /// snapshot WAL
     ///
     /// copies all WAL files into `snapshot_shard_path/wal`
-    pub async fn snapshot_wal(&self, snapshot_shard_path: &Path) -> CollectionResult<()> {
+    pub fn snapshot_wal(&self, snapshot_shard_path: &Path) -> CollectionResult<()> {
         // lock wal during snapshot
         let _wal_guard = self.wal.lock();
         let source_wal_path = self.path.join("wal");
@@ -517,7 +517,7 @@ impl LocalShard {
         Ok(())
     }
 
-    pub async fn estimate_cardinality<'a>(
+    pub fn estimate_cardinality<'a>(
         &'a self,
         filter: Option<&'a Filter>,
     ) -> CollectionResult<CardinalityEstimation> {
@@ -541,7 +541,7 @@ impl LocalShard {
         Ok(cardinality)
     }
 
-    pub async fn read_filtered<'a>(
+    pub fn read_filtered<'a>(
         &'a self,
         filter: Option<&'a Filter>,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
@@ -558,7 +558,7 @@ impl LocalShard {
         Ok(all_points)
     }
 
-    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
+    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         let segments: Vec<_> = self
             .segments()
             .read()
