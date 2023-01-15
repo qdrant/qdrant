@@ -200,7 +200,7 @@ impl LocalShard {
             load_handlers.push(
                 thread::Builder::new()
                     .name(format!("shard-load-{}-{}", collection_id, id))
-                    .spawn(move || load_segment(&segments_path))?,
+                    .spawn(move || load_segment(&segments_path, true))?,
             );
         }
 

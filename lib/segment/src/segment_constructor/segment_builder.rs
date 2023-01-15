@@ -199,7 +199,7 @@ impl SegmentBuilder {
         fs::rename(&self.temp_path, &self.destination_path)
             .describe("Moving segment data after optimization")?;
 
-        load_segment(&self.destination_path)?.ok_or_else(|| {
+        load_segment(&self.destination_path, false)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "Segment loading error: {}",
                 self.destination_path.display()

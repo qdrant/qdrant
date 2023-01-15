@@ -151,7 +151,7 @@ fn create_segment(
     })
 }
 
-pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
+pub fn load_segment(path: &Path, do_checks: bool) -> OperationResult<Option<Segment>> {
     if !SegmentVersion::check_exists(path) {
         // Assume segment was not properly saved.
         // Server might have crashed before saving the segment fully.
@@ -195,8 +195,10 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
 
     let mut segment = create_segment(segment_state.version, path, &segment_state.config)?;
 
-    info!("Checking segment consistency: {}", path.display());
-    segment.check_consistency_and_repair()?;
+    if do_checks {
+        info!("Checking segment consistency: {}", path.display());
+        segment.check_consistency_and_repair()?;
+    }
 
     Ok(Some(segment))
 }
