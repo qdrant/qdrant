@@ -509,12 +509,12 @@ mod tests {
     use std::{thread, time};
 
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-    use segment::types::{Distance, PayloadFieldSchema, PayloadKeyType};
+    use segment::types::Distance;
     use serde_json::json;
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
+    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     #[test]
     fn test_add_and_swap() {
