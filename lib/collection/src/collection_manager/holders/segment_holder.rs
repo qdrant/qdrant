@@ -352,6 +352,13 @@ impl<'s> SegmentHolder {
                 }
             }
 
+            if applied_points.contains(&point_id) {
+                // point was already applied to another segment
+                // we can remove the duplicate and continue
+                write_segment.delete_point(op_num, point_id)?;
+                return Ok(false);
+            }
+
             let is_applied = if write_segment.is_appendable() {
                 f(point_id, write_segment)?
             } else {
@@ -371,6 +378,15 @@ impl<'s> SegmentHolder {
                 )?
             };
             applied_points.insert(point_id);
+            #[cfg(debug_assertions)]
+            if is_applied {
+                // Check that the version of applied point is correct if present
+                let point_version = write_segment.point_version(point_id);
+                if let Some(point_version) = point_version {
+                    // version is either applied or the point was removed
+                    assert!(point_version >= op_num);
+                }
+            }
             Ok(is_applied)
         })?;
         Ok(applied_points)
@@ -437,6 +453,70 @@ impl<'s> SegmentHolder {
             self.optimizer_errors = Some(error.into());
         }
     }
+
+    /// Duplicated points can appear in case of interrupted optimization.
+    /// LocalShard can still work with duplicated points, but it is better to remove them.
+    /// Duplicated points should not affect the search results.
+    ///
+    /// Checks all segments and removes duplicated and outdated points.
+    /// If two points have the same id, the point with the highest version is kept.
+    /// If two points have the same id and version, one of them is kept.
+    ///
+    /// Deduplication works with plain segments only.
+    pub fn deduplicate_points(&self) -> OperationResult<usize> {
+        let mut seen_points: HashMap<PointIdType, (SegmentId, SeqNumberType)> = Default::default();
+        let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
+        let all_segment_ids: Vec<SegmentId> = self.segments.keys().cloned().collect();
+        for segment_id in all_segment_ids {
+            let locked_segment = self.segments.get(&segment_id).unwrap();
+            let segment_arc = locked_segment.get();
+            let read_segment = segment_arc.read();
+            for point_id in read_segment.iter_points() {
+                let point_version_opt = read_segment.point_version(point_id);
+                let seen = seen_points.get(&point_id).cloned();
+
+                // Ignore points without version, those are partially updated and will be overwritten
+                if let Some(point_version) = point_version_opt {
+                    if let Some((seen_segment_id, seen_version)) = seen {
+                        // Other version exists
+                        if seen_version > point_version {
+                            // Other version is newer
+                            // Remove this point
+                            points_to_remove
+                                .entry(segment_id)
+                                .or_default()
+                                .push(point_id);
+                        } else {
+                            // This version is newer
+                            // Remove point from other segment and update seen
+                            seen_points.insert(point_id, (segment_id, point_version));
+                            points_to_remove
+                                .entry(seen_segment_id)
+                                .or_default()
+                                .push(point_id);
+                        }
+                    } else {
+                        // No other version exists
+                        seen_points.insert(point_id, (segment_id, point_version));
+                    }
+                }
+            }
+        }
+
+        let mut removed_points = 0;
+        for (segment_id, points) in points_to_remove {
+            let locked_segment = self.segments.get(&segment_id).unwrap();
+            let segment_arc = locked_segment.get();
+            let mut write_segment = segment_arc.write();
+            for point_id in points {
+                if let Some(point_version) = write_segment.point_version(point_id) {
+                    removed_points += 1;
+                    write_segment.delete_point(point_version, point_id)?;
+                }
+            }
+        }
+        Ok(removed_points)
+    }
 }
 
 #[cfg(test)]
@@ -445,11 +525,12 @@ mod tests {
     use std::{thread, time};
 
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-    use segment::types::Distance;
+    use segment::types::{Distance, PayloadFieldSchema, PayloadKeyType};
+    use serde_json::json;
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
+    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 
     #[test]
     fn test_add_and_swap() {
@@ -521,14 +602,16 @@ mod tests {
         let sid1 = holder.add(segment1);
         let _sid2 = holder.add(segment2);
 
+        let op_num = 100;
         let mut processed_points: Vec<PointIdType> = vec![];
         holder
             .apply_points_to_appendable(
-                100,
+                op_num,
                 &[1.into(), 2.into(), 11.into(), 12.into()],
                 |point_id, segment| {
                     processed_points.push(point_id);
                     assert!(segment.has_point(point_id));
+                    segment.set_payload(op_num, point_id, &json!({}).into())?;
                     Ok(true)
                 },
             )
@@ -545,6 +628,136 @@ mod tests {
         // Points moved on apply
         assert!(read_segment_1.has_point(11.into()));
         assert!(read_segment_1.has_point(12.into()));
+    }
+
+    #[test]
+    fn test_appendable_with_proxy() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let segment1 = build_segment_1(dir.path());
+
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
+        ));
+
+        let original_segment_1 = LockedSegment::new(build_segment_1(dir.path()));
+        let original_segment_2 = LockedSegment::new(build_segment_1(dir.path()));
+
+        let proxy_segment_1 = ProxySegment::new(
+            original_segment_1,
+            write_segment.clone(),
+            deleted_points.clone(),
+            created_indexes.clone(),
+            deleted_indexes.clone(),
+        );
+
+        let proxy_segment_2 = ProxySegment::new(
+            original_segment_2,
+            write_segment,
+            deleted_points,
+            created_indexes,
+            deleted_indexes,
+        );
+        let mut holder = SegmentHolder::default();
+
+        let sid1 = holder.add(segment1);
+        let sid2 = holder.add(proxy_segment_1);
+        let sid3 = holder.add(proxy_segment_2);
+
+        for i in 0..2 {
+            let op_num = 100 + i;
+            let mut applied_counter = 0;
+            let mut processed_points: Vec<PointIdType> = vec![];
+            holder
+                .apply_points_to_appendable(
+                    op_num,
+                    &[1.into(), 2.into(), 3.into()],
+                    |point_id, segment| {
+                        processed_points.push(point_id);
+                        assert!(segment.has_point(point_id));
+                        segment.set_payload(op_num, point_id, &json!({}).into())?;
+                        applied_counter += 1;
+                        Ok(true)
+                    },
+                )
+                .unwrap();
+
+            let points1: Vec<_> = holder
+                .get(sid1)
+                .unwrap()
+                .get()
+                .read()
+                .read_filtered(None, None, None);
+            let points2: Vec<_> = holder
+                .get(sid2)
+                .unwrap()
+                .get()
+                .read()
+                .read_filtered(None, None, None);
+            let points3: Vec<_> = holder
+                .get(sid3)
+                .unwrap()
+                .get()
+                .read()
+                .read_filtered(None, None, None);
+
+            // Points are removed from one or another segment
+            assert!(
+                (points1.len() == 2 && points2.len() == 5)
+                    || (points1.len() == 5 && points2.len() == 2)
+            );
+
+            // Proxy segments share the same write segment, so they should have the same points
+            assert_eq!(points2, points3);
+
+            // In total we apply the operation exactly 3 times, one for each ID
+            assert_eq!(3, applied_counter);
+        }
+    }
+
+    #[test]
+    fn test_points_deduplication() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let mut segment1 = build_segment_1(dir.path());
+        let mut segment2 = build_segment_1(dir.path());
+
+        segment1
+            .set_payload(100, 1.into(), &json!({}).into())
+            .unwrap();
+        segment1
+            .set_payload(100, 2.into(), &json!({}).into())
+            .unwrap();
+
+        segment2
+            .set_payload(200, 4.into(), &json!({}).into())
+            .unwrap();
+        segment2
+            .set_payload(200, 5.into(), &json!({}).into())
+            .unwrap();
+
+        let mut holder = SegmentHolder::default();
+
+        let sid1 = holder.add(segment1);
+        let sid2 = holder.add(segment2);
+
+        let res = holder.deduplicate_points().unwrap();
+
+        assert_eq!(5, res);
+
+        assert!(holder.get(sid1).unwrap().get().read().has_point(1.into()));
+        assert!(holder.get(sid1).unwrap().get().read().has_point(2.into()));
+        assert!(!holder.get(sid2).unwrap().get().read().has_point(1.into()));
+        assert!(!holder.get(sid2).unwrap().get().read().has_point(2.into()));
+
+        assert!(holder.get(sid2).unwrap().get().read().has_point(4.into()));
+        assert!(holder.get(sid2).unwrap().get().read().has_point(5.into()));
+        assert!(!holder.get(sid1).unwrap().get().read().has_point(4.into()));
+        assert!(!holder.get(sid1).unwrap().get().read().has_point(5.into()));
     }
 
     #[test]

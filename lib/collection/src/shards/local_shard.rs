@@ -222,6 +222,11 @@ impl LocalShard {
             }
         }
 
+        let res = segment_holder.deduplicate_points()?;
+        if res > 0 {
+            log::debug!("Deduplicated {} points", res);
+        }
+
         let optimizers = build_optimizers(
             shard_path,
             &collection_config.params,
@@ -492,12 +497,15 @@ impl LocalShard {
         // snapshot all shard's segment
         let snapshot_segments_shard_path = snapshot_shard_path.join("segments");
         create_dir_all(&snapshot_segments_shard_path).await?;
-        self.segments
-            .read()
-            .snapshot_all_segments(&snapshot_segments_shard_path)?;
 
-        // snapshot all shard's WAL
-        self.snapshot_wal(snapshot_shard_path)?;
+        {
+            // Do not change segments while snapshotting
+            let segments_read = self.segments.read();
+            segments_read.snapshot_all_segments(&snapshot_segments_shard_path)?;
+
+            // snapshot all shard's WAL
+            self.snapshot_wal(snapshot_shard_path)?;
+        }
 
         // copy shard's config
         let shard_config_path = ShardConfig::get_config_path(&self.path);
@@ -511,7 +519,8 @@ impl LocalShard {
     /// copies all WAL files into `snapshot_shard_path/wal`
     pub fn snapshot_wal(&self, snapshot_shard_path: &Path) -> CollectionResult<()> {
         // lock wal during snapshot
-        let _wal_guard = self.wal.lock();
+        let mut wal_guard = self.wal.lock();
+        wal_guard.flush()?;
         let source_wal_path = self.path.join("wal");
         let options = fs_extra::dir::CopyOptions::new();
         fs_extra::dir::copy(source_wal_path, snapshot_shard_path, &options).map_err(|err| {

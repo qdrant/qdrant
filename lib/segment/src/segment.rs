@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ use atomic_refcell::AtomicRefCell;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
+use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
@@ -217,7 +219,7 @@ impl Segment {
         let res = operation(self);
 
         if res.is_ok() {
-            self.version = op_num;
+            self.version = max(op_num, self.version);
             if let Ok((_, Some(point_id))) = res {
                 self.id_tracker
                     .borrow_mut()
@@ -1181,7 +1183,7 @@ impl SegmentEntry for Segment {
         // flush segment to capture latest state
         self.flush(true)?;
 
-        let tmp_path = self.current_path.join("tmp");
+        let tmp_path = self.current_path.join(format!("tmp-{}", Uuid::new_v4()));
 
         let db_backup_path = tmp_path.join(DB_BACKUP_PATH);
         let payload_index_db_backup_path = tmp_path.join(PAYLOAD_DB_BACKUP_PATH);
@@ -1261,9 +1263,17 @@ impl SegmentEntry for Segment {
 
         builder.finish()?;
 
-        fs::remove_dir_all(&tmp_path).map_err(|err| {
-            OperationError::service_error(format!("failed to remove {tmp_path:?} directory: {err}"))
-        })?;
+        // remove tmp directory in background
+        let _ = std::thread::spawn(move || {
+            let res = std::fs::remove_dir_all(&tmp_path);
+            if let Err(err) = res {
+                log::error!(
+                    "Failed to remove tmp directory at {}: {:?}",
+                    tmp_path.display(),
+                    err
+                );
+            }
+        });
 
         Ok(archive_path)
     }
