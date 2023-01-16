@@ -352,13 +352,6 @@ impl<'s> SegmentHolder {
                 }
             }
 
-            if applied_points.contains(&point_id) {
-                // point was already applied to another segment
-                // we can remove the duplicate and continue
-                write_segment.delete_point(op_num, point_id)?;
-                return Ok(false);
-            }
-
             let is_applied = if write_segment.is_appendable() {
                 f(point_id, write_segment)?
             } else {
@@ -378,15 +371,6 @@ impl<'s> SegmentHolder {
                 )?
             };
             applied_points.insert(point_id);
-            #[cfg(debug_assertions)]
-            if is_applied {
-                // Check that the version of applied point is correct if present
-                let point_version = write_segment.point_version(point_id);
-                if let Some(point_version) = point_version {
-                    // version is either applied or the point was removed
-                    assert!(point_version >= op_num);
-                }
-            }
             Ok(is_applied)
         })?;
         Ok(applied_points)
@@ -611,7 +595,6 @@ mod tests {
                 |point_id, segment| {
                     processed_points.push(point_id);
                     assert!(segment.has_point(point_id));
-                    segment.set_payload(op_num, point_id, &json!({}).into())?;
                     Ok(true)
                 },
             )
@@ -628,95 +611,6 @@ mod tests {
         // Points moved on apply
         assert!(read_segment_1.has_point(11.into()));
         assert!(read_segment_1.has_point(12.into()));
-    }
-
-    #[test]
-    fn test_appendable_with_proxy() {
-        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-        let segment1 = build_segment_1(dir.path());
-
-        let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
-
-        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(
-            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-        ));
-
-        let original_segment_1 = LockedSegment::new(build_segment_1(dir.path()));
-        let original_segment_2 = LockedSegment::new(build_segment_1(dir.path()));
-
-        let proxy_segment_1 = ProxySegment::new(
-            original_segment_1,
-            write_segment.clone(),
-            deleted_points.clone(),
-            created_indexes.clone(),
-            deleted_indexes.clone(),
-        );
-
-        let proxy_segment_2 = ProxySegment::new(
-            original_segment_2,
-            write_segment,
-            deleted_points,
-            created_indexes,
-            deleted_indexes,
-        );
-        let mut holder = SegmentHolder::default();
-
-        let sid1 = holder.add(segment1);
-        let sid2 = holder.add(proxy_segment_1);
-        let sid3 = holder.add(proxy_segment_2);
-
-        for i in 0..2 {
-            let op_num = 100 + i;
-            let mut applied_counter = 0;
-            let mut processed_points: Vec<PointIdType> = vec![];
-            holder
-                .apply_points_to_appendable(
-                    op_num,
-                    &[1.into(), 2.into(), 3.into()],
-                    |point_id, segment| {
-                        processed_points.push(point_id);
-                        assert!(segment.has_point(point_id));
-                        segment.set_payload(op_num, point_id, &json!({}).into())?;
-                        applied_counter += 1;
-                        Ok(true)
-                    },
-                )
-                .unwrap();
-
-            let points1: Vec<_> = holder
-                .get(sid1)
-                .unwrap()
-                .get()
-                .read()
-                .read_filtered(None, None, None);
-            let points2: Vec<_> = holder
-                .get(sid2)
-                .unwrap()
-                .get()
-                .read()
-                .read_filtered(None, None, None);
-            let points3: Vec<_> = holder
-                .get(sid3)
-                .unwrap()
-                .get()
-                .read()
-                .read_filtered(None, None, None);
-
-            // Points are removed from one or another segment
-            assert!(
-                (points1.len() == 2 && points2.len() == 5)
-                    || (points1.len() == 5 && points2.len() == 2)
-            );
-
-            // Proxy segments share the same write segment, so they should have the same points
-            assert_eq!(points2, points3);
-
-            // In total we apply the operation exactly 3 times, one for each ID
-            assert_eq!(3, applied_counter);
-        }
     }
 
     #[test]
