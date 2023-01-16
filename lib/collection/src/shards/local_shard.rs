@@ -200,7 +200,13 @@ impl LocalShard {
             load_handlers.push(
                 thread::Builder::new()
                     .name(format!("shard-load-{}-{}", collection_id, id))
-                    .spawn(move || load_segment(&segments_path))?,
+                    .spawn(move || {
+                        let mut res = load_segment(&segments_path)?;
+                        if let Some(segment) = &mut res {
+                            segment.check_consistency_and_repair()?;
+                        }
+                        Ok::<_, CollectionError>(res)
+                    })?,
             );
         }
 
