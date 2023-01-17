@@ -337,7 +337,7 @@ impl Consensus {
                     RECOVERY_RETRY_TIMEOUT * (RECOVERY_MAX_RETRY_COUNT - tries) as u32;
                 sleep(exp_timeout).await;
             }
-            log::error!("Failed to recover from any peer");
+            return Err(anyhow::anyhow!("Failed to recover from any known peers"));
         }
 
         Ok(())
