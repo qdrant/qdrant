@@ -7,12 +7,14 @@ use collection::shards::shard::{PeerId, ShardId};
 
 /// Handlers for migration data from one collection into another within single cluster
 
-
 /// Get a list of local shards, which can be used for migration
 ///
 /// For each shard, it should present on local peer, it should be active, it should have maximal peer id.
 /// Selection of max peer id guarantees that only one shard will be migrated from one peer.
-async fn get_local_source_shards(source: &Collection, this_peer_id: PeerId) -> CollectionResult<Vec<ShardId>> {
+async fn get_local_source_shards(
+    source: &Collection,
+    this_peer_id: PeerId,
+) -> CollectionResult<Vec<ShardId>> {
     let collection_state = source.state().await;
 
     let mut local_responsible_shards = Vec::new();
@@ -43,7 +45,6 @@ async fn get_local_source_shards(source: &Collection, this_peer_id: PeerId) -> C
 
     Ok(local_responsible_shards)
 }
-
 
 /// Spawns a task which will retrieve data from appropriate local shards of the `source` collection
 /// into target collection.

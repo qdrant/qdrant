@@ -3,7 +3,12 @@ use std::collections::BTreeMap;
 use collection::operations::types::VectorsConfig;
 use tonic::Status;
 
-use crate::content_manager::collection_meta_ops::{AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateAliasOperation, CreateCollection, CreateCollectionOperation, DeleteAlias, DeleteAliasOperation, DeleteCollectionOperation, InitFrom, RenameAlias, RenameAliasOperation, UpdateCollection, UpdateCollectionOperation};
+use crate::content_manager::collection_meta_ops::{
+    AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
+    CreateAliasOperation, CreateCollection, CreateCollectionOperation, DeleteAlias,
+    DeleteAliasOperation, DeleteCollectionOperation, InitFrom, RenameAlias, RenameAliasOperation,
+    UpdateCollection, UpdateCollectionOperation,
+};
 use crate::content_manager::errors::StorageError;
 
 pub fn error_to_status(error: StorageError) -> tonic::Status {
@@ -51,7 +56,9 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 on_disk_payload: value.on_disk_payload,
                 replication_factor: value.replication_factor,
                 write_consistency_factor: value.write_consistency_factor,
-                init_from: value.init_from_collection.map(|v| InitFrom { collection: v } ),
+                init_from: value
+                    .init_from_collection
+                    .map(|v| InitFrom { collection: v }),
             },
         )))
     }
