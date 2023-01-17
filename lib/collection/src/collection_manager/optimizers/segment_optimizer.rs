@@ -248,7 +248,7 @@ pub trait SegmentOptimizer {
             match segment {
                 LockedSegment::Original(segment_arc) => {
                     let segment_guard = segment_arc.read();
-                    segment_builder.update_from(&segment_guard, stopped, false)?;
+                    segment_builder.update_from(&segment_guard, stopped)?;
                 }
                 LockedSegment::Proxy(_) => panic!("Attempt to optimize segment which is already currently under optimization. Should never happen"),
             }
@@ -295,6 +295,8 @@ pub trait SegmentOptimizer {
             )?;
             self.check_cancellation(stopped)?;
         }
+
+        optimized_segment.update_quantization()?;
 
         Ok(optimized_segment)
     }
