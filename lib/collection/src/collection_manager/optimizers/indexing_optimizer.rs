@@ -423,7 +423,8 @@ mod tests {
                     )
                     .unwrap(),
                     distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
-                    use_quantization: segment_config.vector_data[DEFAULT_VECTOR_NAME].use_quantization,
+                    use_quantization: segment_config.vector_data[DEFAULT_VECTOR_NAME]
+                        .use_quantization,
                 }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 replication_factor: NonZeroU32::new(1).unwrap(),
