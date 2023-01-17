@@ -29,4 +29,8 @@ service Collections {
   Update Aliases of the existing collection
   */
   rpc UpdateAliases (ChangeAliases) returns (CollectionOperationResponse) {}
+  /*
+  Get list name of all existing collections
+  */
+  rpc ListAliases (ListAliasesRequest) returns (ListAliasesResponse) {}
 }

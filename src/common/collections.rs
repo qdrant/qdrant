@@ -6,7 +6,9 @@ use collection::operations::cluster_ops::{
     ReplicateShardOperation,
 };
 use collection::operations::snapshot_ops::SnapshotDescription;
-use collection::operations::types::{CollectionClusterInfo, CollectionInfo};
+use collection::operations::types::{
+    CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
+};
 use collection::shards::replica_set;
 use collection::shards::shard::ShardId;
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
@@ -37,6 +39,13 @@ pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
         .collect_vec();
 
     CollectionsResponse { collections }
+}
+
+pub async fn do_list_aliases(
+    toc: &TableOfContent,
+) -> Result<CollectionsAliasesResponse, StorageError> {
+    let aliases = toc.list_aliases().await?;
+    Ok(CollectionsAliasesResponse { aliases })
 }
 
 pub async fn do_list_snapshots(

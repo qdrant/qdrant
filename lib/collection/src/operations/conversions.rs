@@ -18,9 +18,9 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
 };
 use crate::operations::types::{
-    CollectionInfo, CollectionStatus, CountResult, LookupLocation, OptimizersStatus,
-    RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus, VectorParams,
-    VectorsConfig,
+    AliasDescription, CollectionInfo, CollectionStatus, CountResult, LookupLocation,
+    OptimizersStatus, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus,
+    VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionSearchRequest;
@@ -635,6 +635,15 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 Distance::Dot => api::grpc::qdrant::Distance::Dot,
             }
             .into(),
+        }
+    }
+}
+
+impl From<AliasDescription> for api::grpc::qdrant::AliasDescription {
+    fn from(value: AliasDescription) -> Self {
+        api::grpc::qdrant::AliasDescription {
+            alias_name: value.alias_name,
+            collection_name: value.collection_name,
         }
     }
 }

@@ -4,6 +4,7 @@
 ## Table of Contents
 
 - [collections.proto](#collections-proto)
+    - [AliasDescription](#qdrant-AliasDescription)
     - [AliasOperations](#qdrant-AliasOperations)
     - [ChangeAliases](#qdrant-ChangeAliases)
     - [CollectionConfig](#qdrant-CollectionConfig)
@@ -20,6 +21,8 @@
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
     - [HnswConfigDiff](#qdrant-HnswConfigDiff)
+    - [ListAliasesRequest](#qdrant-ListAliasesRequest)
+    - [ListAliasesResponse](#qdrant-ListAliasesResponse)
     - [ListCollectionsRequest](#qdrant-ListCollectionsRequest)
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
@@ -141,6 +144,22 @@
 <p align="right"><a href="#top">Top</a></p>
 
 ## collections.proto
+
+
+
+<a name="qdrant-AliasDescription"></a>
+
+### AliasDescription
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| alias_name | [string](#string) |  | Name of the alias |
+| collection_name | [string](#string) |  | Name of the collection |
+
+
+
 
 
 
@@ -415,6 +434,32 @@
 | max_indexing_threads | [uint64](#uint64) | optional | Number of parallel threads used for background index building. If 0 - auto selection. |
 | on_disk | [bool](#bool) | optional | Store HNSW index on disk. If set to false, index will be stored in RAM. |
 | payload_m | [uint64](#uint64) | optional | Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used. |
+
+
+
+
+
+
+<a name="qdrant-ListAliasesRequest"></a>
+
+### ListAliasesRequest
+
+
+
+
+
+
+
+<a name="qdrant-ListAliasesResponse"></a>
+
+### ListAliasesResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| aliases | [AliasDescription](#qdrant-AliasDescription) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
 
 
 
@@ -747,6 +792,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Update | [UpdateCollection](#qdrant-UpdateCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update parameters of the existing collection |
 | Delete | [DeleteCollection](#qdrant-DeleteCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Drop collection and all associated data |
 | UpdateAliases | [ChangeAliases](#qdrant-ChangeAliases) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update Aliases of the existing collection |
+| ListAliases | [ListAliasesRequest](#qdrant-ListAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list name of all existing collections |
 
  
 

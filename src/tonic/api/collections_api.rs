@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
     ChangeAliases, CollectionOperationResponse, CreateCollection, DeleteCollection,
-    GetCollectionInfoRequest, GetCollectionInfoResponse, ListCollectionsRequest,
-    ListCollectionsResponse, UpdateCollection,
+    GetCollectionInfoRequest, GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
+    ListCollectionsRequest, ListCollectionsResponse, UpdateCollection,
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::dispatcher::Dispatcher;
@@ -44,6 +44,25 @@ impl CollectionsService {
             .map_err(error_to_status)?;
 
         let response = CollectionOperationResponse::from((timing, result));
+        Ok(Response::new(response))
+    }
+
+    async fn list_aliases(
+        &self,
+        _request: Request<ListAliasesRequest>,
+    ) -> Result<Response<ListAliasesResponse>, Status> {
+        let timing = Instant::now();
+        let aliases = self
+            .dispatcher
+            .toc()
+            .list_aliases()
+            .await
+            .map(|aliases| aliases.into_iter().map(|alias| alias.into()).collect())
+            .map_err(error_to_status)?;
+        let response = ListAliasesResponse {
+            aliases,
+            time: timing.elapsed().as_secs_f64(),
+        };
         Ok(Response::new(response))
     }
 }
@@ -94,6 +113,13 @@ impl Collections for CollectionsService {
         request: Request<ChangeAliases>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         self.perform_operation(request).await
+    }
+
+    async fn list_aliases(
+        &self,
+        request: Request<ListAliasesRequest>,
+    ) -> Result<Response<ListAliasesResponse>, Status> {
+        self.list_aliases(request).await
     }
 }
 

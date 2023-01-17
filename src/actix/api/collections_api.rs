@@ -32,6 +32,13 @@ async fn get_collections(toc: web::Data<TableOfContent>) -> impl Responder {
     process_response(response, timing)
 }
 
+#[get("/collections/aliases")]
+async fn get_aliases(toc: web::Data<TableOfContent>) -> impl Responder {
+    let timing = Instant::now();
+    let response = do_list_aliases(toc.get_ref()).await;
+    process_response(response, timing)
+}
+
 #[get("/collections/{name}")]
 async fn get_collection(toc: web::Data<TableOfContent>, path: web::Path<String>) -> impl Responder {
     let name = path.into_inner();
@@ -151,6 +158,7 @@ async fn update_collection_cluster(
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_collections)
+        .service(get_aliases) // higher priority than /collections/{name}
         .service(get_collection)
         .service(create_collection)
         .service(update_collection)
