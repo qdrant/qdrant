@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::path::Path;
 use std::result;
 use std::thread::JoinHandle;
 
@@ -119,6 +120,10 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
     pub fn flush_async(&mut self) -> JoinHandle<std::io::Result<()>> {
         self.wal.flush_open_segment_async()
+    }
+
+    pub fn path(&self) -> &Path {
+        self.wal.path()
     }
 }
 
