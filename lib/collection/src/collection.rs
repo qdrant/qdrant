@@ -21,6 +21,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::collection_state::{ShardInfo, State};
+use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
@@ -81,6 +82,9 @@ pub struct Collection {
     #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: OnPeerFailure,
     init_time: Duration,
+    // One-way boolean flag that is set to true when the collection is fully initialized
+    // i.e. all shards are activated for the first time.
+    is_initialized: Arc<IsReady>,
 }
 
 impl Collection {
@@ -151,6 +155,7 @@ impl Collection {
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure.clone(),
             init_time: start_time.elapsed(),
+            is_initialized: Arc::new(Default::default()),
         })
     }
 
@@ -250,6 +255,7 @@ impl Collection {
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure,
             init_time: start_time.elapsed(),
+            is_initialized: Arc::new(Default::default()),
         }
     }
 
@@ -325,6 +331,25 @@ impl Collection {
             for transfer in related_transfers {
                 self._abort_shard_transfer(transfer.key(), &shard_holder)
                     .await?;
+            }
+        }
+
+        if !self.is_initialized.check_ready() {
+            // If not initialized yet, we need to check if it was initialized by this call
+            let state = self.state().await;
+            let mut is_fully_active = true;
+            for (_shard_id, shard_info) in state.shards {
+                if shard_info
+                    .replicas
+                    .into_iter()
+                    .any(|(_peer_id, state)| state != ReplicaState::Active)
+                {
+                    is_fully_active = false;
+                    break;
+                }
+            }
+            if is_fully_active {
+                self.is_initialized.make_ready();
             }
         }
 
@@ -1417,6 +1442,10 @@ impl Collection {
         }
 
         Ok(())
+    }
+
+    pub fn wait_collection_initiated(&self, timeout: Duration) -> bool {
+        self.is_initialized.await_ready_for_timeout(timeout)
     }
 }
 

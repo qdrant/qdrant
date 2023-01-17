@@ -27,7 +27,7 @@ use super::errors::StorageError;
 use super::CollectionContainer;
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
-use crate::content_manager::consensus::is_ready::IsReady;
+use collection::common::is_ready::IsReady;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{

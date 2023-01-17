@@ -1,9 +1,20 @@
-use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 use collection::collection::Collection;
-use collection::operations::types::{CollectionError, CollectionResult};
+use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use collection::operations::types::{CollectionError, CollectionResult, ScrollRequest};
+use collection::operations::CollectionUpdateOperations;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::CollectionId;
+use segment::types::{WithPayloadInterface, WithVector};
+use tokio::sync::RwLock;
+
+use crate::content_manager::collections_ops::Collections;
+
+const MIGRATION_BATCH_SIZE: usize = 1000;
+const COLLECTION_INITIATION_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Handlers for migration data from one collection into another within single cluster
 
@@ -24,7 +35,7 @@ async fn get_local_source_shards(
         let responsible_shard_opt = shard_info
             .replicas
             .iter()
-            .filter(|(_, replica_state)| replica_state == ReplicaState::Active)
+            .filter(|(_, replica_state)| **replica_state == ReplicaState::Active)
             .max_by_key(|(peer_id, _)| *peer_id)
             .map(|(peer_id, _)| *peer_id);
 
@@ -46,14 +57,102 @@ async fn get_local_source_shards(
     Ok(local_responsible_shards)
 }
 
+fn handle_get_collection(collection: Option<&Collection>) -> CollectionResult<&Collection> {
+    match collection {
+        Some(collection) => Ok(collection),
+        None => Err(CollectionError::service_error(
+            "Collection is not found".to_string(),
+        )),
+    }
+}
+
+async fn migrate_shard(
+    collections: Arc<RwLock<Collections>>,
+    source_collection: &CollectionId,
+    target_collection: &CollectionId,
+    shard_id: ShardId,
+) -> CollectionResult<()> {
+    let mut offset = None;
+    let limit = MIGRATION_BATCH_SIZE;
+
+    loop {
+        let request = ScrollRequest {
+            offset,
+            limit: Some(limit),
+            filter: None,
+            with_payload: Some(WithPayloadInterface::Bool(true)),
+            with_vector: WithVector::Bool(true),
+        };
+
+        let scroll_result = {
+            let collections_read = collections.read().await;
+            let collection = handle_get_collection(collections_read.get(source_collection))?;
+            collection.scroll_by(request, Some(shard_id)).await?
+        };
+
+        offset = scroll_result.next_page_offset;
+
+        if offset.is_none() {
+            break;
+        }
+
+        let records = scroll_result
+            .points
+            .into_iter()
+            .map(|point| PointStruct {
+                id: point.id,
+                vector: point.vector.unwrap(),
+                payload: point.payload,
+            })
+            .collect();
+
+        let upsert_request = CollectionUpdateOperations::PointOperation(
+            PointOperations::UpsertPoints(PointInsertOperations::PointsList(records)),
+        );
+
+        let collections_read = collections.read().await;
+        let collection = handle_get_collection(collections_read.get(target_collection))?;
+
+        collection.update_from_client(upsert_request, false).await?;
+    }
+    Ok(())
+}
+
 /// Spawns a task which will retrieve data from appropriate local shards of the `source` collection
 /// into target collection.
 pub async fn migrate(
-    source: &Collection,
-    target: &Collection,
+    collections: Arc<RwLock<Collections>>,
+    source_collection: CollectionId,
+    target_collection: CollectionId,
     this_peer_id: PeerId,
 ) -> CollectionResult<()> {
-    let local_responsible_shards = get_local_source_shards(source, this_peer_id).await?;
+    let collections_read = collections.read().await;
+    let collection = handle_get_collection(collections_read.get(&source_collection))?;
+    let local_responsible_shards = get_local_source_shards(collection, this_peer_id).await?;
+
+    // Wait for all shards to be active
+    {
+        let collections_read = collections.read().await;
+        let collection = handle_get_collection(collections_read.get(&target_collection))?;
+        let is_initialized = collection.wait_collection_initiated(COLLECTION_INITIATION_TIMEOUT);
+        if !is_initialized {
+            return Err(CollectionError::service_error(format!(
+                "Collection {} was not initialized within {} sec timeout",
+                target_collection,
+                COLLECTION_INITIATION_TIMEOUT.as_secs()
+            )));
+        }
+    }
+
+    for shard_id in local_responsible_shards {
+        migrate_shard(
+            collections.clone(),
+            &source_collection,
+            &target_collection,
+            shard_id,
+        )
+        .await?;
+    }
 
     Ok(())
 }

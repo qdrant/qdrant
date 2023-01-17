@@ -48,6 +48,7 @@ use crate::content_manager::collection_meta_ops::{
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
+use crate::content_manager::migration::migrate;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
@@ -258,7 +259,7 @@ impl TableOfContent {
             optimizers_config: optimizers_config_diff,
             replication_factor,
             write_consistency_factor,
-            init_from: _init_from,
+            init_from,
         } = operation;
 
         self.collections
@@ -356,7 +357,24 @@ impl TableOfContent {
             self.on_peer_created(collection_name.to_string(), self.this_peer_id, shard_id)
                 .await?;
         }
+
+        if let Some(init_from) = init_from {
+            self.run_migration(init_from.collection, collection_name.to_string()).await;
+        }
+
         Ok(true)
+    }
+
+    pub async fn run_migration(&self, from_collection: CollectionId, to_collection: CollectionId) {
+        let collections = self.collections.clone();
+        let this_peer_id = self.this_peer_id;
+        // There should be no search requests during initial update, so we can search runtime.
+        self.search_runtime.spawn(async move {
+            match migrate(collections, from_collection, to_collection, this_peer_id).await {
+                Ok(_) => log::info!("Migration completed"),
+                Err(err) => log::error!("Migration failed: {}", err),
+            }
+        });
     }
 
     async fn on_peer_created(
