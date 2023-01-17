@@ -156,7 +156,11 @@ def get_cluster_info(peer_api_uri: str) -> dict:
 
 def print_clusters_info(peer_api_uris: [str]):
     for uri in peer_api_uris:
-        print(json.dumps(get_cluster_info(uri), indent=4))
+        try:
+            # do not crash if the peer is not online
+            print(json.dumps(get_cluster_info(uri), indent=4))
+        except requests.exceptions.ConnectionError:
+            print(f"Can't retrieve cluster info for offline peer {uri}")
 
 
 def get_collection_cluster_info(peer_api_uri: str, collection_name: str) -> dict:
