@@ -219,6 +219,7 @@ mod tests {
                 vectors: VectorsConfig::Single(VectorParams {
                     size: NonZeroU64::new(4).unwrap(),
                     distance: Distance::Dot,
+                    use_quantization: false,
                 }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,

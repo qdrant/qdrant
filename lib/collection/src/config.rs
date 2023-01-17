@@ -161,6 +161,7 @@ impl CollectionParams {
                     VectorDataConfig {
                         size: params.size.get() as usize,
                         distance: params.distance,
+                        use_quantization: params.use_quantization,
                     },
                 );
                 map
@@ -173,6 +174,7 @@ impl CollectionParams {
                         VectorDataConfig {
                             size: params.size.get() as usize,
                             distance: params.distance,
+                            use_quantization: params.use_quantization,
                         },
                     )
                 })

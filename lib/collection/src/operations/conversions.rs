@@ -265,6 +265,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 Status::invalid_argument("VectorParams size must be greater than zero")
             })?,
             distance: from_grpc_dist(vector_params.distance)?,
+            use_quantization: vector_params.use_quantization.unwrap_or(false),
         })
     }
 }
@@ -635,6 +636,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 Distance::Dot => api::grpc::qdrant::Distance::Dot,
             }
             .into(),
+            use_quantization: Some(value.use_quantization),
         }
     }
 }

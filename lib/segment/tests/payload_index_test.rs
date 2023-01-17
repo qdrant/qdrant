@@ -32,6 +32,7 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
+                    use_quantization: false,
                 },
             )]),
             index: Indexes::Plain {},

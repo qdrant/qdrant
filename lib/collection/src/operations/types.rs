@@ -641,6 +641,9 @@ pub struct VectorParams {
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    ///
+    #[serde(default)]
+    pub use_quantization: bool,
 }
 
 /// Vector params separator for single and multiple vector modes

@@ -105,6 +105,7 @@ impl Anonymize for VectorDataConfig {
         VectorDataConfig {
             size: self.size.anonymize(),
             distance: self.distance,
+            use_quantization: self.use_quantization,
         }
     }
 }

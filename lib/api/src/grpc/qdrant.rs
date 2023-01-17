@@ -7,6 +7,8 @@ pub struct VectorParams {
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
     pub distance: i32,
+    #[prost(bool, optional, tag = "3")]
+    pub use_quantization: ::core::option::Option<bool>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

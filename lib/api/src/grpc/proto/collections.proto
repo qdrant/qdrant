@@ -4,6 +4,7 @@ package qdrant;
 message VectorParams {
   uint64 size = 1; // Size of the vectors
   Distance distance = 2; // Distance function used for comparing vectors
+  optional bool use_quantization = 3;
 }
 
 message VectorParamsMap {
