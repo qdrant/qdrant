@@ -359,7 +359,8 @@ impl TableOfContent {
         }
 
         if let Some(init_from) = init_from {
-            self.run_migration(init_from.collection, collection_name.to_string()).await;
+            self.run_migration(init_from.collection, collection_name.to_string())
+                .await;
         }
 
         Ok(true)
