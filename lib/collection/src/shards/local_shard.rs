@@ -1,6 +1,5 @@
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
-use std::fs::remove_file;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -189,7 +188,7 @@ impl LocalShard {
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
             if segments_path.ends_with("deleted") {
-                std::fs::remove_dir_all(&segments_path).map_err(|_| {
+                remove_dir_all(&segments_path).await.map_err(|_| {
                     CollectionError::service_error(format!(
                         "Can't remove marked-for-remove segment {}",
                         segments_path.to_str().unwrap()
@@ -479,7 +478,7 @@ impl LocalShard {
                 }
                 let segment_id = segment_id_opt.unwrap();
                 Segment::restore_snapshot(&entry_path, &segment_id)?;
-                remove_file(&entry_path)?;
+                std::fs::remove_file(&entry_path)?;
             }
         }
         Ok(())

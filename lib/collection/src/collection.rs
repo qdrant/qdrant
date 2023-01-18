@@ -1350,6 +1350,9 @@ impl Collection {
             .await
     }
 
+    /// Restore collection from snapshot
+    ///
+    /// This method performs blocking IO.
     pub fn restore_snapshot(snapshot_path: &Path, target_dir: &Path) -> CollectionResult<()> {
         // decompress archive
         let archive_file = std::fs::File::open(snapshot_path)?;
