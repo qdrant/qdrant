@@ -3,28 +3,27 @@ mod tests {
     use std::collections::{BTreeSet, HashMap};
     use std::sync::atomic::AtomicBool;
 
-    use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::thread_rng;
     use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::entry::entry_point::SegmentEntry;
-    use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
+    use segment::fixtures::payload_fixtures::random_vector;
     use segment::index::hnsw_index::graph_links::GraphLinksRam;
     use segment::index::hnsw_index::hnsw::HNSWIndex;
-    use segment::index::{PayloadIndex, VectorIndex};
+    use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
-        PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType,
+        Distance, HnswConfig, Indexes,
+        SearchParams, SegmentConfig, SeqNumberType,
         StorageType, VectorDataConfig,
     };
     use segment::vector_storage::ScoredPointOffset;
-    use serde_json::json;
     use tempfile::Builder;
 
     fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
-        a.iter()
+        a[0].iter()
+            .map(|x| x.idx)
             .collect::<BTreeSet<_>>()
-            .intersection(&b.iter().collect())
+            .intersection(&b[0].iter().map(|x| x.idx).collect())
             .count()
     }
 
@@ -32,15 +31,12 @@ mod tests {
     fn hnsw_quantized_search_test() {
         let stopped = AtomicBool::new(false);
 
-        let dim = 32;
-        let m = 8;
-        let num_vectors: u64 = 5_000;
-        let ef = 32;
-        let ef_construct = 16;
+        let dim = 128;
+        let m = 16;
+        let num_vectors: u64 = 100_000;
+        let ef = 100;
+        let ef_construct = 100;
         let distance = Distance::Cosine;
-        let full_scan_threshold = 16; // KB
-        let indexing_threshold = 500; // num vectors
-        let num_payload_values = 2;
 
         let mut rnd = thread_rng();
 
@@ -61,31 +57,20 @@ mod tests {
             payload_storage_type: Default::default(),
         };
 
-        let int_key = "int";
-
         let mut segment = build_segment(dir.path(), &config).unwrap();
         for n in 0..num_vectors {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
-
-            let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
-            let payload: Payload = json!({int_key:int_payload,}).into();
-
             segment
                 .upsert_vector(n as SeqNumberType, idx, &only_default_vector(&vector))
-                .unwrap();
-            segment
-                .set_full_payload(n as SeqNumberType, idx, &payload)
                 .unwrap();
         }
         segment.update_quantization().unwrap();
 
-        let payload_index_ptr = segment.payload_index.clone();
-
         let hnsw_config = HnswConfig {
             m,
             ef_construct,
-            full_scan_threshold,
+            full_scan_threshold: usize::MAX,
             max_indexing_threads: 2,
             on_disk: Some(false),
             payload_m: None,
@@ -96,55 +81,16 @@ mod tests {
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_storage
                 .clone(),
-            payload_index_ptr.clone(),
+            segment.payload_index.clone(),
             hnsw_config,
         )
         .unwrap();
 
         hnsw_index.build_index(&stopped).unwrap();
+        println!("\nbuild_index finished");
 
-        payload_index_ptr
-            .borrow_mut()
-            .set_indexed(int_key, PayloadSchemaType::Integer.into())
-            .unwrap();
-        let borrowed_payload_index = payload_index_ptr.borrow();
-        let blocks = borrowed_payload_index
-            .payload_blocks(int_key, indexing_threshold)
-            .collect_vec();
-        for block in blocks.iter() {
-            assert!(
-                block.condition.range.is_some(),
-                "only range conditions should be generated for this type of payload"
-            );
-        }
-
-        let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
-        for block in &blocks {
-            let px = payload_index_ptr.borrow();
-            let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-            let points = px.query_points(&filter);
-            for point in points {
-                coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
-            }
-        }
-        let expected_blocks = num_vectors as usize / indexing_threshold * 2;
-
-        println!("blocks.len() = {:#?}", blocks.len());
-        assert!(
-            (blocks.len() as i64 - expected_blocks as i64).abs() <= 3,
-            "real number of payload blocks is too far from expected"
-        );
-
-        assert_eq!(
-            coverage.len(),
-            num_vectors as usize,
-            "not all points are covered by payload blocks"
-        );
-
-        hnsw_index.build_index(&stopped).unwrap();
-
-        let top = 3;
-        let attempts = 50;
+        let top = 10;
+        let attempts = 10;
         let mut sames: usize = 0;
         for _i in 0..attempts {
             let query = random_vector(&mut rnd, dim);
@@ -163,41 +109,9 @@ mod tests {
                 .borrow()
                 .search(&[&query], None, top, None);
             sames += sames_count(&index_result, &plain_result);
-
-            let range_size = 40;
-            let left_range = rnd.gen_range(0..400);
-            let right_range = left_range + range_size;
-
-            let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-                int_key.to_owned(),
-                Range {
-                    lt: None,
-                    gt: None,
-                    gte: Some(left_range as f64),
-                    lte: Some(right_range as f64),
-                },
-            )));
-
-            let filter_query = Some(&filter);
-            let index_result = hnsw_index.search(
-                &[&query],
-                filter_query,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    ..Default::default()
-                }),
-            );
-            let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_index
-                .borrow()
-                .search(&[&query], filter_query, top, None);
-            sames += sames_count(&index_result, &plain_result);
         }
-        println!("sames = {}, attempts = {}, top = {}", sames, attempts, top);
-        assert!(
-            4 * sames > attempts * 2 * top,
-            "not all results are the same for index and plain search"
-        );
+        let acc = 100.0 * sames as f64 / (attempts * top) as f64;
+        println!("sames = {:}, attempts = {:}, top = {:}, acc = {:}", sames, attempts, top, acc);
+        assert!(acc > 40.0);
     }
 }

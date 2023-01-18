@@ -228,12 +228,15 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         vector: &[VectorElementType],
         ignore_quantization: bool,
     ) -> (Box<dyn RawScorer + 'a>, bool) {
-        if let Some(raw_scorer) = vector_storage.quantized_raw_scorer(vector) {
-            if !ignore_quantization {
-                return (raw_scorer, true);
+        if ignore_quantization {
+            (vector_storage.raw_scorer(vector.to_owned()), false)
+        } else {
+            if let Some(quantized_raw_scorer) = vector_storage.quantized_raw_scorer(vector) {
+                (quantized_raw_scorer, true)
+            } else {
+                (vector_storage.raw_scorer(vector.to_owned()), false)
             }
         }
-        (vector_storage.raw_scorer(vector.to_owned()), false)
     }
 }
 
