@@ -432,6 +432,25 @@ impl TableOfContent {
         })
     }
 
+    fn on_transfer_success_callback(
+        proposal_sender: Option<OperationSender>,
+    ) -> collection::collection::OnTransferSuccess {
+        Arc::new(move |transfer, collection_name| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let operation =
+                    ConsensusOperations::finish_transfer(collection_name.clone(), transfer.clone());
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to complete transfer of shard {} of collection {}. Error: {}",
+                        transfer.shard_id,
+                        collection_name,
+                        send_error
+                    );
+                }
+            }
+        })
+    }
+
     fn on_peer_failure_callback(
         proposal_sender: Option<OperationSender>,
         collection_name: String,
@@ -1353,9 +1372,14 @@ impl CollectionContainer for TableOfContent {
             let collections = self.collections.read().await;
             let transfer_failure_callback =
                 Self::on_transfer_failure_callback(self.consensus_proposal_sender.clone());
+            let transfer_success_callback =
+                Self::on_transfer_success_callback(self.consensus_proposal_sender.clone());
             for collection in collections.values() {
                 collection
-                    .sync_local_state(transfer_failure_callback.clone())
+                    .sync_local_state(
+                        transfer_failure_callback.clone(),
+                        transfer_success_callback.clone(),
+                    )
                     .await?;
             }
             Ok(())
