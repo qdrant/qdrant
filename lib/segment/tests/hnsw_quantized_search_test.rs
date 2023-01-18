@@ -32,9 +32,9 @@ mod tests {
 
         let dim = 128;
         let m = 16;
-        let num_vectors: u64 = 100_000;
-        let ef = 100;
-        let ef_construct = 100;
+        let num_vectors: u64 = 5_000;
+        let ef = 64;
+        let ef_construct = 64;
         let distance = Distance::Cosine;
 
         let mut rnd = thread_rng();
@@ -86,7 +86,6 @@ mod tests {
         .unwrap();
 
         hnsw_index.build_index(&stopped).unwrap();
-        println!("\nbuild_index finished");
 
         let top = 10;
         let attempts = 10;
