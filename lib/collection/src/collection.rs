@@ -88,7 +88,7 @@ pub struct Collection {
     // Lock to temporary block collection update operations while the collection is being migrated.
     // Lock is acquired for read on update operation and can be acquired for write externally,
     // which will block all update operations until the lock is released.
-    updates_lock: RwLock<()>
+    updates_lock: RwLock<()>,
 }
 
 impl Collection {
