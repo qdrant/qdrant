@@ -18,7 +18,7 @@ use semver::Version;
 use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -85,6 +85,10 @@ pub struct Collection {
     // One-way boolean flag that is set to true when the collection is fully initialized
     // i.e. all shards are activated for the first time.
     is_initialized: Arc<IsReady>,
+    // Lock to temporary block collection update operations while the collection is being migrated.
+    // Lock is acquired for read on update operation and can be acquired for write externally,
+    // which will block all update operations until the lock is released.
+    updates_lock: RwLock<()>
 }
 
 impl Collection {
@@ -156,6 +160,7 @@ impl Collection {
             notify_peer_failure_cb: on_replica_failure.clone(),
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
+            updates_lock: RwLock::new(()),
         })
     }
 
@@ -256,6 +261,7 @@ impl Collection {
             notify_peer_failure_cb: on_replica_failure,
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
+            updates_lock: RwLock::new(()),
         }
     }
 
@@ -649,6 +655,7 @@ impl Collection {
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        let _update_lock = self.updates_lock.read().await;
         let shard_holder_guard = self.shards_holder.read().await;
 
         let res = match shard_holder_guard.get_shard(&shard_selection) {
@@ -672,6 +679,7 @@ impl Collection {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
+        let _update_lock = self.updates_lock.read().await;
 
         let mut results = {
             let shards_holder = self.shards_holder.read().await;
@@ -1446,6 +1454,10 @@ impl Collection {
 
     pub fn wait_collection_initiated(&self, timeout: Duration) -> bool {
         self.is_initialized.await_ready_for_timeout(timeout)
+    }
+
+    pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
+        self.updates_lock.write().await
     }
 }
 

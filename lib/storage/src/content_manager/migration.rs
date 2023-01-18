@@ -68,8 +68,8 @@ fn handle_get_collection(collection: Option<&Collection>) -> CollectionResult<&C
 
 async fn migrate_shard(
     collections: Arc<RwLock<Collections>>,
-    source_collection: &CollectionId,
-    target_collection: &CollectionId,
+    source_collection_name: &CollectionId,
+    target_collection_name: &CollectionId,
     shard_id: ShardId,
 ) -> CollectionResult<()> {
     let mut offset = None;
@@ -84,11 +84,12 @@ async fn migrate_shard(
             with_vector: WithVector::Bool(true),
         };
 
-        let scroll_result = {
-            let collections_read = collections.read().await;
-            let collection = handle_get_collection(collections_read.get(source_collection))?;
-            collection.scroll_by(request, Some(shard_id)).await?
-        };
+        let collections_read = collections.read().await;
+
+        let source_collection =
+            handle_get_collection(collections_read.get(source_collection_name))?;
+        let _updates_guard = source_collection.lock_updates().await;
+        let scroll_result = source_collection.scroll_by(request, Some(shard_id)).await?;
 
         offset = scroll_result.next_page_offset;
 
@@ -110,10 +111,12 @@ async fn migrate_shard(
             PointOperations::UpsertPoints(PointInsertOperations::PointsList(records)),
         );
 
-        let collections_read = collections.read().await;
-        let collection = handle_get_collection(collections_read.get(target_collection))?;
+        let target_collection =
+            handle_get_collection(collections_read.get(target_collection_name))?;
 
-        collection.update_from_client(upsert_request, false).await?;
+        target_collection
+            .update_from_client(upsert_request, false)
+            .await?;
 
         if offset.is_none() {
             break;
