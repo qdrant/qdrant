@@ -12,9 +12,8 @@ mod tests {
     use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Distance, HnswConfig, Indexes,
-        SearchParams, SegmentConfig, SeqNumberType,
-        StorageType, VectorDataConfig,
+        Distance, HnswConfig, Indexes, SearchParams, SegmentConfig, SeqNumberType, StorageType,
+        VectorDataConfig,
     };
     use segment::vector_storage::ScoredPointOffset;
     use tempfile::Builder;
@@ -111,7 +110,10 @@ mod tests {
             sames += sames_count(&index_result, &plain_result);
         }
         let acc = 100.0 * sames as f64 / (attempts * top) as f64;
-        println!("sames = {:}, attempts = {:}, top = {:}, acc = {:}", sames, attempts, top, acc);
+        println!(
+            "sames = {:}, attempts = {:}, top = {:}, acc = {:}",
+            sames, attempts, top, acc
+        );
         assert!(acc > 40.0);
     }
 }
