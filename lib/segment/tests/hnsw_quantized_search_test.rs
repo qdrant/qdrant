@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, BTreeSet};
+    use std::collections::{BTreeSet, HashMap};
     use std::sync::atomic::AtomicBool;
 
     use itertools::Itertools;
@@ -21,11 +21,9 @@ mod tests {
     use serde_json::json;
     use tempfile::Builder;
 
-    fn sames_count(
-        a: &[Vec<ScoredPointOffset>],
-        b: &[Vec<ScoredPointOffset>],
-    ) -> usize {
-        a.iter().collect::<BTreeSet<_>>()
+    fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
+        a.iter()
+            .collect::<BTreeSet<_>>()
             .intersection(&b.iter().collect())
             .count()
     }
