@@ -16,7 +16,7 @@ use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
     RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    UpdateResult,
+    UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -268,6 +268,11 @@ impl TableOfContent {
             .validate_collection_not_exists(collection_name)
             .await?;
 
+        if let Some(init_from_) = &init_from {
+            self.check_migration_compatibility(&vectors, &init_from_.collection)
+                .await?;
+        }
+
         let collection_path = self.create_collection_path(collection_name).await?;
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
 
@@ -364,6 +369,21 @@ impl TableOfContent {
         }
 
         Ok(true)
+    }
+
+    async fn check_migration_compatibility(
+        &self,
+        vectors: &VectorsConfig,
+        source_collection: &CollectionId,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection(source_collection).await?;
+        let collection_vectors_schema = collection.state().await.config.params.vectors;
+        if &collection_vectors_schema != vectors {
+            return Err(StorageError::BadInput {
+                description: format!("Cannot migrate data from collection with vectors schema {:?} to collection with vectors schema {:?}", collection_vectors_schema, vectors)
+            });
+        }
+        Ok(())
     }
 
     pub async fn run_migration(&self, from_collection: CollectionId, to_collection: CollectionId) {

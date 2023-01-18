@@ -92,7 +92,7 @@ async fn migrate_shard(
 
         offset = scroll_result.next_page_offset;
 
-        if offset.is_none() {
+        if scroll_result.points.is_empty() {
             break;
         }
 
@@ -114,6 +114,10 @@ async fn migrate_shard(
         let collection = handle_get_collection(collections_read.get(target_collection))?;
 
         collection.update_from_client(upsert_request, false).await?;
+
+        if offset.is_none() {
+            break;
+        }
     }
     Ok(())
 }
@@ -129,6 +133,13 @@ pub async fn migrate(
     let collections_read = collections.read().await;
     let collection = handle_get_collection(collections_read.get(&source_collection))?;
     let local_responsible_shards = get_local_source_shards(collection, this_peer_id).await?;
+
+    log::debug!(
+        "Migrating shards {:?} from collection {} to collection {}",
+        local_responsible_shards,
+        source_collection,
+        target_collection
+    );
 
     // Wait for all shards to be active
     {
