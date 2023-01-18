@@ -296,8 +296,6 @@ pub trait SegmentOptimizer {
             self.check_cancellation(stopped)?;
         }
 
-        optimized_segment.update_quantization()?;
-
         Ok(optimized_segment)
     }
 

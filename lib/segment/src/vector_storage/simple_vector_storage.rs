@@ -299,6 +299,7 @@ where
     }
 
     fn quantize(&mut self) -> OperationResult<()> {
+        log::info!("Quantizing vectors...");
         self.quantized_vectors = Some(
             EncodedVectors::encode(
                 (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),

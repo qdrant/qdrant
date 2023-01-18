@@ -187,6 +187,8 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
             }
 
+            segment.update_quantization()?;
+
             for vector_data in segment.vector_data.values_mut() {
                 vector_data.vector_index.borrow_mut().build_index(stopped)?;
             }
@@ -199,11 +201,13 @@ impl SegmentBuilder {
         fs::rename(&self.temp_path, &self.destination_path)
             .describe("Moving segment data after optimization")?;
 
-        load_segment(&self.destination_path)?.ok_or_else(|| {
+        let loaded_segment = load_segment(&self.destination_path)?.ok_or_else(|| {
             OperationError::service_error(&format!(
                 "Segment loading error: {}",
                 self.destination_path.display()
             ))
-        })
+        })?;
+        loaded_segment.update_quantization()?;
+        Ok(loaded_segment)
     }
 }
