@@ -23,6 +23,7 @@
     - [HnswConfigDiff](#qdrant-HnswConfigDiff)
     - [ListAliasesRequest](#qdrant-ListAliasesRequest)
     - [ListAliasesResponse](#qdrant-ListAliasesResponse)
+    - [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest)
     - [ListCollectionsRequest](#qdrant-ListCollectionsRequest)
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
@@ -466,6 +467,21 @@
 
 
 
+<a name="qdrant-ListCollectionAliasesRequest"></a>
+
+### ListCollectionAliasesRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+
+
+
+
+
+
 <a name="qdrant-ListCollectionsRequest"></a>
 
 ### ListCollectionsRequest
@@ -792,7 +808,8 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Update | [UpdateCollection](#qdrant-UpdateCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update parameters of the existing collection |
 | Delete | [DeleteCollection](#qdrant-DeleteCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Drop collection and all associated data |
 | UpdateAliases | [ChangeAliases](#qdrant-ChangeAliases) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update Aliases of the existing collection |
-| ListAliases | [ListAliasesRequest](#qdrant-ListAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list name of all existing collections |
+| ListCollectionAliases | [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for a collection |
+| ListAliases | [ListAliasesRequest](#qdrant-ListAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for all existing collections |
 
  
 

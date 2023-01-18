@@ -277,6 +277,10 @@ message DeleteAlias {
 message ListAliasesRequest {
 }
 
+message ListCollectionAliasesRequest {
+  string collection_name = 1; // Name of the collection
+}
+
 message AliasDescription {
   string alias_name = 1; // Name of the alias
   string collection_name = 2; // Name of the collection

@@ -421,6 +421,13 @@ pub struct DeleteAlias {
 pub struct ListAliasesRequest {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCollectionAliasesRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AliasDescription {
     /// Name of the alias
     #[prost(string, tag = "1")]
@@ -725,7 +732,28 @@ pub mod collections_client {
             self.inner.unary(request.into_request(), path, codec).await
         }
         ///
-        /// Get list name of all existing collections
+        /// Get list of all aliases for a collection
+        pub async fn list_collection_aliases(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListCollectionAliasesRequest>,
+        ) -> Result<tonic::Response<super::ListAliasesResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/ListCollectionAliases",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        ///
+        /// Get list of all aliases for all existing collections
         pub async fn list_aliases(
             &mut self,
             request: impl tonic::IntoRequest<super::ListAliasesRequest>,
@@ -791,7 +819,13 @@ pub mod collections_server {
             request: tonic::Request<super::ChangeAliases>,
         ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
         ///
-        /// Get list name of all existing collections
+        /// Get list of all aliases for a collection
+        async fn list_collection_aliases(
+            &self,
+            request: tonic::Request<super::ListCollectionAliasesRequest>,
+        ) -> Result<tonic::Response<super::ListAliasesResponse>, tonic::Status>;
+        ///
+        /// Get list of all aliases for all existing collections
         async fn list_aliases(
             &self,
             request: tonic::Request<super::ListAliasesRequest>,
@@ -1075,6 +1109,46 @@ pub mod collections_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = UpdateAliasesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/ListCollectionAliases" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListCollectionAliasesSvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<super::ListCollectionAliasesRequest>
+                    for ListCollectionAliasesSvc<T> {
+                        type Response = super::ListAliasesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListCollectionAliasesRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).list_collection_aliases(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListCollectionAliasesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
