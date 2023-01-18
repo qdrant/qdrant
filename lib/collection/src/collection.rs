@@ -55,6 +55,7 @@ use crate::telemetry::CollectionTelemetry;
 
 pub type VectorLookupFuture<'a> = Box<dyn Future<Output = CollectionResult<Vec<Record>>> + 'a>;
 pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
+pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
 struct CollectionVersion;
@@ -1396,6 +1397,7 @@ impl Collection {
     pub async fn sync_local_state(
         &self,
         on_transfer_failure: OnTransferFailure,
+        on_transfer_success: OnTransferSuccess,
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
@@ -1407,12 +1409,30 @@ impl Collection {
         let outgoing_transfers = self.get_outgoing_transfers(&self.this_peer_id).await;
         let tasks_lock = self.transfer_tasks.lock().await;
         for transfer in outgoing_transfers {
-            if !tasks_lock.check_if_still_running(&transfer.key()) {
-                log::debug!(
-                    "Transfer {:?} is not running, but not reported as finished. Reporting now.",
-                    transfer.key()
-                );
-                on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+            match tasks_lock.get_task_result(&transfer.key()) {
+                None => {
+                    if !tasks_lock.check_if_still_running(&transfer.key()) {
+                        log::debug!(
+                            "Transfer {:?} does not exist, but not reported as cancelled. Reporting now.",
+                            transfer.key()
+                        );
+                        on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+                    }
+                }
+                Some(true) => {
+                    log::debug!(
+                        "Transfer {:?} is finished successfully, but not reported. Reporting now.",
+                        transfer.key()
+                    );
+                    on_transfer_success(transfer, self.name());
+                }
+                Some(false) => {
+                    log::debug!(
+                        "Transfer {:?} is failed, but not reported as failed. Reporting now.",
+                        transfer.key()
+                    );
+                    on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+                }
             }
         }
 
