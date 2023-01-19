@@ -1281,11 +1281,15 @@ impl Collection {
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
         let snapshot_path = self.snapshots_path.join(&snapshot_name);
-
+        log::info!(
+            "Creating collection snapshot {} into {:?}",
+            snapshot_name,
+            snapshot_path
+        );
         let snapshot_path_tmp = snapshot_path.with_extension("tmp");
 
         let snapshot_path_with_tmp_extension = temp_dir.join(&snapshot_name).with_extension("tmp");
-        let snapshot_path_with_arc_extension = temp_dir.join(snapshot_name).with_extension("arc");
+        let snapshot_path_with_arc_extension = temp_dir.join(&snapshot_name).with_extension("arc");
 
         create_dir_all(&snapshot_path_with_tmp_extension).await?;
 
@@ -1308,6 +1312,7 @@ impl Collection {
 
         let snapshot_path_with_arc_extension_clone = snapshot_path_with_arc_extension.clone();
         let snapshot_path_with_tmp_extension_clone = snapshot_path_with_tmp_extension.clone();
+        log::debug!("Archiving snapshot {:?}", snapshot_path_with_tmp_extension);
         let archiving = tokio::task::spawn_blocking(move || {
             // have to use std here, cause TarBuilder is not async
             let file = std::fs::File::create(&snapshot_path_with_arc_extension_clone)?;
@@ -1330,6 +1335,11 @@ impl Collection {
         rename(&snapshot_path_tmp, &snapshot_path).await?;
         remove_file(snapshot_path_with_arc_extension).await?;
 
+        log::info!(
+            "Collection snapshot {} completed into {:?}",
+            snapshot_name,
+            snapshot_path
+        );
         get_snapshot_description(&snapshot_path).await
     }
 
