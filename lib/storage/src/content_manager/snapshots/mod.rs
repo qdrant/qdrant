@@ -30,10 +30,32 @@ pub async fn get_full_snapshot_path(
     let snapshot_path = Path::new(toc.snapshots_path()).join(snapshot_name);
     if !snapshot_path.exists() {
         return Err(StorageError::NotFound {
-            description: format!("Snapshot {} not found", snapshot_name),
+            description: format!("Full storage snapshot {} not found", snapshot_name),
         });
     }
     Ok(snapshot_path)
+}
+
+pub async fn do_delete_full_snapshot(
+    toc: &TableOfContent,
+    snapshot_name: &str,
+) -> Result<bool, StorageError> {
+    let snapshot_dir = get_full_snapshot_path(toc, snapshot_name).await?;
+    log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
+    tokio::fs::remove_file(snapshot_dir).await?;
+    Ok(true)
+}
+
+pub async fn do_delete_collection_snapshot(
+    toc: &TableOfContent,
+    collection_name: &str,
+    snapshot_name: &str,
+) -> Result<bool, StorageError> {
+    let collection = toc.get_collection(collection_name).await?;
+    let file_name = collection.get_snapshot_path(snapshot_name).await?;
+    log::info!("Deleting collection snapshot {:?}", file_name);
+    tokio::fs::remove_file(file_name).await?;
+    Ok(true)
 }
 
 pub async fn do_list_full_snapshots(

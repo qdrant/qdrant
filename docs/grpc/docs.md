@@ -130,6 +130,9 @@
     - [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest)
     - [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest)
     - [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse)
+    - [DeleteFullSnapshotsRequest](#qdrant-DeleteFullSnapshotsRequest)
+    - [DeleteSnapshotsRequest](#qdrant-DeleteSnapshotsRequest)
+    - [DeleteSnapshotsResponse](#qdrant-DeleteSnapshotsResponse)
     - [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest)
     - [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest)
     - [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse)
@@ -2070,6 +2073,52 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-DeleteFullSnapshotsRequest"></a>
+
+### DeleteFullSnapshotsRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| snapshot_name | [string](#string) |  | Name of the full snapshot |
+
+
+
+
+
+
+<a name="qdrant-DeleteSnapshotsRequest"></a>
+
+### DeleteSnapshotsRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| snapshot_name | [string](#string) |  | Name of the collection snapshot |
+
+
+
+
+
+
+<a name="qdrant-DeleteSnapshotsResponse"></a>
+
+### DeleteSnapshotsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
 <a name="qdrant-ListFullSnapshotsRequest"></a>
 
 ### ListFullSnapshotsRequest
@@ -2143,8 +2192,10 @@ The JSON representation for `Value` is JSON value.
 | ----------- | ------------ | ------------- | ------------|
 | Create | [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create collection snapshot |
 | List | [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List collection snapshots |
+| Delete | [DeleteSnapshotsRequest](#qdrant-DeleteSnapshotsRequest) | [DeleteSnapshotsResponse](#qdrant-DeleteSnapshotsResponse) | Delete collection snapshots |
 | CreateFull | [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create full storage snapshot |
 | ListFull | [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List full storage snapshots |
+| DeleteFull | [DeleteFullSnapshotsRequest](#qdrant-DeleteFullSnapshotsRequest) | [DeleteSnapshotsResponse](#qdrant-DeleteSnapshotsResponse) | List full storage snapshots |
 
  
 
