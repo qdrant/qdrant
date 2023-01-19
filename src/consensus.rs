@@ -912,7 +912,6 @@ mod tests {
                             vectors: VectorParams {
                                 size: NonZeroU64::new(10).unwrap(),
                                 distance: Distance::Cosine,
-                                use_quantization: false,
                             }
                             .into(),
                             hnsw_config: None,

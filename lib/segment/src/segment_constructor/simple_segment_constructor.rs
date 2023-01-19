@@ -26,7 +26,6 @@ pub fn build_simple_segment(
                 VectorDataConfig {
                     size: dim,
                     distance,
-                    use_quantization: false,
                 },
             )]),
             index: Indexes::Plain {},
@@ -48,7 +47,6 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim1,
             distance,
-            use_quantization: false,
         },
     );
     vectors_config.insert(
@@ -56,7 +54,6 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim2,
             distance,
-            use_quantization: false,
         },
     );
 

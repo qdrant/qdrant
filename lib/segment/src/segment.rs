@@ -1237,7 +1237,6 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
-                    use_quantization: false,
                 },
             )]),
             index: Indexes::Plain {},
@@ -1307,7 +1306,6 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
-                    use_quantization: false,
                 },
             )]),
             index: Indexes::Plain {},
@@ -1396,7 +1394,6 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
-                    use_quantization: false,
                 },
             )]),
             index: Indexes::Plain {},
@@ -1480,7 +1477,6 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
-                    use_quantization: false,
                 },
             )]),
             index: Indexes::Plain {},
@@ -1533,7 +1529,6 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
-                    use_quantization: false,
                 },
             )]),
             index: Indexes::Plain {},
