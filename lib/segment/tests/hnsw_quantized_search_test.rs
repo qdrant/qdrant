@@ -52,7 +52,7 @@ mod tests {
             )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            payload_storage_type: Default::default(),
+            ..Default::default()
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();

@@ -921,6 +921,7 @@ mod tests {
                             on_disk_payload: None,
                             replication_factor: None,
                             write_consistency_factor: None,
+                            quantization_config: None,
                         },
                     )),
                     None,

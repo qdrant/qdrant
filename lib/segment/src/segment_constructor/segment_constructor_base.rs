@@ -272,6 +272,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                     index: state.config.index,
                     storage_type: state.config.storage_type,
                     payload_storage_type: state.config.payload_storage_type,
+                    quantization_config: None,
                 },
             }
         })

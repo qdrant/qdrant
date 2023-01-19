@@ -171,6 +171,12 @@ pub struct OptimizersConfigDiff {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuantizationConfig {
+    #[prost(bool, tag = "1")]
+    pub enable: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
@@ -202,6 +208,8 @@ pub struct CreateCollection {
     /// How many replicas should apply the operation for us to consider it successful, default = 1
     #[prost(uint32, optional, tag = "12")]
     pub write_consistency_factor: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "13")]
+    pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -283,6 +291,8 @@ pub struct CollectionConfig {
     /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "4")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
+    #[prost(message, optional, tag = "5")]
+    pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

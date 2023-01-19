@@ -49,7 +49,7 @@ mod tests {
             )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            payload_storage_type: Default::default(),
+            ..Default::default()
         };
 
         let int_key = "int";

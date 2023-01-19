@@ -7,6 +7,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
+use segment::types::QuantizationConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -120,6 +121,8 @@ pub struct CreateCollection {
     pub wal_config: Option<WalConfigDiff>,
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
     pub optimizers_config: Option<OptimizersConfigDiff>,
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params

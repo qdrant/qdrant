@@ -258,6 +258,7 @@ impl TableOfContent {
             optimizers_config: optimizers_config_diff,
             replication_factor,
             write_consistency_factor,
+            quantization_config,
         } = operation;
 
         self.collections
@@ -320,6 +321,7 @@ impl TableOfContent {
             params: collection_params,
             optimizer_config: optimizers_config,
             hnsw_config,
+            quantization_config,
         };
         let collection = Collection::new(
             collection_name.to_string(),

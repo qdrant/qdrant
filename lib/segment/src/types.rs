@@ -289,6 +289,12 @@ fn default_max_indexing_threads() -> usize {
     0
 }
 
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct QuantizationConfig {
+    pub enable: bool,
+}
+
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
 
 impl Default for HnswConfig {
@@ -367,7 +373,7 @@ impl Default for PayloadStorageType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_data: HashMap<String, VectorDataConfig>,
@@ -378,6 +384,9 @@ pub struct SegmentConfig {
     /// Defines payload storage type
     #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
+
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Config of single vector data storage

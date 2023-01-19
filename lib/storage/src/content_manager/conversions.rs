@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use collection::operations::types::VectorsConfig;
+use segment::types::QuantizationConfig;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -56,6 +57,9 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 on_disk_payload: value.on_disk_payload,
                 replication_factor: value.replication_factor,
                 write_consistency_factor: value.write_consistency_factor,
+                quantization_config: value
+                    .quantization_config
+                    .map(|v| QuantizationConfig { enable: v.enable }),
             },
         )))
     }

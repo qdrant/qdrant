@@ -212,10 +212,11 @@ impl SegmentBuilder {
     }
 
     fn update_quantization(segment: &Segment) -> OperationResult<()> {
-        for (_vector_name, vector_data) in segment.vector_data.iter() {
-            let use_quantization = false;
-            if use_quantization {
-                vector_data.vector_storage.borrow_mut().quantize()?;
+        if let Some(quantization) = &segment.config().quantization_config {
+            if quantization.enable {
+                for vector_data in segment.vector_data.values() {
+                    vector_data.vector_storage.borrow_mut().quantize()?;
+                }
             }
         }
         Ok(())

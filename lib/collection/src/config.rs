@@ -9,7 +9,7 @@ use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::types::{HnswConfig, VectorDataConfig};
+use segment::types::{HnswConfig, QuantizationConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
 use wal::WalOptions;
 
@@ -103,6 +103,8 @@ pub struct CollectionConfig {
     pub hnsw_config: HnswConfig,
     pub optimizer_config: OptimizersConfig,
     pub wal_config: WalConfig,
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 impl CollectionConfig {

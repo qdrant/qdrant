@@ -36,7 +36,7 @@ mod tests {
             )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            payload_storage_type: Default::default(),
+            ..Default::default()
         };
 
         let mut plain_segment = build_segment(path_plain, &config).unwrap();

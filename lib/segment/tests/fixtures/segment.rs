@@ -135,8 +135,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                 ),
             ]),
             index: Indexes::Plain {},
-            storage_type: Default::default(),
-            payload_storage_type: Default::default(),
+            ..Default::default()
         },
     )
     .unwrap();

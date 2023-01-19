@@ -55,6 +55,7 @@ async fn test_snapshot_collection() {
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,
         hnsw_config: Default::default(),
+        quantization_config: Default::default(),
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
