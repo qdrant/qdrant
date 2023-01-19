@@ -1,6 +1,5 @@
 use core::cmp;
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -196,7 +195,7 @@ impl SegmentBuilder {
         }
 
         // Move fully constructed segment into collection directory and load back to RAM
-        fs::rename(&self.temp_path, &self.destination_path)
+        std::fs::rename(&self.temp_path, &self.destination_path)
             .describe("Moving segment data after optimization")?;
 
         load_segment(&self.destination_path)?.ok_or_else(|| {

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::{create_dir_all, File};
+use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
@@ -210,7 +210,7 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
 pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Segment> {
     let segment_path = path.join(Uuid::new_v4().to_string());
 
-    create_dir_all(&segment_path)?;
+    std::fs::create_dir_all(&segment_path)?;
 
     let segment = create_segment(0, &segment_path, config)?;
     segment.save_current_state()?;
