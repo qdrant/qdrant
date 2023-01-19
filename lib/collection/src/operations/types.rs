@@ -699,3 +699,16 @@ impl VectorsConfig {
         }
     }
 }
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct AliasDescription {
+    pub alias_name: String,
+    pub collection_name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CollectionsAliasesResponse {
+    pub aliases: Vec<AliasDescription>,
+}

@@ -14,7 +14,7 @@ use collection::config::{
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
+    AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
     RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
     UpdateResult,
 };
@@ -1037,6 +1037,22 @@ impl TableOfContent {
             .await
             .collection_aliases(collection_name);
         Ok(result)
+    }
+
+    /// List of all aliases across all collections
+    pub async fn list_aliases(&self) -> Result<Vec<AliasDescription>, StorageError> {
+        let all_collections = self.all_collections().await;
+        let mut aliases: Vec<AliasDescription> = Default::default();
+        for collection_name in &all_collections {
+            for alias in self.collection_aliases(collection_name).await? {
+                aliases.push(AliasDescription {
+                    alias_name: alias.to_string(),
+                    collection_name: collection_name.to_string(),
+                });
+            }
+        }
+
+        Ok(aliases)
     }
 
     /// Paginate over all stored points with given filtering conditions

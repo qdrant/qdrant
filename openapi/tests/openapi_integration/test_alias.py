@@ -31,6 +31,27 @@ def test_alias_operations():
     assert response.ok
 
     response = request_with_validation(
+        api='/aliases',
+        method="GET"
+    )
+    assert response.ok
+    assert len(response.json()['result']['aliases']) == 1
+    first_alias = response.json()['result']['aliases'][0]
+    assert first_alias['alias_name'] == 'test_alias'
+    assert first_alias['collection_name'] == collection_name
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/aliases',
+        path_params={'collection_name': collection_name},
+        method="GET"
+    )
+    assert response.ok
+    assert len(response.json()['result']['aliases']) == 1
+    first_alias = response.json()['result']['aliases'][0]
+    assert first_alias['alias_name'] == 'test_alias'
+    assert first_alias['collection_name'] == collection_name
+
+    response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
         path_params={'collection_name': collection_name},
@@ -68,6 +89,13 @@ def test_alias_operations():
         }
     )
     assert response.ok
+
+    response = request_with_validation(
+        api='/aliases',
+        method="GET"
+    )
+    assert response.ok
+    assert len(response.json()['result']['aliases']) == 0
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',

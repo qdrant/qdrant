@@ -4,9 +4,9 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
 use collection::operations::types::{
-    CollectionClusterInfo, CollectionInfo, CountRequest, CountResult, PointRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
-    SearchRequestBatch, UpdateResult,
+    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
+    CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
+    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use schemars::{schema_for, JsonSchema};
 use segment::types::ScoredPoint;
@@ -57,6 +57,8 @@ struct AllDefinitions {
     au: RecommendRequestBatch,
     av: LocksOption,
     aw: SnapshotRecover,
+    ax: CollectionsAliasesResponse,
+    ay: AliasDescription,
 }
 
 fn save_schema<T: JsonSchema>() {

@@ -67,6 +67,5 @@ def test_approx_count_search():
         }
     )
     assert response.ok
-    print(response.json())
     assert response.json()['result']['count'] < 6
     assert response.json()['result']['count'] > 0
