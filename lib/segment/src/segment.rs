@@ -470,21 +470,6 @@ impl Segment {
         }
         Ok(())
     }
-
-    pub fn update_quantization(&self) -> OperationResult<()> {
-        for (vector_name, vector_data) in self.vector_data.iter() {
-            let use_quantization = self
-                .segment_config
-                .vector_data
-                .get(vector_name)
-                .map(|config| config.use_quantization)
-                .unwrap_or(false);
-            if use_quantization {
-                vector_data.vector_storage.borrow_mut().quantize()?;
-            }
-        }
-        Ok(())
-    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,

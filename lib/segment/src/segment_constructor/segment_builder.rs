@@ -187,7 +187,7 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
             }
 
-            segment.update_quantization()?;
+            Self::update_quantization(&segment)?;
 
             for vector_data in segment.vector_data.values_mut() {
                 vector_data.vector_index.borrow_mut().build_index(stopped)?;
@@ -207,7 +207,22 @@ impl SegmentBuilder {
                 self.destination_path.display()
             ))
         })?;
-        loaded_segment.update_quantization()?;
+        Self::update_quantization(&loaded_segment)?;
         Ok(loaded_segment)
+    }
+
+    fn update_quantization(segment: &Segment) -> OperationResult<()> {
+        for (vector_name, vector_data) in segment.vector_data.iter() {
+            let use_quantization = segment
+                .segment_config
+                .vector_data
+                .get(vector_name)
+                .map(|config| config.use_quantization)
+                .unwrap_or(false);
+            if use_quantization {
+                vector_data.vector_storage.borrow_mut().quantize()?;
+            }
+        }
+        Ok(())
     }
 }

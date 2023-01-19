@@ -64,7 +64,13 @@ mod tests {
                 .upsert_vector(n as SeqNumberType, idx, &only_default_vector(&vector))
                 .unwrap();
         }
-        segment.update_quantization().unwrap();
+        segment.vector_data.values_mut().for_each(|vector_storage| {
+            vector_storage
+                .vector_storage
+                .borrow_mut()
+                .quantize()
+                .unwrap()
+        });
 
         let hnsw_config = HnswConfig {
             m,
