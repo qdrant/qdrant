@@ -127,6 +127,13 @@ paths:
           schema:
             type: integer
       responses: #@ response(type("boolean"))
+    get:
+      tags:
+        - collections
+      summary: List collections aliases
+      description: Get list of all existing collections aliases
+      operationId: get_collections_mappings
+      responses: #@ response(reference("CollectionsAliasesResponse"))
 
   /collections/{collection_name}/index:
     put:
@@ -229,3 +236,28 @@ paths:
           schema:
             type: integer
       responses: #@ response(type("boolean"))
+
+  /collections/{collection_name}/aliases:
+    get:
+      tags:
+        - collections
+      summary: List aliases for collection
+      description: Get list of all aliases for a collection
+      operationId: get_collection_aliases
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("CollectionsAliasesResponse"))
+
+  /aliases:
+    get:
+      tags:
+        - collections
+      summary: List collections aliases
+      description: Get list of all existing collections aliases
+      operationId: get_collections_aliases
+      responses: #@ response(reference("CollectionsAliasesResponse"))

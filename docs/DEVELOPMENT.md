@@ -70,11 +70,10 @@ Here is a quick step-by-step guide:
 2. change specs in `/openapi/*ytt.yaml`
 3. add new schema definitions to `src/schema_generator.rs`
 4. run `/tools/generate_openapi_models.sh` to generate specs
-5. move newly created openapi.json `cp docs/redoc/openapi.json docs/redoc/master/openapi.json`
-6. update integration tests `openapi/tests/openapi_integration`
-7. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
-8. validate specs by browsing redoc on `http://localhost:8000/?v=master`
-9. validate `openapi-merged.yaml` using [swagger editor](https://editor.swagger.io/)
+5. update integration tests `openapi/tests/openapi_integration` and run them with `./tests/openapi_integration_test.sh`
+6. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
+7. validate specs by browsing redoc on `http://localhost:8000/?v=master`
+8. validate `openapi-merged.yaml` using [swagger editor](https://editor.swagger.io/)
 
 ### gRPC
 
