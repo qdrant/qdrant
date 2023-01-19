@@ -2726,9 +2726,12 @@ dependencies = [
 [[package]]
 name = "quantization"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/quantization.git#13b734be5ed139ac4aff70e1f93b32d0ec46cf67"
+source = "git+https://github.com/qdrant/quantization.git#328f37c6d951d2ae483f56bf1f609ab13b6ab737"
 dependencies = [
+ "atomicwrites",
  "cc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
