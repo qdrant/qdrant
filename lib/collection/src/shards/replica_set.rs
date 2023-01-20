@@ -1145,15 +1145,37 @@ pub enum MergeCondition {
     Majority,
 }
 
-fn merge_records(records: &[Vec<Record>], condition: MergeCondition) -> Vec<Record> {
-    merge(records, |record| record.id, cmp::PartialEq::eq, condition)
+pub trait Merge: Sized {
+    fn merge(responses: &[Self], condition: MergeCondition) -> Self;
 }
 
-fn merge_scored_points<'a, I>(points: I, condition: MergeCondition) -> Vec<ScoredPoint>
-where
-    I: IntoIterator<Item = &'a Vec<ScoredPoint>>,
-{
-    merge(points, |point| point.id, scored_points_eq, condition)
+impl Merge for Vec<Record> {
+    fn merge(records: &[Self], condition: MergeCondition) -> Self {
+        merge(records, |record| record.id, cmp::PartialEq::eq, condition)
+    }
+}
+
+impl Merge for Vec<Vec<ScoredPoint>> {
+    fn merge(batches: &[Self], condition: MergeCondition) -> Self {
+        let batch_len = batches.first().map(Vec::len).unwrap_or(0);
+
+        let mut output_batch = Vec::with_capacity(batch_len);
+
+        let mut batches: Vec<_> = batches.iter().map(IntoIterator::into_iter).collect();
+
+        for _ in 0..batch_len {
+            let points = batches
+                .iter_mut()
+                .map(Iterator::next)
+                .filter_map(|points| points);
+
+            let points = merge(points, |point| point.id, scored_points_eq, condition);
+
+            output_batch.push(points);
+        }
+
+        output_batch
+    }
 }
 
 fn scored_points_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
