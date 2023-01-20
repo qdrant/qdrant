@@ -4,8 +4,8 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use itertools::Itertools;
-    use rand::{Rng, SeedableRng};
     use rand::prelude::StdRng;
+    use rand::{Rng, SeedableRng};
     use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
