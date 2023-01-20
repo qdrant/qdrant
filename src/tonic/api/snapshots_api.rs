@@ -4,10 +4,14 @@ use std::time::Instant;
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
     CreateFullSnapshotRequest, CreateSnapshotRequest, CreateSnapshotResponse,
+    DeleteFullSnapshotRequest, DeleteSnapshotRequest, DeleteSnapshotResponse,
     ListFullSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
 };
 use storage::content_manager::conversions::error_to_status;
-use storage::content_manager::snapshots::{do_create_full_snapshot, do_list_full_snapshots};
+use storage::content_manager::snapshots::{
+    do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
+    do_list_full_snapshots,
+};
 use storage::content_manager::toc::TableOfContent;
 use tonic::{async_trait, Request, Response, Status};
 
@@ -56,6 +60,23 @@ impl Snapshots for SnapshotsService {
         }))
     }
 
+    async fn delete(
+        &self,
+        request: Request<DeleteSnapshotRequest>,
+    ) -> Result<Response<DeleteSnapshotResponse>, Status> {
+        let DeleteSnapshotRequest {
+            collection_name,
+            snapshot_name,
+        } = request.into_inner();
+        let timing = Instant::now();
+        let _response = do_delete_collection_snapshot(&self.toc, &collection_name, &snapshot_name)
+            .await
+            .map_err(error_to_status)?;
+        Ok(Response::new(DeleteSnapshotResponse {
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
     async fn create_full(
         &self,
         _request: Request<CreateFullSnapshotRequest>,
@@ -80,6 +101,20 @@ impl Snapshots for SnapshotsService {
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
+    async fn delete_full(
+        &self,
+        request: Request<DeleteFullSnapshotRequest>,
+    ) -> Result<Response<DeleteSnapshotResponse>, Status> {
+        let snapshot_name = request.into_inner().snapshot_name;
+        let timing = Instant::now();
+        let _response = do_delete_full_snapshot(&self.toc, &snapshot_name)
+            .await
+            .map_err(error_to_status)?;
+        Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
     }

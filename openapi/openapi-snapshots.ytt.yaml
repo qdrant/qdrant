@@ -58,6 +58,27 @@ paths:
       responses: #@ response(reference("SnapshotDescription"))
 
   /collections/{collection_name}/snapshots/{snapshot_name}:
+    delete:
+      tags:
+        - snapshots
+        - collections
+      summary: Delete collection snapshot
+      description: Delete snapshot for a collection
+      operationId: delete_snapshot
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection for which to delete a snapshot
+          required: true
+          schema:
+            type: string
+        - name: snapshot_name
+          in: path
+          description: Name of the snapshot to delete
+          required: true
+          schema:
+            type: string
+      responses: #@ response(type("boolean"))
     get:
       tags:
         - snapshots
@@ -118,6 +139,20 @@ paths:
       responses: #@ response(reference("SnapshotDescription"))
 
   /snapshots/{snapshot_name}:
+    delete:
+      tags:
+        - snapshots
+      summary: Delete storage snapshot
+      description: Delete snapshot of the whole storage
+      operationId: delete_full_snapshot
+      parameters:
+        - name: snapshot_name
+          in: path
+          description: Name of the full snapshot to delete
+          required: true
+          schema:
+            type: string
+      responses: #@ response(type("boolean"))
     get:
       tags:
         - snapshots
