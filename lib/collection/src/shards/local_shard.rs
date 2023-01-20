@@ -38,6 +38,8 @@ use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal, UPDATE_QUEUE_SIZE};
 use crate::wal::SerdeWal;
 
+pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
+
 /// LocalShard
 ///
 /// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
@@ -46,7 +48,7 @@ use crate::wal::SerdeWal;
 pub struct LocalShard {
     pub(super) segments: Arc<RwLock<SegmentHolder>>,
     pub(super) config: Arc<TokioRwLock<CollectionConfig>>,
-    pub(super) wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+    pub(super) wal: LockedWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) runtime_handle: Option<Runtime>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
@@ -219,6 +221,11 @@ impl LocalShard {
             if let Some(segment) = segment_opt {
                 segment_holder.add(segment);
             }
+        }
+
+        let res = segment_holder.deduplicate_points()?;
+        if res > 0 {
+            log::debug!("Deduplicated {} points", res);
         }
 
         let optimizers = build_optimizers(
@@ -491,12 +498,21 @@ impl LocalShard {
         // snapshot all shard's segment
         let snapshot_segments_shard_path = snapshot_shard_path.join("segments");
         create_dir_all(&snapshot_segments_shard_path).await?;
-        self.segments
-            .read()
-            .snapshot_all_segments(&snapshot_segments_shard_path)?;
 
-        // snapshot all shard's WAL
-        self.snapshot_wal(snapshot_shard_path)?;
+        let segments = self.segments.clone();
+        let wal = self.wal.clone();
+        let snapshot_shard_path_owned = snapshot_shard_path.to_owned();
+
+        tokio::task::spawn_blocking(move || {
+            let segments_read = segments.read();
+
+            // Do not change segments while snapshotting
+            segments_read.snapshot_all_segments(&snapshot_segments_shard_path)?;
+
+            // snapshot all shard's WAL
+            Self::snapshot_wal(wal, &snapshot_shard_path_owned)
+        })
+        .await??;
 
         // copy shard's config
         let shard_config_path = ShardConfig::get_config_path(&self.path);
@@ -508,10 +524,11 @@ impl LocalShard {
     /// snapshot WAL
     ///
     /// copies all WAL files into `snapshot_shard_path/wal`
-    pub fn snapshot_wal(&self, snapshot_shard_path: &Path) -> CollectionResult<()> {
+    pub fn snapshot_wal(wal: LockedWal, snapshot_shard_path: &Path) -> CollectionResult<()> {
         // lock wal during snapshot
-        let _wal_guard = self.wal.lock();
-        let source_wal_path = self.path.join("wal");
+        let mut wal_guard = wal.lock();
+        wal_guard.flush()?;
+        let source_wal_path = wal_guard.path();
         let options = fs_extra::dir::CopyOptions::new();
         fs_extra::dir::copy(source_wal_path, snapshot_shard_path, &options).map_err(|err| {
             CollectionError::service_error(format!(

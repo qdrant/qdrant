@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
-use parking_lot::Mutex as ParkingMutex;
 use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
@@ -19,7 +18,8 @@ use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
-use crate::wal::{SerdeWal, WalError};
+use crate::shards::local_shard::LockedWal;
+use crate::wal::WalError;
 
 pub const UPDATE_QUEUE_SIZE: usize = 100;
 
@@ -77,7 +77,7 @@ pub struct UpdateHandler {
     flush_stop: Option<oneshot::Sender<()>>,
     runtime_handle: Handle,
     /// WAL, required for operations
-    wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+    wal: LockedWal,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
 }
@@ -87,7 +87,7 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
-        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: usize,
     ) -> UpdateHandler {
@@ -169,10 +169,7 @@ impl UpdateHandler {
 
     /// Checks if there are any failed operations.
     /// If so - attempts to re-apply all failed operations.
-    async fn try_recover(
-        segments: LockedSegmentHolder,
-        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
-    ) -> CollectionResult<usize> {
+    async fn try_recover(segments: LockedSegmentHolder, wal: LockedWal) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
         match first_failed_operation_option {
@@ -276,7 +273,7 @@ impl UpdateHandler {
         sender: Sender<OptimizerSignal>,
         mut receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
-        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: LockedWal,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         max_handles: usize,
     ) {
@@ -372,7 +369,7 @@ impl UpdateHandler {
 
     async fn flush_worker(
         segments: LockedSegmentHolder,
-        wal: Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>,
+        wal: LockedWal,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
     ) {

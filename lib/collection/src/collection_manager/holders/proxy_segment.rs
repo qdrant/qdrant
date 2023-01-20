@@ -1,25 +1,19 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
-use segment::entry::entry_point::{
-    OperationError, OperationResult, SegmentEntry, SegmentFailedState,
-};
+use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::index::field_index::CardinalityEstimation;
-use segment::segment::Segment;
-use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
     WithVector,
 };
-use uuid::Uuid;
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 
@@ -706,35 +700,14 @@ impl SegmentEntry for ProxySegment {
             "Taking a snapshot of a proxy segment into {:?}",
             snapshot_dir_path
         );
-        // extra care is needed to capture outstanding deleted points
-        let deleted_points_guard = self.deleted_points.read();
-        let wrapped_segment_arc = self.wrapped_segment.get();
-        let wrapped_segment_guard = wrapped_segment_arc.read();
 
-        // stable copy of the deleted points at the time of the snapshot
-        let deleted_points_copy = deleted_points_guard.clone();
+        let archive_path = {
+            let wrapped_segment_arc = self.wrapped_segment.get();
+            let wrapped_segment_guard = wrapped_segment_arc.read();
 
-        // parse wrapped segment id from it's data path
-        let wrapped_segment_id = wrapped_segment_guard
-            .data_path()
-            .file_stem()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-
-        // create temporary dir for operations on wrapped segment data
-        let tmp_dir_path = snapshot_dir_path.join(format!("segment_copy_{}", Uuid::new_v4()));
-        create_dir_all(&tmp_dir_path)?;
-
-        // snapshot wrapped segment data into the temporary dir
-        let archive_path = wrapped_segment_guard.take_snapshot(&tmp_dir_path)?;
-
-        // restore a copy of the wrapped segment data into the temporary dir
-        Segment::restore_snapshot(&archive_path, &wrapped_segment_id)?;
-
-        // build a path to a copy of the wrapped segment data
-        let full_copy_path = tmp_dir_path.join(&wrapped_segment_id);
+            // snapshot wrapped segment data into the temporary dir
+            wrapped_segment_guard.take_snapshot(snapshot_dir_path)?
+        };
 
         // snapshot write_segment
         let write_segment_rw = self.write_segment.get();
@@ -742,33 +715,6 @@ impl SegmentEntry for ProxySegment {
 
         // Write segment is not unique to the proxy segment, therefore it might overwrite an existing snapshot.
         write_segment_guard.take_snapshot(snapshot_dir_path)?;
-        // guaranteed to be higher than anything in wrapped segment and does not exceed WAL at the same time
-        let write_segment_version = write_segment_guard.version();
-
-        // unlock deleted_points as we have a stable copy
-        drop(wrapped_segment_guard);
-        drop(deleted_points_guard);
-
-        // load copy of wrapped segment in memory
-        let mut in_memory_wrapped_segment = load_segment(&full_copy_path)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Failed to load segment from {:?}",
-                full_copy_path
-            ))
-        })?;
-
-        // remove potentially deleted points from wrapped_segment
-        for deleted_point in deleted_points_copy {
-            in_memory_wrapped_segment.delete_point(write_segment_version, deleted_point)?;
-        }
-
-        let archive_path = in_memory_wrapped_segment.take_snapshot(snapshot_dir_path)?;
-
-        // release segment resources
-        drop(in_memory_wrapped_segment);
-
-        // delete temporary copy
-        remove_dir_all(tmp_dir_path)?;
 
         Ok(archive_path)
     }
