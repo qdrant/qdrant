@@ -23,9 +23,8 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 }
 
 /// Full vector data per point separator with single and multiple vector modes
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
     Single(VectorType),
     Multi(HashMap<String, VectorType>),
