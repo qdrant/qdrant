@@ -47,7 +47,7 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
-use crate::content_manager::data_transfer::populate_collection;
+use crate::content_manager::data_transfer::{populate_collection, transfer_indexes};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
@@ -394,6 +394,22 @@ impl TableOfContent {
         let collections = self.collections.clone();
         let this_peer_id = self.this_peer_id;
         self.collection_management_runtime.spawn(async move {
+            // Create indexes
+            match transfer_indexes(
+                collections.clone(),
+                &from_collection,
+                &to_collection,
+                this_peer_id,
+            )
+            .await
+            {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Initialization failed: {}", err)
+                }
+            }
+
+            // Transfer data
             match populate_collection(collections, &from_collection, &to_collection, this_peer_id)
                 .await
             {

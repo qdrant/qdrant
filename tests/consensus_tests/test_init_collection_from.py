@@ -33,6 +33,15 @@ def create_collection_from(
     assert_http_ok(r_batch)
 
 
+def create_payload_index(peer_url, collection_name):
+    r_batch = requests.put(
+        f"{peer_url}/collections/{collection_name}/index?wait=false", json={
+            "field_name": "city",
+            "field_schema": "keyword"
+        })
+    assert_http_ok(r_batch)
+
+
 def test_init_collection_from(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -44,6 +53,7 @@ def test_init_collection_from(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
+    create_payload_index(peer_api_uris[0], "test_collection")
     upsert_random_points(peer_api_uris[0], collection_name="test_collection", num=500)
 
     create_collection_from(peer_api_uris[1], from_collection_name="test_collection", collection="test_collection_2")
@@ -58,3 +68,7 @@ def test_init_collection_from(tmp_path: pathlib.Path):
         "test_collection_2",
         500
     )
+
+    collection_info = get_collection_info(peer_api_uris[0], "test_collection_2")
+
+    assert "city" in collection_info["payload_schema"]
