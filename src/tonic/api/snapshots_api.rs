@@ -4,7 +4,7 @@ use std::time::Instant;
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
     CreateFullSnapshotRequest, CreateSnapshotRequest, CreateSnapshotResponse,
-    DeleteFullSnapshotsRequest, DeleteSnapshotsRequest, DeleteSnapshotsResponse,
+    DeleteFullSnapshotRequest, DeleteSnapshotRequest, DeleteSnapshotResponse,
     ListFullSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
 };
 use storage::content_manager::conversions::error_to_status;
@@ -62,9 +62,9 @@ impl Snapshots for SnapshotsService {
 
     async fn delete(
         &self,
-        request: Request<DeleteSnapshotsRequest>,
-    ) -> Result<Response<DeleteSnapshotsResponse>, Status> {
-        let DeleteSnapshotsRequest {
+        request: Request<DeleteSnapshotRequest>,
+    ) -> Result<Response<DeleteSnapshotResponse>, Status> {
+        let DeleteSnapshotRequest {
             collection_name,
             snapshot_name,
         } = request.into_inner();
@@ -72,7 +72,7 @@ impl Snapshots for SnapshotsService {
         let _response = do_delete_collection_snapshot(&self.toc, &collection_name, &snapshot_name)
             .await
             .map_err(error_to_status)?;
-        Ok(Response::new(DeleteSnapshotsResponse {
+        Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
     }
@@ -107,14 +107,14 @@ impl Snapshots for SnapshotsService {
 
     async fn delete_full(
         &self,
-        request: Request<DeleteFullSnapshotsRequest>,
-    ) -> Result<Response<DeleteSnapshotsResponse>, Status> {
+        request: Request<DeleteFullSnapshotRequest>,
+    ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         let snapshot_name = request.into_inner().snapshot_name;
         let timing = Instant::now();
         let _response = do_delete_full_snapshot(&self.toc, &snapshot_name)
             .await
             .map_err(error_to_status)?;
-        Ok(Response::new(DeleteSnapshotsResponse {
+        Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
     }

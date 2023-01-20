@@ -5252,7 +5252,7 @@ pub struct CreateFullSnapshotRequest {}
 pub struct ListFullSnapshotsRequest {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteFullSnapshotsRequest {
+pub struct DeleteFullSnapshotRequest {
     /// Name of the full snapshot
     #[prost(string, tag = "1")]
     pub snapshot_name: ::prost::alloc::string::String,
@@ -5273,7 +5273,7 @@ pub struct ListSnapshotsRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteSnapshotsRequest {
+pub struct DeleteSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
@@ -5314,7 +5314,7 @@ pub struct ListSnapshotsResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteSnapshotsResponse {
+pub struct DeleteSnapshotResponse {
     /// Time spent to process
     #[prost(double, tag = "1")]
     pub time: f64,
@@ -5430,8 +5430,8 @@ pub mod snapshots_client {
         /// Delete collection snapshots
         pub async fn delete(
             &mut self,
-            request: impl tonic::IntoRequest<super::DeleteSnapshotsRequest>,
-        ) -> Result<tonic::Response<super::DeleteSnapshotsResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::DeleteSnapshotRequest>,
+        ) -> Result<tonic::Response<super::DeleteSnapshotResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -5491,8 +5491,8 @@ pub mod snapshots_client {
         /// List full storage snapshots
         pub async fn delete_full(
             &mut self,
-            request: impl tonic::IntoRequest<super::DeleteFullSnapshotsRequest>,
-        ) -> Result<tonic::Response<super::DeleteSnapshotsResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::DeleteFullSnapshotRequest>,
+        ) -> Result<tonic::Response<super::DeleteSnapshotResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -5533,8 +5533,8 @@ pub mod snapshots_server {
         /// Delete collection snapshots
         async fn delete(
             &self,
-            request: tonic::Request<super::DeleteSnapshotsRequest>,
-        ) -> Result<tonic::Response<super::DeleteSnapshotsResponse>, tonic::Status>;
+            request: tonic::Request<super::DeleteSnapshotRequest>,
+        ) -> Result<tonic::Response<super::DeleteSnapshotResponse>, tonic::Status>;
         ///
         /// Create full storage snapshot
         async fn create_full(
@@ -5551,8 +5551,8 @@ pub mod snapshots_server {
         /// List full storage snapshots
         async fn delete_full(
             &self,
-            request: tonic::Request<super::DeleteFullSnapshotsRequest>,
-        ) -> Result<tonic::Response<super::DeleteSnapshotsResponse>, tonic::Status>;
+            request: tonic::Request<super::DeleteFullSnapshotRequest>,
+        ) -> Result<tonic::Response<super::DeleteSnapshotResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct SnapshotsServer<T: Snapshots> {
@@ -5694,16 +5694,16 @@ pub mod snapshots_server {
                     struct DeleteSvc<T: Snapshots>(pub Arc<T>);
                     impl<
                         T: Snapshots,
-                    > tonic::server::UnaryService<super::DeleteSnapshotsRequest>
+                    > tonic::server::UnaryService<super::DeleteSnapshotRequest>
                     for DeleteSvc<T> {
-                        type Response = super::DeleteSnapshotsResponse;
+                        type Response = super::DeleteSnapshotResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::DeleteSnapshotsRequest>,
+                            request: tonic::Request<super::DeleteSnapshotRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).delete(request).await };
@@ -5808,16 +5808,16 @@ pub mod snapshots_server {
                     struct DeleteFullSvc<T: Snapshots>(pub Arc<T>);
                     impl<
                         T: Snapshots,
-                    > tonic::server::UnaryService<super::DeleteFullSnapshotsRequest>
+                    > tonic::server::UnaryService<super::DeleteFullSnapshotRequest>
                     for DeleteFullSvc<T> {
-                        type Response = super::DeleteSnapshotsResponse;
+                        type Response = super::DeleteSnapshotResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::DeleteFullSnapshotsRequest>,
+                            request: tonic::Request<super::DeleteFullSnapshotRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).delete_full(request).await };
