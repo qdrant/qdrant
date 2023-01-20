@@ -16,7 +16,7 @@ use crate::content_manager::collections_ops::Collections;
 const MIGRATION_BATCH_SIZE: usize = 1000;
 const COLLECTION_INITIATION_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Handlers for migration data from one collection into another within single cluster
+/// Handlers for transferring data from one collection into another within single cluster
 
 /// Get a list of local shards, which can be used for migration
 ///
@@ -66,7 +66,7 @@ fn handle_get_collection(collection: Option<&Collection>) -> CollectionResult<&C
     }
 }
 
-async fn migrate_shard(
+async fn replicate_shard_data(
     collections: Arc<RwLock<Collections>>,
     source_collection_name: &CollectionId,
     target_collection_name: &CollectionId,
@@ -127,14 +127,14 @@ async fn migrate_shard(
 
 /// Spawns a task which will retrieve data from appropriate local shards of the `source` collection
 /// into target collection.
-pub async fn migrate(
+pub async fn populate_collection(
     collections: Arc<RwLock<Collections>>,
-    source_collection: CollectionId,
-    target_collection: CollectionId,
+    source_collection: &CollectionId,
+    target_collection: &CollectionId,
     this_peer_id: PeerId,
 ) -> CollectionResult<()> {
     let collections_read = collections.read().await;
-    let collection = handle_get_collection(collections_read.get(&source_collection))?;
+    let collection = handle_get_collection(collections_read.get(source_collection))?;
     let local_responsible_shards = get_local_source_shards(collection, this_peer_id).await?;
 
     log::debug!(
@@ -147,7 +147,7 @@ pub async fn migrate(
     // Wait for all shards to be active
     {
         let collections_read = collections.read().await;
-        let collection = handle_get_collection(collections_read.get(&target_collection))?;
+        let collection = handle_get_collection(collections_read.get(target_collection))?;
         let is_initialized = collection.wait_collection_initiated(COLLECTION_INITIATION_TIMEOUT);
         if !is_initialized {
             return Err(CollectionError::service_error(format!(
@@ -159,10 +159,10 @@ pub async fn migrate(
     }
 
     for shard_id in local_responsible_shards {
-        migrate_shard(
+        replicate_shard_data(
             collections.clone(),
-            &source_collection,
-            &target_collection,
+            source_collection,
+            target_collection,
             shard_id,
         )
         .await?;

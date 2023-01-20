@@ -47,8 +47,8 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
+use crate::content_manager::data_transfer::populate_collection;
 use crate::content_manager::errors::StorageError;
-use crate::content_manager::migration::migrate;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
@@ -269,7 +269,7 @@ impl TableOfContent {
             .await?;
 
         if let Some(init_from_) = &init_from {
-            self.check_migration_compatibility(&vectors, &init_from_.collection)
+            self.check_collections_compatibility(&vectors, &init_from_.collection)
                 .await?;
         }
 
@@ -364,14 +364,14 @@ impl TableOfContent {
         }
 
         if let Some(init_from) = init_from {
-            self.run_migration(init_from.collection, collection_name.to_string())
+            self.run_data_initialization(init_from.collection, collection_name.to_string())
                 .await;
         }
 
         Ok(true)
     }
 
-    async fn check_migration_compatibility(
+    async fn check_collections_compatibility(
         &self,
         vectors: &VectorsConfig,
         source_collection: &CollectionId,
@@ -380,19 +380,29 @@ impl TableOfContent {
         let collection_vectors_schema = collection.state().await.config.params.vectors;
         if &collection_vectors_schema != vectors {
             return Err(StorageError::BadInput {
-                description: format!("Cannot migrate data from collection with vectors schema {:?} to collection with vectors schema {:?}", collection_vectors_schema, vectors)
+                description: format!("Cannot take data from collection with vectors schema {:?} to collection with vectors schema {:?}", collection_vectors_schema, vectors)
             });
         }
         Ok(())
     }
 
-    pub async fn run_migration(&self, from_collection: CollectionId, to_collection: CollectionId) {
+    pub async fn run_data_initialization(
+        &self,
+        from_collection: CollectionId,
+        to_collection: CollectionId,
+    ) {
         let collections = self.collections.clone();
         let this_peer_id = self.this_peer_id;
         self.collection_management_runtime.spawn(async move {
-            match migrate(collections, from_collection, to_collection, this_peer_id).await {
-                Ok(_) => log::info!("Migration completed"),
-                Err(err) => log::error!("Migration failed: {}", err),
+            match populate_collection(collections, &from_collection, &to_collection, this_peer_id)
+                .await
+            {
+                Ok(_) => log::info!(
+                    "Collection {} initialized with data from {}",
+                    to_collection,
+                    from_collection
+                ),
+                Err(err) => log::error!("Initialization failed: {}", err),
             }
         });
     }
