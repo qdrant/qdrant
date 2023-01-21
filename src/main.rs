@@ -2,7 +2,7 @@
 
 #[cfg(feature = "web")]
 mod actix;
-pub mod common;
+mod common;
 mod consensus;
 mod greeting;
 mod migrations;
@@ -12,6 +12,7 @@ mod startup;
 mod tonic;
 
 use std::io::Error;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -36,6 +37,7 @@ use crate::common::helpers::{
     create_general_purpose_runtime, create_search_runtime, create_update_runtime,
 };
 use crate::common::telemetry::TelemetryCollector;
+use crate::common::telemetry_reporting::TelemetryReporter;
 use crate::greeting::welcome;
 use crate::migrations::single_to_cluster::handle_existing_collections;
 use crate::settings::Settings;
@@ -95,6 +97,12 @@ struct Args {
     /// Default path : config/config.yaml
     #[arg(long, value_name = "PATH")]
     config_path: Option<String>,
+
+    /// Disable telemetry sending to developers
+    /// If provided - telemetry collection will be disabled.
+    /// Read more: https://qdrant.tech/documentation/telemetry
+    #[arg(long, action, default_value_t = false)]
+    disable_telemetry: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -289,10 +297,42 @@ fn main() -> anyhow::Result<()> {
 
     let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
+    //
+    // Telemetry reporting
+    //
+
+    let tracking_id = telemetry_collector.tracking_id();
+    let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
+
+    let mut reporting_runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("telemetry-reporting-{}", id)
+        })
+        .enable_all()
+        .build()
+        .ok();
+
+    if !settings.telemetry_disabled && !args.disable_telemetry {
+        log::info!("Telemetry reporting enabled, id: {}", tracking_id);
+
+        reporting_runtime
+            .as_ref()
+            .map(|runtime| runtime.spawn(TelemetryReporter::run(telemetry_collector.clone())));
+    } else {
+        log::info!("Telemetry reporting disabled");
+        let _ = reporting_runtime.take(); // drop runtime, we don't need it
+    }
+
+    //
+    // REST API server
+    //
+
     #[cfg(feature = "web")]
     {
         let dispatcher_arc = dispatcher_arc.clone();
-        let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
@@ -300,6 +340,10 @@ fn main() -> anyhow::Result<()> {
             .unwrap();
         handles.push(handle);
     }
+
+    //
+    // gRPC server
+    //
 
     if let Some(grpc_port) = settings.service.grpc_port {
         let settings = settings.clone();
@@ -362,6 +406,7 @@ fn main() -> anyhow::Result<()> {
         );
         handle.join().expect("thread is not panicking")?;
     }
+    drop(reporting_runtime);
     drop(toc_arc);
     drop(settings);
     Ok(())

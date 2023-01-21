@@ -46,6 +46,10 @@ impl Anonymize for TelemetryData {
 }
 
 impl TelemetryCollector {
+    pub fn tracking_id(&self) -> String {
+        self.process_id.to_string()
+    }
+
     pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             process_id: Uuid::new_v4(),
