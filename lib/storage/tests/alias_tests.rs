@@ -84,6 +84,7 @@ mod tests {
                             on_disk_payload: None,
                             replication_factor: None,
                             write_consistency_factor: None,
+                            init_from: None,
                         },
                     )),
                     None,

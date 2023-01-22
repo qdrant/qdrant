@@ -18,9 +18,10 @@ use semver::Version;
 use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
 use crate::collection_state::{ShardInfo, State};
+use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
@@ -82,6 +83,13 @@ pub struct Collection {
     #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: OnPeerFailure,
     init_time: Duration,
+    // One-way boolean flag that is set to true when the collection is fully initialized
+    // i.e. all shards are activated for the first time.
+    is_initialized: Arc<IsReady>,
+    // Lock to temporary block collection update operations while the collection is being migrated.
+    // Lock is acquired for read on update operation and can be acquired for write externally,
+    // which will block all update operations until the lock is released.
+    updates_lock: RwLock<()>,
 }
 
 impl Collection {
@@ -152,6 +160,8 @@ impl Collection {
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure.clone(),
             init_time: start_time.elapsed(),
+            is_initialized: Arc::new(Default::default()),
+            updates_lock: RwLock::new(()),
         })
     }
 
@@ -251,6 +261,8 @@ impl Collection {
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure,
             init_time: start_time.elapsed(),
+            is_initialized: Arc::new(Default::default()),
+            updates_lock: RwLock::new(()),
         }
     }
 
@@ -326,6 +338,25 @@ impl Collection {
             for transfer in related_transfers {
                 self._abort_shard_transfer(transfer.key(), &shard_holder)
                     .await?;
+            }
+        }
+
+        if !self.is_initialized.check_ready() {
+            // If not initialized yet, we need to check if it was initialized by this call
+            let state = self.state().await;
+            let mut is_fully_active = true;
+            for (_shard_id, shard_info) in state.shards {
+                if shard_info
+                    .replicas
+                    .into_iter()
+                    .any(|(_peer_id, state)| state != ReplicaState::Active)
+                {
+                    is_fully_active = false;
+                    break;
+                }
+            }
+            if is_fully_active {
+                self.is_initialized.make_ready();
             }
         }
 
@@ -625,6 +656,7 @@ impl Collection {
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        let _update_lock = self.updates_lock.read().await;
         let shard_holder_guard = self.shards_holder.read().await;
 
         let res = match shard_holder_guard.get_shard(&shard_selection) {
@@ -648,6 +680,7 @@ impl Collection {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
+        let _update_lock = self.updates_lock.read().await;
 
         let mut results = {
             let shards_holder = self.shards_holder.read().await;
@@ -1450,6 +1483,14 @@ impl Collection {
         }
 
         Ok(())
+    }
+
+    pub fn wait_collection_initiated(&self, timeout: Duration) -> bool {
+        self.is_initialized.await_ready_for_timeout(timeout)
+    }
+
+    pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
+        self.updates_lock.write().await
     }
 }
 
