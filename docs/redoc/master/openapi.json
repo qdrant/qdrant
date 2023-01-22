@@ -4588,6 +4588,18 @@
                 "nullable": true
               }
             ]
+          },
+          "init_from": {
+            "description": "Specify other collection to copy data from.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InitFrom"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -4715,6 +4727,18 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          }
+        }
+      },
+      "InitFrom": {
+        "description": "Operation for creating new collection and (optionally) specify index params",
+        "type": "object",
+        "required": [
+          "collection"
+        ],
+        "properties": {
+          "collection": {
+            "type": "string"
           }
         }
       },

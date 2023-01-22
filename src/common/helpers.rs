@@ -37,7 +37,7 @@ mod tests {
     use std::thread::sleep;
     use std::time::Duration;
 
-    use storage::content_manager::consensus::is_ready::IsReady;
+    use collection::common::is_ready::IsReady;
 
     #[test]
     fn test_is_ready() {

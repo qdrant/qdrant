@@ -170,6 +170,13 @@ def get_collection_cluster_info(peer_api_uri: str, collection_name: str) -> dict
     return res
 
 
+def get_collection_info(peer_api_uri: str, collection_name: str) -> dict:
+    r = requests.get(f"{peer_api_uri}/collections/{collection_name}")
+    assert_http_ok(r)
+    res = r.json()["result"]
+    return res
+
+
 def print_collection_cluster_info(peer_api_uri: str, collection_name: str):
     print(json.dumps(get_collection_cluster_info(peer_api_uri, collection_name), indent=4))
 
@@ -359,6 +366,19 @@ def wait_for_peer_online(peer_api_uri: str):
         wait_for(peer_is_online, peer_api_uri)
     except Exception as e:
         print_clusters_info([peer_api_uri])
+        raise e
+
+
+def check_collection_size(peer_api_uri: str, collection_name: str, expected_size: int) -> bool:
+    collection_cluster_info = get_collection_info(peer_api_uri, collection_name)
+    return collection_cluster_info['points_count'] == expected_size
+
+
+def wait_collection_size(peer_api_uri: str, collection_name: str, expected_size: int):
+    try:
+        wait_for(check_collection_size, peer_api_uri, collection_name, expected_size)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
         raise e
 
 

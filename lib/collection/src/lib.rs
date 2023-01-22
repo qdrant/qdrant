@@ -3,7 +3,7 @@
 pub mod collection;
 pub mod collection_manager;
 pub mod collection_state;
-mod common;
+pub mod common;
 pub mod config;
 pub mod hash_ring;
 pub mod operations;

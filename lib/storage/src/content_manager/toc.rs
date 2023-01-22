@@ -16,7 +16,7 @@ use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
     RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    UpdateResult,
+    UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -47,6 +47,7 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
+use crate::content_manager::data_transfer::{populate_collection, transfer_indexes};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
@@ -258,6 +259,7 @@ impl TableOfContent {
             optimizers_config: optimizers_config_diff,
             replication_factor,
             write_consistency_factor,
+            init_from,
         } = operation;
 
         self.collections
@@ -265,6 +267,11 @@ impl TableOfContent {
             .await
             .validate_collection_not_exists(collection_name)
             .await?;
+
+        if let Some(init_from_) = &init_from {
+            self.check_collections_compatibility(&vectors, &init_from_.collection)
+                .await?;
+        }
 
         let collection_path = self.create_collection_path(collection_name).await?;
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
@@ -355,7 +362,65 @@ impl TableOfContent {
             self.on_peer_created(collection_name.to_string(), self.this_peer_id, shard_id)
                 .await?;
         }
+
+        if let Some(init_from) = init_from {
+            self.run_data_initialization(init_from.collection, collection_name.to_string())
+                .await;
+        }
+
         Ok(true)
+    }
+
+    async fn check_collections_compatibility(
+        &self,
+        vectors: &VectorsConfig,
+        source_collection: &CollectionId,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection(source_collection).await?;
+        let collection_vectors_schema = collection.state().await.config.params.vectors;
+        if &collection_vectors_schema != vectors {
+            return Err(StorageError::BadInput {
+                description: format!("Cannot take data from collection with vectors schema {:?} to collection with vectors schema {:?}", collection_vectors_schema, vectors)
+            });
+        }
+        Ok(())
+    }
+
+    pub async fn run_data_initialization(
+        &self,
+        from_collection: CollectionId,
+        to_collection: CollectionId,
+    ) {
+        let collections = self.collections.clone();
+        let this_peer_id = self.this_peer_id;
+        self.collection_management_runtime.spawn(async move {
+            // Create indexes
+            match transfer_indexes(
+                collections.clone(),
+                &from_collection,
+                &to_collection,
+                this_peer_id,
+            )
+            .await
+            {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Initialization failed: {}", err)
+                }
+            }
+
+            // Transfer data
+            match populate_collection(collections, &from_collection, &to_collection, this_peer_id)
+                .await
+            {
+                Ok(_) => log::info!(
+                    "Collection {} initialized with data from {}",
+                    to_collection,
+                    from_collection
+                ),
+                Err(err) => log::error!("Initialization failed: {}", err),
+            }
+        });
     }
 
     async fn on_peer_created(
