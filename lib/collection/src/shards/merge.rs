@@ -14,7 +14,7 @@ pub trait Merge: Sized {
 
 impl Merge for Vec<Record> {
     fn merge(records: &[Self], condition: MergeCondition) -> Self {
-        merge(records, |record| record.id, cmp::PartialEq::eq, condition)
+        merge(records, |record| record.id, PartialEq::eq, condition)
     }
 }
 
@@ -27,12 +27,17 @@ impl Merge for Vec<Vec<ScoredPoint>> {
         let mut batches: Vec<_> = batches.iter().map(IntoIterator::into_iter).collect();
 
         for _ in 0..batch_len {
-            let points = batches
+            let points: Vec<_> = batches
                 .iter_mut()
-                .map(Iterator::next)
-                .filter_map(|points| points);
+                .filter_map(|batch| {
+                    let mut points = batch.next()?.clone();
+                    points.sort_unstable_by_key(|point| point.id);
+                    Some(points)
+                })
+                .collect();
 
-            let points = merge(points, |point| point.id, scored_points_eq, condition);
+            let mut points = merge(&points, |point| point.id, scored_points_eq, condition);
+            points.sort_unstable_by(|this, other| this.score.total_cmp(&other.score));
 
             output_batch.push(points);
         }
@@ -73,32 +78,49 @@ where
         }
 
         let mut selected = None;
+        let mut max_count = 0;
 
-        for &item in items {
-            match unique.iter_mut().find(|(other, _)| eq(other, item)) {
-                Some((_, count)) => {
-                    *count += 1;
-
-                    let is_condition_met = match condition {
-                        MergeCondition::All => *count == input_width,
-                        MergeCondition::Majority => *count > input_width / 2,
-                    };
-
-                    if is_condition_met {
-                        selected = Some(item);
-                        break;
-                    }
-                }
-
+        for (index, item) in items.into_iter().copied().enumerate() {
+            let count = match unique.iter_mut().find(|(other, _)| eq(other, item)) {
                 None => {
                     unique.push((item, 1));
-
-                    if condition == MergeCondition::All {
-                        break;
-                    }
+                    1
                 }
+
+                Some((_, count)) => {
+                    *count += 1;
+                    *count
+                }
+            };
+
+            let is_condition_reached = match condition {
+                MergeCondition::All => count == input_width,
+                MergeCondition::Majority => count > input_width / 2,
+            };
+
+            if is_condition_reached {
+                selected = Some(item);
+                break;
+            }
+
+            let is_condition_valid = match condition {
+                MergeCondition::All => unique.len() == 1,
+                MergeCondition::Majority => {
+                    max_count = max_count.max(count);
+
+                    let remaining_items = items.len() - index - 1;
+                    let majority = input_width / 2 + 1;
+
+                    max_count + remaining_items >= majority
+                }
+            };
+
+            if !is_condition_valid {
+                break;
             }
         }
+
+        unique.clear();
 
         if let Some(selected) = selected {
             output.push(selected.clone());
@@ -109,7 +131,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct Iter<I, T, K> {
+struct Iter<I, T, K> {
     iterators: Vec<I>,
     items: Vec<Option<T>>,
     key: K,
@@ -195,17 +217,18 @@ where
                 }
 
                 // TODO: Break the iteration if it's clear that merge condition can't be met?
-                // TODO: The check seems way overcomplicated... :/
+                // TODO: Iteration of the loop should be cheap and The check seems way overcomplicated... :/
 
                 /*
                 let selected_items = self.items_with_min_key.len();
+                let processed_items = index + 1;
 
                 let is_condition_valid = match self.condition {
-                    MergeCondition::All => selected_items > index,
+                    MergeCondition::All => selected_items == processed_items,
                     MergeCondition::Majority => {
                         let total_items = self.items.len();
 
-                        let remaining_items = total_items - index - 1;
+                        let remaining_items = total_items - processed_items;
                         let majority = total_items / 2 + 1;
 
                         selected_items + remaining_items >= majority
