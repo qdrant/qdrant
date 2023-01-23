@@ -7,7 +7,6 @@ use segment::data_types::vectors::{NamedVector, VectorElementType, DEFAULT_VECTO
 use segment::types::{
     Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayloadInterface, WithVector,
 };
-use tokio::runtime::Handle;
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
@@ -41,7 +40,6 @@ fn avg_vectors<'a>(
 
 pub async fn recommend_by<'a, F, Fut>(
     request: RecommendRequest,
-    search_runtime_handle: &Handle,
     collection: &Collection,
     collection_by_name: F,
 ) -> CollectionResult<Vec<ScoredPoint>>
@@ -56,13 +54,7 @@ where
     let request_batch = RecommendRequestBatch {
         searches: vec![request],
     };
-    let results = recommend_batch_by(
-        request_batch,
-        search_runtime_handle,
-        collection,
-        collection_by_name,
-    )
-    .await?;
+    let results = recommend_batch_by(request_batch, collection, collection_by_name).await?;
     Ok(results.into_iter().next().unwrap())
 }
 
@@ -132,7 +124,6 @@ fn get_search_vector_name(request: &RecommendRequest) -> String {
 ///
 pub async fn recommend_batch_by<'a, F, Fut>(
     request_batch: RecommendRequestBatch,
-    search_runtime_handle: &Handle,
     collection: &Collection,
     collection_by_name: F,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
@@ -301,7 +292,5 @@ where
 
     let search_batch_request = SearchRequestBatch { searches };
 
-    collection
-        .search_batch(search_batch_request, search_runtime_handle, None)
-        .await
+    collection.search_batch(search_batch_request, None).await
 }

@@ -144,6 +144,7 @@ impl TableOfContent {
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
                 ),
+                Some(search_runtime.handle().clone()),
             ));
 
             collections.insert(collection_name, collection);
@@ -344,6 +345,7 @@ impl TableOfContent {
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
             ),
+            Some(self.search_runtime.handle().clone()),
         )
         .await?;
 
@@ -950,11 +952,9 @@ impl TableOfContent {
         request: RecommendRequest,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        recommend_by(request, self.search_runtime.handle(), &collection, |name| {
-            self.get_collection_opt(name)
-        })
-        .await
-        .map_err(|err| err.into())
+        recommend_by(request, &collection, |name| self.get_collection_opt(name))
+            .await
+            .map_err(|err| err.into())
     }
 
     /// Recommend points in a batchig fashion using positive and negative example from the request
@@ -973,11 +973,9 @@ impl TableOfContent {
         request: RecommendRequestBatch,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        recommend_batch_by(request, self.search_runtime.handle(), &collection, |name| {
-            self.get_collection_opt(name)
-        })
-        .await
-        .map_err(|err| err.into())
+        recommend_batch_by(request, &collection, |name| self.get_collection_opt(name))
+            .await
+            .map_err(|err| err.into())
     }
 
     /// Search for the closest points using vector similarity with given restrictions defined
@@ -999,7 +997,7 @@ impl TableOfContent {
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search(request, self.search_runtime.handle(), shard_selection)
+            .search(request, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -1023,7 +1021,7 @@ impl TableOfContent {
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search_batch(request, self.search_runtime.handle(), shard_selection)
+            .search_batch(request, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -1250,6 +1248,7 @@ impl TableOfContent {
                                 self.consensus_proposal_sender.clone(),
                                 id.to_string(),
                             ),
+                            Some(self.search_runtime.handle().clone()),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;
