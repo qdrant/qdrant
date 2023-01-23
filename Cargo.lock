@@ -2726,7 +2726,7 @@ dependencies = [
 [[package]]
 name = "quantization"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/quantization.git#328f37c6d951d2ae483f56bf1f609ab13b6ab737"
+source = "git+https://github.com/qdrant/quantization.git#b12910ff528dccffb59c5636c02e97b1987419a2"
 dependencies = [
  "atomicwrites",
  "cc",
