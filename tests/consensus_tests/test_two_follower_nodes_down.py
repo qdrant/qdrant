@@ -35,7 +35,8 @@ def run_update_points_in_background(peer_url, collection_name):
 def test_two_follower_nodes_down(tmp_path: pathlib.Path):
     assert_project_root()
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(
@@ -53,8 +54,6 @@ def test_two_follower_nodes_down(tmp_path: pathlib.Path):
     p.kill()
     peer_api_uris.pop()
 
-    time.sleep(1)
-
     # Kill second peer
     p = processes.pop()
     p.kill()
@@ -63,14 +62,12 @@ def test_two_follower_nodes_down(tmp_path: pathlib.Path):
     # Stop pushing points to the leader
     upload_process.kill()
 
-    # Restart third peer
-    new_url_3 = start_peer(peer_dirs[2], f"peer_{3}_restarted.log", bootstrap_uri)
+    # Restart third peer on same ports
+    new_url_3 = start_peer(peer_dirs[2], f"peer_{3}_restarted.log", bootstrap_uri, 20200)
     peer_api_uris.append(new_url_3)
 
-    time.sleep(5)
-
-    # Restart second peer
-    new_url_2 = start_peer(peer_dirs[1], f"peer_{2}_restarted.log", bootstrap_uri)
+    # Restart second peer on same ports
+    new_url_2 = start_peer(peer_dirs[1], f"peer_{2}_restarted.log", bootstrap_uri, 20100)
     peer_api_uris.append(new_url_2)
 
     # Wait for peers to be online
