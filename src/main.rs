@@ -109,8 +109,12 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let settings = Settings::new(args.config_path).expect("Can't read config.");
 
+    let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
+
+    let reporting_id = TelemetryCollector::generate_id();
+
     setup_logger(&settings.log_level);
-    setup_panic_hook();
+    setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
     segment::madvise::set_global(settings.storage.mmap_advice);
 
@@ -222,7 +226,8 @@ fn main() -> anyhow::Result<()> {
         let dispatcher_arc = Arc::new(dispatcher);
 
         // Monitoring and telemetry.
-        let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+        let telemetry_collector =
+            TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
         let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
@@ -291,7 +296,8 @@ fn main() -> anyhow::Result<()> {
         let dispatcher_arc = Arc::new(dispatcher);
 
         // Monitoring and telemetry.
-        let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+        let telemetry_collector =
+            TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
         (telemetry_collector, dispatcher_arc)
     };
 
@@ -301,7 +307,7 @@ fn main() -> anyhow::Result<()> {
     // Telemetry reporting
     //
 
-    let tracking_id = telemetry_collector.tracking_id();
+    let reporting_id = telemetry_collector.reporting_id();
     let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
 
     let mut reporting_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -315,8 +321,8 @@ fn main() -> anyhow::Result<()> {
         .build()
         .ok();
 
-    if !settings.telemetry_disabled && !args.disable_telemetry {
-        log::info!("Telemetry reporting enabled, id: {}", tracking_id);
+    if reporting_enabled {
+        log::info!("Telemetry reporting enabled, id: {}", reporting_id);
 
         reporting_runtime
             .as_ref()

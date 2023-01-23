@@ -9,3 +9,5 @@ pub mod telemetry;
 pub mod telemetry_ops;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod telemetry_reporting;
+#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
+pub mod error_reporting;

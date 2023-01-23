@@ -46,13 +46,17 @@ impl Anonymize for TelemetryData {
 }
 
 impl TelemetryCollector {
-    pub fn tracking_id(&self) -> String {
+    pub fn reporting_id(&self) -> String {
         self.process_id.to_string()
     }
 
-    pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>) -> Self {
+    pub fn generate_id() -> Uuid {
+        Uuid::new_v4()
+    }
+
+    pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>, id: Uuid) -> Self {
         Self {
-            process_id: Uuid::new_v4(),
+            process_id: id,
             settings,
             dispatcher,
             actix_telemetry_collector: Arc::new(Mutex::new(ActixTelemetryCollector {
