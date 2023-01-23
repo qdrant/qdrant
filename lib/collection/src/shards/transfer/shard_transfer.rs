@@ -241,6 +241,27 @@ pub fn validate_transfer_exists(
     Ok(())
 }
 
+/// Confirms that the transfer does not conflict with any other active transfers
+///
+/// returns `None` if there is no conflicts, otherwise returns conflicting transfer
+pub fn check_transfer_conflicts<'a, I>(
+    transfer: &ShardTransfer,
+    current_transfers: I,
+) -> Option<ShardTransfer>
+where
+    I: Iterator<Item = &'a ShardTransfer>,
+{
+    let res = current_transfers
+        .filter(|t| t.shard_id == transfer.shard_id)
+        .find(|t| {
+            t.from == transfer.from
+                || t.to == transfer.from
+                || t.from == transfer.to
+                || t.to == transfer.to
+        });
+    res.cloned()
+}
+
 /// Confirms that the transfer makes sense with the current state cluster
 ///
 /// Checks:
@@ -285,16 +306,7 @@ pub fn validate_transfer(
         )));
     }
 
-    if let Some(existing_transfer) = current_transfers
-        .iter()
-        .filter(|t| t.shard_id == transfer.shard_id)
-        .find(|t| {
-            t.from == transfer.from
-                || t.to == transfer.from
-                || t.from == transfer.to
-                || t.to == transfer.to
-        })
-    {
+    if let Some(existing_transfer) = check_transfer_conflicts(transfer, current_transfers.iter()) {
         return Err(CollectionError::bad_request(format!(
             "Shard {} is already involved in transfer {} -> {}",
             transfer.shard_id, existing_transfer.from, existing_transfer.to
