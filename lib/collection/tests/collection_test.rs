@@ -13,7 +13,6 @@ use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
 };
 use tempfile::Builder;
-use tokio::runtime::Handle;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
@@ -69,9 +68,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let search_res = collection
-        .search(search_request, &Handle::current(), None)
-        .await;
+    let search_res = collection.search(search_request, None).await;
 
     match search_res {
         Ok(res) => {
@@ -127,9 +124,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         score_threshold: None,
     };
 
-    let search_res = collection
-        .search(search_request, &Handle::current(), None)
-        .await;
+    let search_res = collection.search(search_request, None).await;
 
     match search_res {
         Ok(res) => {
@@ -332,7 +327,6 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
             limit: 5,
             ..Default::default()
         },
-        &Handle::current(),
         &collection,
         |_name| async { unreachable!("Should not be called in this test") },
     )
