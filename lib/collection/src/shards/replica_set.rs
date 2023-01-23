@@ -138,6 +138,23 @@ impl ShardReplicaSet {
         self.replica_state.read().this_peer_id
     }
 
+    pub async fn remote_peers(&self) -> Vec<PeerId> {
+        self.remotes
+            .read()
+            .await
+            .iter()
+            .map(|r| r.peer_id)
+            .collect()
+    }
+
+    pub async fn active_remote_shards(&self) -> Vec<PeerId> {
+        self.remote_peers()
+            .await
+            .into_iter()
+            .filter(|peer_id| self.peer_is_active(peer_id))
+            .collect()
+    }
+
     fn init_remote_shards(
         shard_id: ShardId,
         collection_id: CollectionId,
@@ -518,7 +535,7 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
+    pub fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
         self.locally_disabled_peers.read().contains(peer_id)
     }
 

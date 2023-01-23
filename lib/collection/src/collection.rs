@@ -39,6 +39,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
+use crate::shards::replica_set::ReplicaState::Dead;
 use crate::shards::replica_set::{
     Change, OnPeerFailure, ReplicaState, ShardReplicaSet as ReplicaSetShard,
 }; // TODO rename ReplicaShard to ReplicaSetShard
@@ -47,8 +48,9 @@ use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
-    change_remote_shard_route, finalize_partial_shard, handle_transferred_shard_proxy,
-    revert_proxy_shard_to_local, spawn_transfer_task, ShardTransfer, ShardTransferKey,
+    change_remote_shard_route, check_transfer_conflicts, finalize_partial_shard,
+    handle_transferred_shard_proxy, revert_proxy_shard_to_local, spawn_transfer_task,
+    ShardTransfer, ShardTransferKey,
 };
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
@@ -419,12 +421,20 @@ impl Collection {
     }
 
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
+        self.get_transfers(|transfer| transfer.from == *current_peer_id)
+            .await
+    }
+
+    pub async fn get_transfers<F>(&self, mut predicate: F) -> Vec<ShardTransfer>
+    where
+        F: FnMut(&ShardTransfer) -> bool,
+    {
         let shard_holder = self.shards_holder.read().await;
         let transfers = shard_holder
             .shard_transfers
             .read()
             .iter()
-            .filter(|transfer| transfer.from == *current_peer_id)
+            .filter(|&transfer| predicate(transfer))
             .cloned()
             .collect();
         transfers
@@ -1479,6 +1489,40 @@ impl Collection {
                     );
                     on_transfer_failure(transfer, self.name(), "transfer task does not exist");
                 }
+            }
+        }
+
+        // Check for dead replicas without pending transfers
+        for replica_set in shard_holder.all_shards() {
+            let this_peer_id = &replica_set.this_peer_id();
+            let shard_id = replica_set.shard_id;
+
+            if replica_set.peers().get(this_peer_id) != Some(&Dead) {
+                continue; // All good
+            }
+
+            let transfers = self.get_transfers(|_| true).await;
+
+            // Try to find a replica to transfer from
+            for replica_id in replica_set.active_remote_shards().await {
+                let transfer = ShardTransfer {
+                    from: replica_id,
+                    to: *this_peer_id,
+                    shard_id,
+                    sync: true,
+                };
+                if check_transfer_conflicts(&transfer, transfers.iter()).is_some() {
+                    continue; // this transfer won't work
+                }
+                log::debug!(
+                    "Recovering shard {}:{} on peer {} by requesting it from {}",
+                    self.name(),
+                    shard_id,
+                    this_peer_id,
+                    replica_id
+                );
+                self.request_shard_transfer(transfer);
+                break;
             }
         }
 
