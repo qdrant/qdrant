@@ -327,13 +327,10 @@ mod test {
         ]
     }
 
-    fn batch<const N: usize>(
-        batch: &Vec<ScoredPoint>,
-        mut actions: [Action; N],
-    ) -> Vec<ScoredPoint> {
-        let mut batch = batch.clone();
+    fn batch<const N: usize>(batch: &[ScoredPoint], mut actions: [Action; N]) -> Vec<ScoredPoint> {
+        let mut batch = batch.to_owned();
 
-        actions.sort_unstable_by_key(Action::index);
+        actions.sort_unstable_by_key(|action| action.index());
 
         let mut removed = Vec::new();
 
@@ -365,10 +362,10 @@ mod test {
     }
 
     impl Action {
-        pub fn index(&self) -> usize {
+        pub fn index(self) -> usize {
             match self {
-                &Self::Remove(index) => index,
-                &Self::Modify(index) => index,
+                Self::Remove(index) => index,
+                Self::Modify(index) => index,
             }
         }
     }
@@ -589,7 +586,7 @@ mod test {
         }
     }
 
-    fn test_merge<'a, T, E>(input: &[T], expected: E, condition: MergeCondition)
+    fn test_merge<T, E>(input: &[T], expected: E, condition: MergeCondition)
     where
         T: Merge + Clone + PartialEq<E> + fmt::Debug,
         E: fmt::Debug,
