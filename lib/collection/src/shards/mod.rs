@@ -4,6 +4,7 @@ mod conversions;
 pub mod forward_proxy_shard;
 pub mod local_shard;
 pub mod local_shard_operations;
+pub mod merge;
 pub mod proxy_shard;
 pub mod remote_shard;
 #[allow(dead_code)]
