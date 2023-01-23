@@ -39,6 +39,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
+use crate::shards::replica_set::ReplicaState::Dead;
 use crate::shards::replica_set::{
     Change, OnPeerFailure, ReplicaState, ShardReplicaSet as ReplicaSetShard,
 }; // TODO rename ReplicaShard to ReplicaSetShard
@@ -419,12 +420,20 @@ impl Collection {
     }
 
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
+        self.get_transfers(|transfer| transfer.from == *current_peer_id)
+            .await
+    }
+
+    pub async fn get_transfers<F>(&self, mut predicate: F) -> Vec<ShardTransfer>
+    where
+        F: FnMut(&ShardTransfer) -> bool,
+    {
         let shard_holder = self.shards_holder.read().await;
         let transfers = shard_holder
             .shard_transfers
             .read()
             .iter()
-            .filter(|transfer| transfer.from == *current_peer_id)
+            .filter(|&transfer| predicate(transfer))
             .cloned()
             .collect();
         transfers
@@ -1478,6 +1487,54 @@ impl Collection {
                         transfer.key()
                     );
                     on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+                }
+            }
+        }
+
+        // TODO make sure to not check too often
+        // Check for dead replicas without pending transfers
+        for replica_set in shard_holder.all_shards() {
+            let this_peer_id = &replica_set.this_peer_id();
+            let shard_id = replica_set.shard_id;
+            let disabled_locally = replica_set.is_locally_disabled(this_peer_id);
+            if disabled_locally {
+                // If replica is disabled locally, it is not reported officially as dead.
+                // No actions performed.
+                continue;
+            }
+
+            let disabled_officially = replica_set.peers().get(this_peer_id) == Some(&Dead);
+            // Find if it is possible to request a transfer from a remote replica
+            if disabled_officially {
+                let remote_replicas = replica_set.remote_peers().await;
+                let mut free_remote_replica = None;
+                for remote_replica_id in remote_replicas {
+                    // Is the remote peer already transferring this shard ?
+                    let transfers = self
+                        .get_transfers(|transfer| {
+                            transfer.from == remote_replica_id && transfer.shard_id == shard_id
+                        })
+                        .await;
+                    if transfers.is_empty() {
+                        free_remote_replica = Some(remote_replica_id);
+                        break;
+                    }
+                }
+                if let Some(free_remote_replica) = free_remote_replica {
+                    let transfer = ShardTransfer {
+                        from: free_remote_replica,
+                        to: *this_peer_id,
+                        shard_id,
+                        sync: true,
+                    };
+                    log::info!(
+                        "Recovering shard {}:{} on peer {} by requesting it from {}",
+                        self.name(),
+                        shard_id,
+                        this_peer_id,
+                        free_remote_replica
+                    );
+                    self.request_shard_transfer(transfer);
                 }
             }
         }
