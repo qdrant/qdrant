@@ -1,9 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub struct ReadConsistencyValidationError;
+struct ValidationError;
 
-impl std::fmt::Display for ReadConsistencyValidationError {
+impl std::fmt::Display for ValidationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "Read consistency factor cannot be less than 1")
     }
@@ -61,7 +61,7 @@ impl Default for ReadConsistency {
 }
 
 impl TryFrom<ReadConsistencyShadow> for ReadConsistency {
-    type Error = ReadConsistencyValidationError;
+    type Error = ValidationError;
 
     fn try_from(value: ReadConsistencyShadow) -> Result<Self, Self::Error> {
         match value {
@@ -69,7 +69,7 @@ impl TryFrom<ReadConsistencyShadow> for ReadConsistency {
                 if factor > 0 {
                     Ok(ReadConsistency::Factor(factor))
                 } else {
-                    Err(ReadConsistencyValidationError)
+                    Err(ValidationError)
                 }
             }
             ReadConsistencyShadow::Type(read_consistency_type) => {
