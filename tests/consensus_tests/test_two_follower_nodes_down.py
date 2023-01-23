@@ -59,6 +59,8 @@ def test_two_follower_nodes_down(tmp_path: pathlib.Path):
     p.kill()
     peer_api_uris.pop()
 
+    time.sleep(0.3)
+
     # Stop pushing points to the leader
     upload_process.kill()
 

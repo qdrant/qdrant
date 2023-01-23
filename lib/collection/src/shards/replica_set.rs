@@ -147,6 +147,14 @@ impl ShardReplicaSet {
             .collect()
     }
 
+    pub async fn active_remote_shards(&self) -> Vec<PeerId> {
+        self.remote_peers()
+            .await
+            .into_iter()
+            .filter(|peer_id| self.peer_is_active(peer_id))
+            .collect()
+    }
+
     fn init_remote_shards(
         shard_id: ShardId,
         collection_id: CollectionId,
