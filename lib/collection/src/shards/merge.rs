@@ -80,7 +80,7 @@ where
         let mut selected = None;
         let mut max_count = 0;
 
-        for (index, item) in items.into_iter().copied().enumerate() {
+        for (index, item) in items.iter().copied().enumerate() {
             let count = match unique.iter_mut().find(|(other, _)| eq(other, item)) {
                 None => {
                     unique.push((item, 1));
@@ -263,7 +263,7 @@ where
 mod test {
     use std::fmt;
 
-    use segment::types::{PointIdType, ScoreType, SeqNumberType};
+    use segment::types::ScoreType;
 
     use super::*;
 
