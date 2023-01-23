@@ -16,7 +16,6 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{NamedVector, VectorStruct};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
-use tokio::runtime::Handle;
 
 use crate::common::{new_local_collection, N_SHARDS, TEST_OPTIMIZERS_CONFIG};
 
@@ -126,10 +125,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection
-        .search(full_search_request, &Handle::current(), None)
-        .await
-        .unwrap();
+    let result = collection.search(full_search_request, None).await.unwrap();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -154,9 +150,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection
-        .search(failed_search_request, &Handle::current(), None)
-        .await;
+    let result = collection.search(failed_search_request, None).await;
 
     assert!(
         matches!(result, Err(CollectionError::BadInput { .. })),
@@ -179,10 +173,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection
-        .search(full_search_request, &Handle::current(), None)
-        .await
-        .unwrap();
+    let result = collection.search(full_search_request, None).await.unwrap();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -223,7 +214,6 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             limit: 10,
             ..Default::default()
         },
-        &Handle::current(),
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
     )
@@ -247,7 +237,6 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             using: Some(VEC_NAME1.to_string().into()),
             ..Default::default()
         },
-        &Handle::current(),
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
     )

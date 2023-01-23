@@ -90,6 +90,8 @@ pub struct Collection {
     // Lock is acquired for read on update operation and can be acquired for write externally,
     // which will block all update operations until the lock is released.
     updates_lock: RwLock<()>,
+    // Search runtime handle.
+    search_runtime: Handle,
 }
 
 impl Collection {
@@ -108,6 +110,7 @@ impl Collection {
         channel_service: ChannelService,
         on_replica_failure: replica_set::OnPeerFailure,
         request_shard_transfer: RequestShardTransfer,
+        search_runtime: Option<Handle>,
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
@@ -162,6 +165,7 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
+            search_runtime: search_runtime.unwrap_or_else(Handle::current),
         })
     }
 
@@ -188,6 +192,7 @@ impl Collection {
         true
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn load(
         collection_id: CollectionId,
         this_peer_id: PeerId,
@@ -196,6 +201,7 @@ impl Collection {
         channel_service: ChannelService,
         on_replica_failure: replica_set::OnPeerFailure,
         request_shard_transfer: RequestShardTransfer,
+        search_runtime: Option<Handle>,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -263,6 +269,7 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
+            search_runtime: search_runtime.unwrap_or_else(Handle::current),
         }
     }
 
@@ -735,7 +742,6 @@ impl Collection {
     pub async fn search_batch(
         &self,
         request: SearchRequestBatch,
-        search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // shortcuts batch if all requests with limit=0
@@ -788,11 +794,7 @@ impl Collection {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
-                ._search_batch(
-                    without_payload_batch,
-                    search_runtime_handle,
-                    shard_selection,
-                )
+                ._search_batch(without_payload_batch, shard_selection)
                 .await?;
             let filled_results = without_payload_results
                 .into_iter()
@@ -807,9 +809,7 @@ impl Collection {
                 });
             try_join_all(filled_results).await
         } else {
-            let result = self
-                ._search_batch(request, search_runtime_handle, shard_selection)
-                .await?;
+            let result = self._search_batch(request, shard_selection).await?;
             Ok(result)
         }
     }
@@ -817,7 +817,6 @@ impl Collection {
     pub async fn _search_batch(
         &self,
         request: SearchRequestBatch,
-        search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
@@ -829,7 +828,7 @@ impl Collection {
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards
                 .iter()
-                .map(|shard| shard.search(request.clone(), search_runtime_handle));
+                .map(|shard| shard.search(request.clone(), &self.search_runtime));
             try_join_all(all_searches).await?
         };
 
@@ -909,7 +908,6 @@ impl Collection {
     pub async fn search(
         &self,
         request: SearchRequest,
-        search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
@@ -919,9 +917,7 @@ impl Collection {
         let request_batch = SearchRequestBatch {
             searches: vec![request],
         };
-        let results = self
-            ._search_batch(request_batch, search_runtime_handle, shard_selection)
-            .await?;
+        let results = self._search_batch(request_batch, shard_selection).await?;
         Ok(results.into_iter().next().unwrap())
     }
 
