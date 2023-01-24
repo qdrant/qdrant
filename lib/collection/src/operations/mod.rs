@@ -1,5 +1,6 @@
 pub mod cluster_ops;
 pub mod config_diff;
+pub mod consistency_params;
 mod conversions;
 pub mod operation_effect;
 pub mod payload_ops;
