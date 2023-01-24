@@ -38,10 +38,20 @@ pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::Wr
 pub fn write_ordering_from_proto(
     ordering: Option<api::grpc::qdrant::WriteOrdering>,
 ) -> Result<WriteOrdering, Status> {
-    let ordering_parsed = ordering
-        .map(|x| api::grpc::qdrant::WriteOrderingType::from_i32(x.r#type))
-        .ok_or_else(|| Status::invalid_argument("cannot convert ordering"))?
-        .unwrap_or(api::grpc::qdrant::WriteOrderingType::Weak);
+    let ordering_parsed = match ordering {
+        None => api::grpc::qdrant::WriteOrderingType::Weak,
+        Some(write_ordering) => {
+            match api::grpc::qdrant::WriteOrderingType::from_i32(write_ordering.r#type) {
+                None => {
+                    return Err(Status::invalid_argument(format!(
+                        "cannot convert ordering: {}",
+                        write_ordering.r#type
+                    )))
+                }
+                Some(res) => res,
+            }
+        }
+    };
 
     Ok(match ordering_parsed {
         api::grpc::qdrant::WriteOrderingType::Weak => WriteOrdering::Weak,
