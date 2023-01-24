@@ -1,4 +1,5 @@
 use schemars::JsonSchema;
+use serde::de::Error;
 use serde::{Deserialize, Serialize};
 
 pub struct ValidationError;
@@ -39,17 +40,9 @@ pub enum ReadConsistencyType {
 ///
 /// Default value is `Factor(1)`
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-#[serde(try_from = "ReadConsistencyShadow")]
+#[serde(untagged, remote = "ReadConsistency")]
 pub enum ReadConsistency {
     // send N random request and return points, which present on all of them
-    Factor(usize),
-    Type(ReadConsistencyType),
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum ReadConsistencyShadow {
     Factor(usize),
     Type(ReadConsistencyType),
 }
@@ -60,22 +53,20 @@ impl Default for ReadConsistency {
     }
 }
 
-impl TryFrom<ReadConsistencyShadow> for ReadConsistency {
-    type Error = ValidationError;
-
-    fn try_from(value: ReadConsistencyShadow) -> Result<Self, Self::Error> {
-        match value {
-            ReadConsistencyShadow::Factor(factor) => {
-                if factor > 0 {
-                    Ok(ReadConsistency::Factor(factor))
-                } else {
-                    Err(ValidationError)
-                }
-            }
-            ReadConsistencyShadow::Type(read_consistency_type) => {
-                Ok(ReadConsistency::Type(read_consistency_type))
+impl<'de> serde::Deserialize<'de> for ReadConsistency {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let consistency = ReadConsistency::deserialize(deserializer)?;
+        if let ReadConsistency::Factor(factor) = &consistency {
+            if *factor == 0 {
+                return Err(D::Error::custom(ValidationError));
             }
         }
+        Ok(consistency)
+    }
+}
+impl serde::Serialize for ReadConsistency {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ReadConsistency::serialize(self, serializer)
     }
 }
 
