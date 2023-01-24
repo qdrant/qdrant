@@ -67,6 +67,7 @@ mod tests {
             Default::default(),
             0,
             Some(propose_operation_sender),
+            handle.clone(),
         ));
         let dispatcher = Dispatcher::new(toc);
 

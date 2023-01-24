@@ -48,6 +48,18 @@ pub fn create_update_runtime(max_optimization_threads: usize) -> std::io::Result
     update_runtime_builder.build()
 }
 
+pub fn create_general_purpose_runtime() -> std::io::Result<Runtime> {
+    runtime::Builder::new_multi_thread()
+        .enable_time()
+        .enable_io()
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("general-{}", id)
+        })
+        .build()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
