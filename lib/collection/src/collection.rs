@@ -95,7 +95,7 @@ pub struct Collection {
     // Search runtime handle.
     search_runtime: Handle,
     // Optimizer runtime handle.
-    optimizer_runtime: Handle,
+    update_runtime: Handle,
 }
 
 impl Collection {
@@ -115,7 +115,7 @@ impl Collection {
         on_replica_failure: OnPeerFailure,
         request_shard_transfer: RequestShardTransfer,
         search_runtime: Option<Handle>,
-        optimizer_runtime: Option<Handle>,
+        update_runtime: Option<Handle>,
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
@@ -136,7 +136,7 @@ impl Collection {
                 path,
                 shared_config.clone(),
                 channel_service.clone(),
-                optimizer_runtime.clone().unwrap_or_else(Handle::current),
+                update_runtime.clone().unwrap_or_else(Handle::current),
             )
             .await;
 
@@ -172,7 +172,7 @@ impl Collection {
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
-            optimizer_runtime: optimizer_runtime.unwrap_or_else(Handle::current),
+            update_runtime: update_runtime.unwrap_or_else(Handle::current),
         })
     }
 
@@ -209,7 +209,7 @@ impl Collection {
         on_replica_failure: replica_set::OnPeerFailure,
         request_shard_transfer: RequestShardTransfer,
         search_runtime: Option<Handle>,
-        optimizer_runtime: Option<Handle>,
+        update_runtime: Option<Handle>,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -257,7 +257,7 @@ impl Collection {
                 channel_service.clone(),
                 on_replica_failure.clone(),
                 this_peer_id,
-                optimizer_runtime.clone().unwrap_or_else(Handle::current),
+                update_runtime.clone().unwrap_or_else(Handle::current),
             )
             .await;
 
@@ -279,7 +279,7 @@ impl Collection {
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
-            optimizer_runtime: optimizer_runtime.unwrap_or_else(Handle::current),
+            update_runtime: update_runtime.unwrap_or_else(Handle::current),
         }
     }
 
@@ -655,7 +655,7 @@ impl Collection {
                 self.name(),
                 &replica_set.shard_path,
                 self.config.clone(),
-                self.optimizer_runtime.clone(),
+                self.update_runtime.clone(),
             )
             .await?;
 

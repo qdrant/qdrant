@@ -211,7 +211,7 @@ impl ShardHolder {
         channel_service: ChannelService,
         on_peer_failure: OnPeerFailure,
         this_peer_id: PeerId,
-        optimizer_runtime: Handle,
+        update_runtime: Handle,
     ) {
         let shard_number = shared_collection_config
             .read()
@@ -232,7 +232,7 @@ impl ShardHolder {
                     channel_service.clone(),
                     on_peer_failure.clone(),
                     this_peer_id,
-                    optimizer_runtime.clone(),
+                    update_runtime.clone(),
                 )
                 .await;
 
@@ -244,7 +244,7 @@ impl ShardHolder {
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
-                            optimizer_runtime.clone(),
+                            update_runtime.clone(),
                         )
                         .await
                         .unwrap();
@@ -265,7 +265,7 @@ impl ShardHolder {
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
-                            optimizer_runtime.clone(),
+                            update_runtime.clone(),
                         )
                         .await
                         .unwrap();

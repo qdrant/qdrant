@@ -869,8 +869,8 @@ mod tests {
         let search_runtime =
             crate::create_search_runtime(settings.storage.performance.max_search_threads)
                 .expect("Can't create search runtime.");
-        let optimizer_runtime =
-            crate::create_optimizer_runtime(settings.storage.performance.max_search_threads)
+        let update_runtime =
+            crate::create_update_runtime(settings.storage.performance.max_search_threads)
                 .expect("Can't create optimizer runtime.");
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =
@@ -879,7 +879,7 @@ mod tests {
         let toc = TableOfContent::new(
             &settings.storage,
             search_runtime,
-            optimizer_runtime,
+            update_runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),

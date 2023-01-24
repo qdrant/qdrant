@@ -118,7 +118,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
-    optimizer_runtime: Handle,
+    update_runtime: Handle,
 }
 
 impl ShardReplicaSet {
@@ -189,7 +189,7 @@ impl ShardReplicaSet {
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
-        optimizer_runtime: Handle,
+        update_runtime: Handle,
     ) -> CollectionResult<Self> {
         let shard_path = create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
@@ -198,7 +198,7 @@ impl ShardReplicaSet {
                 collection_id.clone(),
                 &shard_path,
                 shared_config.clone(),
-                optimizer_runtime.clone(),
+                update_runtime.clone(),
             )
             .await?;
             Some(Local(shard))
@@ -243,7 +243,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config: shared_config,
-            optimizer_runtime,
+            update_runtime,
         })
     }
 
@@ -346,7 +346,7 @@ impl ShardReplicaSet {
                         self.collection_id.clone(),
                         &self.shard_path,
                         self.collection_config.clone(),
-                        self.optimizer_runtime.clone(),
+                        self.update_runtime.clone(),
                     )
                     .await?,
                 ))
@@ -377,7 +377,7 @@ impl ShardReplicaSet {
         channel_service: ChannelService,
         on_peer_failure: OnPeerFailure,
         this_peer_id: PeerId,
-        optimizer_runtime: Handle,
+        update_runtime: Handle,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -411,7 +411,7 @@ impl ShardReplicaSet {
                 collection_id.clone(),
                 shard_path,
                 shared_config.clone(),
-                optimizer_runtime.clone(),
+                update_runtime.clone(),
             )
             .await
             .map_err(|e| {
@@ -436,7 +436,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config: shared_config,
-            optimizer_runtime,
+            update_runtime,
         }
     }
 
@@ -509,7 +509,7 @@ impl ShardReplicaSet {
                     self.collection_id.clone(),
                     &self.shard_path,
                     self.collection_config.clone(),
-                    self.optimizer_runtime.clone(),
+                    self.update_runtime.clone(),
                 )
                 .await?;
                 match state {
@@ -739,7 +739,7 @@ impl ShardReplicaSet {
                 self.collection_id.clone(),
                 &self.shard_path,
                 self.collection_config.clone(),
-                self.optimizer_runtime.clone(),
+                self.update_runtime.clone(),
             )
             .await?;
 

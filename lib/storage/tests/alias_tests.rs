@@ -55,7 +55,7 @@ mod tests {
         let search_runtime = Runtime::new().unwrap();
         let handle = search_runtime.handle().clone();
 
-        let optimizer_runtime = Runtime::new().unwrap();
+        let update_runtime = Runtime::new().unwrap();
 
         let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
         let propose_operation_sender = OperationSender::new(propose_sender);
@@ -63,7 +63,7 @@ mod tests {
         let toc = Arc::new(TableOfContent::new(
             &config,
             search_runtime,
-            optimizer_runtime,
+            update_runtime,
             Default::default(),
             0,
             Some(propose_operation_sender),

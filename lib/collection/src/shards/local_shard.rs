@@ -98,7 +98,7 @@ impl LocalShard {
         wal: SerdeWal<CollectionUpdateOperations>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         shard_path: &Path,
-        optimizer_runtime: Handle,
+        update_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = shared_config.read().await;
@@ -106,7 +106,7 @@ impl LocalShard {
 
         let mut update_handler = UpdateHandler::new(
             optimizers.clone(),
-            optimizer_runtime.clone(),
+            update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
@@ -140,7 +140,7 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        optimizer_runtime: Handle,
+        update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         let collection_config = shared_config.read().await;
 
@@ -220,7 +220,7 @@ impl LocalShard {
             wal,
             optimizers,
             shard_path,
-            optimizer_runtime,
+            update_runtime,
         )
         .await;
 
@@ -246,18 +246,12 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        optimizer_runtime: Handle,
+        update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_local();
-        let shard = Self::build(
-            id,
-            collection_id,
-            shard_path,
-            shared_config,
-            optimizer_runtime,
-        )
-        .await?;
+        let shard =
+            Self::build(id, collection_id, shard_path, shared_config, update_runtime).await?;
         local_shard_config.save(shard_path)?;
         Ok(shard)
     }
@@ -268,7 +262,7 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        optimizer_runtime: Handle,
+        update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         let config = shared_config.read().await;
 
@@ -351,7 +345,7 @@ impl LocalShard {
             wal,
             optimizers,
             shard_path,
-            optimizer_runtime,
+            update_runtime,
         )
         .await;
 

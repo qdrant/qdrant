@@ -30,10 +30,10 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
         .build()
 }
 
-pub fn create_optimizer_runtime(max_optimization_threads: usize) -> std::io::Result<Runtime> {
-    let mut optimize_runtime_builder = runtime::Builder::new_multi_thread();
+pub fn create_update_runtime(max_optimization_threads: usize) -> std::io::Result<Runtime> {
+    let mut update_runtime_builder = runtime::Builder::new_multi_thread();
 
-    optimize_runtime_builder
+    update_runtime_builder
         .enable_time()
         .thread_name_fn(move || {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
@@ -43,9 +43,9 @@ pub fn create_optimizer_runtime(max_optimization_threads: usize) -> std::io::Res
 
     if max_optimization_threads > 0 {
         // panics if val is not larger than 0.
-        optimize_runtime_builder.max_blocking_threads(max_optimization_threads);
+        update_runtime_builder.max_blocking_threads(max_optimization_threads);
     }
-    optimize_runtime_builder.build()
+    update_runtime_builder.build()
 }
 
 #[cfg(test)]

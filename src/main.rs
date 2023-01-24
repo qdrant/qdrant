@@ -32,7 +32,7 @@ use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-use crate::common::helpers::{create_optimizer_runtime, create_search_runtime};
+use crate::common::helpers::{create_search_runtime, create_update_runtime};
 use crate::common::telemetry::TelemetryCollector;
 use crate::greeting::welcome;
 use crate::migrations::single_to_cluster::handle_existing_collections;
@@ -129,8 +129,8 @@ fn main() -> anyhow::Result<()> {
         .expect("Can't search create runtime.");
     let search_runtime_handle = search_runtime.handle().clone();
 
-    let optimizer_runtime =
-        create_optimizer_runtime(settings.storage.performance.max_optimization_threads)
+    let update_runtime =
+        create_update_runtime(settings.storage.performance.max_optimization_threads)
             .expect("Can't optimizer create runtime.");
 
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
@@ -170,7 +170,7 @@ fn main() -> anyhow::Result<()> {
     let toc = TableOfContent::new(
         &settings.storage,
         search_runtime,
-        optimizer_runtime,
+        update_runtime,
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
