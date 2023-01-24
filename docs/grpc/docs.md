@@ -113,10 +113,11 @@
     - [VectorsSelector](#qdrant-VectorsSelector)
     - [WithPayloadSelector](#qdrant-WithPayloadSelector)
     - [WithVectorsSelector](#qdrant-WithVectorsSelector)
+    - [WriteOrdering](#qdrant-WriteOrdering)
   
     - [FieldType](#qdrant-FieldType)
     - [UpdateStatus](#qdrant-UpdateStatus)
-    - [WriteOrdering](#qdrant-WriteOrdering)
+    - [WriteOrderingType](#qdrant-WriteOrderingType)
   
 - [points_service.proto](#points_service-proto)
     - [Points](#qdrant-Points)
@@ -1904,6 +1905,21 @@ The JSON representation for `Value` is JSON value.
 
 
 
+
+<a name="qdrant-WriteOrdering"></a>
+
+### WriteOrdering
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| type | [WriteOrderingType](#qdrant-WriteOrderingType) |  | Write ordering guarantees |
+
+
+
+
+
  
 
 
@@ -1935,9 +1951,9 @@ The JSON representation for `Value` is JSON value.
 
 
 
-<a name="qdrant-WriteOrdering"></a>
+<a name="qdrant-WriteOrderingType"></a>
 
-### WriteOrdering
+### WriteOrderingType
 
 
 | Name | Number | Description |
