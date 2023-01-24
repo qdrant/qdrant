@@ -246,6 +246,7 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
+
         update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
