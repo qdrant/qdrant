@@ -108,11 +108,11 @@ where
             .collect();
 
         // Shortcut if everything is consistent: return first items, avoiding filtering
-        let is_consistent = resolved_items.len() == items[0].len()
+        let is_consistent = resolved_items.len() == items.first().map_or(0, Vec::len)
             && resolved_items.iter().all(|&(row, _)| row == 0);
 
         if is_consistent {
-            items.into_iter().next().unwrap()
+            items.into_iter().next().unwrap_or_default()
         } else {
             items
                 .into_iter()
@@ -410,6 +410,20 @@ mod test {
 
     fn expected_4_majority() -> [i32; 10] {
         [3, 6, 9, 12, 13, 16, 19, 22, 26, 27]
+    }
+
+    #[test]
+    fn resolve_0_all() {
+        resolve_0(ResolveCondition::All);
+    }
+
+    #[test]
+    fn resolve_0_majority() {
+        resolve_0(ResolveCondition::Majority);
+    }
+
+    fn resolve_0(condition: ResolveCondition) {
+        test_resolve_simple(Vec::<Vec<i32>>::new(), Vec::new(), condition);
     }
 
     #[test]
