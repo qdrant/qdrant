@@ -829,6 +829,7 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror",
+ "tinyvec",
  "tokio",
  "tonic",
  "tower",

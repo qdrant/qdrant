@@ -24,6 +24,7 @@ rmp-serde = "~1.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "0519d97c1f806e2787abcfecf96d13d87556e8c0"}
 ordered-float = "3.4"
 hashring = "0.3.0"
+tinyvec = { version = "1.6.0", features = ["alloc"] }
 
 tokio = {version = "~1.24", features = ["full"]}
 futures = "0.3.25"

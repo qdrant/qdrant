@@ -4,11 +4,11 @@ mod conversions;
 pub mod forward_proxy_shard;
 pub mod local_shard;
 pub mod local_shard_operations;
-pub mod merge;
 pub mod proxy_shard;
 pub mod remote_shard;
 #[allow(dead_code)]
 pub mod replica_set;
+pub mod resolve;
 pub mod shard;
 pub mod shard_config;
 pub mod shard_holder;
