@@ -22,6 +22,7 @@ use tokio::sync::RwLock;
 
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
+use super::resolve::{Resolve, ResolveCondition};
 use super::{create_shard_dir, CollectionId};
 use crate::config::CollectionConfig;
 use crate::operations::types::{
@@ -685,6 +686,132 @@ impl ShardReplicaSet {
             }
         }
         captured_error.expect("at this point `captured_error` must be defined by construction")
+    }
+
+    pub async fn execute_and_resolve_read_operation<'a, F, Fut, Res>(
+        &self,
+        read_operation: F,
+        local: &'a Option<Shard>,
+        remotes: &'a [RemoteShard],
+        factor: usize,
+        condition: ResolveCondition,
+    ) -> CollectionResult<Res>
+    where
+        F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
+        Fut: Future<Output = CollectionResult<Res>>,
+        Res: Resolve,
+    {
+        let total_shards = if local.is_some() { 1 } else { 0 } + remotes.len();
+        let factor = factor.max(total_shards);
+
+        let mut responses = Vec::new();
+        let mut errors = Vec::new();
+
+        // Query local shard if it is active
+        if let Some(local) = local {
+            if self.peer_is_active(&self.this_peer_id()) {
+                match read_operation(local.get()).await {
+                    Ok(response) => {
+                        if factor == 1 {
+                            return Ok(response);
+                        } else {
+                            responses.push(response);
+                        }
+                    }
+
+                    Err(err @ CollectionError::ServiceError { .. }) => {
+                        log::debug!("Local read op. failed: {err}");
+                        errors.push(err);
+                    }
+
+                    Err(err @ CollectionError::Cancelled { .. }) => {
+                        log::debug!("Local read op. cancelled: {err}");
+                        errors.push(err);
+                    }
+
+                    // Validation errors are not recoverable, reply immediately
+                    res => return res,
+                }
+            }
+        }
+
+        // 2 - try a subset of active remote shards in parallel for fast response
+        let mut active_remote_shards: Vec<_> = remotes
+            .iter()
+            .filter(|rs| self.peer_is_active(&rs.peer_id))
+            .collect();
+
+        if responses.len() + active_remote_shards.len() < factor {
+            return Err(todo!());
+        }
+
+        /*
+        if active_remote_shards.is_empty() {
+            if let Some(local_result) = local_result {
+                return local_result;
+            }
+
+            return Err(CollectionError::service_error(format!(
+                "The replica set for shard {} on peer {} has no active replica",
+                self.shard_id,
+                self.this_peer_id()
+            )));
+        }
+        */
+
+        // Shuffle the list of active remote shards to avoid biasing the first ones
+        active_remote_shards.shuffle(&mut rand::thread_rng());
+
+        let fan_out_selection = (factor - responses.len() + self.read_remote_replicas as usize)
+            .min(active_remote_shards.len());
+
+        let mut read_operations = active_remote_shards
+            .into_iter()
+            .map(|shard| read_operation(shard));
+
+        let mut futures: FuturesUnordered<_> =
+            read_operations.by_ref().take(fan_out_selection).collect();
+
+        // shortcut at first successful result
+        while let Some(result) = futures.next().await {
+            match result {
+                Ok(response) => {
+                    if factor == 1 {
+                        return Ok(response);
+                    } else {
+                        responses.push(response);
+                    }
+                }
+
+                Err(err @ CollectionError::ServiceError { .. }) => {
+                    log::debug!("Remote read op. failed: {err}");
+                    errors.push(err);
+                }
+
+                Err(err @ CollectionError::Cancelled { .. }) => {
+                    log::debug!("Remote read op. cancelled: {err}");
+                    errors.push(err);
+                }
+
+                // Validation errors are not recoverable, reply immediately
+                res => return res,
+            }
+
+            if responses.len() >= factor {
+                break;
+            } else if responses.len() + futures.len() < factor {
+                match read_operations.next() {
+                    Some(future) => futures.push(future),
+                    None => return Err(todo!()),
+                }
+            }
+        }
+
+        if responses.len() >= factor {
+            Ok(Res::resolve(responses, condition))
+        } else {
+            Err(todo!())
+        }
     }
 
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
