@@ -13,33 +13,55 @@ pub enum ResolveCondition {
     Majority,
 }
 
-struct ResolverRecord<'a, T> {
-    item: Option<&'a T>,
-    row: usize,
-    index: usize,
-    number: usize,
+pub trait Resolve: Sized {
+    fn resolve(responses: Vec<Self>, condition: ResolveCondition) -> Self;
 }
 
-impl<'a, T> Default for ResolverRecord<'a, T> {
-    fn default() -> Self {
-        Self {
-            item: None,
-            row: 0,
-            index: 0,
-            number: 0,
-        }
+impl Resolve for Vec<Record> {
+    fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
+        let mut res = Resolver::resolve(records, &PartialEq::eq, &|x| x.id, condition);
+        res.sort_unstable_by_key(|x| x.id);
+        res
     }
 }
 
-impl<'a, T> ResolverRecord<'a, T> {
-    fn new(item: &'a T, row: usize, index: usize) -> Self {
-        Self {
-            item: Some(item),
-            row,
-            index,
-            number: 1,
-        }
+impl Resolve for Vec<Vec<ScoredPoint>> {
+    fn resolve(batches: Vec<Self>, condition: ResolveCondition) -> Self {
+        // batches: <replica_id, <batch_id, ScoredPoint>>
+        // transpose to <batch_id, <replica_id, ScoredPoint>>
+
+        let batches = transpose2(batches);
+
+        batches
+            .into_iter()
+            .map(|records| {
+                let mut res = Resolver::resolve(records, &scored_points_eq, &|x| x.id, condition);
+                res.sort_unstable();
+                res
+            })
+            .collect()
     }
+}
+
+fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    assert!(!v.is_empty());
+    let len = v[0].len();
+    let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
+    (0..len)
+        .map(|_| {
+            iters
+                .iter_mut()
+                .map(|n| n.next().unwrap())
+                .collect::<Vec<T>>()
+        })
+        .collect()
+}
+
+fn scored_points_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
+    this.id == other.id
+        && this.score == other.score
+        && this.vector == other.vector
+        && this.payload == other.payload
 }
 
 struct Resolver<'a, T> {
@@ -132,55 +154,33 @@ impl<'a, T> Resolver<'a, T> {
     }
 }
 
-pub trait Resolve: Sized {
-    fn resolve(responses: Vec<Self>, condition: ResolveCondition) -> Self;
+struct ResolverRecord<'a, T> {
+    item: Option<&'a T>,
+    row: usize,
+    index: usize,
+    number: usize,
 }
 
-impl Resolve for Vec<Record> {
-    fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
-        let mut res = Resolver::resolve(records, &PartialEq::eq, &|x| x.id, condition);
-        res.sort_unstable_by_key(|x| x.id);
-        res
+impl<'a, T> Default for ResolverRecord<'a, T> {
+    fn default() -> Self {
+        Self {
+            item: None,
+            row: 0,
+            index: 0,
+            number: 0,
+        }
     }
 }
 
-fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
-    assert!(!v.is_empty());
-    let len = v[0].len();
-    let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
-    (0..len)
-        .map(|_| {
-            iters
-                .iter_mut()
-                .map(|n| n.next().unwrap())
-                .collect::<Vec<T>>()
-        })
-        .collect()
-}
-
-impl Resolve for Vec<Vec<ScoredPoint>> {
-    fn resolve(batches: Vec<Self>, condition: ResolveCondition) -> Self {
-        // batches: <replica_id, <batch_id, ScoredPoint>>
-        // transpose to <batch_id, <replica_id, ScoredPoint>>
-
-        let batches = transpose2(batches);
-
-        batches
-            .into_iter()
-            .map(|records| {
-                let mut res = Resolver::resolve(records, &scored_points_eq, &|x| x.id, condition);
-                res.sort_unstable();
-                res
-            })
-            .collect()
+impl<'a, T> ResolverRecord<'a, T> {
+    fn new(item: &'a T, row: usize, index: usize) -> Self {
+        Self {
+            item: Some(item),
+            row,
+            index,
+            number: 1,
+        }
     }
-}
-
-fn scored_points_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
-    this.id == other.id
-        && this.score == other.score
-        && this.vector == other.vector
-        && this.payload == other.payload
 }
 
 #[cfg(test)]
