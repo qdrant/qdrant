@@ -1,5 +1,7 @@
 use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsSelector};
+use collection::operations::point_ops::{
+    PointInsertOperations, PointOperations, PointsSelector, WriteOrdering,
+};
 use collection::operations::types::{
     CountRequest, CountResult, PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
     SearchRequestBatch, UpdateResult,
@@ -25,6 +27,7 @@ pub async fn do_upsert_points(
     operation: PointInsertOperations,
     shard_selection: Option<ShardId>,
     wait: bool,
+    _ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
@@ -38,6 +41,7 @@ pub async fn do_delete_points(
     points: PointsSelector,
     shard_selection: Option<ShardId>,
     wait: bool,
+    _ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let point_operation = match points {
         PointsSelector::PointIdsSelector(points) => {
@@ -58,6 +62,7 @@ pub async fn do_set_payload(
     operation: SetPayload,
     shard_selection: Option<ShardId>,
     wait: bool,
+    _ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(operation));
@@ -71,6 +76,7 @@ pub async fn do_overwrite_payload(
     operation: SetPayload,
     shard_selection: Option<ShardId>,
     wait: bool,
+    _ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::OverwritePayload(operation));
@@ -84,6 +90,7 @@ pub async fn do_delete_payload(
     operation: DeletePayload,
     shard_selection: Option<ShardId>,
     wait: bool,
+    _ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::DeletePayload(operation));
@@ -97,6 +104,7 @@ pub async fn do_clear_payload(
     points: PointsSelector,
     shard_selection: Option<ShardId>,
     wait: bool,
+    _ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let points_operation = match points {
         PointsSelector::PointIdsSelector(points) => PayloadOps::ClearPayload {
@@ -118,6 +126,7 @@ pub async fn do_create_index(
     operation: CreateFieldIndex,
     shard_selection: Option<ShardId>,
     wait: bool,
+    _ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
@@ -135,6 +144,7 @@ pub async fn do_delete_index(
     index_name: String,
     shard_selection: Option<ShardId>,
     wait: bool,
+    _ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),

@@ -10,8 +10,9 @@ use api::grpc::qdrant::{
 use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType};
 use tonic::Status;
 
+use crate::operations::conversions::write_ordering_to_proto;
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
-use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation};
+use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation, WriteOrdering};
 use crate::operations::types::CollectionResult;
 use crate::operations::CreateIndex;
 use crate::shards::remote_shard::RemoteShard;
@@ -41,6 +42,7 @@ pub fn internal_upsert_points(
     point_insert_operations: PointInsertOperations,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpsertPointsInternal> {
     Ok(UpsertPointsInternal {
         shard_id: shard.id,
@@ -54,6 +56,7 @@ pub fn internal_upsert_points(
                     .map(|id| id.try_into())
                     .collect::<Result<Vec<_>, Status>>()?,
             },
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     })
 }
@@ -62,6 +65,7 @@ pub fn internal_delete_points(
     ids: Vec<PointIdType>,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
         shard_id: shard.id,
@@ -73,6 +77,7 @@ pub fn internal_delete_points(
                     ids: ids.into_iter().map(|id| id.into()).collect(),
                 })),
             }),
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }
@@ -81,6 +86,7 @@ pub fn internal_delete_points_by_filter(
     filter: Filter,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
         shard_id: shard.id,
@@ -90,6 +96,7 @@ pub fn internal_delete_points_by_filter(
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
             }),
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }
@@ -98,6 +105,7 @@ pub fn internal_set_payload(
     set_payload: SetPayload,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> SetPayloadPointsInternal {
     let mut selected_points = vec![];
 
@@ -122,6 +130,7 @@ pub fn internal_set_payload(
             payload: payload_to_proto(set_payload.payload),
             points: selected_points, // ToDo: Deprecated
             points_selector,
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }
@@ -130,6 +139,7 @@ pub fn internal_delete_payload(
     delete_payload: DeletePayload,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> DeletePayloadPointsInternal {
     let mut selected_points = vec![];
     let points_selector = if let Some(points) = delete_payload.points {
@@ -153,6 +163,7 @@ pub fn internal_delete_payload(
             keys: delete_payload.keys,
             points: selected_points, // ToDo: Deprecated
             points_selector,
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }
@@ -161,6 +172,7 @@ pub fn internal_clear_payload(
     points: Vec<PointIdType>,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
         shard_id: shard.id,
@@ -172,6 +184,7 @@ pub fn internal_clear_payload(
                     ids: points.into_iter().map(|id| id.into()).collect(),
                 })),
             }),
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }
@@ -180,6 +193,7 @@ pub fn internal_clear_payload_by_filter(
     filter: Filter,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
         shard_id: shard.id,
@@ -189,6 +203,7 @@ pub fn internal_clear_payload_by_filter(
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
             }),
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }
@@ -197,6 +212,7 @@ pub fn internal_create_index(
     create_index: CreateIndex,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> CreateFieldIndexCollectionInternal {
     let (field_type, field_index_params) = create_index
         .field_schema
@@ -239,6 +255,7 @@ pub fn internal_create_index(
             field_name: create_index.field_name,
             field_type,
             field_index_params,
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }
@@ -247,6 +264,7 @@ pub fn internal_delete_index(
     delete_index: String,
     shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> DeleteFieldIndexCollectionInternal {
     DeleteFieldIndexCollectionInternal {
         shard_id: shard.id,
@@ -254,6 +272,7 @@ pub fn internal_delete_index(
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             field_name: delete_index,
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     }
 }

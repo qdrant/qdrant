@@ -2,7 +2,7 @@ use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, post, put, web, Responder};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
+use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
@@ -16,6 +16,7 @@ use crate::common::points::{
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct UpdateParam {
     pub wait: Option<bool>,
+    pub ordering: Option<WriteOrdering>,
 }
 
 #[put("/collections/{name}/points")]
@@ -28,9 +29,18 @@ pub async fn upsert_points(
     let collection_name = path.into_inner();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();
 
-    let response = do_upsert_points(toc.get_ref(), &collection_name, operation, None, wait).await;
+    let response = do_upsert_points(
+        toc.get_ref(),
+        &collection_name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -44,9 +54,18 @@ pub async fn delete_points(
     let collection_name = path.into_inner();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();
 
-    let response = do_delete_points(toc.get_ref(), &collection_name, operation, None, wait).await;
+    let response = do_delete_points(
+        toc.get_ref(),
+        &collection_name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -60,9 +79,18 @@ pub async fn set_payload(
     let collection_name = path.into_inner();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();
 
-    let response = do_set_payload(toc.get_ref(), &collection_name, operation, None, wait).await;
+    let response = do_set_payload(
+        toc.get_ref(),
+        &collection_name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -76,10 +104,18 @@ pub async fn overwrite_payload(
     let collection_name = path.into_inner();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();
 
-    let response =
-        do_overwrite_payload(toc.get_ref(), &collection_name, operation, None, wait).await;
+    let response = do_overwrite_payload(
+        toc.get_ref(),
+        &collection_name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -93,9 +129,18 @@ pub async fn delete_payload(
     let collection_name = path.into_inner();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();
 
-    let response = do_delete_payload(toc.get_ref(), &collection_name, operation, None, wait).await;
+    let response = do_delete_payload(
+        toc.get_ref(),
+        &collection_name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -109,9 +154,18 @@ pub async fn clear_payload(
     let collection_name = path.into_inner();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();
 
-    let response = do_clear_payload(toc.get_ref(), &collection_name, operation, None, wait).await;
+    let response = do_clear_payload(
+        toc.get_ref(),
+        &collection_name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -125,9 +179,18 @@ pub async fn create_field_index(
     let collection_name = path.into_inner();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();
 
-    let response = do_create_index(toc.get_ref(), &collection_name, operation, None, wait).await;
+    let response = do_create_index(
+        toc.get_ref(),
+        &collection_name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -139,9 +202,18 @@ pub async fn delete_field_index(
 ) -> impl Responder {
     let (collection_name, field_name) = path.into_inner();
     let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();
 
-    let response = do_delete_index(toc.get_ref(), &collection_name, field_name, None, wait).await;
+    let response = do_delete_index(
+        toc.get_ref(),
+        &collection_name,
+        field_name,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
     process_response(response, timing)
 }
 

@@ -1,7 +1,7 @@
 use api::grpc::models::CollectionsResponse;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
+use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
@@ -59,6 +59,7 @@ struct AllDefinitions {
     aw: SnapshotRecover,
     ax: CollectionsAliasesResponse,
     ay: AliasDescription,
+    az: WriteOrdering,
 }
 
 fn save_schema<T: JsonSchema>() {

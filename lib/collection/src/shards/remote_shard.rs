@@ -182,7 +182,8 @@ impl ShardOperation for RemoteShard {
         let point_operation_response = match operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
                 PointOperations::UpsertPoints(point_insert_operations) => {
-                    let request = &internal_upsert_points(point_insert_operations, self, wait)?;
+                    let request =
+                        &internal_upsert_points(point_insert_operations, self, wait, None)?;
                     self.with_points_client(|mut client| async move {
                         client.upsert(tonic::Request::new(request.clone())).await
                     })
@@ -190,7 +191,7 @@ impl ShardOperation for RemoteShard {
                     .into_inner()
                 }
                 PointOperations::DeletePoints { ids } => {
-                    let request = &internal_delete_points(ids, self, wait);
+                    let request = &internal_delete_points(ids, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client.delete(tonic::Request::new(request.clone())).await
                     })
@@ -198,7 +199,7 @@ impl ShardOperation for RemoteShard {
                     .into_inner()
                 }
                 PointOperations::DeletePointsByFilter(filter) => {
-                    let request = &internal_delete_points_by_filter(filter, self, wait);
+                    let request = &internal_delete_points_by_filter(filter, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client.delete(tonic::Request::new(request.clone())).await
                     })
@@ -216,7 +217,7 @@ impl ShardOperation for RemoteShard {
             },
             CollectionUpdateOperations::PayloadOperation(payload_ops) => match payload_ops {
                 PayloadOps::SetPayload(set_payload) => {
-                    let request = &internal_set_payload(set_payload, self, wait);
+                    let request = &internal_set_payload(set_payload, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client
                             .set_payload(tonic::Request::new(request.clone()))
@@ -226,7 +227,7 @@ impl ShardOperation for RemoteShard {
                     .into_inner()
                 }
                 PayloadOps::DeletePayload(delete_payload) => {
-                    let request = &internal_delete_payload(delete_payload, self, wait);
+                    let request = &internal_delete_payload(delete_payload, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client
                             .delete_payload(tonic::Request::new(request.clone()))
@@ -236,7 +237,7 @@ impl ShardOperation for RemoteShard {
                     .into_inner()
                 }
                 PayloadOps::ClearPayload { points } => {
-                    let request = &internal_clear_payload(points, self, wait);
+                    let request = &internal_clear_payload(points, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client
                             .clear_payload(tonic::Request::new(request.clone()))
@@ -246,7 +247,7 @@ impl ShardOperation for RemoteShard {
                     .into_inner()
                 }
                 PayloadOps::ClearPayloadByFilter(filter) => {
-                    let request = &internal_clear_payload_by_filter(filter, self, wait);
+                    let request = &internal_clear_payload_by_filter(filter, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client
                             .clear_payload(tonic::Request::new(request.clone()))
@@ -256,7 +257,7 @@ impl ShardOperation for RemoteShard {
                     .into_inner()
                 }
                 PayloadOps::OverwritePayload(set_payload) => {
-                    let request = &internal_set_payload(set_payload, self, wait);
+                    let request = &internal_set_payload(set_payload, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client
                             .overwrite_payload(tonic::Request::new(request.clone()))
@@ -269,7 +270,7 @@ impl ShardOperation for RemoteShard {
             CollectionUpdateOperations::FieldIndexOperation(field_index_op) => match field_index_op
             {
                 FieldIndexOperations::CreateIndex(create_index) => {
-                    let request = &internal_create_index(create_index, self, wait);
+                    let request = &internal_create_index(create_index, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client
                             .create_field_index(tonic::Request::new(request.clone()))
@@ -279,7 +280,7 @@ impl ShardOperation for RemoteShard {
                     .into_inner()
                 }
                 FieldIndexOperations::DeleteIndex(delete_index) => {
-                    let request = &internal_delete_index(delete_index, self, wait);
+                    let request = &internal_delete_index(delete_index, self, wait, None);
                     self.with_points_client(|mut client| async move {
                         client
                             .delete_field_index(tonic::Request::new(request.clone()))
