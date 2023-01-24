@@ -320,6 +320,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         );
 
         let pool = rayon::ThreadPoolBuilder::new()
+            .thread_name(|idx| format!("hnsw-build-{}", idx))
             .num_threads(self.config.max_rayon_threads())
             .build()?;
 
