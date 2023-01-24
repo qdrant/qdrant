@@ -51,15 +51,18 @@ mod tests {
             mmap_advice: madvise::Advice::Random,
         };
 
-        let runtime = Runtime::new().unwrap();
-        let handle = runtime.handle().clone();
+        let search_runtime = Runtime::new().unwrap();
+        let handle = search_runtime.handle().clone();
+
+        let optimizer_runtime = Runtime::new().unwrap();
 
         let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
         let propose_operation_sender = OperationSender::new(propose_sender);
 
         let toc = Arc::new(TableOfContent::new(
             &config,
-            runtime,
+            search_runtime,
+            optimizer_runtime,
             Default::default(),
             0,
             Some(propose_operation_sender),
