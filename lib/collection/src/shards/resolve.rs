@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::hash;
 
-use segment::types::{PointIdType, ScoredPoint};
+use segment::types::ScoredPoint;
 use tinyvec::TinyVec;
 
 use crate::operations::types::Record;
-
-const VEC_CAPACITY: usize = 5; // Expected number of replicas
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResolveCondition {
@@ -19,9 +18,9 @@ pub trait Resolve: Sized {
 
 impl Resolve for Vec<Record> {
     fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
-        let mut res = Resolver::resolve(records, &PartialEq::eq, &|x| x.id, condition);
-        res.sort_unstable_by_key(|x| x.id);
-        res
+        let mut resolved = Resolver::resolve(records, |record| record.id, PartialEq::eq, condition);
+        resolved.sort_unstable_by_key(|record| record.id);
+        resolved
     }
 }
 
@@ -30,30 +29,32 @@ impl Resolve for Vec<Vec<ScoredPoint>> {
         // batches: <replica_id, <batch_id, ScoredPoint>>
         // transpose to <batch_id, <replica_id, ScoredPoint>>
 
-        let batches = transpose2(batches);
+        let batches = transpose(batches);
 
         batches
             .into_iter()
-            .map(|records| {
-                let mut res = Resolver::resolve(records, &scored_points_eq, &|x| x.id, condition);
-                res.sort_unstable();
-                res
+            .map(|points| {
+                let mut resolved =
+                    Resolver::resolve(points, |point| point.id, scored_points_eq, condition);
+
+                resolved.sort_unstable();
+                resolved
             })
             .collect()
     }
 }
 
-fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
-    assert!(!v.is_empty());
-    let len = v[0].len();
-    let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
+fn transpose<T>(vec: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    if vec.is_empty() {
+        return Vec::new();
+    }
+
+    let len = vec[0].len();
+
+    let mut iters: Vec<_> = vec.into_iter().map(IntoIterator::into_iter).collect();
+
     (0..len)
-        .map(|_| {
-            iters
-                .iter_mut()
-                .map(|n| n.next().unwrap())
-                .collect::<Vec<T>>()
-        })
+        .map(|_| iters.iter_mut().filter_map(Iterator::next).collect())
         .collect()
 }
 
@@ -64,93 +65,106 @@ fn scored_points_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
         && this.payload == other.payload
 }
 
-struct Resolver<'a, T> {
-    items: HashMap<PointIdType, TinyVec<[ResolverRecord<'a, T>; VEC_CAPACITY]>>,
+struct Resolver<'a, Item, Id, Ident, Cmp> {
+    items: HashMap<Id, ResolverRecords<'a, Item>>,
+    identify: Ident,
+    compare: Cmp,
 }
 
-impl<'a, T> Resolver<'a, T> {
-    fn new() -> Self {
-        Self {
-            items: HashMap::new(),
-        }
-    }
+type ResolverRecords<'a, Item> = TinyVec<[ResolverRecord<'a, Item>; RESOLVER_RECORDS_CAPACITY]>;
 
-    fn add<CMP>(
-        &mut self,
-        point_id: &PointIdType,
-        item: &'a T,
-        row: usize,
-        index: usize,
-        compare: &CMP,
-    ) where
-        CMP: Fn(&T, &T) -> bool,
-    {
-        let points = self.items.entry(*point_id).or_insert_with(TinyVec::new);
-        for point in points.iter_mut() {
-            if compare(point.item.unwrap(), item) {
-                point.number += 1;
-                return;
-            }
-        }
-        points.push(ResolverRecord::new(item, row, index));
-    }
+const RESOLVER_RECORDS_CAPACITY: usize = 5; // Expected number of replicas
 
-    fn add_all<CMP, ID>(&mut self, items: &'a [Vec<T>], compare: &CMP, get_id: &ID)
-    where
-        CMP: Fn(&T, &T) -> bool,
-        ID: Fn(&T) -> PointIdType,
-    {
-        for (row, batch) in items.iter().enumerate() {
-            for (index, item) in batch.iter().enumerate() {
-                self.add(&get_id(item), item, row, index, compare);
-            }
-        }
-    }
-
-    pub fn resolve<CMP, ID>(
-        items: Vec<Vec<T>>,
-        compare: &CMP,
-        get_id: &ID,
+impl<'a, Item, Id, Ident, Cmp> Resolver<'a, Item, Id, Ident, Cmp>
+where
+    Id: Eq + hash::Hash,
+    Ident: Fn(&Item) -> Id,
+    Cmp: Fn(&Item, &Item) -> bool,
+{
+    pub fn resolve(
+        items: Vec<Vec<Item>>,
+        identify: Ident,
+        compare: Cmp,
         condition: ResolveCondition,
-    ) -> Vec<T>
-    where
-        CMP: Fn(&T, &T) -> bool,
-        ID: Fn(&T) -> PointIdType,
-    {
-        let required_number = match condition {
+    ) -> Vec<Item> {
+        let resolution_count = match condition {
             ResolveCondition::All => items.len(),
             ResolveCondition::Majority => items.len() / 2 + 1,
         };
 
-        let mut resolver = Resolver::new();
-        resolver.add_all(&items, compare, get_id);
+        let mut resolver = Resolver::new(items.first().map_or(0, Vec::len), identify, compare);
+        resolver.add_all(&items);
 
         // Select coordinates of accepted items, avoiding copying
-        let accepted_ids: HashSet<_> = resolver
+        let resolved_items: HashSet<_> = resolver
             .items
             .into_iter()
             .filter_map(|(_, points)| {
                 points
                     .into_iter()
-                    .find(|point| point.number >= required_number)
+                    .find(|point| point.count >= resolution_count)
                     .map(|point| (point.row, point.index))
             })
             .collect();
 
         // Shortcut if everything is consistent: return first items, avoiding filtering
-        let have_inconsistency =
-            accepted_ids.len() < items[0].len() || accepted_ids.iter().any(|(row, _)| *row > 0);
-        if have_inconsistency {
+        let is_consistent = resolved_items.len() == items[0].len()
+            && resolved_items.iter().all(|&(row, _)| row == 0);
+
+        if is_consistent {
+            items.into_iter().next().unwrap()
+        } else {
             items
                 .into_iter()
                 .enumerate()
-                .flat_map(|(row_id, row)| row.into_iter().map(move |x| (row_id, x)).enumerate())
-                .filter(|(index, (row, _))| accepted_ids.contains(&(*row, *index)))
-                .map(|(_, (_, item))| item)
+                .flat_map(|(row, items)| {
+                    items
+                        .into_iter()
+                        .enumerate()
+                        .map(move |(index, item)| (row, index, item))
+                })
+                .filter_map(|(row, index, item)| {
+                    if resolved_items.contains(&(row, index)) {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                })
                 .collect()
-        } else {
-            items.into_iter().next().unwrap()
         }
+    }
+
+    fn new(capacity: usize, identify: Ident, compare: Cmp) -> Self {
+        Self {
+            items: HashMap::with_capacity(capacity),
+            identify,
+            compare,
+        }
+    }
+
+    fn add_all<I>(&mut self, items: I)
+    where
+        I: IntoIterator,
+        I::Item: IntoIterator<Item = &'a Item>,
+    {
+        for (row, items) in items.into_iter().enumerate() {
+            for (index, item) in items.into_iter().enumerate() {
+                self.add((self.identify)(item), item, row, index);
+            }
+        }
+    }
+
+    fn add(&mut self, id: Id, item: &'a Item, row: usize, index: usize) {
+        let points = self.items.entry(id).or_default();
+
+        for point in points.iter_mut() {
+            if (self.compare)(item, point.item.unwrap()) {
+                point.count += 1;
+                return;
+            }
+        }
+
+        points.push(ResolverRecord::new(item, row, index));
     }
 }
 
@@ -158,7 +172,7 @@ struct ResolverRecord<'a, T> {
     item: Option<&'a T>,
     row: usize,
     index: usize,
-    number: usize,
+    count: usize,
 }
 
 impl<'a, T> Default for ResolverRecord<'a, T> {
@@ -167,7 +181,7 @@ impl<'a, T> Default for ResolverRecord<'a, T> {
             item: None,
             row: 0,
             index: 0,
-            number: 0,
+            count: 0,
         }
     }
 }
@@ -178,7 +192,7 @@ impl<'a, T> ResolverRecord<'a, T> {
             item: Some(item),
             row,
             index,
-            number: 1,
+            count: 1,
         }
     }
 }
@@ -347,7 +361,7 @@ mod test {
         );
     }
 
-    fn data_1() -> [i32; 9] {
+    fn data_simple() -> [i32; 9] {
         [1, 2, 3, 4, 5, 6, 7, 8, 9]
     }
 
@@ -359,8 +373,8 @@ mod test {
         ]
     }
 
-    fn expected_2() -> [[i32; 2]; 3] {
-        [[3; 2], [6; 2], [11; 2]]
+    fn expected_2() -> [i32; 3] {
+        [3, 6, 11]
     }
 
     #[rustfmt::skip]
@@ -372,16 +386,12 @@ mod test {
         ]
     }
 
-    fn expected_3_all() -> [[i32; 3]; 2] {
-        [[7; 3], [14; 3]]
+    fn expected_3_all() -> [i32; 2] {
+        [7, 14]
     }
 
-    #[rustfmt::skip]
-    fn expected_3_majority() -> [Vec<i32>; 8] {
-        [
-            vec![2; 2], vec![4; 2],  vec![6; 2],  vec![7; 3],
-            vec![9; 2], vec![11; 2], vec![13; 2], vec![14; 3]
-        ]
+    fn expected_3_majority() -> [i32; 8] {
+        [2, 4, 6, 7, 9, 11, 13, 14]
     }
 
     #[rustfmt::skip]
@@ -394,127 +404,83 @@ mod test {
         ]
     }
 
-    fn expected_4_all() -> [[i32; 4]; 2] {
-        [[13; 4], [27; 4]]
+    fn expected_4_all() -> [i32; 2] {
+        [13, 27]
     }
 
-    #[rustfmt::skip]
-    fn expected_4_majority() -> [Vec<i32>; 10] {
-        [
-            vec![3; 3],  vec![6; 3],  vec![9; 3],  vec![12; 3], vec![13; 4],
-            vec![16; 3], vec![19; 3], vec![22; 3], vec![26; 3], vec![27; 4],
-        ]
-    }
-
-    #[rustfmt::skip]
-    fn input_5() -> [Vec<i32>; 3] {
-        [
-            vec![1, 2, 3, 4, 5],
-            vec![1, 2, 3, 4, 5],
-            vec![1, 2, 3, 4, 5],
-        ]
-    }
-
-    fn expected_5_all() -> [[i32; 3]; 5] {
-        [[1; 3], [2; 3], [3; 3], [4; 3], [5; 3]]
-    }
-
-    fn expected_5_majority() -> [Vec<i32>; 5] {
-        [vec![1; 2], vec![2; 2], vec![3; 2], vec![4; 2], vec![5; 2]]
+    fn expected_4_majority() -> [i32; 10] {
+        [3, 6, 9, 12, 13, 16, 19, 22, 26, 27]
     }
 
     #[test]
-    fn resolve_1_all() {
-        resolve_1(ResolveCondition::All);
+    fn resolve_simple_all() {
+        for replicas in 1..=5 {
+            resolve_simple(replicas, ResolveCondition::All);
+        }
     }
 
     #[test]
-    fn resolve_1_majority() {
-        resolve_1(ResolveCondition::Majority);
+    fn resolve_simple_majority() {
+        for replicas in 1..=5 {
+            resolve_simple(replicas, ResolveCondition::All);
+        }
     }
 
-    fn resolve_1(condition: ResolveCondition) {
-        let data: Vec<_> = data_1().into_iter().map(Val).collect();
+    fn resolve_simple(replicas: usize, condition: ResolveCondition) {
+        let input: Vec<_> = (0..replicas).map(|_| data_simple()).collect();
+        let expected = data_simple();
 
-        let input = vec![data.clone()];
-        let expected = data;
-
-        test_resolve(input, expected, condition);
+        test_resolve_simple(input, expected, condition)
     }
 
     #[test]
     fn resolve_2_all() {
-        test_resolve(
-            resolve_input(input_2()),
-            resolve_expected(expected_2()),
-            ResolveCondition::All,
-        );
+        test_resolve_simple(input_2(), expected_2(), ResolveCondition::All);
     }
 
     #[test]
     fn resolve_2_majority() {
-        test_resolve(
-            resolve_input(input_2()),
-            resolve_expected(expected_2()),
-            ResolveCondition::Majority,
-        );
+        test_resolve_simple(input_2(), expected_2(), ResolveCondition::Majority);
     }
 
     #[test]
     fn resolve_3_all() {
-        test_resolve(
-            resolve_input(input_3()),
-            resolve_expected(expected_3_all()),
-            ResolveCondition::All,
-        );
+        test_resolve_simple(input_3(), expected_3_all(), ResolveCondition::All);
     }
 
     #[test]
     fn resolve_3_majority() {
-        test_resolve(
-            resolve_input(input_3()),
-            resolve_expected(expected_3_majority()),
-            ResolveCondition::Majority,
-        );
+        test_resolve_simple(input_3(), expected_3_majority(), ResolveCondition::Majority);
     }
 
     #[test]
     fn resolve_4_all() {
-        test_resolve(
-            resolve_input(input_4()),
-            resolve_expected(expected_4_all()),
-            ResolveCondition::All,
-        );
+        test_resolve_simple(input_4(), expected_4_all(), ResolveCondition::All);
     }
 
     #[test]
     fn resolve_4_majority() {
-        test_resolve(
-            resolve_input(input_4()),
-            resolve_expected(expected_4_majority()),
-            ResolveCondition::Majority,
-        );
+        test_resolve_simple(input_4(), expected_4_majority(), ResolveCondition::Majority);
     }
 
-    #[test]
-    fn resolve_5_all() {
-        test_resolve(
-            resolve_input(input_5()),
-            resolve_expected(expected_5_all()),
-            ResolveCondition::All,
-        );
+    fn test_resolve<T, E>(input: Vec<T>, expected: E, condition: ResolveCondition)
+    where
+        T: Resolve + Clone + PartialEq<E> + fmt::Debug,
+        E: fmt::Debug,
+    {
+        assert_eq!(T::resolve(input, condition), expected);
     }
 
-    #[test]
-    fn resolve_5_majority() {
-        test_resolve(
-            resolve_input(input_5()),
-            resolve_expected(expected_5_majority()),
-            ResolveCondition::Majority,
-        );
+    fn test_resolve_simple<I, E>(input: I, expected: E, condition: ResolveCondition)
+    where
+        I: IntoIterator,
+        I::Item: IntoIterator<Item = i32>,
+        E: IntoIterator<Item = i32>,
+    {
+        test_resolve(simple_input(input), simple_expected(expected), condition);
     }
 
-    fn resolve_input<I>(input: I) -> Vec<Vec<Val>>
+    fn simple_input<I>(input: I) -> Vec<Vec<Val>>
     where
         I: IntoIterator,
         I::Item: IntoIterator<Item = i32>,
@@ -525,15 +491,11 @@ mod test {
             .collect()
     }
 
-    fn resolve_expected<E>(expected: E) -> Vec<Val>
+    fn simple_expected<E>(expected: E) -> Vec<Val>
     where
-        E: IntoIterator,
-        E::Item: IntoIterator<Item = i32>,
+        E: IntoIterator<Item = i32>,
     {
-        expected
-            .into_iter()
-            .map(|items| items.into_iter().map(Val).next().unwrap())
-            .collect()
+        expected.into_iter().map(Val).collect()
     }
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -541,22 +503,10 @@ mod test {
 
     impl Resolve for Vec<Val> {
         fn resolve(values: Vec<Self>, condition: ResolveCondition) -> Self {
-            let mut res = Resolver::resolve(
-                values,
-                &PartialEq::eq,
-                &|x| PointIdType::NumId(x.0 as u64),
-                condition,
-            );
-            res.sort_unstable();
-            res
-        }
-    }
+            let mut resolved = Resolver::resolve(values, |val| val.0, PartialEq::eq, condition);
 
-    fn test_resolve<T, E>(input: Vec<T>, expected: E, condition: ResolveCondition)
-    where
-        T: Resolve + Clone + PartialEq<E> + fmt::Debug,
-        E: fmt::Debug,
-    {
-        assert_eq!(T::resolve(input, condition), expected);
+            resolved.sort_unstable();
+            resolved
+        }
     }
 }
