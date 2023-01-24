@@ -86,6 +86,10 @@ mod tests {
         let consistency: ReadConsistency = serde_json::from_str(json).unwrap();
         assert_eq!(consistency, ReadConsistency::Factor(2));
 
+        let json = "0";
+        let consistency: Result<ReadConsistency, _> = serde_json::from_str(json);
+        assert!(consistency.is_err());
+
         let json = "\"majority\"";
         let consistency: ReadConsistency = serde_json::from_str(json).unwrap();
         assert_eq!(
