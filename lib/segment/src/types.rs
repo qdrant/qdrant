@@ -455,7 +455,7 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Payload(pub Map<String, Value>);
 
 impl Payload {

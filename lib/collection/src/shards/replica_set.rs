@@ -565,7 +565,7 @@ impl ShardReplicaSet {
     /// 3 - Fallbacks to all remaining shards if the optimisations fails.
     /// It does not report failing peer_ids to the consensus.
     pub async fn execute_read_operation<'a, F, Fut, Res>(
-        &'_ self,
+        &self,
         read_operation: F,
         local: &'a Option<Shard>,
         remotes: &'a [RemoteShard],
