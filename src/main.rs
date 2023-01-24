@@ -130,7 +130,7 @@ fn main() -> anyhow::Result<()> {
     let search_runtime_handle = search_runtime.handle().clone();
 
     let optimizer_runtime =
-        create_optimizer_runtime(settings.storage.optimizers.max_optimization_threads)
+        create_optimizer_runtime(settings.storage.performance.max_optimization_threads)
             .expect("Can't optimizer create runtime.");
 
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.

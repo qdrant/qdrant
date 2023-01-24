@@ -46,6 +46,7 @@ mod tests {
             wal: Default::default(),
             performance: PerformanceConfig {
                 max_search_threads: 1,
+                max_optimization_threads: 1,
             },
             hnsw_index: Default::default(),
             mmap_advice: madvise::Advice::Random,
