@@ -25,24 +25,28 @@ use crate::operations::types::{
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionSearchRequest;
 
-pub fn write_ordering_to_proto(ordering: WriteOrdering) -> i32 {
-    match ordering {
-        WriteOrdering::Weak => api::grpc::qdrant::WriteOrdering::Weak as i32,
-        WriteOrdering::Medium => api::grpc::qdrant::WriteOrdering::Medium as i32,
-        WriteOrdering::Strong => api::grpc::qdrant::WriteOrdering::Strong as i32,
+pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
+    api::grpc::qdrant::WriteOrdering {
+        r#type: match ordering {
+            WriteOrdering::Weak => api::grpc::qdrant::WriteOrderingType::Weak as i32,
+            WriteOrdering::Medium => api::grpc::qdrant::WriteOrderingType::Medium as i32,
+            WriteOrdering::Strong => api::grpc::qdrant::WriteOrderingType::Strong as i32,
+        },
     }
 }
 
-pub fn write_ordering_from_proto(ordering: Option<i32>) -> Result<WriteOrdering, Status> {
+pub fn write_ordering_from_proto(
+    ordering: Option<api::grpc::qdrant::WriteOrdering>,
+) -> Result<WriteOrdering, Status> {
     let ordering_parsed = ordering
-        .map(api::grpc::qdrant::WriteOrdering::from_i32)
+        .map(|x| api::grpc::qdrant::WriteOrderingType::from_i32(x.r#type))
         .ok_or_else(|| Status::invalid_argument("cannot convert ordering"))?
-        .unwrap_or(api::grpc::qdrant::WriteOrdering::Weak);
+        .unwrap_or(api::grpc::qdrant::WriteOrderingType::Weak);
 
     Ok(match ordering_parsed {
-        api::grpc::qdrant::WriteOrdering::Weak => WriteOrdering::Weak,
-        api::grpc::qdrant::WriteOrdering::Medium => WriteOrdering::Medium,
-        api::grpc::qdrant::WriteOrdering::Strong => WriteOrdering::Strong,
+        api::grpc::qdrant::WriteOrderingType::Weak => WriteOrdering::Weak,
+        api::grpc::qdrant::WriteOrderingType::Medium => WriteOrdering::Medium,
+        api::grpc::qdrant::WriteOrderingType::Strong => WriteOrdering::Strong,
     })
 }
 
