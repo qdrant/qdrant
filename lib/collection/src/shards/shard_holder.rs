@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use tokio::runtime::Handle;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::config::CollectionConfig;
@@ -201,6 +202,7 @@ impl ShardHolder {
         self.shards.is_empty()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn load_shards(
         &mut self,
         collection_path: &Path,
@@ -209,6 +211,7 @@ impl ShardHolder {
         channel_service: ChannelService,
         on_peer_failure: OnPeerFailure,
         this_peer_id: PeerId,
+        update_runtime: Handle,
     ) {
         let shard_number = shared_collection_config
             .read()
@@ -229,6 +232,7 @@ impl ShardHolder {
                     channel_service.clone(),
                     on_peer_failure.clone(),
                     this_peer_id,
+                    update_runtime.clone(),
                 )
                 .await;
 
@@ -240,6 +244,7 @@ impl ShardHolder {
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
+                            update_runtime.clone(),
                         )
                         .await
                         .unwrap();
@@ -260,6 +265,7 @@ impl ShardHolder {
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
+                            update_runtime.clone(),
                         )
                         .await
                         .unwrap();

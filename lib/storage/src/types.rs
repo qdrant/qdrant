@@ -13,9 +13,15 @@ use tonic::transport::Uri;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PerformanceConfig {
     pub max_search_threads: usize,
+    #[serde(default = "default_max_optimization_threads")]
+    pub max_optimization_threads: usize,
+}
+
+fn default_max_optimization_threads() -> usize {
+    1
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config

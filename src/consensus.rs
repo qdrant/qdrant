@@ -866,15 +866,20 @@ mod tests {
         settings.storage.storage_path = storage_dir.path().to_str().unwrap().to_string();
         std::env::set_var("RUST_LOG", log::Level::Debug.as_str());
         env_logger::init();
-        let runtime = crate::create_search_runtime(settings.storage.performance.max_search_threads)
-            .expect("Can't create runtime.");
+        let search_runtime =
+            crate::create_search_runtime(settings.storage.performance.max_search_threads)
+                .expect("Can't create search runtime.");
+        let update_runtime =
+            crate::create_update_runtime(settings.storage.performance.max_search_threads)
+                .expect("Can't create optimizer runtime.");
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =
             Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
-            runtime,
+            search_runtime,
+            update_runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),

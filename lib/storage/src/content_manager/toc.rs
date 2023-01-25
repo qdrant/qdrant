@@ -66,6 +66,7 @@ pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     storage_config: StorageConfig,
     search_runtime: Runtime,
+    update_runtime: Runtime,
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
@@ -81,6 +82,7 @@ impl TableOfContent {
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
+        update_runtime: Runtime,
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
@@ -145,6 +147,7 @@ impl TableOfContent {
                     collection_name.clone(),
                 ),
                 Some(search_runtime.handle().clone()),
+                Some(update_runtime.handle().clone()),
             ));
 
             collections.insert(collection_name, collection);
@@ -156,6 +159,7 @@ impl TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
             search_runtime,
+            update_runtime,
             alias_persistence: RwLock::new(alias_persistence),
             collection_management_runtime,
             this_peer_id,
@@ -346,6 +350,7 @@ impl TableOfContent {
                 collection_name.to_string(),
             ),
             Some(self.search_runtime.handle().clone()),
+            Some(self.update_runtime.handle().clone()),
         )
         .await?;
 
@@ -1249,6 +1254,7 @@ impl TableOfContent {
                                 id.to_string(),
                             ),
                             Some(self.search_runtime.handle().clone()),
+                            Some(self.update_runtime.handle().clone()),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;

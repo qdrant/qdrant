@@ -98,6 +98,7 @@ pub async fn new_local_collection(
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         None,
+        None,
     )
     .await;
 
@@ -127,6 +128,7 @@ pub async fn load_local_collection(
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        None,
         None,
     )
     .await

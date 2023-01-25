@@ -82,6 +82,7 @@ async fn test_snapshot_collection() {
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -107,6 +108,7 @@ async fn test_snapshot_collection() {
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        None,
         None,
     )
     .await;
