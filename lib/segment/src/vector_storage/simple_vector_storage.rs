@@ -309,6 +309,7 @@ where
                     Distance::Euclid => quantization::encoder::SimilarityType::L2,
                     Distance::Dot => quantization::encoder::SimilarityType::Dot,
                 },
+                TMetric::distance() == Distance::Euclid,
             )
             .map_err(|_| OperationError::service_error("cannot quantize vector data"))?,
         );

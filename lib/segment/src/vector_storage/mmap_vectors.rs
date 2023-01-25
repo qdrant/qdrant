@@ -109,6 +109,7 @@ impl MmapVectors {
                     Distance::Euclid => quantization::encoder::SimilarityType::L2,
                     Distance::Dot => quantization::encoder::SimilarityType::Dot,
                 },
+                distance == Distance::Euclid,
             )
             .map_err(|_| OperationError::service_error("cannot quantize vector data"))?,
         );
