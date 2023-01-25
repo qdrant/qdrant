@@ -701,53 +701,99 @@ impl ShardReplicaSet {
         Fut: Future<Output = CollectionResult<Res>>,
         Res: Resolve,
     {
-        let local_shards_count = if local.is_some() { 1 } else { 0 };
-        let remote_shards_count = remotes.len();
+        let local_count = usize::from(local.is_some());
+        let remotes_count = remotes.len();
 
-        let active_remotes = remotes
+        let active_local = local
+            .as_ref()
+            .filter(|_| self.peer_is_active(&self.this_peer_id()));
+
+        let active_remotes_iter = remotes
             .iter()
             .filter(|remote| self.peer_is_active(&remote.peer_id));
 
-        let active_remote_shards_count = active_remotes.clone().count();
+        let active_local_count = usize::from(active_local.is_some());
+        let active_remotes_count = active_remotes_iter.clone().count();
 
-        let total_shards_count = local_shards_count + remote_shards_count;
-        let operational_shards_count = local_shards_count + active_remote_shards_count;
+        let total_count = local_count + remotes_count;
+        let active_count = active_local_count + active_remotes_count;
 
-        let factor = factor.max(1).min(total_shards_count);
+        let factor = factor.clamp(1, total_count);
 
-        if operational_shards_count < factor {
-            return Err(todo!());
+        if active_count < factor {
+            return Err(CollectionError::service_error(format!(
+                "The replica set for shard {} on peer {} does not have enough active replicas",
+                self.shard_id,
+                self.this_peer_id(),
+            )));
         }
 
-        let mut operations = local
-            .into_iter()
-            .map(|local| read_operation(local.get()).left_future())
-            .chain(active_remotes.map(|remote| read_operation(remote).right_future()));
+        let mut active_remotes: Vec<_> = active_remotes_iter.collect();
+        active_remotes.shuffle(&mut rand::thread_rng());
 
-        let mut pending_operations: FuturesUnordered<_> =
-            operations.by_ref().take(factor).collect();
+        let local_operations = active_local
+            .into_iter()
+            .map(|local| read_operation(local.get()).left_future());
+
+        let remote_operations = active_remotes
+            .into_iter()
+            .map(|remote| read_operation(remote).right_future());
+
+        let mut operations = local_operations.chain(remote_operations);
+
+        let mut pending_operations: FuturesUnordered<_> = operations
+            .by_ref()
+            .take(factor + usize::try_from(self.read_remote_replicas).unwrap())
+            .collect();
 
         let mut responses = Vec::new();
-        let mut errors = Vec::new();
 
         while let Some(result) = pending_operations.next().await {
             match result {
                 Ok(resp) => responses.push(resp),
-                Err(err) => errors.push(err),
+
+                Err(err) => {
+                    let is_transient = matches!(
+                        &err,
+                        CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. },
+                    );
+
+                    if is_transient {
+                        log::debug!("Read operation failed: {err}");
+                    } else {
+                        log::error!("Read operation failed: {err}");
+                        return Err(err);
+                    }
+                }
             }
 
             if responses.len() >= factor {
-                return Ok(Res::resolve(responses, condition));
+                break;
             }
 
-            pending_operations.extend(operations.next());
+            let maybe_responses = responses.len() + pending_operations.len();
 
-            if responses.len() + pending_operations.len() < factor {
-                return Err(todo!());
+            let schedule = factor.saturating_sub(maybe_responses);
+            pending_operations.extend(operations.by_ref().take(schedule));
+
+            let maybe_responses = responses.len() + pending_operations.len();
+
+            if maybe_responses < factor {
+                break;
             }
         }
 
-        Err(todo!())
+        if responses.len() >= factor {
+            if factor == 1 {
+                Ok(responses.into_iter().next().unwrap())
+            } else {
+                Ok(Res::resolve(responses, condition))
+            }
+        } else {
+            Err(CollectionError::service_error(
+                "Failed to complete read operation: too many replicas returned an error".into(),
+            ))
+        }
     }
 
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
