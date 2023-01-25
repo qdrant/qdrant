@@ -26,8 +26,7 @@ mod tests {
             .count()
     }
 
-    #[test]
-    fn hnsw_quantized_search_test() {
+    fn hnsw_quantized_search_test(distance: Distance) {
         let stopped = AtomicBool::new(false);
 
         let dim = 128;
@@ -35,7 +34,6 @@ mod tests {
         let num_vectors: u64 = 5_000;
         let ef = 64;
         let ef_construct = 64;
-        let distance = Distance::Cosine;
 
         let mut rnd = thread_rng();
 
@@ -119,5 +117,15 @@ mod tests {
             sames, attempts, top, acc
         );
         assert!(acc > 40.0);
+    }
+
+    #[test]
+    fn hnsw_quantized_search_cosine_test() {
+        hnsw_quantized_search_test(Distance::Cosine);
+    }
+
+    #[test]
+    fn hnsw_quantized_search_euclid_test() {
+        hnsw_quantized_search_test(Distance::Euclid);
     }
 }
