@@ -4,6 +4,8 @@ use std::panic;
 
 use log::LevelFilter;
 
+use crate::common::error_reporting::ErrorReporter;
+
 pub fn setup_logger(log_level: &str) {
     let is_info = log_level.to_ascii_uppercase() == "INFO";
     let mut log_builder = env_logger::Builder::new();
@@ -28,19 +30,24 @@ pub fn setup_logger(log_level: &str) {
     log_builder.init();
 }
 
-pub fn setup_panic_hook() {
-    panic::set_hook(Box::new(|panic_info| {
+pub fn setup_panic_hook(reporting_enabled: bool, reporting_id: String) {
+    panic::set_hook(Box::new(move |panic_info| {
         let loc = if let Some(loc) = panic_info.location() {
             format!(" in file {} at line {}", loc.file(), loc.line())
         } else {
             String::new()
         };
-        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
-            log::error!("Panic occurred{loc}: {s}");
+        let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s
         } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
-            log::error!("Panic occurred{loc}: {s}");
+            s
         } else {
-            log::error!("Panic occurred{loc}. Payload not captured as it is not a string.");
+            "Payload not captured as it is not a string."
+        };
+        log::error!("Panic occurred{loc}: {message}");
+
+        if reporting_enabled {
+            ErrorReporter::report(message, &reporting_id, Some(&loc));
         }
     }));
 }

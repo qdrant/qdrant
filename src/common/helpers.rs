@@ -22,6 +22,7 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
     runtime::Builder::new_multi_thread()
         .worker_threads(search_threads)
         .enable_time()
+        .enable_all()
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);

@@ -3,7 +3,7 @@ import os
 import shutil
 from subprocess import Popen
 import time
-from typing import Tuple, Callable, Dict, List
+from typing import Tuple, Callable, Dict, List, Optional
 import requests
 import socket
 from contextlib import closing
@@ -238,6 +238,16 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str
             return False
     return True
 
+def all_nodes_respond(peer_api_uris: [str]) -> bool:
+    for uri in peer_api_uris:
+        try:
+            r = requests.get(f"{uri}/collections")
+            assert_http_ok(r)
+        except requests.exceptions.ConnectionError:
+            print(f"Could not contact peer {uri} to fetch collections")
+            return False
+    return True
+
 
 def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -> bool:
     for uri in peer_api_uris:
@@ -312,6 +322,13 @@ def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str):
 def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
     try:
         wait_for(all_nodes_cluster_info_consistent, peer_api_uris, expected_leader)
+    except Exception as e:
+        print_clusters_info(peer_api_uris)
+        raise e
+
+def wait_all_peers_up(peer_api_uris: [str]):
+    try:
+        wait_for(all_nodes_respond, peer_api_uris)
     except Exception as e:
         print_clusters_info(peer_api_uris)
         raise e
