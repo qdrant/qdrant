@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use futures::future::{join, join_all};
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use schemars::JsonSchema;
@@ -701,117 +701,53 @@ impl ShardReplicaSet {
         Fut: Future<Output = CollectionResult<Res>>,
         Res: Resolve,
     {
-        let total_shards = if local.is_some() { 1 } else { 0 } + remotes.len();
-        let factor = factor.max(total_shards);
+        let local_shards_count = if local.is_some() { 1 } else { 0 };
+        let remote_shards_count = remotes.len();
+
+        let active_remotes = remotes
+            .iter()
+            .filter(|remote| self.peer_is_active(&remote.peer_id));
+
+        let active_remote_shards_count = active_remotes.clone().count();
+
+        let total_shards_count = local_shards_count + remote_shards_count;
+        let operational_shards_count = local_shards_count + active_remote_shards_count;
+
+        let factor = factor.max(1).min(total_shards_count);
+
+        if operational_shards_count < factor {
+            return Err(todo!());
+        }
+
+        let mut operations = local
+            .into_iter()
+            .map(|local| read_operation(local.get()).left_future())
+            .chain(active_remotes.map(|remote| read_operation(remote).right_future()));
+
+        let mut pending_operations: FuturesUnordered<_> =
+            operations.by_ref().take(factor).collect();
 
         let mut responses = Vec::new();
         let mut errors = Vec::new();
 
-        // Query local shard if it is active
-        if let Some(local) = local {
-            if self.peer_is_active(&self.this_peer_id()) {
-                match read_operation(local.get()).await {
-                    Ok(response) => {
-                        if factor == 1 {
-                            return Ok(response);
-                        } else {
-                            responses.push(response);
-                        }
-                    }
-
-                    Err(err @ CollectionError::ServiceError { .. }) => {
-                        log::debug!("Local read op. failed: {err}");
-                        errors.push(err);
-                    }
-
-                    Err(err @ CollectionError::Cancelled { .. }) => {
-                        log::debug!("Local read op. cancelled: {err}");
-                        errors.push(err);
-                    }
-
-                    // Validation errors are not recoverable, reply immediately
-                    res => return res,
-                }
-            }
-        }
-
-        // 2 - try a subset of active remote shards in parallel for fast response
-        let mut active_remote_shards: Vec<_> = remotes
-            .iter()
-            .filter(|rs| self.peer_is_active(&rs.peer_id))
-            .collect();
-
-        if responses.len() + active_remote_shards.len() < factor {
-            return Err(todo!());
-        }
-
-        /*
-        if active_remote_shards.is_empty() {
-            if let Some(local_result) = local_result {
-                return local_result;
-            }
-
-            return Err(CollectionError::service_error(format!(
-                "The replica set for shard {} on peer {} has no active replica",
-                self.shard_id,
-                self.this_peer_id()
-            )));
-        }
-        */
-
-        // Shuffle the list of active remote shards to avoid biasing the first ones
-        active_remote_shards.shuffle(&mut rand::thread_rng());
-
-        let fan_out_selection = (factor - responses.len() + self.read_remote_replicas as usize)
-            .min(active_remote_shards.len());
-
-        let mut read_operations = active_remote_shards
-            .into_iter()
-            .map(|shard| read_operation(shard));
-
-        let mut futures: FuturesUnordered<_> =
-            read_operations.by_ref().take(fan_out_selection).collect();
-
-        // shortcut at first successful result
-        while let Some(result) = futures.next().await {
+        while let Some(result) = pending_operations.next().await {
             match result {
-                Ok(response) => {
-                    if factor == 1 {
-                        return Ok(response);
-                    } else {
-                        responses.push(response);
-                    }
-                }
-
-                Err(err @ CollectionError::ServiceError { .. }) => {
-                    log::debug!("Remote read op. failed: {err}");
-                    errors.push(err);
-                }
-
-                Err(err @ CollectionError::Cancelled { .. }) => {
-                    log::debug!("Remote read op. cancelled: {err}");
-                    errors.push(err);
-                }
-
-                // Validation errors are not recoverable, reply immediately
-                res => return res,
+                Ok(resp) => responses.push(resp),
+                Err(err) => errors.push(err),
             }
 
             if responses.len() >= factor {
-                break;
-            } else if responses.len() + futures.len() < factor {
-                match read_operations.next() {
-                    Some(future) => futures.push(future),
-                    None => return Err(todo!()),
-                }
+                return Ok(Res::resolve(responses, condition));
+            }
+
+            pending_operations.extend(operations.next());
+
+            if responses.len() + pending_operations.len() < factor {
+                return Err(todo!());
             }
         }
 
-        if responses.len() >= factor {
-            Ok(Res::resolve(responses, condition))
-        } else {
-            Err(todo!())
-        }
+        Err(todo!())
     }
 
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
