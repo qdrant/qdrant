@@ -75,6 +75,12 @@ pub struct Settings {
     pub service: ServiceConfig,
     #[serde(default)]
     pub cluster: ClusterConfig,
+    #[serde(default = "default_telemetry_disabled")]
+    pub telemetry_disabled: bool,
+}
+
+fn default_telemetry_disabled() -> bool {
+    false
 }
 
 fn default_cors() -> bool {

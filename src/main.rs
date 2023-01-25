@@ -2,7 +2,7 @@
 
 #[cfg(feature = "web")]
 mod actix;
-pub mod common;
+mod common;
 mod consensus;
 mod greeting;
 mod migrations;
@@ -36,6 +36,7 @@ use crate::common::helpers::{
     create_general_purpose_runtime, create_search_runtime, create_update_runtime,
 };
 use crate::common::telemetry::TelemetryCollector;
+use crate::common::telemetry_reporting::TelemetryReporter;
 use crate::greeting::welcome;
 use crate::migrations::single_to_cluster::handle_existing_collections;
 use crate::settings::Settings;
@@ -95,14 +96,24 @@ struct Args {
     /// Default path : config/config.yaml
     #[arg(long, value_name = "PATH")]
     config_path: Option<String>,
+
+    /// Disable telemetry sending to developers
+    /// If provided - telemetry collection will be disabled.
+    /// Read more: https://qdrant.tech/documentation/telemetry
+    #[arg(long, action, default_value_t = false)]
+    disable_telemetry: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let settings = Settings::new(args.config_path).expect("Can't read config.");
 
+    let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
+
+    let reporting_id = TelemetryCollector::generate_id();
+
     setup_logger(&settings.log_level);
-    setup_panic_hook();
+    setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
     segment::madvise::set_global(settings.storage.mmap_advice);
 
@@ -214,7 +225,8 @@ fn main() -> anyhow::Result<()> {
         let dispatcher_arc = Arc::new(dispatcher);
 
         // Monitoring and telemetry.
-        let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+        let telemetry_collector =
+            TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
         let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
@@ -283,16 +295,35 @@ fn main() -> anyhow::Result<()> {
         let dispatcher_arc = Arc::new(dispatcher);
 
         // Monitoring and telemetry.
-        let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+        let telemetry_collector =
+            TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
         (telemetry_collector, dispatcher_arc)
     };
 
     let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
+    //
+    // Telemetry reporting
+    //
+
+    let reporting_id = telemetry_collector.reporting_id();
+    let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
+
+    if reporting_enabled {
+        log::info!("Telemetry reporting enabled, id: {}", reporting_id);
+
+        runtime_handle.spawn(TelemetryReporter::run(telemetry_collector.clone()));
+    } else {
+        log::info!("Telemetry reporting disabled");
+    }
+
+    //
+    // REST API server
+    //
+
     #[cfg(feature = "web")]
     {
         let dispatcher_arc = dispatcher_arc.clone();
-        let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
@@ -300,6 +331,10 @@ fn main() -> anyhow::Result<()> {
             .unwrap();
         handles.push(handle);
     }
+
+    //
+    // gRPC server
+    //
 
     if let Some(grpc_port) = settings.service.grpc_port {
         let settings = settings.clone();
