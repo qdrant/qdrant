@@ -57,6 +57,8 @@ mod tests {
 
         let update_runtime = Runtime::new().unwrap();
 
+        let general_runtime = Runtime::new().unwrap();
+
         let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
         let propose_operation_sender = OperationSender::new(propose_sender);
 
@@ -64,6 +66,7 @@ mod tests {
             &config,
             search_runtime,
             update_runtime,
+            general_runtime,
             Default::default(),
             0,
             Some(propose_operation_sender),

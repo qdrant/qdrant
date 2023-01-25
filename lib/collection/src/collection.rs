@@ -94,7 +94,7 @@ pub struct Collection {
     updates_lock: RwLock<()>,
     // Search runtime handle.
     search_runtime: Handle,
-    // Optimizer runtime handle.
+    // Update runtime handle.
     update_runtime: Handle,
 }
 
