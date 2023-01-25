@@ -29,8 +29,13 @@ impl TelemetryReporter {
     }
 
     async fn report(&self) {
-        let telemetry = self.telemetry.lock().await;
-        let data = telemetry.prepare_data(DETAIL_LEVEL).await.anonymize();
+        let data = self
+            .telemetry
+            .lock()
+            .await
+            .prepare_data(DETAIL_LEVEL)
+            .await
+            .anonymize();
         let client = reqwest::Client::new();
         let data = serde_json::to_string(&data).unwrap();
         let _resp = client

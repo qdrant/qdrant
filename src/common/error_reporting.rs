@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 pub struct ErrorReporter;
 
 impl ErrorReporter {
@@ -23,6 +25,7 @@ impl ErrorReporter {
             .post(Self::get_url())
             .body(data)
             .header("Content-Type", "application/json")
+            .timeout(Duration::from_secs(1))
             .send();
     }
 }
