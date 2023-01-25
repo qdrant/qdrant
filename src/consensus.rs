@@ -867,7 +867,7 @@ mod tests {
                 .expect("Can't create search runtime.");
         let update_runtime =
             crate::create_update_runtime(settings.storage.performance.max_search_threads)
-                .expect("Can't create optimizer runtime.");
+                .expect("Can't create update runtime.");
         let handle = update_runtime.handle().clone(); // no general runtime here, reuse optimizer runtime as it is cheaper
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =

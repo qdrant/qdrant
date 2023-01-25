@@ -33,7 +33,7 @@ use storage::dispatcher::Dispatcher;
 use tikv_jemallocator::Jemalloc;
 
 use crate::common::helpers::{
-    create_general_purpose_runtime, create_update_runtime, create_search_runtime,
+    create_general_purpose_runtime, create_search_runtime, create_update_runtime,
 };
 use crate::common::telemetry::TelemetryCollector;
 use crate::greeting::welcome;

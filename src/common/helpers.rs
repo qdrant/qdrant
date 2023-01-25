@@ -37,8 +37,8 @@ pub fn create_update_runtime(max_optimization_threads: usize) -> std::io::Result
         .enable_time()
         .thread_name_fn(move || {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let optimizer_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("optimizer-{optimizer_id}")
+            let update_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("update-{update_id}")
         });
 
     if max_optimization_threads > 0 {
@@ -54,8 +54,8 @@ pub fn create_general_purpose_runtime() -> std::io::Result<Runtime> {
         .enable_io()
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("general-{}", id)
+            let general_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("general-{}", general_id)
         })
         .build()
 }
