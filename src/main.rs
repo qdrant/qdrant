@@ -32,7 +32,7 @@ use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-use crate::common::helpers::create_search_runtime;
+use crate::common::helpers::{create_search_runtime, create_update_runtime};
 use crate::common::telemetry::TelemetryCollector;
 use crate::greeting::welcome;
 use crate::migrations::single_to_cluster::handle_existing_collections;
@@ -125,9 +125,13 @@ fn main() -> anyhow::Result<()> {
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
-    let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
-        .expect("Can't create runtime.");
-    let runtime_handle = runtime.handle().clone();
+    let search_runtime = create_search_runtime(settings.storage.performance.max_search_threads)
+        .expect("Can't search create runtime.");
+    let search_runtime_handle = search_runtime.handle().clone();
+
+    let update_runtime =
+        create_update_runtime(settings.storage.performance.max_optimization_threads)
+            .expect("Can't optimizer create runtime.");
 
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
@@ -165,14 +169,15 @@ fn main() -> anyhow::Result<()> {
     // It is a main entry point for the storage.
     let toc = TableOfContent::new(
         &settings.storage,
-        runtime,
+        search_runtime,
+        update_runtime,
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
     );
 
     // Here we load all stored collections.
-    runtime_handle.block_on(async {
+    search_runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::debug!("Loaded collection: {}", collection);
         }
@@ -233,7 +238,7 @@ fn main() -> anyhow::Result<()> {
 
         let toc_arc_clone = toc_arc.clone();
         let consensus_state_clone = consensus_state.clone();
-        let _cancel_transfer_handle = runtime_handle.spawn(async move {
+        let _cancel_transfer_handle = search_runtime_handle.spawn(async move {
             consensus_state_clone.is_leader_established.await_ready();
             match toc_arc_clone
                 .cancel_outgoing_all_transfers("Source peer restarted")
@@ -249,14 +254,14 @@ fn main() -> anyhow::Result<()> {
         });
 
         let collections_to_recover_in_consensus = if is_new_deployment {
-            let existing_collections = runtime_handle.block_on(toc_arc.all_collections());
+            let existing_collections = search_runtime_handle.block_on(toc_arc.all_collections());
             existing_collections
         } else {
             restored_collections
         };
 
         if !collections_to_recover_in_consensus.is_empty() {
-            runtime_handle.spawn(handle_existing_collections(
+            search_runtime_handle.spawn(handle_existing_collections(
                 toc_arc.clone(),
                 consensus_state.clone(),
                 dispatcher_arc.clone(),

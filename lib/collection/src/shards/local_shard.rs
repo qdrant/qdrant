@@ -2,7 +2,6 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 
@@ -19,7 +18,7 @@ use segment::types::{
     SegmentType,
 };
 use tokio::fs::{copy, create_dir_all, remove_dir_all};
-use tokio::runtime::{self, Runtime};
+use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
@@ -50,7 +49,6 @@ pub struct LocalShard {
     pub(super) config: Arc<TokioRwLock<CollectionConfig>>,
     pub(super) wal: LockedWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
-    pub(super) runtime_handle: Option<Runtime>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) path: PathBuf,
     before_drop_called: bool,
@@ -94,42 +92,21 @@ impl LocalShard {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        id: ShardId,
-        collection_id: CollectionId,
         segment_holder: SegmentHolder,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
         wal: SerdeWal<CollectionUpdateOperations>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         shard_path: &Path,
+        update_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = shared_config.read().await;
-        let mut optimize_runtime_builder = runtime::Builder::new_multi_thread();
-
-        optimize_runtime_builder
-            .worker_threads(3)
-            .enable_time()
-            .thread_name_fn(move || {
-                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let optimizer_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("collection-{collection_id}-shard-{id}-optimizer-{optimizer_id}")
-            });
-
-        if config.optimizer_config.max_optimization_threads > 0 {
-            // panics if val is not larger than 0.
-            optimize_runtime_builder
-                .max_blocking_threads(config.optimizer_config.max_optimization_threads);
-        }
-
-        let optimize_runtime = optimize_runtime_builder.build().unwrap();
-
         let locked_wal = Arc::new(ParkingMutex::new(wal));
 
         let mut update_handler = UpdateHandler::new(
             optimizers.clone(),
-            optimize_runtime.handle().clone(),
+            update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
@@ -146,7 +123,6 @@ impl LocalShard {
             config: shared_config,
             wal: locked_wal,
             update_handler: Arc::new(Mutex::new(update_handler)),
-            runtime_handle: Some(optimize_runtime),
             update_sender: ArcSwap::from_pointee(update_sender),
             path: shard_path.to_owned(),
             before_drop_called: false,
@@ -164,6 +140,7 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
+        update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         let collection_config = shared_config.read().await;
 
@@ -238,13 +215,12 @@ impl LocalShard {
         drop(collection_config); // release `shared_config` from borrow checker
 
         let collection = LocalShard::new(
-            id,
-            collection_id.clone(),
             segment_holder,
             shared_config,
             wal,
             optimizers,
             shard_path,
+            update_runtime,
         )
         .await;
 
@@ -270,10 +246,12 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
+        update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_local();
-        let shard = Self::build(id, collection_id, shard_path, shared_config).await?;
+        let shard =
+            Self::build(id, collection_id, shard_path, shared_config, update_runtime).await?;
         local_shard_config.save(shard_path)?;
         Ok(shard)
     }
@@ -284,6 +262,7 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
+        update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         let config = shared_config.read().await;
 
@@ -361,13 +340,12 @@ impl LocalShard {
         drop(config); // release `shared_config` from borrow checker
 
         let collection = LocalShard::new(
-            id,
-            collection_id,
             segment_holder,
             shared_config,
             wal,
             optimizers,
             shard_path,
+            update_runtime,
         )
         .await;
 
@@ -446,23 +424,6 @@ impl LocalShard {
 
         if let Err(err) = self.wait_update_workers_stop().await {
             log::warn!("Update workers failed with: {}", err);
-        }
-
-        match self.runtime_handle.take() {
-            None => {}
-            Some(handle) => {
-                // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
-                // Calling remove from there would lead to the following error in a new version of tokio:
-                // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
-                // So the workaround for move out the runtime handler and drop it in the separate thread.
-                // The proper solution is to reconsider the collection to be an owner of the runtime
-
-                let thread_handler = thread::Builder::new()
-                    .name("collection_drop".to_string())
-                    .spawn(move || drop(handle))
-                    .unwrap();
-                thread_handler.join().unwrap();
-            }
         }
 
         self.before_drop_called = true;
