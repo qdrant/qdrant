@@ -743,7 +743,7 @@ impl ShardReplicaSet {
 
         let mut pending_operations: FuturesUnordered<_> = operations
             .by_ref()
-            .take(factor + usize::try_from(self.read_remote_replicas).unwrap())
+            .take(factor + usize::try_from(self.read_remote_replicas).unwrap() - 1)
             .collect();
 
         let mut responses = Vec::new();
@@ -761,7 +761,6 @@ impl ShardReplicaSet {
                     if is_transient {
                         log::debug!("Read operation failed: {err}");
                     } else {
-                        log::error!("Read operation failed: {err}");
                         return Err(err);
                     }
                 }
