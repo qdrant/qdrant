@@ -12,7 +12,6 @@ mod startup;
 mod tonic;
 
 use std::io::Error;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -310,26 +309,12 @@ fn main() -> anyhow::Result<()> {
     let reporting_id = telemetry_collector.reporting_id();
     let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
 
-    let mut reporting_runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .thread_name_fn(|| {
-            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("telemetry-reporting-{}", id)
-        })
-        .enable_all()
-        .build()
-        .ok();
-
     if reporting_enabled {
         log::info!("Telemetry reporting enabled, id: {}", reporting_id);
 
-        reporting_runtime
-            .as_ref()
-            .map(|runtime| runtime.spawn(TelemetryReporter::run(telemetry_collector.clone())));
+        runtime_handle.spawn(TelemetryReporter::run(telemetry_collector.clone()));
     } else {
         log::info!("Telemetry reporting disabled");
-        let _ = reporting_runtime.take(); // drop runtime, we don't need it
     }
 
     //
@@ -412,7 +397,6 @@ fn main() -> anyhow::Result<()> {
         );
         handle.join().expect("thread is not panicking")?;
     }
-    drop(reporting_runtime);
     drop(toc_arc);
     drop(settings);
     Ok(())
