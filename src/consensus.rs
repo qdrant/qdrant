@@ -852,6 +852,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::Consensus;
+    use crate::common::helpers::create_general_purpose_runtime;
     use crate::settings::ConsensusConfig;
 
     #[test]
@@ -868,7 +869,9 @@ mod tests {
         let update_runtime =
             crate::create_update_runtime(settings.storage.performance.max_search_threads)
                 .expect("Can't create update runtime.");
-        let handle = update_runtime.handle().clone(); // no general runtime here, reuse optimizer runtime as it is cheaper
+        let general_runtime =
+            create_general_purpose_runtime().expect("Can't create general purpose runtime.");
+        let handle = general_runtime.handle().clone();
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =
             Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
@@ -877,10 +880,10 @@ mod tests {
             &settings.storage,
             search_runtime,
             update_runtime,
+            general_runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
-            handle.clone(),
         );
         let toc_arc = Arc::new(toc);
         let storage_path = toc_arc.storage_path();

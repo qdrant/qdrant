@@ -30,7 +30,7 @@ use collection::shards::transfer::shard_transfer::{
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
-use tokio::runtime::{Handle, Runtime};
+use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
 use uuid::Uuid;
 
@@ -67,7 +67,7 @@ pub struct TableOfContent {
     storage_config: StorageConfig,
     search_runtime: Runtime,
     update_runtime: Runtime,
-    collection_management_runtime: Handle,
+    general_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
@@ -83,10 +83,10 @@ impl TableOfContent {
         storage_config: &StorageConfig,
         search_runtime: Runtime,
         update_runtime: Runtime,
+        general_runtime: Runtime,
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
-        collection_management_runtime: Handle,
     ) -> Self {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
@@ -123,7 +123,7 @@ impl TableOfContent {
                 )
             });
             log::info!("Loading collection: {}", collection_name);
-            let collection = collection_management_runtime.block_on(Collection::load(
+            let collection = general_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 this_peer_id,
                 &collection_path,
@@ -151,8 +151,8 @@ impl TableOfContent {
             storage_config: storage_config.clone(),
             search_runtime,
             update_runtime,
+            general_runtime,
             alias_persistence: RwLock::new(alias_persistence),
-            collection_management_runtime,
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
@@ -391,7 +391,7 @@ impl TableOfContent {
     ) {
         let collections = self.collections.clone();
         let this_peer_id = self.this_peer_id;
-        self.collection_management_runtime.spawn(async move {
+        self.general_runtime.spawn(async move {
             // Create indexes
             match transfer_indexes(
                 collections.clone(),
@@ -727,7 +727,7 @@ impl TableOfContent {
         &self,
         operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
-        self.collection_management_runtime
+        self.general_runtime
             .block_on(self.perform_collection_meta_op(operation))
     }
 
@@ -1078,7 +1078,7 @@ impl TableOfContent {
 
     /// List of all collections
     pub fn all_collections_sync(&self) -> Vec<String> {
-        self.collection_management_runtime
+        self.general_runtime
             .block_on(self.collections.read())
             .keys()
             .cloned()
@@ -1171,8 +1171,7 @@ impl TableOfContent {
     }
 
     pub fn collections_snapshot_sync(&self) -> consensus_manager::CollectionsSnapshot {
-        self.collection_management_runtime
-            .block_on(self.collections_snapshot())
+        self.general_runtime.block_on(self.collections_snapshot())
     }
 
     pub async fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
@@ -1190,7 +1189,7 @@ impl TableOfContent {
         &self,
         data: consensus_manager::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
-        self.collection_management_runtime.block_on(async {
+        self.general_runtime.block_on(async {
             let mut collections = self.collections.write().await;
             for (id, state) in &data.collections {
                 let collection = collections.get(id);
@@ -1389,7 +1388,7 @@ impl TableOfContent {
     }
 
     pub fn remove_shards_at_peer_sync(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.collection_management_runtime
+        self.general_runtime
             .block_on(self.remove_shards_at_peer(peer_id))
     }
 }
@@ -1414,7 +1413,7 @@ impl CollectionContainer for TableOfContent {
     }
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.collection_management_runtime.block_on(async {
+        self.general_runtime.block_on(async {
             // Validation:
             // 1. Check that we are not removing some unique shards (removed)
 
@@ -1445,7 +1444,7 @@ impl CollectionContainer for TableOfContent {
     }
 
     fn sync_local_state(&self) -> Result<(), StorageError> {
-        self.collection_management_runtime.block_on(async {
+        self.general_runtime.block_on(async {
             let collections = self.collections.read().await;
             let transfer_failure_callback =
                 Self::on_transfer_failure_callback(self.consensus_proposal_sender.clone());
@@ -1467,7 +1466,7 @@ impl CollectionContainer for TableOfContent {
 // `TableOfContent` should not be dropped from async context.
 impl Drop for TableOfContent {
     fn drop(&mut self) {
-        self.collection_management_runtime.block_on(async {
+        self.general_runtime.block_on(async {
             for (_, mut collection) in self.collections.write().await.drain() {
                 collection.before_drop().await;
             }

@@ -176,10 +176,10 @@ fn main() -> anyhow::Result<()> {
         &settings.storage,
         search_runtime,
         update_runtime,
+        general_runtime,
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
-        runtime_handle.clone(),
     );
 
     // Here we load all stored collections.
@@ -356,6 +356,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     for handle in handles.into_iter() {
+        log::debug!(
+            "Waiting for thread {} to finish",
+            handle.thread().name().unwrap()
+        );
         handle.join().expect("thread is not panicking")?;
     }
     drop(toc_arc);
