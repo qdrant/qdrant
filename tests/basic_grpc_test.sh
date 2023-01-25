@@ -29,6 +29,7 @@ $docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
 $docker_grpcurl -d '{
   "collection_name": "test_collection",
   "wait": true,
+  "ordering": null,
   "points": [
     {
       "id": { "num": 1 },

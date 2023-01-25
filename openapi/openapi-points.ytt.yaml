@@ -72,6 +72,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/delete:
@@ -101,6 +107,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload:
@@ -130,6 +142,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
     put:
       tags:
@@ -157,6 +175,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload/delete:
@@ -186,6 +210,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload/clear:
@@ -215,4 +245,10 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
