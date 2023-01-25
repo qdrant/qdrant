@@ -2,7 +2,6 @@ mod api;
 mod tonic_telemetry;
 
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use ::api::grpc::models::VersionInfo;
@@ -16,7 +15,8 @@ use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use tokio::{runtime, signal};
+use tokio::runtime::Handle;
+use tokio::signal;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -46,17 +46,9 @@ pub fn init(
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     grpc_port: u16,
+    runtime: Handle,
 ) -> std::io::Result<()> {
-    let tonic_runtime = runtime::Builder::new_multi_thread()
-        .enable_io()
-        .enable_time()
-        .thread_name_fn(|| {
-            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("tonic-{}", id)
-        })
-        .build()?;
-    tonic_runtime
+    runtime
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
 
@@ -108,21 +100,13 @@ pub fn init_internal(
     host: String,
     internal_grpc_port: u16,
     to_consensus: tokio::sync::mpsc::Sender<crate::consensus::Message>,
+    runtime: Handle,
 ) -> std::io::Result<()> {
     use ::api::grpc::qdrant::raft_server::RaftServer;
 
     use crate::tonic::api::raft_api::RaftService;
 
-    let tonic_runtime = runtime::Builder::new_multi_thread()
-        .enable_io()
-        .enable_time()
-        .thread_name_fn(|| {
-            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("tonic-internal-{}", id)
-        })
-        .build()?;
-    tonic_runtime
+    runtime
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 

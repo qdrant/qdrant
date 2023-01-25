@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::thread::JoinHandle;
@@ -20,7 +19,7 @@ use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::PeerAddressById;
-use tokio::runtime::Runtime;
+use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 use tonic::transport::Uri;
@@ -47,7 +46,7 @@ pub struct Consensus {
     /// Receives proposals from peers and client for applying in consensus
     receiver: Receiver<Message>,
     /// Runtime for async message sending
-    runtime: Runtime,
+    runtime: Handle,
     /// Uri to some other known peer, used to join the consensus
     /// ToDo: Make if many
     bootstrap_uri: Option<Uri>,
@@ -70,6 +69,7 @@ impl Consensus {
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
+        runtime: Handle,
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let (mut consensus, message_sender) = Self::new(
             logger,
@@ -79,6 +79,7 @@ impl Consensus {
             p2p_port,
             config,
             channel_service,
+            runtime.clone(),
         )?;
 
         let state_ref_clone = state_ref.clone();
@@ -90,6 +91,7 @@ impl Consensus {
                     state_ref_clone.on_consensus_thread_err(err);
                 } else {
                     log::info!("Consensus stopped");
+                    state_ref_clone.on_consensus_stopped();
                     state_ref_clone.on_consensus_stopped();
                 }
             })?;
@@ -119,6 +121,7 @@ impl Consensus {
                     p2p_host,
                     p2p_port,
                     message_sender,
+                    runtime,
                 )
             })
             .unwrap();
@@ -136,6 +139,7 @@ impl Consensus {
         p2p_port: u16,
         config: ConsensusConfig,
         channel_service: ChannelService,
+        runtime: Handle,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
@@ -155,14 +159,6 @@ impl Consensus {
             log::warn!("With current tick period of {}ms, operation commit time might exceed default wait timeout: {}ms",
                  config.tick_period_ms, op_wait.as_millis())
         }
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .thread_name_fn(|| {
-                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("consensus-tokio-rt-{}", id)
-            })
-            .enable_all()
-            .build()?;
         // bounded channel for backpressure
         let (sender, receiver) = tokio::sync::mpsc::channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
@@ -175,7 +171,7 @@ impl Consensus {
                 uri,
                 p2p_port,
                 &config,
-                &runtime,
+                runtime.clone(),
                 leader_established_in_ms,
             )
             .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {}", err))?;
@@ -218,7 +214,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
-        runtime: &Runtime,
+        runtime: Handle,
         leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
@@ -856,6 +852,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::Consensus;
+    use crate::common::helpers::create_general_purpose_runtime;
     use crate::settings::ConsensusConfig;
 
     #[test]
@@ -871,7 +868,10 @@ mod tests {
                 .expect("Can't create search runtime.");
         let update_runtime =
             crate::create_update_runtime(settings.storage.performance.max_search_threads)
-                .expect("Can't create optimizer runtime.");
+                .expect("Can't create update runtime.");
+        let general_runtime =
+            create_general_purpose_runtime().expect("Can't create general purpose runtime.");
+        let handle = general_runtime.handle().clone();
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =
             Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
@@ -880,6 +880,7 @@ mod tests {
             &settings.storage,
             search_runtime,
             update_runtime,
+            general_runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
@@ -903,6 +904,7 @@ mod tests {
             6335,
             ConsensusConfig::default(),
             ChannelService::default(),
+            handle.clone(),
         )
         .unwrap();
 
@@ -929,8 +931,7 @@ mod tests {
         // When
 
         // New runtime is used as timers need to be enabled.
-        tokio::runtime::Runtime::new()
-            .unwrap()
+        handle
             .block_on(
                 dispatcher.submit_collection_meta_op(
                     CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
