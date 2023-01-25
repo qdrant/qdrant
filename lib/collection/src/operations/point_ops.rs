@@ -16,6 +16,23 @@ use crate::hash_ring::HashRing;
 use crate::operations::types::Record;
 use crate::shards::shard::ShardId;
 
+/// Defines write ordering guarantees for collection operations
+///
+/// * `weak` - write operations may be reordered, works faster, default
+///
+/// * `medium` - write operations go through dynamically selected leader, may be inconsistent for a short period of time in case of leader change
+///
+/// * `strong` - Write operations go through the permanent leader, consistent, but may be unavailable if leader is down
+///
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WriteOrdering {
+    #[default]
+    Weak,
+    Medium,
+    Strong,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct PointStruct {

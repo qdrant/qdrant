@@ -113,9 +113,11 @@
     - [VectorsSelector](#qdrant-VectorsSelector)
     - [WithPayloadSelector](#qdrant-WithPayloadSelector)
     - [WithVectorsSelector](#qdrant-WithVectorsSelector)
+    - [WriteOrdering](#qdrant-WriteOrdering)
   
     - [FieldType](#qdrant-FieldType)
     - [UpdateStatus](#qdrant-UpdateStatus)
+    - [WriteOrderingType](#qdrant-WriteOrderingType)
   
 - [points_service.proto](#points_service-proto)
     - [Points](#qdrant-Points)
@@ -963,6 +965,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1048,6 +1051,7 @@ The JSON representation for `Value` is JSON value.
 | field_name | [string](#string) |  | Field name to index |
 | field_type | [FieldType](#qdrant-FieldType) | optional | Field type. |
 | field_index_params | [PayloadIndexParams](#qdrant-PayloadIndexParams) | optional | Payload index params. |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1065,6 +1069,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | field_name | [string](#string) |  | Field name to delete |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1084,6 +1089,7 @@ The JSON representation for `Value` is JSON value.
 | keys | [string](#string) | repeated | List of keys to delete |
 | points | [PointId](#qdrant-PointId) | repeated | Affected points, deprecated |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1101,6 +1107,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1745,6 +1752,7 @@ The JSON representation for `Value` is JSON value.
 | payload | [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry) | repeated | New payload values |
 | points | [PointId](#qdrant-PointId) | repeated | List of point to modify, deprecated |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1794,6 +1802,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1896,6 +1905,21 @@ The JSON representation for `Value` is JSON value.
 
 
 
+
+<a name="qdrant-WriteOrdering"></a>
+
+### WriteOrdering
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| type | [WriteOrderingType](#qdrant-WriteOrderingType) |  | Write ordering guarantees |
+
+
+
+
+
  
 
 
@@ -1924,6 +1948,19 @@ The JSON representation for `Value` is JSON value.
 | UnknownUpdateStatus | 0 |  |
 | Acknowledged | 1 | Update is received, but not processed yet |
 | Completed | 2 | Update is applied and ready for search |
+
+
+
+<a name="qdrant-WriteOrderingType"></a>
+
+### WriteOrderingType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Weak | 0 | Write operations may be reordered, works faster, default |
+| Medium | 1 | Write operations go through dynamically selected leader, may be inconsistent for a short period of time in case of leader change |
+| Strong | 2 | Write operations go through the permanent leader, consistent, but may be unavailable if leader is down |
 
 
  

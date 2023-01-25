@@ -155,6 +155,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
       requestBody:
         description: Field name
         content:
@@ -190,6 +196,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/cluster:

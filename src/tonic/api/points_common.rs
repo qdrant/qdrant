@@ -9,6 +9,7 @@ use api::grpc::qdrant::{
     RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse,
     SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpsertPoints,
 };
+use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector,
@@ -50,6 +51,7 @@ pub async fn upsert(
         collection_name,
         wait,
         points,
+        ordering,
     } = upsert_points;
     let points = points
         .into_iter()
@@ -63,6 +65,7 @@ pub async fn upsert(
         operation,
         shard_selection,
         wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
     )
     .await
     .map_err(error_to_status)?;
@@ -121,6 +124,7 @@ pub async fn delete(
         collection_name,
         wait,
         points,
+        ordering,
     } = delete_points;
 
     let points_selector = match points {
@@ -135,6 +139,7 @@ pub async fn delete(
         points_selector,
         shard_selection,
         wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
     )
     .await
     .map_err(error_to_status)?;
@@ -154,6 +159,7 @@ pub async fn set_payload(
         payload,
         points,
         points_selector,
+        ordering,
     } = set_payload_points;
 
     let (points, filter) = if let Some(points_selector) = points_selector {
@@ -183,6 +189,7 @@ pub async fn set_payload(
         operation,
         shard_selection,
         wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
     )
     .await
     .map_err(error_to_status)?;
@@ -202,6 +209,7 @@ pub async fn overwrite_payload(
         payload,
         points,
         points_selector,
+        ordering,
     } = set_payload_points;
 
     let (points, filter) = if let Some(points_selector) = points_selector {
@@ -231,6 +239,7 @@ pub async fn overwrite_payload(
         operation,
         shard_selection,
         wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
     )
     .await
     .map_err(error_to_status)?;
@@ -250,6 +259,7 @@ pub async fn delete_payload(
         keys,
         points,
         points_selector,
+        ordering,
     } = delete_payload_points;
 
     let (points, filter) = if let Some(points_selector) = points_selector {
@@ -279,6 +289,7 @@ pub async fn delete_payload(
         operation,
         shard_selection,
         wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
     )
     .await
     .map_err(error_to_status)?;
@@ -296,6 +307,7 @@ pub async fn clear_payload(
         collection_name,
         wait,
         points,
+        ordering,
     } = clear_payload_points;
 
     let points_selector = match points {
@@ -310,6 +322,7 @@ pub async fn clear_payload(
         points_selector,
         shard_selection,
         wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
     )
     .await
     .map_err(error_to_status)?;
@@ -329,6 +342,7 @@ pub async fn create_field_index(
         field_name,
         field_type,
         field_index_params,
+        ordering,
     } = create_field_index_collection;
 
     let field_type_parsed = field_type
@@ -374,6 +388,7 @@ pub async fn create_field_index(
         operation,
         shard_selection,
         wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
     )
     .await
     .map_err(error_to_status)?;
@@ -391,6 +406,7 @@ pub async fn delete_field_index(
         collection_name,
         wait,
         field_name,
+        ordering,
     } = delete_field_index_collection;
 
     let timing = Instant::now();
@@ -400,6 +416,7 @@ pub async fn delete_field_index(
         field_name,
         shard_selection,
         wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
     )
     .await
     .map_err(error_to_status)?;
