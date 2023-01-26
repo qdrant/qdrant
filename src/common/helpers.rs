@@ -26,7 +26,7 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("search-{}", id)
+            format!("search-{id}")
         })
         .build()
 }
@@ -56,7 +56,7 @@ pub fn create_general_purpose_runtime() -> std::io::Result<Runtime> {
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let general_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-            format!("general-{}", general_id)
+            format!("general-{general_id}")
         })
         .build()
 }

@@ -65,7 +65,7 @@ struct AllDefinitions {
 fn save_schema<T: JsonSchema>() {
     let schema = schema_for!(T);
     let schema_str = serde_json::to_string_pretty(&schema).unwrap();
-    println!("{}", schema_str)
+    println!("{schema_str}")
 }
 
 fn main() {

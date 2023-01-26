@@ -576,7 +576,7 @@ mod tests {
             .unique()
             .collect_vec();
 
-        eprintln!("estimation = {:#?}", estimation);
+        eprintln!("estimation = {estimation:#?}");
         eprintln!("result.len() = {:#?}", result.len());
         assert!(estimation.min <= result.len());
         assert!(estimation.max >= result.len());

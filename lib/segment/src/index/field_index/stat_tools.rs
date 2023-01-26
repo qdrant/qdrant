@@ -109,22 +109,22 @@ mod tests {
     fn test_estimation_corner_cases() {
         let count = estimate_multi_value_selection_cardinality(10, 20, 20);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(100, 100, 100);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(100, 100, 50);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(10, 10, 10);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(1, 1, 1);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
         let count = estimate_multi_value_selection_cardinality(1, 1, 0);
         assert!(!count.is_nan());
-        eprintln!("count = {:#?}", count);
+        eprintln!("count = {count:#?}");
     }
 
     #[test]

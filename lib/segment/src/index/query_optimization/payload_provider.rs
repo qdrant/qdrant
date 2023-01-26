@@ -47,7 +47,7 @@ impl PayloadProvider {
             // Which may lead to slowdown and assumes a lot of changes.
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s
                 .read_payload(point_id)
-                .unwrap_or_else(|err| panic!("Payload storage is corrupted: {}", err))
+                .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"))
                 .map(|x| x.into()),
         };
 

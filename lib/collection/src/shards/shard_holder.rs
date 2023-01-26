@@ -285,7 +285,7 @@ impl ShardHolder {
                 if require_migration {
                     ShardConfig::new_replica_set()
                         .save(&path)
-                        .map_err(|e| panic!("Failed to save shard config {:?}: {}", path, e))
+                        .map_err(|e| panic!("Failed to save shard config {path:?}: {e}"))
                         .unwrap();
                 }
                 self.add_shard(shard_id, replica_set);

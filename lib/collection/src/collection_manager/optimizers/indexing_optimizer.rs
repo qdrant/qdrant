@@ -480,7 +480,7 @@ mod tests {
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
-        eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
+        eprintln!("suggested_to_optimize = {suggested_to_optimize:#?}");
         index_optimizer
             .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
             .unwrap();

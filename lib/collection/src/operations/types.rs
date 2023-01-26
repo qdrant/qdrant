@@ -411,7 +411,7 @@ impl CollectionError {
 impl From<SystemTimeError> for CollectionError {
     fn from(error: SystemTimeError) -> CollectionError {
         CollectionError::ServiceError {
-            error: format!("System time error: {}", error),
+            error: format!("System time error: {error}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -430,13 +430,13 @@ impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
             OperationError::WrongVector { .. } => Self::BadInput {
-                description: format!("{}", err),
+                description: format!("{err}"),
             },
             OperationError::VectorNameNotExists { .. } => Self::BadInput {
-                description: format!("{}", err),
+                description: format!("{err}"),
             },
             OperationError::MissedVectorName { .. } => Self::BadInput {
-                description: format!("{}", err),
+                description: format!("{err}"),
             },
             OperationError::PointIdError { missed_point_id } => {
                 Self::PointNotFound { missed_point_id }
@@ -449,11 +449,11 @@ impl From<OperationError> for CollectionError {
                 backtrace,
             },
             OperationError::TypeError { .. } => Self::BadInput {
-                description: format!("{}", err),
+                description: format!("{err}"),
             },
             OperationError::Cancelled { description } => Self::Cancelled { description },
             OperationError::TypeInferenceError { .. } => Self::BadInput {
-                description: format!("{}", err),
+                description: format!("{err}"),
             },
         }
     }
@@ -462,7 +462,7 @@ impl From<OperationError> for CollectionError {
 impl From<OneshotRecvError> for CollectionError {
     fn from(err: OneshotRecvError) -> Self {
         Self::ServiceError {
-            error: format!("{}", err),
+            error: format!("{err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -471,7 +471,7 @@ impl From<OneshotRecvError> for CollectionError {
 impl From<JoinError> for CollectionError {
     fn from(err: JoinError) -> Self {
         Self::ServiceError {
-            error: format!("{}", err),
+            error: format!("{err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -480,7 +480,7 @@ impl From<JoinError> for CollectionError {
 impl From<WalError> for CollectionError {
     fn from(err: WalError) -> Self {
         Self::ServiceError {
-            error: format!("{}", err),
+            error: format!("{err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -489,7 +489,7 @@ impl From<WalError> for CollectionError {
 impl<T> From<SendError<T>> for CollectionError {
     fn from(err: SendError<T>) -> Self {
         Self::ServiceError {
-            error: format!("Can't reach one of the workers: {}", err),
+            error: format!("Can't reach one of the workers: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -498,7 +498,7 @@ impl<T> From<SendError<T>> for CollectionError {
 impl From<JsonError> for CollectionError {
     fn from(err: JsonError) -> Self {
         CollectionError::ServiceError {
-            error: format!("Json error: {}", err),
+            error: format!("Json error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -507,7 +507,7 @@ impl From<JsonError> for CollectionError {
 impl From<io::Error> for CollectionError {
     fn from(err: io::Error) -> Self {
         CollectionError::ServiceError {
-            error: format!("File IO error: {}", err),
+            error: format!("File IO error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -516,7 +516,7 @@ impl From<io::Error> for CollectionError {
 impl From<tonic::transport::Error> for CollectionError {
     fn from(err: tonic::transport::Error) -> Self {
         CollectionError::ServiceError {
-            error: format!("Tonic transport error: {}", err),
+            error: format!("Tonic transport error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -525,7 +525,7 @@ impl From<tonic::transport::Error> for CollectionError {
 impl From<InvalidUri> for CollectionError {
     fn from(err: InvalidUri) -> Self {
         CollectionError::ServiceError {
-            error: format!("Invalid URI error: {}", err),
+            error: format!("Invalid URI error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -535,20 +535,20 @@ impl From<tonic::Status> for CollectionError {
     fn from(err: tonic::Status) -> Self {
         match err.code() {
             tonic::Code::InvalidArgument => CollectionError::BadInput {
-                description: format!("InvalidArgument: {}", err),
+                description: format!("InvalidArgument: {err}"),
             },
             tonic::Code::AlreadyExists => CollectionError::BadInput {
-                description: format!("AlreadyExists: {}", err),
+                description: format!("AlreadyExists: {err}"),
             },
             tonic::Code::NotFound => CollectionError::NotFound {
-                what: format!("{}", err),
+                what: format!("{err}"),
             },
             tonic::Code::Internal => CollectionError::ServiceError {
-                error: format!("Internal error: {}", err),
+                error: format!("Internal error: {err}"),
                 backtrace: Some(Backtrace::force_capture().to_string()),
             },
             other => CollectionError::ServiceError {
-                error: format!("Tonic status error: {}", other),
+                error: format!("Tonic status error: {other}"),
                 backtrace: Some(Backtrace::force_capture().to_string()),
             },
         }
@@ -558,7 +558,7 @@ impl From<tonic::Status> for CollectionError {
 impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
     fn from(err: std::sync::PoisonError<Guard>) -> Self {
         CollectionError::ServiceError {
-            error: format!("Mutex lock poisoned: {}", err),
+            error: format!("Mutex lock poisoned: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -584,7 +584,7 @@ impl From<RequestError<tonic::Status>> for CollectionError {
     fn from(err: RequestError<tonic::Status>) -> Self {
         match err {
             RequestError::FromClosure(status) => status.into(),
-            RequestError::Tonic(err) => CollectionError::service_error(format!("{}", err)),
+            RequestError::Tonic(err) => CollectionError::service_error(format!("{err}")),
         }
     }
 }

@@ -111,7 +111,7 @@ impl CollectionConfig {
         let af = AtomicFile::new(&config_path, AllowOverwrite);
         let state_bytes = serde_json::to_vec(self).unwrap();
         af.write(|f| f.write_all(&state_bytes)).map_err(|err| {
-            CollectionError::service_error(format!("Can't write {:?}, error: {}", config_path, err))
+            CollectionError::service_error(format!("Can't write {config_path:?}, error: {err}"))
         })?;
         Ok(())
     }

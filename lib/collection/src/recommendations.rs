@@ -192,7 +192,7 @@ where
                     }
                     None => {
                         return Err(CollectionError::NotFound {
-                            what: format!("Collection {}", name),
+                            what: format!("Collection {name}"),
                         })
                     }
                 }

@@ -80,7 +80,7 @@ mod tests {
     fn test_read_consistency_deserialization() {
         let consistency = ReadConsistency::Type(ReadConsistencyType::Majority);
         let json = serde_json::to_string(&consistency).unwrap();
-        println!("{}", json);
+        println!("{json}");
 
         let json = "2";
         let consistency: ReadConsistency = serde_json::from_str(json).unwrap();
@@ -111,6 +111,6 @@ mod tests {
 
         let schema = schema_for!(ReadConsistency);
         let schema_str = serde_json::to_string_pretty(&schema).unwrap();
-        println!("{}", schema_str)
+        println!("{schema_str}")
     }
 }

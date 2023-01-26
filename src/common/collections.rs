@@ -111,7 +111,7 @@ pub async fn do_update_collection_cluster(
             .contains_key(&peer_id);
         if !target_peer_exist {
             return Err(StorageError::BadRequest {
-                description: format!("Peer {} does not exist", peer_id),
+                description: format!("Peer {peer_id} does not exist"),
             });
         }
         Ok(())

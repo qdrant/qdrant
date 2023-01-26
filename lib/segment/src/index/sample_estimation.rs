@@ -85,8 +85,7 @@ mod tests {
                 assert!(interval.1 < delta);
                 delta = interval.1;
                 eprintln!(
-                    "confidence_agresti_coull_interval({}, {}, {}) = {:#?}",
-                    i, positive, total, interval
+                    "confidence_agresti_coull_interval({i}, {positive}, {total}) = {interval:#?}"
                 );
             }
         }

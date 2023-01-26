@@ -394,7 +394,7 @@ impl ShardReplicaSet {
                     rs.this_peer_id = this_peer_id;
                 })
                 .map_err(|e| {
-                    panic!("Failed to update replica state in {:?}: {}", shard_path, e);
+                    panic!("Failed to update replica state in {shard_path:?}: {e}");
                 })
                 .unwrap();
         }
@@ -416,7 +416,7 @@ impl ShardReplicaSet {
             )
             .await
             .map_err(|e| {
-                panic!("Failed to load local shard {:?}: {}", shard_path, e);
+                panic!("Failed to load local shard {shard_path:?}: {e}");
             })
             .unwrap();
             Some(Local(shard))

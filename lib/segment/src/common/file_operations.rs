@@ -32,7 +32,7 @@ impl<E> From<AtomicIoError<E>> for FileStorageError {
     fn from(err: AtomicIoError<E>) -> Self {
         match err {
             AtomicIoError::Internal(io_err) => FileStorageError::IoError {
-                description: format!("{}", io_err),
+                description: format!("{io_err}"),
             },
             AtomicIoError::User(_atomic_io_err) => FileStorageError::UserAtomicIoError,
         }

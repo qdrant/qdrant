@@ -486,7 +486,7 @@ impl TryFrom<PointId> for segment::types::PointIdType {
             Some(PointIdOptions::Uuid(uui_str)) => Uuid::parse_str(&uui_str)
                 .map(segment::types::PointIdType::Uuid)
                 .map_err(|_err| {
-                    Status::invalid_argument(format!("Unable to parse UUID: {}", uui_str))
+                    Status::invalid_argument(format!("Unable to parse UUID: {uui_str}"))
                 }),
             _ => Err(Status::invalid_argument(
                 "No ID options provided".to_string(),

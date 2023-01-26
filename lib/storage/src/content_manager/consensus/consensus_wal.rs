@@ -100,10 +100,7 @@ impl ConsensusOpWal {
                 // Example: 2 <= 0 + 1 + 1
                 debug_assert!(
                     index <= current_index + offset + 1,
-                    "Expected no index skip: {} <= {} + {}",
-                    index,
-                    current_index,
-                    offset
+                    "Expected no index skip: {index} <= {current_index} + {offset}"
                 );
 
                 if index < current_index + offset {
@@ -115,8 +112,7 @@ impl ConsensusOpWal {
                     // 10 < 11 + 1
                     if index < offset {
                         return Err(StorageError::service_error(&format!(
-                            "Wal index conflict, raft index: {}, wal index: {}, offset: {}",
-                            index, current_index, offset
+                            "Wal index conflict, raft index: {index}, wal index: {current_index}, offset: {offset}"
                         )));
                     }
                     log::debug!(

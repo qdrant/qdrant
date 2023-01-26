@@ -64,7 +64,7 @@ impl<'a> Profiler for FlamegraphProfiler<'a> {
         std::fs::create_dir_all(benchmark_dir).unwrap();
         let pprof_path = benchmark_dir.join("profile.pb");
         let flamegraph_path = benchmark_dir.join("flamegraph.svg");
-        eprintln!("\nflamegraph_path = {:#?}", flamegraph_path);
+        eprintln!("\nflamegraph_path = {flamegraph_path:#?}");
         let flamegraph_file = File::create(&flamegraph_path)
             .expect("File system error while creating flamegraph.svg");
         let mut options = pprof::flamegraph::Options::default();

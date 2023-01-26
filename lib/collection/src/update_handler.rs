@@ -235,7 +235,7 @@ impl UpdateHandler {
                                     // so the best available action here is to stop whole
                                     // optimization thread and log the error
                                     log::error!("Optimization error: {}", error);
-                                    panic!("Optimization error: {}", error);
+                                    panic!("Optimization error: {error}");
                                 }
                             },
                         }
@@ -392,8 +392,7 @@ impl UpdateHandler {
                 segments
                     .write()
                     .report_optimizer_error(WalError::WriteWalError(format!(
-                        "WAL flush error: {:?}",
-                        err
+                        "WAL flush error: {err:?}"
                     )));
                 continue;
             }

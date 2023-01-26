@@ -132,7 +132,7 @@ impl Settings {
             // Add in the current environment file
             // Default to 'development' env
             // Note that this file is _optional_
-            .add_source(File::with_name(&format!("config/{}", env)).required(false))
+            .add_source(File::with_name(&format!("config/{env}")).required(false))
             // Add in a local configuration file
             // This file shouldn't be checked in to git
             .add_source(File::with_name("config/local").required(false))

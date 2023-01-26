@@ -152,7 +152,7 @@ impl LocalShard {
             wal_path.to_str().unwrap(),
             &(&collection_config.wal_config).into(),
         )
-        .map_err(|e| CollectionError::service_error(format!("Wal error: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
 
         let segment_dirs = std::fs::read_dir(&segments_path).map_err(|err| {
             CollectionError::service_error(format!(
@@ -177,7 +177,7 @@ impl LocalShard {
             }
             load_handlers.push(
                 thread::Builder::new()
-                    .name(format!("shard-load-{}-{}", collection_id, id))
+                    .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
                         let mut res = load_segment(&segments_path)?;
                         if let Some(segment) = &mut res {
@@ -270,8 +270,7 @@ impl LocalShard {
 
         create_dir_all(&wal_path).await.map_err(|err| {
             CollectionError::service_error(format!(
-                "Can't create shard wal directory. Error: {}",
-                err
+                "Can't create shard wal directory. Error: {err}"
             ))
         })?;
 
@@ -279,8 +278,7 @@ impl LocalShard {
 
         create_dir_all(&segments_path).await.map_err(|err| {
             CollectionError::service_error(format!(
-                "Can't create shard segments directory. Error: {}",
-                err
+                "Can't create shard segments directory. Error: {err}"
             ))
         })?;
 
@@ -302,7 +300,7 @@ impl LocalShard {
                 },
             };
             let segment = thread::Builder::new()
-                .name(format!("shard-build-{}-{}", collection_id, id))
+                .name(format!("shard-build-{collection_id}-{id}"))
                 .spawn(move || build_segment(&path_clone, &segment_config))
                 .unwrap();
             build_handlers.push(segment);
@@ -316,9 +314,9 @@ impl LocalShard {
         for join_result in join_results {
             let segment = join_result.map_err(|e| {
                 let error_msg = if let Some(s) = e.downcast_ref::<&str>() {
-                    format!("Segment DB create panicked with:\n{}", s)
+                    format!("Segment DB create panicked with:\n{s}")
                 } else if let Some(s) = e.downcast_ref::<String>() {
-                    format!("Segment DB create panicked with:\n{}", s)
+                    format!("Segment DB create panicked with:\n{s}")
                 } else {
                     "Segment DB create failed with unknown reason".to_string()
                 };
@@ -372,7 +370,7 @@ impl LocalShard {
             .expect("Failed to create progress style");
         bar.set_style(progress_style);
 
-        bar.set_message(format!("Recovering collection {}", collection_id));
+        bar.set_message(format!("Recovering collection {collection_id}"));
         let segments = self.segments();
         // ToDo: Start from minimal applied version
         for (op_num, update) in wal.read_all() {
@@ -380,7 +378,7 @@ impl LocalShard {
             if let Err(CollectionError::ServiceError { error, .. }) =
                 CollectionUpdater::update(segments, op_num, update)
             {
-                panic!("Can't apply WAL operation: {}", error)
+                panic!("Can't apply WAL operation: {error}")
             }
             bar.inc(1);
         }
@@ -493,8 +491,7 @@ impl LocalShard {
         let options = fs_extra::dir::CopyOptions::new();
         fs_extra::dir::copy(source_wal_path, snapshot_shard_path, &options).map_err(|err| {
             CollectionError::service_error(format!(
-                "Error while copy WAL {:?} {}",
-                snapshot_shard_path, err
+                "Error while copy WAL {snapshot_shard_path:?} {err}"
             ))
         })?;
         Ok(())

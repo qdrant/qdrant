@@ -887,7 +887,7 @@ mod tests {
         eprintln!("read_counter.get() = {:#?}", read_counter.get());
         eprintln!("histogram.borders.len() = {:#?}", histogram.borders.len());
         for border in histogram.borders.iter().take(5) {
-            eprintln!("border = {:?}", border);
+            eprintln!("border = {border:?}");
         }
         (histogram, points_index)
     }
