@@ -39,7 +39,8 @@ use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
-pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type ActivatePeer = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -58,6 +59,8 @@ pub enum ReplicaState {
     Dead,
     // The shard is partially loaded and is currently receiving data from other shards
     Partial,
+    // Collection is being created
+    Initializing,
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
@@ -115,7 +118,7 @@ pub struct ShardReplicaSet {
     /// Number of remote replicas to send read requests to.
     /// If actual number of peers is less than this, then read request will be sent to all of them.
     read_remote_replicas: u32,
-    notify_peer_failure_cb: OnPeerFailure,
+    notify_peer_failure_cb: ChangePeerState,
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
@@ -186,7 +189,7 @@ impl ShardReplicaSet {
         this_peer_id: PeerId,
         local: bool,
         remotes: HashSet<PeerId>,
-        on_peer_failure: OnPeerFailure,
+        on_peer_failure: ChangePeerState,
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
@@ -212,7 +215,7 @@ impl ShardReplicaSet {
             rs.this_peer_id = this_peer_id;
             if local.is_some() {
                 rs.is_local = true;
-                rs.set_peer_state(this_peer_id, ReplicaState::Partial);
+                rs.set_peer_state(this_peer_id, ReplicaState::Initializing);
             }
             for peer in remotes {
                 rs.set_peer_state(peer, ReplicaState::Dead);
@@ -376,7 +379,7 @@ impl ShardReplicaSet {
         shard_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
-        on_peer_failure: OnPeerFailure,
+        on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
     ) -> Self {
@@ -529,6 +532,10 @@ impl ShardReplicaSet {
                         self.set_local(local_shard, Some(ReplicaState::Partial))
                             .await?;
                     }
+                    ReplicaState::Initializing => {
+                        self.set_local(local_shard, Some(ReplicaState::Initializing))
+                            .await?;
+                    }
                 }
                 continue;
             }
@@ -560,6 +567,7 @@ impl ShardReplicaSet {
         let res = match self.peer_state(peer_id) {
             Some(ReplicaState::Active) => true,
             Some(ReplicaState::Partial) => true,
+            Some(ReplicaState::Initializing) => true,
             Some(ReplicaState::Dead) => false,
             None => false,
         };
@@ -969,6 +977,9 @@ impl ShardReplicaSet {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
                 Some(ReplicaState::Partial) => {
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
+                Some(ReplicaState::Initializing) => {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
                 Some(ReplicaState::Dead) | None => Ok(None),

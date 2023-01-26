@@ -11,7 +11,7 @@ use crate::operations::types::{VectorParams, VectorsConfig};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
-use crate::shards::replica_set::OnPeerFailure;
+use crate::shards::replica_set::ChangePeerState;
 
 const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
@@ -24,7 +24,7 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     max_optimization_threads: 2,
 };
 
-pub fn dummy_on_replica_failure() -> OnPeerFailure {
+pub fn dummy_on_replica_failure() -> ChangePeerState {
     Arc::new(move |_peer_id, _shard_id| {})
 }
 

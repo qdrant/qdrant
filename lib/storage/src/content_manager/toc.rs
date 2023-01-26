@@ -126,9 +126,10 @@ impl TableOfContent {
                 &collection_path,
                 &collection_snapshots_path,
                 channel_service.clone(),
-                Self::on_peer_failure_callback(
+                Self::change_peer_state_callback(
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
+                    ReplicaState::Dead,
                 ),
                 Self::request_shard_transfer_callback(
                     consensus_proposal_sender.clone(),
@@ -327,9 +328,10 @@ impl TableOfContent {
             &collection_config,
             collection_shard_distribution,
             self.channel_service.clone(),
-            Self::on_peer_failure_callback(
+            Self::change_peer_state_callback(
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
+                ReplicaState::Dead,
             ),
             Self::request_shard_transfer_callback(
                 self.consensus_proposal_sender.clone(),
@@ -509,10 +511,11 @@ impl TableOfContent {
         })
     }
 
-    fn on_peer_failure_callback(
+    fn change_peer_state_callback(
         proposal_sender: Option<OperationSender>,
         collection_name: String,
-    ) -> replica_set::OnPeerFailure {
+        state: ReplicaState,
+    ) -> replica_set::ChangePeerState {
         Arc::new(move |peer_id, shard_id| {
             if let Some(proposal_sender) = &proposal_sender {
                 if let Err(send_error) = Self::send_set_replica_state_proposal_op(
@@ -520,7 +523,7 @@ impl TableOfContent {
                     collection_name.clone(),
                     peer_id,
                     shard_id,
-                    ReplicaState::Dead,
+                    state,
                 ) {
                     log::error!(
                         "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
@@ -1230,9 +1233,10 @@ impl TableOfContent {
                             &state.config,
                             shard_distribution,
                             self.channel_service.clone(),
-                            Self::on_peer_failure_callback(
+                            Self::change_peer_state_callback(
                                 self.consensus_proposal_sender.clone(),
                                 id.to_string(),
+                                ReplicaState::Dead,
                             ),
                             Self::request_shard_transfer_callback(
                                 self.consensus_proposal_sender.clone(),
@@ -1446,10 +1450,16 @@ impl CollectionContainer for TableOfContent {
             let transfer_success_callback =
                 Self::on_transfer_success_callback(self.consensus_proposal_sender.clone());
             for collection in collections.values() {
+                let activate_shard_callback = Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection.name(),
+                    ReplicaState::Active,
+                );
                 collection
                     .sync_local_state(
                         transfer_failure_callback.clone(),
                         transfer_success_callback.clone(),
+                        activate_shard_callback,
                     )
                     .await?;
             }

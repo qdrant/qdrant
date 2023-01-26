@@ -39,9 +39,9 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::replica_set::ReplicaState::Dead;
+use crate::shards::replica_set::ReplicaState::{Dead, Initializing};
 use crate::shards::replica_set::{
-    Change, OnPeerFailure, ReplicaState, ShardReplicaSet as ReplicaSetShard,
+    Change, ChangePeerState, ReplicaState, ShardReplicaSet as ReplicaSetShard,
 }; // TODO rename ReplicaShard to ReplicaSetShard
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
@@ -83,7 +83,7 @@ pub struct Collection {
     transfer_tasks: Mutex<TransferTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
     #[allow(dead_code)] //Might be useful in case of repartition implementation
-    notify_peer_failure_cb: OnPeerFailure,
+    notify_peer_failure_cb: ChangePeerState,
     init_time: Duration,
     // One-way boolean flag that is set to true when the collection is fully initialized
     // i.e. all shards are activated for the first time.
@@ -112,7 +112,7 @@ impl Collection {
         config: &CollectionConfig,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
-        on_replica_failure: OnPeerFailure,
+        on_replica_failure: ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
@@ -206,7 +206,7 @@ impl Collection {
         path: &Path,
         snapshots_path: &Path,
         channel_service: ChannelService,
-        on_replica_failure: replica_set::OnPeerFailure,
+        on_replica_failure: replica_set::ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
@@ -1454,6 +1454,7 @@ impl Collection {
         &self,
         on_transfer_failure: OnTransferFailure,
         on_transfer_success: OnTransferSuccess,
+        activate_shard_callback: ChangePeerState,
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
@@ -1497,7 +1498,16 @@ impl Collection {
             let this_peer_id = &replica_set.this_peer_id();
             let shard_id = replica_set.shard_id;
 
-            if replica_set.peers().get(this_peer_id) != Some(&Dead) {
+            let this_peer_state = replica_set.peers().get(this_peer_id).copied();
+
+            if this_peer_state == Some(Initializing) {
+                // It is possible, that collection creation didn't report
+                // Try to activate shard, as the collection clearly exists
+                activate_shard_callback(*this_peer_id, shard_id);
+                continue;
+            }
+
+            if this_peer_state != Some(Dead) {
                 continue; // All good
             }
 
