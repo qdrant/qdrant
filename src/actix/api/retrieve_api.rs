@@ -1,5 +1,6 @@
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
+use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::types::{PointRequest, Record, ScrollRequest, ScrollResult};
 use segment::types::{PointIdType, WithPayloadInterface};
 use storage::content_manager::errors::StorageError;
@@ -12,11 +13,13 @@ async fn do_get_point(
     toc: &TableOfContent,
     collection_name: &str,
     point_id: PointIdType,
+    read_consistency: ReadConsistency,
 ) -> Result<Option<Record>, StorageError> {
     let request = PointRequest {
         ids: vec![point_id],
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true.into(),
+        read_consistency,
     };
     toc.retrieve(collection_name, request, None)
         .await
@@ -52,7 +55,7 @@ pub async fn get_point(
         }
     };
 
-    let response = do_get_point(toc.get_ref(), &collection_name, point_id).await;
+    let response = do_get_point(toc.get_ref(), &collection_name, point_id, todo!()).await;
 
     let response = match response {
         Ok(record) => match record {

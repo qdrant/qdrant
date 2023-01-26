@@ -585,6 +585,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
                 DEFAULT_VECTOR_NAME => None,
                 vector_name => Some(vector_name.to_string()),
             },
+            read_consistency: None,
         }
     }
 }
@@ -614,6 +615,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
                     .unwrap_or_default(),
             ),
             score_threshold: value.score_threshold,
+            read_consistency: value.read_consistency.try_into()?,
         })
     }
 }
@@ -656,6 +658,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
             score_threshold: value.score_threshold,
             using: value.using.map(|name| name.into()),
             lookup_from: value.lookup_from.map(|x| x.into()),
+            read_consistency: value.read_consistency.try_into()?,
         })
     }
 }

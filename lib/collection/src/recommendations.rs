@@ -10,6 +10,7 @@ use segment::types::{
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
+use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
     CollectionError, CollectionResult, PointRequest, RecommendRequest, RecommendRequestBatch,
     Record, SearchRequest, SearchRequestBatch, UsingVector,
@@ -69,6 +70,7 @@ async fn retrieve_points(
                 ids,
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: WithVector::Selector(vector_names),
+                read_consistency: ReadConsistency::Factor(1), // TODO: Which `ReadConsistency` should be used here!?
             },
             None,
         )
@@ -286,6 +288,7 @@ where
             limit: request.limit,
             score_threshold: request.score_threshold,
             offset: request.offset,
+            read_consistency: request.read_consistency,
         };
         searches.push(search_request)
     }

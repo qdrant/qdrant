@@ -1668,6 +1668,23 @@ pub struct WriteOrdering {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReadConsistency {
+    #[prost(oneof = "read_consistency::Value", tags = "1, 2")]
+    pub value: ::core::option::Option<read_consistency::Value>,
+}
+/// Nested message and enum types in `ReadConsistency`.
+pub mod read_consistency {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Value {
+        #[prost(enumeration = "super::ReadConsistencyType", tag = "1")]
+        Type(i32),
+        #[prost(uint64, tag = "2")]
+        Factor(u64),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointId {
     #[prost(oneof = "point_id::PointIdOptions", tags = "1, 2")]
     pub point_id_options: ::core::option::Option<point_id::PointIdOptions>,
@@ -1737,6 +1754,8 @@ pub struct GetPoints {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "5")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    #[prost(message, optional, tag = "6")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1965,6 +1984,8 @@ pub struct SearchPoints {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "11")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    #[prost(message, optional, tag = "12")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1974,6 +1995,8 @@ pub struct SearchBatchPoints {
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
+    #[prost(message, optional, tag = "3")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1995,6 +2018,8 @@ pub struct ScrollPoints {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "7")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    #[prost(message, optional, tag = "8")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2044,6 +2069,8 @@ pub struct RecommendPoints {
     /// Name of the collection to use for points lookup, if not specified - use current collection
     #[prost(message, optional, tag = "13")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
+    #[prost(message, optional, tag = "14")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2053,6 +2080,8 @@ pub struct RecommendBatchPoints {
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub recommend_points: ::prost::alloc::vec::Vec<RecommendPoints>,
+    #[prost(message, optional, tag = "3")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2392,6 +2421,26 @@ impl WriteOrderingType {
             WriteOrderingType::Weak => "Weak",
             WriteOrderingType::Medium => "Medium",
             WriteOrderingType::Strong => "Strong",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReadConsistencyType {
+    Quorum = 0,
+    Majority = 1,
+    All = 2,
+}
+impl ReadConsistencyType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ReadConsistencyType::Quorum => "Quorum",
+            ReadConsistencyType::Majority => "Majority",
+            ReadConsistencyType::All => "All",
         }
     }
 }

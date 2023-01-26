@@ -103,8 +103,16 @@ impl Points for PointsService {
         let SearchBatchPoints {
             collection_name,
             search_points,
+            read_consistency,
         } = request.into_inner();
-        search_batch(self.toc.as_ref(), collection_name, search_points, None).await
+        search_batch(
+            self.toc.as_ref(),
+            collection_name,
+            search_points,
+            read_consistency,
+            None,
+        )
+        .await
     }
 
     async fn scroll(
@@ -128,8 +136,15 @@ impl Points for PointsService {
         let RecommendBatchPoints {
             collection_name,
             recommend_points,
+            read_consistency,
         } = request.into_inner();
-        recommend_batch(self.toc.as_ref(), collection_name, recommend_points).await
+        recommend_batch(
+            self.toc.as_ref(),
+            collection_name,
+            recommend_points,
+            read_consistency,
+        )
+        .await
     }
 
     async fn count(

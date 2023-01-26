@@ -25,6 +25,7 @@ use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
+use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
@@ -917,6 +918,7 @@ impl Collection {
             ids: search_result.iter().map(|x| x.id).collect(),
             with_payload,
             with_vector,
+            read_consistency: ReadConsistency::Factor(1), // TODO: Which `ReadConsistency` should be used here!?
         };
         let retrieved_records = self.retrieve(retrieve_request, shard_selection).await?;
         let mut records_map: HashMap<ExtendedPointId, Record> = retrieved_records
