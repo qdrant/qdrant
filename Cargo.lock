@@ -2726,7 +2726,7 @@ dependencies = [
 [[package]]
 name = "quantization"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/quantization.git#43db76514c51dc65eb57252cfeb29cd62568a10e"
+source = "git+https://github.com/qdrant/quantization.git#c34a173afd90d9daf6bd774298c8c19b1ae8583e"
 dependencies = [
  "cc",
  "serde",

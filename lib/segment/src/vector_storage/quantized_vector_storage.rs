@@ -22,7 +22,7 @@ impl RawScorer for QuantizedRawScorer<'_> {
                 idx: point_id,
                 score: self
                     .quantized_data
-                    .score_point(&self.query, point_id as usize),
+                    .score_point(&self.query, point_id),
             };
             size += 1;
             if size == scores.len() {
@@ -37,11 +37,10 @@ impl RawScorer for QuantizedRawScorer<'_> {
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
-        self.quantized_data.score_point(&self.query, point as usize)
+        self.quantized_data.score_point(&self.query, point)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        self.quantized_data
-            .score_internal(point_a as usize, point_b as usize)
+        self.quantized_data.score_internal(point_a, point_b)
     }
 }
