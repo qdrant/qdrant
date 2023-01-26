@@ -331,8 +331,7 @@ impl Collection {
             let current_state = replica_set.peer_state(&peer_id);
             if current_state != from_state {
                 return Err(CollectionError::bad_input(format!(
-                    "Replica {} of shard {} has state {:?}, but expected {:?}",
-                    peer_id, shard_id, current_state, from_state
+                    "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected {from_state:?}"
                 )));
             }
         }
