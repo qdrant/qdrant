@@ -34,7 +34,6 @@ use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
     PeerInfo, RaftInfo,
 };
-use crate::CollectionMetaOperations;
 
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
@@ -563,7 +562,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         &self,
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
-        with_confirmation: bool,
     ) -> Result<bool, StorageError> {
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
 
@@ -584,25 +582,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             on_apply_lock.insert(operation, sender);
         }
         let res = Self::await_receiver(receiver, wait_timeout).await?;
-
-        // Send explicit empty operation to ensure that all previous operations are applied.
-        // Assume that peer can not accept new operations until it applies all previous ones.
-        if with_confirmation {
-            let random_token: usize = rand::random();
-            // Send empty operation to make sure that the majority of consensus applied the operation
-            let empty_operation =
-                ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop {
-                    token: random_token,
-                }));
-            let (sender, receiver) = oneshot::channel();
-            {
-                let mut on_apply_lock = self.on_consensus_op_apply.lock();
-                self.propose_sender.send(empty_operation.clone())?;
-                on_apply_lock.insert(empty_operation, sender);
-            }
-            Self::await_receiver(receiver, wait_timeout).await?;
-        }
-
         Ok(res)
     }
 

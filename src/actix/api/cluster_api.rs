@@ -48,7 +48,6 @@ async fn remove_peer(
                 .propose_consensus_op_with_await(
                     ConsensusOperations::RemovePeer(peer_id),
                     params.timeout.map(std::time::Duration::from_secs),
-                    false,
                 )
                 .await
         }
