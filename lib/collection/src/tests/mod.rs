@@ -99,9 +99,7 @@ async fn test_cancel_optimization() {
     let optimization_res = join_all(join_handles).await;
 
     let actual_optimization_duration = now.elapsed().as_millis();
-    eprintln!(
-        "actual_optimization_duration = {actual_optimization_duration:#?} ms"
-    );
+    eprintln!("actual_optimization_duration = {actual_optimization_duration:#?} ms");
 
     for res in optimization_res {
         let was_finished = res.expect("Should be no errors during optimization");

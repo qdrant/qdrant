@@ -482,10 +482,7 @@ mod tests {
 
         let mut file = File::create("graph.json").unwrap();
         file.write_all(
-            format!(
-                "{{ \"graph\": {graph_json}, \n \"vectors\": {vectors_json} }}"
-            )
-            .as_bytes(),
+            format!("{{ \"graph\": {graph_json}, \n \"vectors\": {vectors_json} }}").as_bytes(),
         )
         .unwrap();
     }

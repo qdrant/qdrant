@@ -1020,15 +1020,11 @@ impl SegmentEntry for Segment {
         let flush_op = move || {
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to flush id_tracker mapping: {err}"
-                ))
+                OperationError::service_error(format!("Failed to flush id_tracker mapping: {err}"))
             })?;
             for vector_storage_flusher in vector_storage_flushers {
                 vector_storage_flusher().map_err(|err| {
-                    OperationError::service_error(format!(
-                        "Failed to flush vector_storage: {err}"
-                    ))
+                    OperationError::service_error(format!("Failed to flush vector_storage: {err}"))
                 })?;
             }
             payload_index_flusher().map_err(|err| {
@@ -1041,9 +1037,7 @@ impl SegmentEntry for Segment {
             //  by simply overriding data in vector and payload storages.
             // Once versions are saved - points are considered persisted.
             id_tracker_versions_flusher().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to flush id_tracker versions: {err}"
-                ))
+                OperationError::service_error(format!("Failed to flush id_tracker versions: {err}"))
             })?;
             Self::save_state(&state, &current_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to flush segment state: {err}"))

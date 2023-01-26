@@ -117,9 +117,7 @@ impl TableOfContent {
             let collection_snapshots_path =
                 Self::collection_snapshots_path(&snapshots_path, &collection_name);
             create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
-                panic!(
-                    "Can't create a directory for snapshot of {collection_name}: {e}"
-                )
+                panic!("Can't create a directory for snapshot of {collection_name}: {e}")
             });
             log::info!("Loading collection: {}", collection_name);
             let collection = general_runtime.block_on(Collection::load(

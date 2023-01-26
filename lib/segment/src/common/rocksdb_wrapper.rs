@@ -122,9 +122,7 @@ impl DatabaseColumnWrapper {
         let db = self.database.read();
         let cf_handle = self.get_column_family(&db)?;
         db.put_cf_opt(cf_handle, key, value, &Self::get_write_options())
-            .map_err(|err| {
-                OperationError::service_error(format!("RocksDB put_cf error: {err}"))
-            })?;
+            .map_err(|err| OperationError::service_error(format!("RocksDB put_cf error: {err}")))?;
         Ok(())
     }
 

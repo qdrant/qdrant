@@ -301,9 +301,7 @@ impl GeoMapIndex {
 
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
-                .map_err(|e| {
-                    OperationError::service_error(format!("Malformed geo points: {e}"))
-                })?;
+                .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
 
             let key = Self::encode_db_key(&added_geo_hash, idx);
             let value = Self::encode_db_value(added_point);

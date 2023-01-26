@@ -1095,9 +1095,7 @@ impl Collection {
 
                     if peers.len() == 1 {
                         return Err(CollectionError::BadRequest {
-                            description: format!(
-                                "Shard {shard_id} must have at least one replica"
-                            ),
+                            description: format!("Shard {shard_id} must have at least one replica"),
                         });
                     }
 

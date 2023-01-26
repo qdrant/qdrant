@@ -100,9 +100,7 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
         AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
     for (alias, collection_name) in config_json.collections_aliases {
         if alias_persistence.get(&alias).is_some() && !force {
-            panic!(
-                "Alias {alias} already exists. Use --force-snapshot to overwrite it."
-            );
+            panic!("Alias {alias} already exists. Use --force-snapshot to overwrite it.");
         }
         alias_persistence.insert(alias, collection_name).unwrap();
     }
