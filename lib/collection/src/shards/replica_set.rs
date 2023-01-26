@@ -25,6 +25,7 @@ use super::remote_shard::RemoteShard;
 use super::resolve::{Resolve, ResolveCondition};
 use super::{create_shard_dir, CollectionId};
 use crate::config::CollectionConfig;
+use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult,
@@ -138,6 +139,24 @@ impl ShardReplicaSet {
 
     pub fn this_peer_id(&self) -> PeerId {
         self.replica_state.read().this_peer_id
+    }
+
+    pub fn highest_replica_peer_id(&self) -> Option<PeerId> {
+        self.peers().keys().max().cloned()
+    }
+
+    pub fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
+        self.peers()
+            .iter()
+            .filter_map(|(peer_id, _state)| {
+                if self.peer_is_active(peer_id) {
+                    Some(peer_id)
+                } else {
+                    None
+                }
+            })
+            .max()
+            .cloned()
     }
 
     pub async fn remote_peers(&self) -> Vec<PeerId> {
@@ -1053,6 +1072,57 @@ impl ShardReplicaSet {
             self.notify_peer_failure(*failed_peer);
         }
         Ok(())
+    }
+
+    pub async fn update_with_consistency(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+        ordering: WriteOrdering,
+    ) -> CollectionResult<UpdateResult> {
+        match self.leader_peer_for_update(ordering) {
+            None => Err(CollectionError::service_error(format!(
+                "Cannot update shard {}:{} because there are no active replicas",
+                self.collection_id, self.shard_id
+            ))),
+            Some(leader_peer) => {
+                // If we are the leader, run the update from this replica set
+                if leader_peer == self.this_peer_id() {
+                    self.update(operation, wait).await
+                } else {
+                    // forward the update to the designated leader
+                    self.forward_update(leader_peer, operation, wait).await
+                }
+            }
+        }
+    }
+
+    /// Designated a leader replica for the update based on the WriteOrdering
+    pub fn leader_peer_for_update(&self, ordering: WriteOrdering) -> Option<PeerId> {
+        match ordering {
+            WriteOrdering::Weak => Some(self.this_peer_id()), // no requirement for consistency
+            WriteOrdering::Medium => self.highest_replica_peer_id(), // consistency with highest replica
+            WriteOrdering::Strong => self.highest_alive_replica_peer_id(), // consistency with highest alive replica
+        }
+    }
+
+    /// Forward update to the leader replica
+    pub async fn forward_update(
+        &self,
+        leader_peer: PeerId,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+    ) -> CollectionResult<UpdateResult> {
+        let remotes_guard = self.remotes.read().await;
+        let remote_leader = remotes_guard.iter().find(|r| r.peer_id == leader_peer);
+
+        match remote_leader {
+            Some(remote_leader) => remote_leader.forward_update(operation, wait).await,
+            None => Err(CollectionError::service_error(format!(
+                "Cannot forward update to shard {} because was removed from the replica set",
+                self.shard_id
+            ))),
+        }
     }
 
     pub async fn update(

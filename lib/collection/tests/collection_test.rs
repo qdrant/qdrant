@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use collection::operations::payload_ops::{PayloadOps, SetPayload};
-use collection::operations::point_ops::{Batch, PointOperations, PointStruct};
+use collection::operations::point_ops::{Batch, PointOperations, PointStruct, WriteOrdering};
 use collection::operations::types::{
     CountRequest, PointRequest, RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus,
 };
@@ -48,7 +48,9 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         .into(),
     );
 
-    let insert_result = collection.update_from_client(insert_points, true).await;
+    let insert_result = collection
+        .update_from_client(insert_points, true, WriteOrdering::default())
+        .await;
 
     match insert_result {
         Ok(res) => {
@@ -104,7 +106,9 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         .into(),
     );
 
-    let insert_result = collection.update_from_client(insert_points, true).await;
+    let insert_result = collection
+        .update_from_client(insert_points, true, WriteOrdering::default())
+        .await;
 
     match insert_result {
         Ok(res) => {
@@ -189,7 +193,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         );
 
         collection
-            .update_from_client(insert_points, true)
+            .update_from_client(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
 
@@ -203,7 +207,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             }));
 
         collection
-            .update_from_client(assign_payload, true)
+            .update_from_client(assign_payload, true, WriteOrdering::default())
             .await
             .unwrap();
         collection.before_drop().await;
@@ -317,7 +321,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
     );
 
     collection
-        .update_from_client(insert_points, true)
+        .update_from_client(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
     let result = recommend_by(
@@ -373,7 +377,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
     ));
 
     collection
-        .update_from_client(insert_points, true)
+        .update_from_client(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
@@ -426,7 +430,9 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         .into(),
     );
 
-    let insert_result = collection.update_from_client(insert_points, true).await;
+    let insert_result = collection
+        .update_from_client(insert_points, true, WriteOrdering::default())
+        .await;
 
     match insert_result {
         Ok(res) => {
@@ -447,7 +453,9 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         PointOperations::DeletePointsByFilter(delete_filter),
     );
 
-    let delete_result = collection.update_from_client(delete_points, true).await;
+    let delete_result = collection
+        .update_from_client(delete_points, true, WriteOrdering::default())
+        .await;
 
     match delete_result {
         Ok(res) => {

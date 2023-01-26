@@ -12,6 +12,7 @@ use collection::config::{
     CollectionParams,
 };
 use collection::operations::config_diff::DiffConfig;
+use collection::operations::point_ops::WriteOrdering;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
@@ -1139,6 +1140,7 @@ impl TableOfContent {
         operation: CollectionUpdateOperations,
         shard_selection: Option<ShardId>,
         wait: bool,
+        ordering: WriteOrdering,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         let result = match shard_selection {
@@ -1151,7 +1153,9 @@ impl TableOfContent {
                 if operation.is_write_operation() {
                     self.check_write_lock()?;
                 }
-                collection.update_from_client(operation, wait).await
+                collection
+                    .update_from_client(operation, wait, ordering)
+                    .await
             }
         };
         result.map_err(|err| err.into())
