@@ -114,9 +114,11 @@ fn create_segment(
             if quantization_config.enable {
                 let quantized_meta_path = vector_storage_path.join(QUANTIZED_META_PATH);
                 let quantized_data_path = vector_storage_path.join(QUANTIZED_DATA_PATH);
-                vector_storage
-                    .borrow_mut()
-                    .load_quantization(&quantized_meta_path, &quantized_data_path)?;
+                if quantized_meta_path.exists() && quantized_data_path.exists() {
+                    vector_storage
+                        .borrow_mut()
+                        .load_quantization(&quantized_meta_path, &quantized_data_path)?;
+                }
             }
         }
 
