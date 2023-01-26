@@ -66,7 +66,7 @@ impl Dispatcher {
                         // Expect all replicas to become active eventually
                         for (shard_id, peer_ids) in &shard_distribution.distribution {
                             for peer_id in peer_ids {
-                                expect_operations.push(ConsensusOperations::activate_replica(
+                                expect_operations.push(ConsensusOperations::initialize_replica(
                                     op.collection_name.clone(),
                                     *shard_id,
                                     *peer_id,

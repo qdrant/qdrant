@@ -49,6 +49,43 @@ const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
+
+// Shard replication state machine:
+//
+//    │
+//    │    Collection Created
+//    │
+//    ▼
+//  ┌─────────────┐
+//  │             │
+//  │Initializing │
+//  │             │
+//  └─────┬─-─────┘
+//        │  Report created     ┌───────────┐
+//        └────────────────────►│           │
+//             Activate         │ Consensus │
+//        ┌─────────────────────│           │
+//        │                     └───────────┘
+//  ┌─────▼───────┐
+//  │             │
+//  │ Active      ◄───────────┐
+//  │             │           │Transfer
+//  └──┬──────────┘           │Finished
+//     │                      │
+//     │               ┌──────┴────────┐
+//     │Update         │               │
+//     │Failure        │ Partial       ├───┐
+//     │               │               │   │
+//     │               └───────▲───────┘   │
+//     │                       │           │Transfer
+//  ┌──▼──────────┐            │           │Failed/Cancelled
+//  │             │ Transfer   │           │
+//  │ Dead        ├────────────┘           │
+//  │             │ Started                │
+//  └──▲──────────┘                        │
+//     │                                   │
+//     └───────────────────────────────────┘
+
 /// State of the single shard within a replica set.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum ReplicaState {
@@ -218,7 +255,7 @@ impl ShardReplicaSet {
                 rs.set_peer_state(this_peer_id, ReplicaState::Initializing);
             }
             for peer in remotes {
-                rs.set_peer_state(peer, ReplicaState::Dead);
+                rs.set_peer_state(peer, ReplicaState::Initializing);
             }
         })?;
 
@@ -1082,10 +1119,10 @@ impl ShardReplicaSet {
                 .collect();
 
             // local is defined AND the peer itself can receive updates
-            let local_is_active =
+            let local_is_updatable =
                 local.is_some() && self.peer_is_active_or_pending(&self.this_peer_id());
 
-            if active_remote_shards.is_empty() && !local_is_active {
+            if active_remote_shards.is_empty() && !local_is_updatable {
                 return Err(CollectionError::service_error(format!(
                     "The replica set for shard {} on peer {} has no active replica",
                     self.shard_id,

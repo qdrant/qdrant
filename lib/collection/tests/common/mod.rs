@@ -107,7 +107,7 @@ pub async fn new_local_collection(
     let local_shards = collection.get_local_shards().await;
     for shard_id in local_shards {
         collection
-            .set_shard_replica_state(shard_id, 0, ReplicaState::Active)
+            .set_shard_replica_state(shard_id, 0, ReplicaState::Active, None)
             .await?;
     }
     Ok(collection)

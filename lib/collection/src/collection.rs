@@ -314,6 +314,7 @@ impl Collection {
         shard_id: ShardId,
         peer_id: PeerId,
         state: ReplicaState,
+        from_state: Option<ReplicaState>,
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
         let replica_set =
@@ -324,6 +325,18 @@ impl Collection {
                 })?;
 
         // Validation:
+        // 0. Check that `from_state` matches current state
+
+        if from_state.is_some() {
+            let current_state = replica_set.peer_state(&peer_id);
+            if current_state != from_state {
+                return Err(CollectionError::bad_input(format!(
+                    "Replica {} of shard {} has state {:?}, but expected {:?}",
+                    peer_id, shard_id, current_state, from_state
+                )));
+            }
+        }
+
         // 1. Do not deactivate the last active replica
 
         if state != ReplicaState::Active {
@@ -1454,7 +1467,7 @@ impl Collection {
         &self,
         on_transfer_failure: OnTransferFailure,
         on_transfer_success: OnTransferSuccess,
-        activate_shard_callback: ChangePeerState,
+        on_finish_init: ChangePeerState,
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
@@ -1503,7 +1516,7 @@ impl Collection {
             if this_peer_state == Some(Initializing) {
                 // It is possible, that collection creation didn't report
                 // Try to activate shard, as the collection clearly exists
-                activate_shard_callback(*this_peer_id, shard_id);
+                on_finish_init(*this_peer_id, shard_id);
                 continue;
             }
 
