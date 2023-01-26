@@ -25,17 +25,16 @@ pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) -> 
         let mut split = snapshot_params.split(':');
         let path = split
             .next()
-            .unwrap_or_else(|| panic!("Snapshot path is missing: {}", snapshot_params));
+            .unwrap_or_else(|| panic!("Snapshot path is missing: {snapshot_params}"));
 
         let snapshot_path = Path::new(path);
         let collection_name = split
             .next()
-            .unwrap_or_else(|| panic!("Collection name is missing: {}", snapshot_params));
+            .unwrap_or_else(|| panic!("Collection name is missing: {snapshot_params}"));
         recovered_collections.push(collection_name.to_string());
         assert!(
             split.next().is_none(),
-            "Too many parts in snapshot mapping: {}",
-            snapshot_params
+            "Too many parts in snapshot mapping: {snapshot_params}"
         );
         info!("Recovering snapshot {} from {}", collection_name, path);
         // check if collection already exists
@@ -46,20 +45,19 @@ pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) -> 
         if collection_path.exists() {
             if !force {
                 panic!(
-                    "Collection {} already exists. Use --force-snapshot to overwrite it.",
-                    collection_name
+                    "Collection {collection_name} already exists. Use --force-snapshot to overwrite it."
                 );
             }
             info!("Overwriting collection {}", collection_name);
         }
         let collection_temp_path = collection_path.with_extension("tmp");
         if let Err(err) = Collection::restore_snapshot(snapshot_path, &collection_temp_path) {
-            panic!("Failed to recover snapshot {}: {}", collection_name, err);
+            panic!("Failed to recover snapshot {collection_name}: {err}");
         }
         // Remove collection_path directory if exists
         if collection_path.exists() {
             if let Err(err) = remove_dir_all(&collection_path) {
-                panic!("Failed to remove collection {}: {}", collection_name, err);
+                panic!("Failed to remove collection {collection_name}: {err}");
             }
         }
         rename(&collection_temp_path, &collection_path).unwrap();
@@ -102,10 +100,7 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
         AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
     for (alias, collection_name) in config_json.collections_aliases {
         if alias_persistence.get(&alias).is_some() && !force {
-            panic!(
-                "Alias {} already exists. Use --force-snapshot to overwrite it.",
-                alias
-            );
+            panic!("Alias {alias} already exists. Use --force-snapshot to overwrite it.");
         }
         alias_persistence.insert(alias, collection_name).unwrap();
     }

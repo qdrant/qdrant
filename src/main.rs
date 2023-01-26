@@ -374,7 +374,7 @@ fn main() -> anyhow::Result<()> {
 
                 let mut error = format!("{} deadlocks detected\n", deadlocks.len());
                 for (i, threads) in deadlocks.iter().enumerate() {
-                    writeln!(error, "Deadlock #{}", i).expect("fail to writeln!");
+                    writeln!(error, "Deadlock #{i}").expect("fail to writeln!");
                     for t in threads {
                         writeln!(
                             error,

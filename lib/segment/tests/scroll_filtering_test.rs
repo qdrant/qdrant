@@ -28,11 +28,7 @@ mod tests {
             let read_by_stream_res =
                 segment.filtered_read_by_id_stream(Some(random_offset.into()), Some(10), &filter);
 
-            assert_eq!(
-                read_by_index_res, read_by_stream_res,
-                "filter: {:#?}",
-                filter
-            );
+            assert_eq!(read_by_index_res, read_by_stream_res, "filter: {filter:#?}");
         }
     }
 }

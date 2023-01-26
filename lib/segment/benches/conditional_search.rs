@@ -100,8 +100,8 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
 
     let indexed_fields = struct_index.indexed_fields();
 
-    eprintln!("cardinality = {:#?}", cardinality);
-    eprintln!("indexed_fields = {:#?}", indexed_fields);
+    eprintln!("cardinality = {cardinality:#?}");
+    eprintln!("indexed_fields = {indexed_fields:#?}");
 
     group.bench_function("struct-conditional-search-query-points", |b| {
         b.iter(|| {

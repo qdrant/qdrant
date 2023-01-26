@@ -97,7 +97,7 @@ impl StructPayloadIndex {
     }
 
     fn get_field_index_path(path: &Path, field: PayloadKeyTypeRef) -> PathBuf {
-        Self::get_field_index_dir(path).join(format!("{}.idx", field))
+        Self::get_field_index_dir(path).join(format!("{field}.idx"))
     }
 
     fn load_all_fields(&mut self) -> OperationResult<()> {
@@ -147,7 +147,7 @@ impl StructPayloadIndex {
         };
 
         let db = open_db_with_existing_cf(path)
-            .map_err(|err| OperationError::service_error(format!("RocksDB open error: {}", err)))?;
+            .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))?;
 
         let mut index = StructPayloadIndex {
             payload,

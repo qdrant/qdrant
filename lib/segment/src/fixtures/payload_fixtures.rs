@@ -59,7 +59,7 @@ pub fn random_adj<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
 pub fn random_keyword<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
     let random_adj = ADJECTIVE.choose(rnd_gen).unwrap();
     let random_noun = NOUN.choose(rnd_gen).unwrap();
-    format!("{} {}", random_adj, random_noun)
+    format!("{random_adj} {random_noun}")
 }
 
 pub fn random_keyword_payload<R: Rng + ?Sized>(

@@ -456,7 +456,7 @@ mod tests {
         eprintln!("slice.len() = {:#?}", slice.len());
 
         for (idx, element) in slice.iter().enumerate() {
-            println!("slice[{}]  = {:?}", idx, element);
+            println!("slice[{idx}]  = {element:?}");
         }
     }
 }

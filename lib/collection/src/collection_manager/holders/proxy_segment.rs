@@ -781,7 +781,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let mut seen_points: HashSet<PointIdType> = Default::default();
         for res in search_result {
@@ -848,7 +848,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -862,7 +862,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())
@@ -901,7 +901,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -915,7 +915,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())
@@ -965,7 +965,7 @@ mod tests {
             all_single_results.push(res);
         }
 
-        eprintln!("search_result = {:#?}", all_single_results);
+        eprintln!("search_result = {all_single_results:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -979,7 +979,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert_eq!(all_single_results, search_batch_result)
     }

@@ -117,10 +117,7 @@ impl TableOfContent {
             let collection_snapshots_path =
                 Self::collection_snapshots_path(&snapshots_path, &collection_name);
             create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
-                panic!(
-                    "Can't create a directory for snapshot of {}: {}",
-                    collection_name, e
-                )
+                panic!("Can't create a directory for snapshot of {collection_name}: {e}")
             });
             log::info!("Loading collection: {}", collection_name);
             let collection = general_runtime.block_on(Collection::load(
@@ -193,8 +190,7 @@ impl TableOfContent {
             .await
             .map_err(|err| {
                 StorageError::service_error(&format!(
-                    "Can't create directory for snapshots {}. Error: {}",
-                    collection_name, err
+                    "Can't create directory for snapshots {collection_name}. Error: {err}"
                 ))
             })?;
 
@@ -206,8 +202,7 @@ impl TableOfContent {
 
         tokio::fs::create_dir_all(&path).await.map_err(|err| {
             StorageError::service_error(&format!(
-                "Can't create directory for collection {}. Error: {}",
-                collection_name, err
+                "Can't create directory for collection {collection_name}. Error: {err}"
             ))
         })?;
 
@@ -378,7 +373,7 @@ impl TableOfContent {
         let collection_vectors_schema = collection.state().await.config.params.vectors;
         if &collection_vectors_schema != vectors {
             return Err(StorageError::BadInput {
-                description: format!("Cannot take data from collection with vectors schema {:?} to collection with vectors schema {:?}", collection_vectors_schema, vectors)
+                description: format!("Cannot take data from collection with vectors schema {collection_vectors_schema:?} to collection with vectors schema {vectors:?}")
             });
         }
         Ok(())

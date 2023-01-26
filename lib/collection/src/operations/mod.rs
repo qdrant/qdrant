@@ -178,6 +178,6 @@ mod tests {
             });
 
         let json = serde_json::to_string_pretty(&op).unwrap();
-        println!("{}", json)
+        println!("{json}")
     }
 }

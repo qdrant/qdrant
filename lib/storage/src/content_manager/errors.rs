@@ -114,7 +114,7 @@ impl From<CollectionError> for StorageError {
 
 impl From<IoError> for StorageError {
     fn from(err: IoError) -> Self {
-        StorageError::service_error(&format!("{}", err))
+        StorageError::service_error(&format!("{err}"))
     }
 }
 
@@ -135,7 +135,7 @@ impl From<FileStorageError> for StorageError {
 impl<Guard> From<std::sync::PoisonError<Guard>> for StorageError {
     fn from(err: std::sync::PoisonError<Guard>) -> Self {
         StorageError::ServiceError {
-            description: format!("Mutex lock poisoned: {}", err),
+            description: format!("Mutex lock poisoned: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -144,7 +144,7 @@ impl<Guard> From<std::sync::PoisonError<Guard>> for StorageError {
 impl<T> From<std::sync::mpsc::SendError<T>> for StorageError {
     fn from(err: std::sync::mpsc::SendError<T>) -> Self {
         StorageError::ServiceError {
-            description: format!("Channel closed: {}", err),
+            description: format!("Channel closed: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -153,7 +153,7 @@ impl<T> From<std::sync::mpsc::SendError<T>> for StorageError {
 impl From<tokio::sync::oneshot::error::RecvError> for StorageError {
     fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
         StorageError::ServiceError {
-            description: format!("Channel sender dropped: {}", err),
+            description: format!("Channel sender dropped: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -162,7 +162,7 @@ impl From<tokio::sync::oneshot::error::RecvError> for StorageError {
 impl From<serde_cbor::Error> for StorageError {
     fn from(err: serde_cbor::Error) -> Self {
         StorageError::ServiceError {
-            description: format!("cbor (de)serialization error: {}", err),
+            description: format!("cbor (de)serialization error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -171,7 +171,7 @@ impl From<serde_cbor::Error> for StorageError {
 impl From<prost::EncodeError> for StorageError {
     fn from(err: prost::EncodeError) -> Self {
         StorageError::ServiceError {
-            description: format!("prost encode error: {}", err),
+            description: format!("prost encode error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -180,7 +180,7 @@ impl From<prost::EncodeError> for StorageError {
 impl From<prost::DecodeError> for StorageError {
     fn from(err: prost::DecodeError) -> Self {
         StorageError::ServiceError {
-            description: format!("prost decode error: {}", err),
+            description: format!("prost decode error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -189,7 +189,7 @@ impl From<prost::DecodeError> for StorageError {
 impl From<raft::Error> for StorageError {
     fn from(err: raft::Error) -> Self {
         StorageError::ServiceError {
-            description: format!("Error in Raft consensus: {}", err),
+            description: format!("Error in Raft consensus: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -198,7 +198,7 @@ impl From<raft::Error> for StorageError {
 impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
     fn from(err: atomicwrites::Error<E>) -> Self {
         StorageError::ServiceError {
-            description: format!("Failed to write file: {}", err),
+            description: format!("Failed to write file: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -207,7 +207,7 @@ impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
 impl From<tonic::transport::Error> for StorageError {
     fn from(err: tonic::transport::Error) -> Self {
         StorageError::ServiceError {
-            description: format!("Tonic transport error: {}", err),
+            description: format!("Tonic transport error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -216,7 +216,7 @@ impl From<tonic::transport::Error> for StorageError {
 impl From<reqwest::Error> for StorageError {
     fn from(err: reqwest::Error) -> Self {
         StorageError::ServiceError {
-            description: format!("Http request error: {}", err),
+            description: format!("Http request error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -225,7 +225,7 @@ impl From<reqwest::Error> for StorageError {
 impl From<tokio::task::JoinError> for StorageError {
     fn from(err: tokio::task::JoinError) -> Self {
         StorageError::ServiceError {
-            description: format!("Tokio task join error: {}", err),
+            description: format!("Tokio task join error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }

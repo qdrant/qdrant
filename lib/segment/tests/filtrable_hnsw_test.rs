@@ -177,7 +177,7 @@ mod tests {
                 hits += 1;
             }
         }
-        assert!(attempts - hits < 5, "hits: {} of {}", hits, attempts); // Not more than 5% failures
-        eprintln!("hits = {:#?} out of {}", hits, attempts);
+        assert!(attempts - hits < 5, "hits: {hits} of {attempts}"); // Not more than 5% failures
+        eprintln!("hits = {hits:#?} out of {attempts}");
     }
 }

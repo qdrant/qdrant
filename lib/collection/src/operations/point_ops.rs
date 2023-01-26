@@ -158,7 +158,7 @@ impl JsonSchema for PointInsertOperations {
 
         let get_obj_schema = |field: String, schema_name: String| {
             let schema_ref = Schema::Object(SchemaObject {
-                reference: Some(format!("{}{}", def_path, schema_name)),
+                reference: Some(format!("{def_path}{schema_name}")),
                 ..Default::default()
             });
             Schema::Object(SchemaObject {
@@ -179,7 +179,7 @@ impl JsonSchema for PointInsertOperations {
         definitions.insert(PointsList::schema_name(), proxy_b_schema);
 
         let proxy_a_ref = Schema::Object(SchemaObject {
-            reference: Some(format!("{}{}", def_path, proxy_a_name)),
+            reference: Some(format!("{def_path}{proxy_a_name}")),
             ..Default::default()
         });
 
@@ -238,8 +238,7 @@ impl Validate for PointInsertOperations {
         let bad_input_error = |ids_len: usize, vectors_len: usize| {
             Err(CollectionError::BadInput {
                 description: format!(
-                    "Amount of ids ({}) and vectors ({}) does not match",
-                    ids_len, vectors_len,
+                    "Amount of ids ({ids_len}) and vectors ({vectors_len}) does not match",
                 ),
             })
         };
