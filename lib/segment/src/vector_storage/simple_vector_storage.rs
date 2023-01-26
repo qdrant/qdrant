@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ops::Range;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -298,21 +299,28 @@ where
         }
     }
 
-    fn quantize(&mut self) -> OperationResult<()> {
+    fn quantize(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {
         log::info!("Quantizing vectors...");
-        self.quantized_vectors = Some(
-            EncodedVectors::encode(
-                (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
-                Vec::new(),
-                match TMetric::distance() {
-                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
-                },
-                TMetric::distance() == Distance::Euclid,
-            )
-            .map_err(|_| OperationError::service_error("cannot quantize vector data"))?,
-        );
+        let quantized_vectors = EncodedVectors::encode(
+            (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
+            Vec::new(),
+            match TMetric::distance() {
+                Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                Distance::Dot => quantization::encoder::SimilarityType::Dot,
+            },
+            TMetric::distance() == Distance::Euclid,
+        )
+        .map_err(|e| {
+            OperationError::service_error(&format!("Cannot quantize vector data: {}", e))
+        })?;
+        quantized_vectors.save(data_path, meta_path)?;
+        self.quantized_vectors = Some(quantized_vectors);
+        Ok(())
+    }
+
+    fn load_quantization(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {
+        self.quantized_vectors = Some(EncodedVectors::load(data_path, meta_path)?);
         Ok(())
     }
 

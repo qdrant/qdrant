@@ -95,24 +95,37 @@ impl MmapVectors {
         self.deleted_ram = Some(deleted);
     }
 
-    pub fn quantize(&mut self, distance: Distance) -> OperationResult<()> {
+    pub fn quantize(
+        &mut self,
+        distance: Distance,
+        meta_path: &Path,
+        data_path: &Path,
+    ) -> OperationResult<()> {
         self.enable_deleted_ram();
-        self.quantized_vectors = Some(
-            EncodedVectors::encode(
-                (0..self.num_vectors as u32).map(|i| {
-                    let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
-                    self.raw_vector_offset(offset)
-                }),
-                Vec::new(),
-                match distance {
-                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
-                },
-                distance == Distance::Euclid,
-            )
-            .map_err(|_| OperationError::service_error("cannot quantize vector data"))?,
-        );
+        let quantized_vectors = EncodedVectors::encode(
+            (0..self.num_vectors as u32).map(|i| {
+                let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
+                self.raw_vector_offset(offset)
+            }),
+            Vec::new(),
+            match distance {
+                Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                Distance::Dot => quantization::encoder::SimilarityType::Dot,
+            },
+            distance == Distance::Euclid,
+        )
+        .map_err(|e| {
+            OperationError::service_error(&format!("Cannot quantize vector data: {}", e))
+        })?;
+        quantized_vectors.save(data_path, meta_path)?;
+        self.quantized_vectors = Some(quantized_vectors);
+        Ok(())
+    }
+
+    pub fn load_quantization(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {
+        self.enable_deleted_ram();
+        self.quantized_vectors = Some(EncodedVectors::load(data_path, meta_path)?);
         Ok(())
     }
 

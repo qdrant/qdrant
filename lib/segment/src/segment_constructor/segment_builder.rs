@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use super::{get_vector_storage_path, QUANTIZED_DATA_PATH, QUANTIZED_META_PATH};
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{
     check_process_stopped, OperationError, OperationResult, SegmentEntry,
@@ -187,7 +188,7 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
             }
 
-            Self::update_quantization(&segment)?;
+            Self::update_quantization(&segment, stopped)?;
 
             for vector_data in segment.vector_data.values_mut() {
                 vector_data.vector_index.borrow_mut().build_index(stopped)?;
@@ -207,15 +208,23 @@ impl SegmentBuilder {
                 self.destination_path.display()
             ))
         })?;
-        Self::update_quantization(&loaded_segment)?;
         Ok(loaded_segment)
     }
 
-    fn update_quantization(segment: &Segment) -> OperationResult<()> {
+    fn update_quantization(segment: &Segment, stopped: &AtomicBool) -> OperationResult<()> {
         if let Some(quantization) = &segment.config().quantization_config {
             if quantization.enable {
-                for vector_data in segment.vector_data.values() {
-                    vector_data.vector_storage.borrow_mut().quantize()?;
+                let segment_path = segment.current_path.as_path().clone();
+                for (vector_name, vector_data) in &segment.vector_data {
+                    check_process_stopped(stopped)?;
+
+                    let vector_storage_path = get_vector_storage_path(segment_path, &vector_name);
+                    let quantized_meta_path = vector_storage_path.join(QUANTIZED_META_PATH);
+                    let quantized_data_path = vector_storage_path.join(QUANTIZED_DATA_PATH);
+                    vector_data
+                        .vector_storage
+                        .borrow_mut()
+                        .quantize(&quantized_meta_path, &quantized_data_path)?;
                 }
             }
         }

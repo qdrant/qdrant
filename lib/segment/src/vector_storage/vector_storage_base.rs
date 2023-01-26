@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::ops::Range;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use ordered_float::OrderedFloat;
@@ -75,9 +76,11 @@ pub trait VectorStorage {
 
     /// Generate a `RawScorer` object which contains all required context for searching similar vector
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
+
     fn quantized_raw_scorer(&self, vector: &[VectorElementType])
         -> Option<Box<dyn RawScorer + '_>>;
-    fn quantize(&mut self) -> OperationResult<()>;
+    fn quantize(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()>;
+    fn load_quantization(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()>;
 
     fn score_points(
         &self,
