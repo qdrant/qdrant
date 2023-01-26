@@ -19,7 +19,7 @@ pub fn error_to_status(error: StorageError) -> tonic::Status {
         StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
         StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
     };
-    tonic::Status::new(error_code, format!("{}", error))
+    tonic::Status::new(error_code, format!("{error}"))
 }
 
 impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {

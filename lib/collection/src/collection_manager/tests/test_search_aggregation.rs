@@ -93,7 +93,7 @@ fn test_aggregation_of_batch_search_results() {
 
     let top_results = aggregator.into_topk();
 
-    eprintln!("top_results = {:#?}", top_results);
+    eprintln!("top_results = {top_results:#?}");
 
     assert_eq!(top_results.len(), 2);
     assert_eq!(top_results[0].len(), 12);

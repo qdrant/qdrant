@@ -154,8 +154,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
     assert!(
         matches!(result, Err(CollectionError::BadInput { .. })),
-        "{:?}",
-        result
+        "{result:?}"
     );
 
     let full_search_request = SearchRequest {
@@ -224,7 +223,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         Err(err) => match err {
             CollectionError::BadRequest { .. } => {}
             CollectionError::BadInput { .. } => {}
-            error => panic!("Unexpected error {}", error),
+            error => panic!("Unexpected error {error}"),
         },
     }
 

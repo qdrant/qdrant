@@ -90,7 +90,7 @@ impl From<semver::Error> for OperationError {
 impl From<ThreadPoolBuildError> for OperationError {
     fn from(error: ThreadPoolBuildError) -> Self {
         OperationError::ServiceError {
-            description: format!("{}", error),
+            description: format!("{error}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
@@ -100,7 +100,7 @@ impl From<FileStorageError> for OperationError {
     fn from(err: FileStorageError) -> Self {
         match err {
             FileStorageError::IoError { description } => {
-                OperationError::service_error(format!("IO Error: {}", description))
+                OperationError::service_error(format!("IO Error: {description}"))
             }
             FileStorageError::UserAtomicIoError => {
                 OperationError::service_error("Unknown atomic write error")
@@ -114,7 +114,7 @@ impl From<FileStorageError> for OperationError {
 
 impl From<serde_cbor::Error> for OperationError {
     fn from(err: serde_cbor::Error) -> Self {
-        OperationError::service_error(format!("Failed to parse data: {}", err))
+        OperationError::service_error(format!("Failed to parse data: {err}"))
     }
 }
 
@@ -131,19 +131,19 @@ impl<E> From<AtomicIoError<E>> for OperationError {
 
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
-        OperationError::service_error(format!("IO Error: {}", err))
+        OperationError::service_error(format!("IO Error: {err}"))
     }
 }
 
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
-        OperationError::service_error(format!("Json error: {}", err))
+        OperationError::service_error(format!("Json error: {err}"))
     }
 }
 
 impl From<fs_extra::error::Error> for OperationError {
     fn from(err: fs_extra::error::Error) -> Self {
-        OperationError::service_error(format!("File system error: {}", err))
+        OperationError::service_error(format!("File system error: {err}"))
     }
 }
 

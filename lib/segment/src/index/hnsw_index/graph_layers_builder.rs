@@ -575,8 +575,8 @@ mod tests {
 
         assert!(total_links_0 > 0);
 
-        eprintln!("total_links_0 = {:#?}", total_links_0);
-        eprintln!("num_vectors = {:#?}", num_vectors);
+        eprintln!("total_links_0 = {total_links_0:#?}");
+        eprintln!("num_vectors = {num_vectors:#?}");
 
         assert!(total_links_0 as f64 / num_vectors as f64 > M as f64);
 
@@ -658,8 +658,8 @@ mod tests {
 
         assert!(total_links_0 > 0);
 
-        eprintln!("total_links_0 = {:#?}", total_links_0);
-        eprintln!("num_vectors = {:#?}", num_vectors);
+        eprintln!("total_links_0 = {total_links_0:#?}");
+        eprintln!("num_vectors = {num_vectors:#?}");
 
         assert!(total_links_0 as f64 / num_vectors as f64 > M as f64);
 
@@ -716,7 +716,7 @@ mod tests {
             .unwrap();
 
         let num_points = graph_layers.links.num_points();
-        eprintln!("number_points = {:#?}", num_points);
+        eprintln!("number_points = {num_points:#?}");
 
         let max_layer = (0..NUM_VECTORS)
             .map(|i| graph_layers.links.point_level(i as PointOffsetType))
@@ -728,13 +728,13 @@ mod tests {
         let links910 = (0..layers910 + 1)
             .map(|i| graph_layers.links.links(910, i).to_vec())
             .collect::<Vec<_>>();
-        eprintln!("graph_layers.links_layers[910] = {:#?}", links910,);
+        eprintln!("graph_layers.links_layers[910] = {links910:#?}",);
 
         let total_edges: usize = (0..NUM_VECTORS)
             .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
             .sum();
         let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
-        eprintln!("avg_connectivity = {:#?}", avg_connectivity);
+        eprintln!("avg_connectivity = {avg_connectivity:#?}");
     }
 
     #[test]
@@ -775,7 +775,7 @@ mod tests {
         );
 
         for x in selected_candidates.iter() {
-            eprintln!("selected_candidates = {}", x);
+            eprintln!("selected_candidates = {x}");
         }
     }
 

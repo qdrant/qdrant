@@ -186,7 +186,7 @@ impl ConditionChecker for SimpleConditionChecker {
                             // Which may lead to slowdown and assumes a lot of changes.
                             s.read_payload(point_id)
                                 .unwrap_or_else(|err| {
-                                    panic!("Payload storage is corrupted: {}", err)
+                                    panic!("Payload storage is corrupted: {err}")
                                 })
                                 .map(|x| x.into())
                         }

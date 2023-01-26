@@ -93,8 +93,7 @@ impl SegmentBuilder {
                     let other_vector_storage = other_vector_storages.get(vector_name);
                     if other_vector_storage.is_none() {
                         return Err(OperationError::service_error(format!(
-                            "Cannot update from other segment because if missing vector name {}",
-                            vector_name
+                            "Cannot update from other segment because if missing vector name {vector_name}"
                         )));
                     }
                     let other_vector_storage = other_vector_storage.unwrap();

@@ -42,8 +42,7 @@ async fn get_local_source_shards(
         let responsible_shard = match responsible_shard_opt {
             None => {
                 return Err(CollectionError::service_error(format!(
-                    "No active replica for shard {}, collection initialization is cancelled",
-                    shard_id
+                    "No active replica for shard {shard_id}, collection initialization is cancelled"
                 )));
             }
             Some(responsible_shard) => responsible_shard,

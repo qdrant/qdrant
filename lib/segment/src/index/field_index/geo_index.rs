@@ -109,7 +109,7 @@ impl GeoMapIndex {
     }
 
     fn encode_db_key(value: &str, idx: PointOffsetType) -> String {
-        format!("{}/{}", value, idx)
+        format!("{value}/{idx}")
     }
 
     fn decode_db_key(s: &str) -> OperationResult<(GeoHash, PointOffsetType)> {
@@ -302,7 +302,7 @@ impl GeoMapIndex {
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
                 .map_err(|e| {
-                    OperationError::service_error(format!("Malformed geo points: {}", e))
+                    OperationError::service_error(format!("Malformed geo points: {e}"))
                 })?;
 
             let key = Self::encode_db_key(&added_geo_hash, idx);
@@ -604,8 +604,8 @@ mod tests {
         let card = field_index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
 
-        eprintln!("real_cardinality = {:#?}", real_cardinality);
-        eprintln!("card = {:#?}", card);
+        eprintln!("real_cardinality = {real_cardinality:#?}");
+        eprintln!("card = {card:#?}");
 
         assert!(card.min <= real_cardinality);
         assert!(card.max >= real_cardinality);

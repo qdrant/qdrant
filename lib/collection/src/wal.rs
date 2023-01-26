@@ -58,7 +58,7 @@ pub struct SerdeWal<R> {
 impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn new(dir: &str, wal_options: &WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, wal_options)
-            .map_err(|err| WalError::InitWalError(format!("{:?}", err)))?;
+            .map_err(|err| WalError::InitWalError(format!("{err:?}")))?;
         Ok(SerdeWal {
             record: PhantomData,
             wal,
@@ -71,7 +71,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         let binary_entity = serde_cbor::to_vec(&entity).unwrap();
         self.wal
             .append(&binary_entity)
-            .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
+            .map_err(|err| WalError::WriteWalError(format!("{err:?}")))
     }
 
     pub fn read_all(&'s self) -> impl Iterator<Item = (u64, R)> + 's {
@@ -109,13 +109,13 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
         self.wal
             .prefix_truncate(until_index)
-            .map_err(|err| WalError::TruncateWalError(format!("{:?}", err)))
+            .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))
     }
 
     pub fn flush(&mut self) -> Result<()> {
         self.wal
             .flush_open_segment()
-            .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
+            .map_err(|err| WalError::WriteWalError(format!("{err:?}")))
     }
 
     pub fn flush_async(&mut self) -> JoinHandle<std::io::Result<()>> {
@@ -157,7 +157,7 @@ mod tests {
         assert_eq!(metadata.size() as usize, wal_options.segment_capacity);
 
         for (_idx, rec) in serde_wal.read(0) {
-            println!("{:?}", rec);
+            println!("{rec:?}");
         }
 
         let record = TestRecord::Struct2(TestInternalStruct2 { a: 12, b: 13 });

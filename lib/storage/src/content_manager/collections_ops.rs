@@ -18,7 +18,7 @@ pub trait Checker {
     ) -> Result<(), StorageError> {
         if self.is_collection_exists(collection_name) {
             return Err(StorageError::BadInput {
-                description: format!("Collection `{}` already exists!", collection_name),
+                description: format!("Collection `{collection_name}` already exists!"),
             });
         }
         Ok(())
@@ -27,7 +27,7 @@ pub trait Checker {
     async fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if !self.is_collection_exists(collection_name) {
             return Err(StorageError::NotFound {
-                description: format!("Collection `{}` doesn't exist!", collection_name),
+                description: format!("Collection `{collection_name}` doesn't exist!"),
             });
         }
         Ok(())

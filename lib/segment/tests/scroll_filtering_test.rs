@@ -30,8 +30,7 @@ mod tests {
 
             assert_eq!(
                 read_by_index_res, read_by_stream_res,
-                "filter: {:#?}",
-                filter
+                "filter: {filter:#?}"
             );
         }
     }

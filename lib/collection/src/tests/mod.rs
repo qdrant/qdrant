@@ -100,8 +100,7 @@ async fn test_cancel_optimization() {
 
     let actual_optimization_duration = now.elapsed().as_millis();
     eprintln!(
-        "actual_optimization_duration = {:#?} ms",
-        actual_optimization_duration
+        "actual_optimization_duration = {actual_optimization_duration:#?} ms"
     );
 
     for res in optimization_res {
