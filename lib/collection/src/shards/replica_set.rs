@@ -49,7 +49,6 @@ const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
-
 // Shard replication state machine:
 //
 //    │
