@@ -219,9 +219,9 @@ impl DatabaseColumnWrapper {
         write_options
     }
 
-    fn get_column_family<'a, 'b>(
+    fn get_column_family<'a>(
         &self,
-        db: &'a parking_lot::RwLockReadGuard<'b, DB>,
+        db: &'a parking_lot::RwLockReadGuard<'_, DB>,
     ) -> OperationResult<&'a ColumnFamily> {
         db.cf_handle(&self.column_name).ok_or_else(|| {
             OperationError::service_error(format!(
