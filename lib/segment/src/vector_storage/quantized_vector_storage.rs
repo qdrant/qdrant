@@ -20,9 +20,7 @@ impl RawScorer for QuantizedRawScorer<'_> {
             }
             scores[size] = ScoredPointOffset {
                 idx: point_id,
-                score: self
-                    .quantized_data
-                    .score_point(&self.query, point_id),
+                score: self.quantized_data.score_point(&self.query, point_id),
             };
             size += 1;
             if size == scores.len() {
