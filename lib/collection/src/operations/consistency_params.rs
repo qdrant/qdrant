@@ -3,14 +3,85 @@ use api::grpc::qdrant::{
     ReadConsistencyType as ReadConsistencyTypeGrpc,
 };
 use schemars::JsonSchema;
-use serde::de::Error;
 use serde::{Deserialize, Serialize};
 
-pub struct ValidationError;
+use crate::utils::validate::{NonZero, Validator as _};
 
-impl std::fmt::Display for ValidationError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "Read consistency factor cannot be less than 1")
+/// Read consistency parameter
+///
+/// Defines how many replicas should be queried to get the result
+///
+/// * `N` - send N random request and return points, which present on all of them
+///
+/// * `majority` - send N/2+1 random request and return points, which present on all of them
+///
+/// * `quorum` - send requests to all nodes and return points which present on majority of them
+///
+/// * `all` - send requests to all nodes and return points which present on all of them
+///
+/// Default value is `Factor(1)`
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ReadConsistency {
+    // send N random request and return points, which present on all of them
+    Factor(#[serde(deserialize_with = "NonZero::deserialize")] usize),
+    Type(ReadConsistencyType),
+}
+
+impl Default for ReadConsistency {
+    fn default() -> Self {
+        ReadConsistency::Factor(1)
+    }
+}
+
+impl ReadConsistency {
+    pub fn try_from_optional(
+        consistency: Option<ReadConsistencyGrpc>,
+    ) -> Result<Option<Self>, tonic::Status> {
+        consistency.map(TryFrom::try_from).transpose()
+    }
+}
+
+impl TryFrom<Option<ReadConsistencyGrpc>> for ReadConsistency {
+    type Error = tonic::Status;
+
+    fn try_from(consistency: Option<ReadConsistencyGrpc>) -> Result<Self, Self::Error> {
+        match consistency {
+            Some(consistency) => consistency.try_into(),
+            None => Ok(Self::Factor(1)),
+        }
+    }
+}
+
+impl TryFrom<ReadConsistencyGrpc> for ReadConsistency {
+    type Error = tonic::Status;
+
+    fn try_from(consistency: ReadConsistencyGrpc) -> Result<Self, Self::Error> {
+        let value = consistency.value.ok_or_else(|| {
+            tonic::Status::invalid_argument(
+                "invalid read consistency message: `ReadConsistency::value` field is `None`",
+            )
+        })?;
+
+        let consistency = match value {
+            read_consistency::Value::Factor(factor) => Self::Factor(factor.try_into().unwrap()),
+            read_consistency::Value::Type(consistency) => Self::Type(consistency.try_into()?),
+        };
+
+        Ok(consistency)
+    }
+}
+
+impl From<ReadConsistency> for ReadConsistencyGrpc {
+    fn from(consistency: ReadConsistency) -> Self {
+        let value = match consistency {
+            ReadConsistency::Factor(factor) => {
+                read_consistency::Value::Factor(factor.try_into().unwrap())
+            }
+            ReadConsistency::Type(consistency) => read_consistency::Value::Type(consistency.into()),
+        };
+
+        ReadConsistencyGrpc { value: Some(value) }
     }
 }
 
@@ -70,102 +141,9 @@ impl From<ReadConsistencyType> for ReadConsistencyTypeGrpc {
     }
 }
 
-/// Read consistency parameter
-///
-/// Defines how many replicas should be queried to get the result
-///
-/// * `N` - send N random request and return points, which present on all of them
-///
-/// * `majority` - send N/2+1 random request and return points, which present on all of them
-///
-/// * `quorum` - send requests to all nodes and return points which present on majority of nodes
-///
-/// * `all` - send requests to all nodes and return points which present on all nodes
-///
-/// Default value is `Factor(1)`
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
-#[serde(untagged, remote = "ReadConsistency")]
-pub enum ReadConsistency {
-    // send N random request and return points, which present on all of them
-    Factor(usize),
-    Type(ReadConsistencyType),
-}
-
-impl Default for ReadConsistency {
-    fn default() -> Self {
-        ReadConsistency::Factor(1)
-    }
-}
-
-impl ReadConsistency {
-    pub fn try_from_optional(
-        consistency: Option<ReadConsistencyGrpc>,
-    ) -> Result<Option<Self>, tonic::Status> {
-        consistency.map(TryFrom::try_from).transpose()
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for ReadConsistency {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let consistency = ReadConsistency::deserialize(deserializer)?;
-        if let ReadConsistency::Factor(factor) = &consistency {
-            if *factor == 0 {
-                return Err(D::Error::custom(ValidationError));
-            }
-        }
-        Ok(consistency)
-    }
-}
-impl serde::Serialize for ReadConsistency {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ReadConsistency::serialize(self, serializer)
-    }
-}
-
-impl TryFrom<Option<ReadConsistencyGrpc>> for ReadConsistency {
-    type Error = tonic::Status;
-
-    fn try_from(consistency: Option<ReadConsistencyGrpc>) -> Result<Self, Self::Error> {
-        match consistency {
-            Some(consistency) => consistency.try_into(),
-            None => Ok(Self::Factor(1)),
-        }
-    }
-}
-
-impl TryFrom<ReadConsistencyGrpc> for ReadConsistency {
-    type Error = tonic::Status;
-
-    fn try_from(consistency: ReadConsistencyGrpc) -> Result<Self, Self::Error> {
-        let value = consistency.value.ok_or_else(|| {
-            tonic::Status::invalid_argument(
-                "invalid read consistency message: `ReadConsistency::value` field is `None`",
-            )
-        })?;
-
-        let consistency = match value {
-            read_consistency::Value::Factor(factor) => Self::Factor(factor.try_into().unwrap()),
-            read_consistency::Value::Type(consistency) => {
-                Self::Type(consistency.try_into().unwrap())
-            }
-        };
-
-        Ok(consistency)
-    }
-}
-
-impl From<ReadConsistency> for ReadConsistencyGrpc {
-    fn from(consistency: ReadConsistency) -> Self {
-        let value = match consistency {
-            ReadConsistency::Factor(factor) => {
-                read_consistency::Value::Factor(factor.try_into().unwrap())
-            }
-            ReadConsistency::Type(consistency) => read_consistency::Value::Type(consistency.into()),
-        };
-
-        ReadConsistencyGrpc { value: Some(value) }
-    }
-}
+#[derive(Copy, Clone, Debug, thiserror::Error)]
+#[error("Read consistency factor cannot be less than 1")]
+pub struct ValidationError;
 
 #[cfg(test)]
 mod tests {

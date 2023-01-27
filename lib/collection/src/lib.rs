@@ -13,6 +13,7 @@ pub mod save_on_disk;
 pub mod shards;
 pub mod telemetry;
 mod update_handler;
+pub mod utils;
 pub mod wal;
 
 #[cfg(test)]
