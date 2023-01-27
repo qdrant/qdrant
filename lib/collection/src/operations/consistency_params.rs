@@ -34,8 +34,11 @@ impl TryFrom<i32> for ReadConsistencyType {
     type Error = tonic::Status;
 
     fn try_from(consistency: i32) -> Result<Self, Self::Error> {
-        let consistency = ReadConsistencyTypeGrpc::from_i32(consistency)
-            .ok_or_else(|| tonic::Status::invalid_argument(format!("{}", todo!())))?;
+        let consistency = ReadConsistencyTypeGrpc::from_i32(consistency).ok_or_else(|| {
+            tonic::Status::invalid_argument(format!(
+                "invalid read consistency type value {consistency}",
+            ))
+        })?;
 
         Ok(consistency.into())
     }
@@ -94,6 +97,14 @@ impl Default for ReadConsistency {
     }
 }
 
+impl ReadConsistency {
+    pub fn try_from_optional(
+        consistency: Option<ReadConsistencyGrpc>,
+    ) -> Result<Option<Self>, tonic::Status> {
+        consistency.map(TryFrom::try_from).transpose()
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for ReadConsistency {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let consistency = ReadConsistency::deserialize(deserializer)?;
@@ -126,9 +137,9 @@ impl TryFrom<ReadConsistencyGrpc> for ReadConsistency {
     type Error = tonic::Status;
 
     fn try_from(consistency: ReadConsistencyGrpc) -> Result<Self, Self::Error> {
-        let value = consistency
-            .value
-            .ok_or_else(|| tonic::Status::invalid_argument(format!("{}", todo!())))?;
+        let value = consistency.value.ok_or_else(|| tonic::Status::invalid_argument(
+                "invalid read consistency message: `ReadConsistency::value` field is `None`"
+        ))?;
 
         let consistency = match value {
             read_consistency::Value::Factor(factor) => Self::Factor(factor.try_into().unwrap()),

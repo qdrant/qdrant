@@ -26,7 +26,6 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 
 use crate::config::CollectionConfig;
-use crate::operations::consistency_params::ReadConsistency;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -181,7 +180,6 @@ pub struct ScrollRequest {
     /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: WithVector,
-    pub read_consistency: ReadConsistency,
 }
 
 impl Default for ScrollRequest {
@@ -192,7 +190,6 @@ impl Default for ScrollRequest {
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
             with_vector: WithVector::Bool(false),
-            read_consistency: ReadConsistency::default(), // TODO: `ReadConsistency::Factor(1)`!?
         }
     }
 }
@@ -237,7 +234,6 @@ pub struct SearchRequest {
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
-    pub read_consistency: ReadConsistency,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -256,7 +252,6 @@ pub struct PointRequest {
     /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: WithVector,
-    pub read_consistency: ReadConsistency,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -329,7 +324,6 @@ pub struct RecommendRequest {
     /// Note: the other collection should have the same vector size as the current collection
     #[serde(default)]
     pub lookup_from: Option<LookupLocation>,
-    pub read_consistency: ReadConsistency,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

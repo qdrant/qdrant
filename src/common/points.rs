@@ -1,3 +1,4 @@
+use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
 use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointsSelector, WriteOrdering,
@@ -205,18 +206,21 @@ pub async fn do_search_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: SearchRequest,
+    read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.search(collection_name, request, shard_selection).await
+    toc.search(collection_name, request, read_consistency, shard_selection)
+        .await
 }
 
 pub async fn do_search_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: SearchRequestBatch,
+    read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.search_batch(collection_name, request, shard_selection)
+    toc.search_batch(collection_name, request, read_consistency, shard_selection)
         .await
 }
 
@@ -233,9 +237,10 @@ pub async fn do_get_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: PointRequest,
+    read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.retrieve(collection_name, request, shard_selection)
+    toc.retrieve(collection_name, request, read_consistency, shard_selection)
         .await
 }
 
@@ -243,7 +248,9 @@ pub async fn do_scroll_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: ScrollRequest,
+    read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 ) -> Result<ScrollResult, StorageError> {
-    toc.scroll(collection_name, request, shard_selection).await
+    toc.scroll(collection_name, request, read_consistency, shard_selection)
+        .await
 }
