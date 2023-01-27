@@ -20,7 +20,7 @@ COLLECTION_NAME = "test_collection"
 def update_points_in_loop(peer_url, collection_name):
     limit = 5
     while True:
-        offset = random.randint(0, 10)
+        offset = random.randint(0, 1000)
         upsert_random_points(peer_url, limit, collection_name, offset=offset, wait='false')
 
 def run_update_points_in_background(peer_url, collection_name):
