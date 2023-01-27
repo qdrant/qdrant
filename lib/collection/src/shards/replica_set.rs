@@ -142,11 +142,13 @@ impl ShardReplicaSet {
     }
 
     pub fn highest_replica_peer_id(&self) -> Option<PeerId> {
-        self.peers().keys().max().cloned()
+        self.replica_state.read().peers.keys().max().cloned()
     }
 
     pub fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
-        self.peers()
+        self.replica_state
+            .read()
+            .peers
             .iter()
             .filter_map(|(peer_id, _state)| {
                 if self.peer_is_active(peer_id) {
@@ -1082,7 +1084,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<UpdateResult> {
         match self.leader_peer_for_update(ordering) {
             None => Err(CollectionError::service_error(format!(
-                "Cannot update shard {}:{} because there are no active replicas",
+                "Cannot update shard {}:{} with {ordering:?} ordering because no leader could be selected",
                 self.collection_id, self.shard_id
             ))),
             Some(leader_peer) => {
@@ -1091,7 +1093,13 @@ impl ShardReplicaSet {
                     self.update(operation, wait).await
                 } else {
                     // forward the update to the designated leader
-                    self.forward_update(leader_peer, operation, wait).await
+                    self.forward_update(leader_peer, operation, wait)
+                        .await
+                        .map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
+                            ))
+                        })
                 }
             }
         }
@@ -1325,5 +1333,94 @@ impl ShardReplicaSet {
             &remotes,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::{NonZeroU32, NonZeroU64};
+
+    use segment::types::Distance;
+    use tempfile::{Builder, TempDir};
+
+    use super::*;
+    use crate::config::*;
+    use crate::operations::types::{VectorParams, VectorsConfig};
+    use crate::optimizers_builder::OptimizersConfig;
+
+    const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
+        deleted_threshold: 0.9,
+        vacuum_min_vector_number: 1000,
+        default_segment_number: 2,
+        max_segment_size: None,
+        memmap_threshold: None,
+        indexing_threshold: 50_000,
+        flush_interval_sec: 30,
+        max_optimization_threads: 2,
+    };
+
+    pub fn dummy_on_replica_failure() -> OnPeerFailure {
+        Arc::new(move |_peer_id, _shard_id| {})
+    }
+
+    async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
+        let update_runtime = Handle::current();
+        let wal_config = WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+        };
+
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParams {
+                size: NonZeroU64::new(4).unwrap(),
+                distance: Distance::Dot,
+            }),
+            shard_number: NonZeroU32::new(4).unwrap(),
+            replication_factor: NonZeroU32::new(3).unwrap(),
+            write_consistency_factor: NonZeroU32::new(2).unwrap(),
+            on_disk_payload: false,
+        };
+
+        let config = CollectionConfig {
+            params: collection_params,
+            optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
+            wal_config,
+            hnsw_config: Default::default(),
+        };
+
+        let shared_config = Arc::new(RwLock::new(config.clone()));
+        let remotes = HashSet::from([2, 3, 4, 5]);
+        ShardReplicaSet::build(
+            1,
+            "test_collection".to_string(),
+            1,
+            false,
+            remotes,
+            dummy_on_replica_failure(),
+            collection_dir.path(),
+            shared_config,
+            Default::default(),
+            update_runtime,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_highest_replica_peer_id() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let rs = new_shard_replica_set(&collection_dir).await;
+
+        assert_eq!(rs.highest_replica_peer_id(), Some(5));
+        // at build time the replicas are all dead, they need to be activated
+        assert_eq!(rs.highest_alive_replica_peer_id(), None);
+
+        rs.set_replica_state(&1, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&3, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&4, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&5, ReplicaState::Partial).unwrap();
+
+        assert_eq!(rs.highest_replica_peer_id(), Some(5));
+        assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));
     }
 }
