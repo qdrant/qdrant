@@ -225,7 +225,10 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true.into(),
     };
-    let retrieved = loaded_collection.retrieve(request, None, None).await.unwrap();
+    let retrieved = loaded_collection
+        .retrieve(request, None, None)
+        .await
+        .unwrap();
 
     assert_eq!(retrieved.len(), 2);
 

@@ -54,7 +54,10 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let reference_result = collection.search(full_search_request, None, None).await.unwrap();
+    let reference_result = collection
+        .search(full_search_request, None, None)
+        .await
+        .unwrap();
 
     assert_eq!(reference_result.len(), 100);
     assert_eq!(reference_result[0].id, 999.into());
