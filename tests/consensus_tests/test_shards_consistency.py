@@ -11,9 +11,9 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
-N_PEERS = 5
+N_PEERS = 3
 N_SHARDS = 1
-N_REPLICAS = 5
+N_REPLICAS = 3
 COLLECTION_NAME = "test_collection"
 
 
@@ -52,29 +52,28 @@ def test_shard_consistency(tmp_path: pathlib.Path):
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
 
     # upload points to the leader
-    upload_process1 = run_update_points_in_background(peer_api_uris[0], "test_collection")
-
-    # upload points to the follower
-    upload_process2 = run_update_points_in_background(peer_api_uris[1], "test_collection")
+    upload_processes = [
+        run_update_points_in_background(peer_api_uris[i], "test_collection")
+        for i in range(len(peer_api_uris))
+    ]
 
     print("Waiting for 5 seconds")
     time.sleep(5)
 
-    upload_process1.kill()
-    upload_process2.kill()
-
-    res1 = get_all_points(peer_api_uris[0], COLLECTION_NAME)
-    res2 = get_all_points(peer_api_uris[1], COLLECTION_NAME)
-    res3 = get_all_points(peer_api_uris[2], COLLECTION_NAME)
-    res4 = get_all_points(peer_api_uris[3], COLLECTION_NAME)
-    res5 = get_all_points(peer_api_uris[4], COLLECTION_NAME)
-
-    # Expected: res1 == res2 == res3 == res4 == res5
-
-    for zip_res in zip(res1, res2, res3, res4, res5):
-        assert zip_res[0] == zip_res[1]
-        assert zip_res[1] == zip_res[2]
-        assert zip_res[2] == zip_res[3]
-        assert zip_res[3] == zip_res[4]
+    # Kill all upload processes
+    for p in upload_processes:
+        p.kill()
 
 
+    # Validate that all peers have the same data
+    results = []
+    for url in peer_api_uris:
+        res = get_all_points(url, COLLECTION_NAME)
+        results.append(res)
+
+    for res in results:
+        print(res)
+
+    for res in results:
+        for idx, row in enumerate(res['points']):
+            assert row == results[0]['points'][idx]
