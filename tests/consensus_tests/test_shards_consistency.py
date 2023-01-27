@@ -20,7 +20,7 @@ COLLECTION_NAME = "test_collection"
 def update_points_in_loop(peer_url, collection_name):
     limit = 5
     while True:
-        offset = random.randint(0, 1000)
+        offset = random.randint(0, 100)
         upsert_random_points(peer_url, limit, collection_name, offset=offset, wait='false')
 
 def run_update_points_in_background(peer_url, collection_name):
@@ -70,9 +70,6 @@ def test_shard_consistency(tmp_path: pathlib.Path):
     for url in peer_api_uris:
         res = get_all_points(url, COLLECTION_NAME)
         results.append(res)
-
-    for res in results:
-        print(res)
 
     for res in results:
         for idx, row in enumerate(res['points']):
