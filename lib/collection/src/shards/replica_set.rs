@@ -1096,9 +1096,18 @@ impl ShardReplicaSet {
                     self.forward_update(leader_peer, operation, wait)
                         .await
                         .map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
-                            ))
+                            match err {
+                                CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. } => {
+                                    // Deactivate the peer if forwarding failed with service error
+                                    self.locally_disabled_peers.write().insert(leader_peer);
+                                    self.notify_peer_failure(leader_peer);
+                                    // return service error
+                                    CollectionError::service_error(format!(
+                                        "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
+                                    ))
+                                }
+                                _ => err // return the original error
+                            }
                         })
                 }
             }
