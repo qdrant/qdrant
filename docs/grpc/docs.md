@@ -88,6 +88,7 @@
     - [PointsOperationResponse](#qdrant-PointsOperationResponse)
     - [PointsSelector](#qdrant-PointsSelector)
     - [Range](#qdrant-Range)
+    - [ReadConsistency](#qdrant-ReadConsistency)
     - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
     - [RecommendBatchResponse](#qdrant-RecommendBatchResponse)
     - [RecommendPoints](#qdrant-RecommendPoints)
@@ -116,6 +117,7 @@
     - [WriteOrdering](#qdrant-WriteOrdering)
   
     - [FieldType](#qdrant-FieldType)
+    - [ReadConsistencyType](#qdrant-ReadConsistencyType)
     - [UpdateStatus](#qdrant-UpdateStatus)
     - [WriteOrderingType](#qdrant-WriteOrderingType)
   
@@ -1211,6 +1213,7 @@ The JSON representation for `Value` is JSON value.
 | ids | [PointId](#qdrant-PointId) | repeated | List of points to retrieve |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| read_consistency | [ReadCosistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
 
@@ -1472,6 +1475,22 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-ReadConsistency"></a>
+
+### ReadConsistency
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| type | [ReadConsistencyType](#qdrant-ReadCosistencyType) |  | Common read consistency configurations |
+| factor | [uint64](#uint64) |  | Send request to a specified number of nodes, and return points which present on all of them |
+
+
+
+
+
+
 <a name="qdrant-RecommendBatchPoints"></a>
 
 ### RecommendBatchPoints
@@ -1482,6 +1501,7 @@ The JSON representation for `Value` is JSON value.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
 | recommend_points | [RecommendPoints](#qdrant-RecommendPoints) | repeated |  |
+| read_consistency | [ReadCosistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
 
@@ -1524,6 +1544,7 @@ The JSON representation for `Value` is JSON value.
 | using | [string](#string) | optional | Define which vector to use for recommendation, if not specified - default vector |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
+| read_consistency | [ReadCosistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
 
@@ -1628,6 +1649,7 @@ The JSON representation for `Value` is JSON value.
 | limit | [uint32](#uint32) | optional | Max number of result |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| read_consistency | [ReadCosistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
 
@@ -1661,6 +1683,7 @@ The JSON representation for `Value` is JSON value.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
 | search_points | [SearchPoints](#qdrant-SearchPoints) | repeated |  |
+| read_consistency | [ReadCosistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
 
@@ -1717,6 +1740,7 @@ The JSON representation for `Value` is JSON value.
 | offset | [uint64](#uint64) | optional | Offset of the result |
 | vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| read_consistency | [ReadCosistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
 
@@ -1935,6 +1959,19 @@ The JSON representation for `Value` is JSON value.
 | FieldTypeFloat | 2 |  |
 | FieldTypeGeo | 3 |  |
 | FieldTypeText | 4 |  |
+
+
+
+<a name="qdrant-ReadConsistencyType"></a>
+
+### ReadCosistencyType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| All | 0 | Send request to all nodes and return points which present on all of them |
+| Majority | 1 | Send requests to all nodes and return points which present on majority of them |
+| Quorum | 2 | Send requests to half + 1 nodes, return points which present on all of them |
 
 
 
