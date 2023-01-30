@@ -77,7 +77,7 @@ pub async fn upsert(
 pub async fn sync(
     toc: &TableOfContent,
     sync_points: SyncPoints,
-    shard_selection: ShardId,
+    shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
     let SyncPoints {
         collection_name,
@@ -85,6 +85,7 @@ pub async fn sync(
         points,
         from_id,
         to_id,
+        ordering,
     } = sync_points;
 
     let points = points
@@ -105,8 +106,9 @@ pub async fn sync(
         .update(
             &collection_name,
             collection_operation,
-            Some(shard_selection),
+            shard_selection,
             wait.unwrap_or(false),
+            write_ordering_from_proto(ordering)?,
         )
         .await
         .map_err(error_to_status)?;

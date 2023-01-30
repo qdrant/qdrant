@@ -6,7 +6,9 @@ use std::path::Path;
 
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use collection::operations::point_ops::{
+    PointInsertOperations, PointOperations, PointStruct, WriteOrdering,
+};
 use collection::operations::types::{
     CollectionError, PointRequest, RecommendRequest, SearchRequest, VectorParams, VectorsConfig,
 };
@@ -104,7 +106,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         PointInsertOperations::PointsList(points),
     ));
     collection
-        .update_from_client(insert_points, true)
+        .update_from_client(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
