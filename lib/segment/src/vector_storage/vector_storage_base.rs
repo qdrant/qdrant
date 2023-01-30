@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::ops::Range;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use ordered_float::OrderedFloat;

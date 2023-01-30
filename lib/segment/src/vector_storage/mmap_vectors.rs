@@ -13,8 +13,8 @@ use crate::common::error_logging::LogError;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::{Distance, PointOffsetType};
 use crate::madvise;
+use crate::types::{Distance, PointOffsetType};
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";
