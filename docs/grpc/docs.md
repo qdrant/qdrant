@@ -1484,7 +1484,7 @@ The JSON representation for `Value` is JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | type | [ReadConsistencyType](#qdrant-ReadConsistencyType) |  | Common read consistency configurations |
-| factor | [uint64](#uint64) |  | Send request to a specified number of nodes, and return points which present on all of them |
+| factor | [uint64](#uint64) |  | Send request to a specified number of nodes, and return points which are present on all of them |
 
 
 
@@ -1969,9 +1969,9 @@ The JSON representation for `Value` is JSON value.
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| All | 0 | Send request to all nodes and return points which present on all of them |
-| Majority | 1 | Send requests to all nodes and return points which present on majority of them |
-| Quorum | 2 | Send requests to half &#43; 1 nodes, return points which present on all of them |
+| All | 0 | Send request to all nodes and return points which are present on all of them |
+| Majority | 1 | Send requests to all nodes and return points which are present on majority of them |
+| Quorum | 2 | Send requests to half &#43; 1 nodes, return points which are present on all of them |
 
 
 

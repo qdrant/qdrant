@@ -1680,7 +1680,7 @@ pub mod read_consistency {
         /// Common read consistency configurations
         #[prost(enumeration = "super::ReadConsistencyType", tag = "1")]
         Type(i32),
-        /// Send request to a specified number of nodes, and return points which present on all of them
+        /// Send request to a specified number of nodes, and return points which are present on all of them
         #[prost(uint64, tag = "2")]
         Factor(u64),
     }
@@ -2435,11 +2435,11 @@ impl WriteOrderingType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ReadConsistencyType {
-    /// Send request to all nodes and return points which present on all of them
+    /// Send request to all nodes and return points which are present on all of them
     All = 0,
-    /// Send requests to all nodes and return points which present on majority of them
+    /// Send requests to all nodes and return points which are present on majority of them
     Majority = 1,
-    /// Send requests to half + 1 nodes, return points which present on all of them
+    /// Send requests to half + 1 nodes, return points which are present on all of them
     Quorum = 2,
 }
 impl ReadConsistencyType {

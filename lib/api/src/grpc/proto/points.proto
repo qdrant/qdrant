@@ -17,15 +17,15 @@ message WriteOrdering {
 }
 
 enum ReadConsistencyType {
-  All = 0; // Send request to all nodes and return points which present on all of them
-  Majority = 1; // Send requests to all nodes and return points which present on majority of them
-  Quorum = 2; // Send requests to half + 1 nodes, return points which present on all of them
+  All = 0; // Send request to all nodes and return points which are present on all of them
+  Majority = 1; // Send requests to all nodes and return points which are present on majority of them
+  Quorum = 2; // Send requests to half + 1 nodes, return points which are present on all of them
 }
 
 message ReadConsistency {
   oneof value {
     ReadConsistencyType type = 1; // Common read consistency configurations
-    uint64 factor = 2; // Send request to a specified number of nodes, and return points which present on all of them
+    uint64 factor = 2; // Send request to a specified number of nodes, and return points which are present on all of them
   }
 }
 
