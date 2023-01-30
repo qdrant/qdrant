@@ -5566,7 +5566,8 @@
         "enum": [
           "Active",
           "Dead",
-          "Partial"
+          "Partial",
+          "Initializing"
         ]
       },
       "RemoteShardInfo": {

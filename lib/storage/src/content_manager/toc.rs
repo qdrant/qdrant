@@ -126,9 +126,11 @@ impl TableOfContent {
                 &collection_path,
                 &collection_snapshots_path,
                 channel_service.clone(),
-                Self::on_peer_failure_callback(
+                Self::change_peer_state_callback(
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
+                    ReplicaState::Dead,
+                    None,
                 ),
                 Self::request_shard_transfer_callback(
                     consensus_proposal_sender.clone(),
@@ -327,9 +329,11 @@ impl TableOfContent {
             &collection_config,
             collection_shard_distribution,
             self.channel_service.clone(),
-            Self::on_peer_failure_callback(
+            Self::change_peer_state_callback(
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
+                ReplicaState::Dead,
+                None,
             ),
             Self::request_shard_transfer_callback(
                 self.consensus_proposal_sender.clone(),
@@ -424,7 +428,7 @@ impl TableOfContent {
     ) -> CollectionResult<()> {
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             let operation =
-                ConsensusOperations::activate_replica(collection_name.clone(), shard_id, peer_id);
+                ConsensusOperations::initialize_replica(collection_name.clone(), shard_id, peer_id);
             if let Err(send_error) = proposal_sender.send(operation) {
                 log::error!(
                         "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
@@ -439,7 +443,12 @@ impl TableOfContent {
             let collections = self.collections.read().await;
             if let Some(collection) = collections.get(&collection_name) {
                 collection
-                    .set_shard_replica_state(shard_id, peer_id, ReplicaState::Active)
+                    .set_shard_replica_state(
+                        shard_id,
+                        peer_id,
+                        ReplicaState::Active,
+                        Some(ReplicaState::Initializing),
+                    )
                     .await?;
             }
         }
@@ -452,9 +461,15 @@ impl TableOfContent {
         peer_id: PeerId,
         shard_id: ShardId,
         state: ReplicaState,
+        from_state: Option<ReplicaState>,
     ) -> Result<(), StorageError> {
-        let operation =
-            ConsensusOperations::set_replica_state(collection_name, shard_id, peer_id, state);
+        let operation = ConsensusOperations::set_replica_state(
+            collection_name,
+            shard_id,
+            peer_id,
+            state,
+            from_state,
+        );
         proposal_sender.send(operation)
     }
 
@@ -509,10 +524,12 @@ impl TableOfContent {
         })
     }
 
-    fn on_peer_failure_callback(
+    fn change_peer_state_callback(
         proposal_sender: Option<OperationSender>,
         collection_name: String,
-    ) -> replica_set::OnPeerFailure {
+        state: ReplicaState,
+        from_state: Option<ReplicaState>,
+    ) -> replica_set::ChangePeerState {
         Arc::new(move |peer_id, shard_id| {
             if let Some(proposal_sender) = &proposal_sender {
                 if let Err(send_error) = Self::send_set_replica_state_proposal_op(
@@ -520,7 +537,8 @@ impl TableOfContent {
                     collection_name.clone(),
                     peer_id,
                     shard_id,
-                    ReplicaState::Dead,
+                    state,
+                    from_state,
                 ) {
                     log::error!(
                         "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
@@ -542,6 +560,7 @@ impl TableOfContent {
         peer_id: PeerId,
         shard_id: ShardId,
         state: ReplicaState,
+        from_state: Option<ReplicaState>,
     ) -> Result<(), StorageError> {
         if let Some(operation_sender) = &self.consensus_proposal_sender {
             Self::send_set_replica_state_proposal_op(
@@ -550,6 +569,7 @@ impl TableOfContent {
                 peer_id,
                 shard_id,
                 state,
+                from_state,
             )?;
         }
         Ok(())
@@ -780,7 +800,12 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         self.get_collection(&operation.collection_name)
             .await?
-            .set_shard_replica_state(operation.shard_id, operation.peer_id, operation.state)
+            .set_shard_replica_state(
+                operation.shard_id,
+                operation.peer_id,
+                operation.state,
+                operation.from_state,
+            )
             .await?;
         Ok(())
     }
@@ -1230,9 +1255,11 @@ impl TableOfContent {
                             &state.config,
                             shard_distribution,
                             self.channel_service.clone(),
-                            Self::on_peer_failure_callback(
+                            Self::change_peer_state_callback(
                                 self.consensus_proposal_sender.clone(),
                                 id.to_string(),
+                                ReplicaState::Dead,
+                                None,
                             ),
                             Self::request_shard_transfer_callback(
                                 self.consensus_proposal_sender.clone(),
@@ -1446,10 +1473,17 @@ impl CollectionContainer for TableOfContent {
             let transfer_success_callback =
                 Self::on_transfer_success_callback(self.consensus_proposal_sender.clone());
             for collection in collections.values() {
+                let finish_shard_initialize = Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection.name(),
+                    ReplicaState::Active,
+                    Some(ReplicaState::Initializing),
+                );
                 collection
                     .sync_local_state(
                         transfer_failure_callback.clone(),
                         transfer_success_callback.clone(),
+                        finish_shard_initialize,
                     )
                     .await?;
             }
