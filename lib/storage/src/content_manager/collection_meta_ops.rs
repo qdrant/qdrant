@@ -256,6 +256,13 @@ pub struct SetShardReplicaState {
     pub peer_id: PeerId,
     /// If `Active` then the replica is up to date and can receive updates and answer requests
     pub state: ReplicaState,
+    /// If `Some` then check that the replica is in this state before changing it
+    /// If `None` then the replica can be in any state
+    /// This is useful for example when we want to make sure
+    /// we only make transition from `Initializing` to `Active`, and not from `Dead` to `Active`.
+    /// If `from_state` does not match the current state of the replica, then the operation will be dismissed.
+    #[serde(default)]
+    pub from_state: Option<ReplicaState>,
 }
 
 /// Enumeration of all possible collection update operations

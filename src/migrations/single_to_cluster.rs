@@ -80,6 +80,7 @@ pub async fn handle_existing_collections(
                             shard_id,
                             peer_id: this_peer_id,
                             state: ReplicaState::Active,
+                            from_state: None,
                         }),
                         None,
                     )

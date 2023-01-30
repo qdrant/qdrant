@@ -39,7 +39,8 @@ use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
-pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type ActivatePeer = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -47,6 +48,42 @@ const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
+
+// Shard replication state machine:
+//
+//    │
+//    │    Collection Created
+//    │
+//    ▼
+//  ┌─────────────┐
+//  │             │
+//  │Initializing │
+//  │             │
+//  └─────┬─-─────┘
+//        │  Report created     ┌───────────┐
+//        └────────────────────►│           │
+//             Activate         │ Consensus │
+//        ┌─────────────────────│           │
+//        │                     └───────────┘
+//  ┌─────▼───────┐
+//  │             │
+//  │ Active      ◄───────────┐
+//  │             │           │Transfer
+//  └──┬──────────┘           │Finished
+//     │                      │
+//     │               ┌──────┴────────┐
+//     │Update         │               │
+//     │Failure        │ Partial       ├───┐
+//     │               │               │   │
+//     │               └───────▲───────┘   │
+//     │                       │           │Transfer
+//  ┌──▼──────────┐            │           │Failed/Cancelled
+//  │             │ Transfer   │           │
+//  │ Dead        ├────────────┘           │
+//  │             │ Started                │
+//  └──▲──────────┘                        │
+//     │                                   │
+//     └───────────────────────────────────┘
 
 /// State of the single shard within a replica set.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
@@ -58,6 +95,8 @@ pub enum ReplicaState {
     Dead,
     // The shard is partially loaded and is currently receiving data from other shards
     Partial,
+    // Collection is being created
+    Initializing,
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
@@ -115,7 +154,7 @@ pub struct ShardReplicaSet {
     /// Number of remote replicas to send read requests to.
     /// If actual number of peers is less than this, then read request will be sent to all of them.
     read_remote_replicas: u32,
-    notify_peer_failure_cb: OnPeerFailure,
+    notify_peer_failure_cb: ChangePeerState,
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
@@ -186,7 +225,7 @@ impl ShardReplicaSet {
         this_peer_id: PeerId,
         local: bool,
         remotes: HashSet<PeerId>,
-        on_peer_failure: OnPeerFailure,
+        on_peer_failure: ChangePeerState,
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
@@ -212,10 +251,10 @@ impl ShardReplicaSet {
             rs.this_peer_id = this_peer_id;
             if local.is_some() {
                 rs.is_local = true;
-                rs.set_peer_state(this_peer_id, ReplicaState::Partial);
+                rs.set_peer_state(this_peer_id, ReplicaState::Initializing);
             }
             for peer in remotes {
-                rs.set_peer_state(peer, ReplicaState::Dead);
+                rs.set_peer_state(peer, ReplicaState::Initializing);
             }
         })?;
 
@@ -376,7 +415,7 @@ impl ShardReplicaSet {
         shard_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
-        on_peer_failure: OnPeerFailure,
+        on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
     ) -> Self {
@@ -529,6 +568,10 @@ impl ShardReplicaSet {
                         self.set_local(local_shard, Some(ReplicaState::Partial))
                             .await?;
                     }
+                    ReplicaState::Initializing => {
+                        self.set_local(local_shard, Some(ReplicaState::Initializing))
+                            .await?;
+                    }
                 }
                 continue;
             }
@@ -560,6 +603,7 @@ impl ShardReplicaSet {
         let res = match self.peer_state(peer_id) {
             Some(ReplicaState::Active) => true,
             Some(ReplicaState::Partial) => true,
+            Some(ReplicaState::Initializing) => true,
             Some(ReplicaState::Dead) => false,
             None => false,
         };
@@ -971,6 +1015,9 @@ impl ShardReplicaSet {
                 Some(ReplicaState::Partial) => {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
+                Some(ReplicaState::Initializing) => {
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
                 Some(ReplicaState::Dead) | None => Ok(None),
             }
         } else {
@@ -1071,10 +1118,10 @@ impl ShardReplicaSet {
                 .collect();
 
             // local is defined AND the peer itself can receive updates
-            let local_is_active =
+            let local_is_updatable =
                 local.is_some() && self.peer_is_active_or_pending(&self.this_peer_id());
 
-            if active_remote_shards.is_empty() && !local_is_active {
+            if active_remote_shards.is_empty() && !local_is_updatable {
                 return Err(CollectionError::service_error(format!(
                     "The replica set for shard {} on peer {} has no active replica",
                     self.shard_id,
