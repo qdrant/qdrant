@@ -41,7 +41,7 @@ sys-info = "0.9.1"
 
 config = "~0.13.3"
 
-tokio = { version = "~1.24", features = ["full"] }
+tokio = { version = "~1.25", features = ["full"] }
 
 actix-web = { version = "4.3.0", optional = true }
 actix-cors = "0.6.4"
