@@ -1,4 +1,6 @@
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use collection::operations::point_ops::{
+    PointInsertOperations, PointOperations, PointStruct, WriteOrdering,
+};
 use collection::operations::types::SearchRequest;
 use collection::operations::CollectionUpdateOperations;
 use segment::types::WithPayloadInterface;
@@ -35,7 +37,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         PointInsertOperations::PointsList(points),
     ));
     collection
-        .update_from_client(insert_points, true)
+        .update_from_client(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 

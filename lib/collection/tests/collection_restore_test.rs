@@ -1,4 +1,6 @@
-use collection::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
+use collection::operations::point_ops::{
+    Batch, PointInsertOperations, PointOperations, WriteOrdering,
+};
 use collection::operations::types::ScrollRequest;
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
@@ -39,7 +41,7 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
             })),
         );
         collection
-            .update_from_client(insert_points, true)
+            .update_from_client(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
         collection.before_drop().await;
@@ -74,7 +76,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             })),
         );
         collection
-            .update_from_client(insert_points, true)
+            .update_from_client(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
         collection.before_drop().await;
@@ -142,7 +144,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             })),
         );
         collection
-            .update_from_client(insert_points, true)
+            .update_from_client(insert_points, true, WriteOrdering::default())
             .await
             .unwrap();
         collection.before_drop().await;

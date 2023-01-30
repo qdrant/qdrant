@@ -25,6 +25,7 @@ use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
+use crate::operations::point_ops::WriteOrdering;
 use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
@@ -715,6 +716,7 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
         let _update_lock = self.updates_lock.read().await;
@@ -731,7 +733,9 @@ impl Collection {
 
             let shard_requests = shard_to_op
                 .into_iter()
-                .map(move |(replica_set, operation)| replica_set.update(operation, wait));
+                .map(move |(replica_set, operation)| {
+                    replica_set.update_with_consistency(operation, wait, ordering)
+                });
             join_all(shard_requests).await
         };
 

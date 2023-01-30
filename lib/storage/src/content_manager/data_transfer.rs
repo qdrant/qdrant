@@ -2,7 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use collection::collection::Collection;
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use collection::operations::point_ops::{
+    PointInsertOperations, PointOperations, PointStruct, WriteOrdering,
+};
 use collection::operations::types::{CollectionError, CollectionResult, ScrollRequest};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::replica_set::ReplicaState;
@@ -114,7 +116,7 @@ async fn replicate_shard_data(
             handle_get_collection(collections_read.get(target_collection_name))?;
 
         target_collection
-            .update_from_client(upsert_request, false)
+            .update_from_client(upsert_request, false, WriteOrdering::default())
             .await?;
 
         if offset.is_none() {
@@ -215,7 +217,9 @@ pub async fn transfer_indexes(
                 field_schema: Some(schema.try_into()?),
             }),
         );
-        target_collection.update_from_client(request, false).await?;
+        target_collection
+            .update_from_client(request, false, WriteOrdering::default())
+            .await?;
     }
 
     Ok(())

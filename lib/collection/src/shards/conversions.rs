@@ -15,17 +15,19 @@ use crate::operations::payload_ops::{DeletePayload, SetPayload};
 use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation, WriteOrdering};
 use crate::operations::types::CollectionResult;
 use crate::operations::CreateIndex;
-use crate::shards::remote_shard::RemoteShard;
+use crate::shards::shard::ShardId;
 
 pub fn internal_sync_points(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     points_sync_operation: PointSyncOperation,
-    shard: &RemoteShard,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> CollectionResult<SyncPointsInternal> {
     Ok(SyncPointsInternal {
-        shard_id: shard.id,
+        shard_id,
         sync_points: Some(SyncPoints {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             points: points_sync_operation
                 .points
@@ -34,20 +36,22 @@ pub fn internal_sync_points(
                 .collect::<Result<Vec<_>, Status>>()?,
             from_id: points_sync_operation.from_id.map(|x| x.into()),
             to_id: points_sync_operation.to_id.map(|x| x.into()),
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     })
 }
 
 pub fn internal_upsert_points(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     point_insert_operations: PointInsertOperations,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpsertPointsInternal> {
     Ok(UpsertPointsInternal {
-        shard_id: shard.id,
+        shard_id,
         upsert_points: Some(UpsertPoints {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             points: match point_insert_operations {
                 PointInsertOperations::PointsBatch(batch) => batch.try_into()?,
@@ -62,15 +66,16 @@ pub fn internal_upsert_points(
 }
 
 pub fn internal_delete_points(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     ids: Vec<PointIdType>,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
-        shard_id: shard.id,
+        shard_id,
         delete_points: Some(DeletePoints {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
@@ -83,15 +88,16 @@ pub fn internal_delete_points(
 }
 
 pub fn internal_delete_points_by_filter(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     filter: Filter,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
-        shard_id: shard.id,
+        shard_id,
         delete_points: Some(DeletePoints {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
@@ -102,8 +108,9 @@ pub fn internal_delete_points_by_filter(
 }
 
 pub fn internal_set_payload(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     set_payload: SetPayload,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> SetPayloadPointsInternal {
@@ -123,9 +130,9 @@ pub fn internal_set_payload(
     };
 
     SetPayloadPointsInternal {
-        shard_id: shard.id,
+        shard_id,
         set_payload_points: Some(SetPayloadPoints {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             payload: payload_to_proto(set_payload.payload),
             points: selected_points, // ToDo: Deprecated
@@ -136,8 +143,9 @@ pub fn internal_set_payload(
 }
 
 pub fn internal_delete_payload(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     delete_payload: DeletePayload,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> DeletePayloadPointsInternal {
@@ -156,9 +164,9 @@ pub fn internal_delete_payload(
     };
 
     DeletePayloadPointsInternal {
-        shard_id: shard.id,
+        shard_id,
         delete_payload_points: Some(DeletePayloadPoints {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             keys: delete_payload.keys,
             points: selected_points, // ToDo: Deprecated
@@ -169,15 +177,16 @@ pub fn internal_delete_payload(
 }
 
 pub fn internal_clear_payload(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     points: Vec<PointIdType>,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
-        shard_id: shard.id,
+        shard_id,
         clear_payload_points: Some(ClearPayloadPoints {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
@@ -190,15 +199,16 @@ pub fn internal_clear_payload(
 }
 
 pub fn internal_clear_payload_by_filter(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     filter: Filter,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
-        shard_id: shard.id,
+        shard_id,
         clear_payload_points: Some(ClearPayloadPoints {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
@@ -209,8 +219,9 @@ pub fn internal_clear_payload_by_filter(
 }
 
 pub fn internal_create_index(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     create_index: CreateIndex,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> CreateFieldIndexCollectionInternal {
@@ -248,9 +259,9 @@ pub fn internal_create_index(
         .unwrap_or((None, None));
 
     CreateFieldIndexCollectionInternal {
-        shard_id: shard.id,
+        shard_id,
         create_field_index_collection: Some(CreateFieldIndexCollection {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             field_name: create_index.field_name,
             field_type,
@@ -261,15 +272,16 @@ pub fn internal_create_index(
 }
 
 pub fn internal_delete_index(
+    shard_id: Option<ShardId>,
+    collection_name: String,
     delete_index: String,
-    shard: &RemoteShard,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> DeleteFieldIndexCollectionInternal {
     DeleteFieldIndexCollectionInternal {
-        shard_id: shard.id,
+        shard_id,
         delete_field_index_collection: Some(DeleteFieldIndexCollection {
-            collection_name: shard.collection_id.clone(),
+            collection_name,
             wait: Some(wait),
             field_name: delete_index,
             ordering: ordering.map(write_ordering_to_proto),

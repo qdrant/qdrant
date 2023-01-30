@@ -3588,54 +3588,56 @@ pub struct SyncPoints {
     /// End of the sync range
     #[prost(message, optional, tag = "5")]
     pub to_id: ::core::option::Option<PointId>,
+    #[prost(message, optional, tag = "6")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub sync_points: ::core::option::Option<SyncPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub upsert_points: ::core::option::Option<UpsertPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePointsInternal {
     #[prost(message, optional, tag = "1")]
     pub delete_points: ::core::option::Option<DeletePoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub set_payload_points: ::core::option::Option<SetPayloadPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub delete_payload_points: ::core::option::Option<DeletePayloadPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClearPayloadPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub clear_payload_points: ::core::option::Option<ClearPayloadPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3644,8 +3646,8 @@ pub struct CreateFieldIndexCollectionInternal {
     pub create_field_index_collection: ::core::option::Option<
         CreateFieldIndexCollection,
     >,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3654,16 +3656,16 @@ pub struct DeleteFieldIndexCollectionInternal {
     pub delete_field_index_collection: ::core::option::Option<
         DeleteFieldIndexCollection,
     >,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub search_points: ::core::option::Option<SearchPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3672,40 +3674,40 @@ pub struct SearchBatchPointsInternal {
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
-    #[prost(uint32, tag = "3")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub scroll_points: ::core::option::Option<ScrollPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub recommend_points: ::core::option::Option<RecommendPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub get_points: ::core::option::Option<GetPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPointsInternal {
     #[prost(message, optional, tag = "1")]
     pub count_points: ::core::option::Option<CountPoints>,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
 }
 /// Generated client implementations.
 pub mod points_internal_client {

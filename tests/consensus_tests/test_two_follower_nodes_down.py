@@ -3,17 +3,10 @@ import pathlib
 
 from .fixtures import upsert_random_points, create_collection
 from .utils import *
-from .assertions import assert_http_ok
 
 N_PEERS = 3
 N_SHARDS = 1
 N_REPLICA = 3
-
-
-def check_collection_cluster(peer_url, collection_name):
-    res = requests.get(f"{peer_url}/collections/{collection_name}/cluster", timeout=10)
-    assert_http_ok(res)
-    return res.json()["result"]['local_shards'][0]
 
 
 def update_points_in_loop(peer_url, collection_name):
