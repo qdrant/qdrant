@@ -1420,7 +1420,7 @@ mod tests {
         max_optimization_threads: 2,
     };
 
-    pub fn dummy_on_replica_failure() -> OnPeerFailure {
+    pub fn dummy_on_replica_failure() -> ChangePeerState {
         Arc::new(move |_peer_id, _shard_id| {})
     }
 
