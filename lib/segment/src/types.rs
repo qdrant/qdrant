@@ -289,7 +289,7 @@ fn default_max_indexing_threads() -> usize {
     0
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct QuantizationConfig {
     pub enable: bool,

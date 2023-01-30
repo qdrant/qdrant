@@ -194,12 +194,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let ignore_quantization = params.map(|p| p.ignore_quantization).unwrap_or(false);
         let (raw_scorer, quantized) = if ignore_quantization {
             (vector_storage.raw_scorer(vector.to_owned()), false)
+        } else if let Some(quantized_raw_scorer) = vector_storage.quantized_raw_scorer(vector) {
+            (quantized_raw_scorer, true)
         } else {
-            if let Some(quantized_raw_scorer) = vector_storage.quantized_raw_scorer(vector) {
-                (quantized_raw_scorer, true)
-            } else {
-                (vector_storage.raw_scorer(vector.to_owned()), false)
-            }
+            (vector_storage.raw_scorer(vector.to_owned()), false)
         };
         let payload_index = self.payload_index.borrow();
 

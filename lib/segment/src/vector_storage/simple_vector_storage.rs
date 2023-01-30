@@ -311,9 +311,7 @@ where
             },
             TMetric::distance() == Distance::Euclid,
         )
-        .map_err(|e| {
-            OperationError::service_error(&format!("Cannot quantize vector data: {}", e))
-        })?;
+        .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
         quantized_vectors.save(data_path, meta_path)?;
         self.quantized_vectors = Some(quantized_vectors);
         Ok(())

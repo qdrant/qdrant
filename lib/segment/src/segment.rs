@@ -1616,6 +1616,7 @@ mod tests {
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: Default::default(),
+            quantization_config: None,
         };
         let mut segment = build_segment(dir.path(), &config).unwrap();
 

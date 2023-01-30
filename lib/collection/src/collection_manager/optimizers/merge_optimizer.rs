@@ -76,7 +76,7 @@ impl SegmentOptimizer for MergeOptimizer {
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
-        self.quantization_config
+        self.quantization_config.clone()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {

@@ -90,8 +90,8 @@ fn create_segment(
 
     let mut vector_data = HashMap::new();
     for (vector_name, vector_config) in &config.vector_data {
-        let vector_storage_path = get_vector_storage_path(&segment_path, vector_name);
-        let vector_index_path = get_vector_index_path(&segment_path, vector_name);
+        let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+        let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         let vector_storage: Arc<AtomicRefCell<VectorStorageSS>> = match config.storage_type {
             StorageType::InMemory => {
@@ -110,7 +110,7 @@ fn create_segment(
             )?,
         };
 
-        if let Some(quantization_config) = config.quantization_config {
+        if let Some(quantization_config) = &config.quantization_config {
             if quantization_config.enable {
                 let quantized_meta_path = vector_storage_path.join(QUANTIZED_META_PATH);
                 let quantized_data_path = vector_storage_path.join(QUANTIZED_DATA_PATH);

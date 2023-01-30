@@ -212,11 +212,11 @@ impl SegmentBuilder {
     fn update_quantization(segment: &Segment, stopped: &AtomicBool) -> OperationResult<()> {
         if let Some(quantization) = &segment.config().quantization_config {
             if quantization.enable {
-                let segment_path = segment.current_path.as_path().clone();
+                let segment_path = segment.current_path.as_path();
                 for (vector_name, vector_data) in &segment.vector_data {
                     check_process_stopped(stopped)?;
 
-                    let vector_storage_path = get_vector_storage_path(segment_path, &vector_name);
+                    let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
                     let quantized_meta_path = vector_storage_path.join(QUANTIZED_META_PATH);
                     let quantized_data_path = vector_storage_path.join(QUANTIZED_DATA_PATH);
                     vector_data
