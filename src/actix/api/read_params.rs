@@ -2,23 +2,100 @@ use collection::operations::consistency_params::ReadConsistency;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema)]
 pub struct ReadParams {
+    #[serde(default, deserialize_with = "deserialize_read_consistency")]
     pub read_consistency: Option<ReadConsistency>,
+}
+
+fn deserialize_read_consistency<'de, D>(
+    deserializer: D,
+) -> Result<Option<ReadConsistency>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Helper<'a> {
+        ReadConsistency(ReadConsistency),
+        Str(&'a str),
+    }
+
+    match Helper::deserialize(deserializer)? {
+        Helper::ReadConsistency(read_consistency) => Ok(Some(read_consistency)),
+        Helper::Str("") => Ok(None),
+        _ => {
+            return Err(serde::de::Error::custom(
+                "failed to deserialize read consistency query parameter value",
+            ));
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use collection::operations::consistency_params::ReadConsistencyType;
+
     use super::*;
 
     #[test]
-    fn read_params_deserialization() {
-        let params: ReadParams = serde_urlencoded::from_str("read_consistency=1").unwrap();
-        assert_eq!(
-            params,
-            ReadParams {
-                read_consistency: Some(ReadConsistency::Factor(1))
-            }
-        );
+    fn deserialize_empty_string() {
+        test_str("", ReadParams::default());
+    }
+
+    #[test]
+    fn deserialize_empty_value() {
+        test("", ReadParams::default());
+    }
+
+    #[test]
+    fn deserialize_type() {
+        test("all", from_type(ReadConsistencyType::All));
+        test("majority", from_type(ReadConsistencyType::Majority));
+        test("quorum", from_type(ReadConsistencyType::Quorum));
+    }
+
+    #[test]
+    fn deserialize_factor() {
+        for factor in 1..42 {
+            test(&factor.to_string(), from_factor(factor));
+        }
+    }
+
+    #[test]
+    fn try_deserialize_factor_0() {
+        assert!(try_deserialize(&str("0")).is_err());
+    }
+
+    fn test(value: &str, params: ReadParams) {
+        test_str(&str(value), params);
+    }
+
+    fn test_str(str: &str, params: ReadParams) {
+        assert_eq!(deserialize(str), params);
+    }
+
+    fn deserialize(str: &str) -> ReadParams {
+        try_deserialize(str).unwrap()
+    }
+
+    fn try_deserialize(str: &str) -> Result<ReadParams, serde_urlencoded::de::Error> {
+        serde_urlencoded::from_str(str)
+    }
+
+    fn str(value: &str) -> String {
+        format!("read_consistency={value}")
+    }
+
+    fn from_type(r#type: ReadConsistencyType) -> ReadParams {
+        ReadParams {
+            read_consistency: Some(ReadConsistency::Type(r#type)),
+        }
+    }
+
+    fn from_factor(factor: usize) -> ReadParams {
+        ReadParams {
+            read_consistency: Some(ReadConsistency::Factor(factor)),
+        }
     }
 }
