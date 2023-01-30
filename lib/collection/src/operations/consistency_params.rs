@@ -5,8 +5,6 @@ use api::grpc::qdrant::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::utils::validate::{NonZero, Validator as _};
-
 /// Read consistency parameter
 ///
 /// Defines how many replicas should be queried to get the result
@@ -24,7 +22,7 @@ use crate::utils::validate::{NonZero, Validator as _};
 #[serde(untagged)]
 pub enum ReadConsistency {
     // send N random request and return points, which present on all of them
-    Factor(#[serde(deserialize_with = "NonZero::deserialize")] usize),
+    Factor(#[serde(deserialize_with = "deserialize_factor")] usize),
     Type(ReadConsistencyType),
 }
 
@@ -82,6 +80,39 @@ impl From<ReadConsistency> for ReadConsistencyGrpc {
         };
 
         ReadConsistencyGrpc { value: Some(value) }
+    }
+}
+
+fn deserialize_factor<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Factor<'a> {
+        Usize(usize),
+        Str(&'a str),
+        String(String),
+    }
+
+    let factor = match Factor::deserialize(deserializer)? {
+        Factor::Usize(factor) => Ok(factor),
+        Factor::Str(str) => str.parse(),
+        Factor::String(str) => str.parse(),
+    };
+
+    let factor = factor.map_err(|err| {
+        serde::de::Error::custom(format!(
+            "failed to deserialize read consistency factor value: {err}"
+        ))
+    })?;
+
+    if factor > 0 {
+        Ok(factor)
+    } else {
+        Err(serde::de::Error::custom(
+            "read consistency factor can't be zero",
+        ))
     }
 }
 
