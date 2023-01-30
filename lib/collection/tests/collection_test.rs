@@ -13,7 +13,6 @@ use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
 };
 use tempfile::Builder;
-use tokio::runtime::Handle;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
@@ -55,7 +54,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => panic!("operation failed: {err:?}"),
     }
 
     let search_request = SearchRequest {
@@ -69,9 +68,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let search_res = collection
-        .search(search_request, &Handle::current(), None)
-        .await;
+    let search_res = collection.search(search_request, None).await;
 
     match search_res {
         Ok(res) => {
@@ -79,7 +76,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
             assert_eq!(res[0].id, 2.into());
             assert!(res[0].payload.is_none());
         }
-        Err(err) => panic!("search failed: {:?}", err),
+        Err(err) => panic!("search failed: {err:?}"),
     }
     collection.before_drop().await;
 }
@@ -113,7 +110,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => panic!("operation failed: {err:?}"),
     }
 
     let search_request = SearchRequest {
@@ -127,9 +124,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         score_threshold: None,
     };
 
-    let search_res = collection
-        .search(search_request, &Handle::current(), None)
-        .await;
+    let search_res = collection.search(search_request, None).await;
 
     match search_res {
         Ok(res) => {
@@ -141,7 +136,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
                 _ => panic!("vector is not returned"),
             }
         }
-        Err(err) => panic!("search failed: {:?}", err),
+        Err(err) => panic!("search failed: {err:?}"),
     }
 
     let count_request = CountRequest {
@@ -332,7 +327,6 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
             limit: 5,
             ..Default::default()
         },
-        &Handle::current(),
         &collection,
         |_name| async { unreachable!("Should not be called in this test") },
     )
@@ -438,7 +432,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => panic!("operation failed: {err:?}"),
     }
 
     // delete points with id (0, 3)
@@ -459,7 +453,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => panic!("operation failed: {err:?}"),
     }
 
     let result = collection

@@ -57,8 +57,7 @@ pub async fn download_snapshot(url: Url, snapshots_dir: &Path) -> Result<PathBuf
             let local_file_path = Path::new(url.path());
             if !local_file_path.exists() {
                 return Err(StorageError::bad_request(&format!(
-                    "Snapshot file {:?} does not exist",
-                    local_file_path
+                    "Snapshot file {local_file_path:?} does not exist"
                 )));
             }
             Ok(local_file_path.to_path_buf())

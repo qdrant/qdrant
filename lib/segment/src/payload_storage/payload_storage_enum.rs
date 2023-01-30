@@ -170,7 +170,7 @@ mod tests {
             assert!(res.0.contains_key("location"));
             assert!(res.0.contains_key("name"));
 
-            eprintln!("res = {:#?}", res);
+            eprintln!("res = {res:#?}");
 
             let partial_payload: Payload =
                 serde_json::from_str(r#"{ "hobby": "vector search" }"#).unwrap();
@@ -185,7 +185,7 @@ mod tests {
             assert!(res.0.contains_key("hobby"));
             assert!(res.0.contains_key("name"));
 
-            eprintln!("res = {:#?}", res);
+            eprintln!("res = {res:#?}");
         }
     }
 }

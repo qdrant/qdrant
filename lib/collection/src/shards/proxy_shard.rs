@@ -114,8 +114,8 @@ impl ProxyShard {
         self.wrapped_shard.before_drop().await
     }
 
-    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
-        self.wrapped_shard.get_telemetry_data().await
+    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
+        self.wrapped_shard.get_telemetry_data()
     }
 }
 
@@ -133,12 +133,12 @@ impl ShardOperation for ProxyShard {
             OperationEffectArea::Empty => PointsOperationEffect::Empty,
             OperationEffectArea::Points(points) => PointsOperationEffect::Some(points),
             OperationEffectArea::Filter(filter) => {
-                let cardinality = local_shard.estimate_cardinality(Some(&filter)).await?;
+                let cardinality = local_shard.estimate_cardinality(Some(&filter))?;
                 // validate the size of the change set before retrieving it
                 if cardinality.max > MAX_CHANGES_TRACKED_COUNT {
                     PointsOperationEffect::Many
                 } else {
-                    let points = local_shard.read_filtered(Some(&filter)).await?;
+                    let points = local_shard.read_filtered(Some(&filter))?;
                     PointsOperationEffect::Some(points.into_iter().collect())
                 }
             }

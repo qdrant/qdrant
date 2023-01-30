@@ -1,12 +1,12 @@
 use api::grpc::models::CollectionsResponse;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
+use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
 use collection::operations::types::{
-    CollectionClusterInfo, CollectionInfo, CountRequest, CountResult, PointRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
-    SearchRequestBatch, UpdateResult,
+    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
+    CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
+    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use schemars::{schema_for, JsonSchema};
 use segment::types::ScoredPoint;
@@ -57,12 +57,15 @@ struct AllDefinitions {
     au: RecommendRequestBatch,
     av: LocksOption,
     aw: SnapshotRecover,
+    ax: CollectionsAliasesResponse,
+    ay: AliasDescription,
+    az: WriteOrdering,
 }
 
 fn save_schema<T: JsonSchema>() {
     let schema = schema_for!(T);
     let schema_str = serde_json::to_string_pretty(&schema).unwrap();
-    println!("{}", schema_str)
+    println!("{schema_str}")
 }
 
 fn main() {

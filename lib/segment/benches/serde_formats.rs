@@ -10,7 +10,7 @@ fn serde_formats_bench(c: &mut Criterion) {
 
     let payloads = (0..1000)
         .map(|x| {
-            let payload: Payload = json!({"val":format!("val_{}", x),}).into();
+            let payload: Payload = json!({"val":format!("val_{x}"),}).into();
             payload
         })
         .collect_vec();

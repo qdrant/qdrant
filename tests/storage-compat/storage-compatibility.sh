@@ -37,3 +37,28 @@ echo "server ready to serve traffic"
 echo "server is going down"
 kill -9 $PID
 echo "END"
+
+
+# Test recovering from an old snapshot
+gzip -d --keep ./tests/storage-compat/collection.snapshot.gz
+
+rm -rf ./storage
+./target/debug/qdrant --snapshot ./tests/storage-compat/collection.snapshot:test_collection &
+
+# Sleep to make sure the process has started (workaround for empty pidof)
+sleep 5
+
+## Capture PID of the run
+PID=$(pidof "./target/debug/qdrant")
+echo $PID
+
+until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections/test_collection; do
+  printf 'waiting for server to start...'
+  sleep 5
+done
+
+echo "server ready to serve traffic"
+
+echo "server is going down"
+kill -9 $PID
+echo "END"

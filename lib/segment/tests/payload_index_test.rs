@@ -159,9 +159,9 @@ mod tests {
             .query_points(&filter)
             .count();
 
-        eprintln!("estimation_plain = {:#?}", estimation_plain);
-        eprintln!("estimation_struct = {:#?}", estimation_struct);
-        eprintln!("real_number = {:#?}", real_number);
+        eprintln!("estimation_plain = {estimation_plain:#?}");
+        eprintln!("estimation_struct = {estimation_struct:#?}");
+        eprintln!("real_number = {real_number:#?}");
 
         assert!(estimation_plain.max >= real_number);
         assert!(estimation_plain.min <= real_number);
@@ -207,8 +207,8 @@ mod tests {
             .collect_vec()
             .len();
 
-        eprintln!("exact = {:#?}", exact);
-        eprintln!("estimation = {:#?}", estimation);
+        eprintln!("exact = {exact:#?}");
+        eprintln!("estimation = {estimation:#?}");
 
         assert!(exact <= estimation.max);
         assert!(exact >= estimation.min);
@@ -259,16 +259,15 @@ mod tests {
                 .borrow()
                 .estimate_cardinality(&query_filter);
 
-            assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
-            assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
+            assert!(estimation.min <= estimation.exp, "{estimation:#?}");
+            assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
                 estimation.max
                     <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
                         .vector_storage
                         .borrow()
                         .vector_count(),
-                "{:#?}",
-                estimation
+                "{estimation:#?}"
             );
 
             // warning: report flakiness at https://github.com/qdrant/qdrant/issues/534
@@ -276,7 +275,7 @@ mod tests {
                 .iter()
                 .zip(struct_result.iter())
                 .for_each(|(r1, r2)| {
-                    assert_eq!(r1.id, r2.id, "got different ScoredPoint {:?} and {:?} for\nquery vector {:?}\nquery filter {:?}\nplain result {:?}\nstruct result{:?}", r1, r2, query_vector, query_filter, plain_result, struct_result);
+                    assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
                     assert!((r1.score - r2.score) < 0.0001)
                 });
         }
@@ -334,16 +333,15 @@ mod tests {
                 .borrow()
                 .estimate_cardinality(&query_filter);
 
-            assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
-            assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
+            assert!(estimation.min <= estimation.exp, "{estimation:#?}");
+            assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
                 estimation.max
                     <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
                         .vector_storage
                         .borrow()
                         .vector_count(),
-                "{:#?}",
-                estimation
+                "{estimation:#?}"
             );
 
             let struct_result = struct_segment
@@ -363,16 +361,15 @@ mod tests {
                 .borrow()
                 .estimate_cardinality(&query_filter);
 
-            assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
-            assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
+            assert!(estimation.min <= estimation.exp, "{estimation:#?}");
+            assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
                 estimation.max
                     <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
                         .vector_storage
                         .borrow()
                         .vector_count(),
-                "{:#?}",
-                estimation
+                "{estimation:#?}"
             );
 
             plain_result

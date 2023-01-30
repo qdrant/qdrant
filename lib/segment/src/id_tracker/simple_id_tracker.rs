@@ -128,7 +128,7 @@ impl SimpleIdTracker {
                 }
                 internal_to_version[internal_id as usize] = version;
             } else {
-                log::warn!(
+                log::debug!(
                     "Found version without internal id, external id: {}",
                     external_id
                 );

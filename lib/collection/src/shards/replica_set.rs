@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use futures::future::{join, join_all};
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use schemars::JsonSchema;
@@ -22,6 +22,7 @@ use tokio::sync::RwLock;
 
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
+use super::resolve::{Resolve, ResolveCondition};
 use super::{create_shard_dir, CollectionId};
 use crate::config::CollectionConfig;
 use crate::operations::types::{
@@ -118,6 +119,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
+    update_runtime: Handle,
 }
 
 impl ShardReplicaSet {
@@ -136,6 +138,23 @@ impl ShardReplicaSet {
 
     pub fn this_peer_id(&self) -> PeerId {
         self.replica_state.read().this_peer_id
+    }
+
+    pub async fn remote_peers(&self) -> Vec<PeerId> {
+        self.remotes
+            .read()
+            .await
+            .iter()
+            .map(|r| r.peer_id)
+            .collect()
+    }
+
+    pub async fn active_remote_shards(&self) -> Vec<PeerId> {
+        self.remote_peers()
+            .await
+            .into_iter()
+            .filter(|peer_id| self.peer_is_active(peer_id))
+            .collect()
     }
 
     fn init_remote_shards(
@@ -171,6 +190,7 @@ impl ShardReplicaSet {
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
+        update_runtime: Handle,
     ) -> CollectionResult<Self> {
         let shard_path = create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
@@ -179,6 +199,7 @@ impl ShardReplicaSet {
                 collection_id.clone(),
                 &shard_path,
                 shared_config.clone(),
+                update_runtime.clone(),
             )
             .await?;
             Some(Local(shard))
@@ -223,6 +244,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config: shared_config,
+            update_runtime,
         })
     }
 
@@ -325,6 +347,7 @@ impl ShardReplicaSet {
                         self.collection_id.clone(),
                         &self.shard_path,
                         self.collection_config.clone(),
+                        self.update_runtime.clone(),
                     )
                     .await?,
                 ))
@@ -346,6 +369,7 @@ impl ShardReplicaSet {
     ///
     /// WARN: This method intended to be used only on the initial start of the node.
     /// It does not implement any logic to recover from a failure. Will panic if there is a failure.
+    #[allow(clippy::too_many_arguments)]
     pub async fn load(
         shard_id: ShardId,
         collection_id: CollectionId,
@@ -354,6 +378,7 @@ impl ShardReplicaSet {
         channel_service: ChannelService,
         on_peer_failure: OnPeerFailure,
         this_peer_id: PeerId,
+        update_runtime: Handle,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -369,7 +394,7 @@ impl ShardReplicaSet {
                     rs.this_peer_id = this_peer_id;
                 })
                 .map_err(|e| {
-                    panic!("Failed to update replica state in {:?}: {}", shard_path, e);
+                    panic!("Failed to update replica state in {shard_path:?}: {e}");
                 })
                 .unwrap();
         }
@@ -387,10 +412,11 @@ impl ShardReplicaSet {
                 collection_id.clone(),
                 shard_path,
                 shared_config.clone(),
+                update_runtime.clone(),
             )
             .await
             .map_err(|e| {
-                panic!("Failed to load local shard {:?}: {}", shard_path, e);
+                panic!("Failed to load local shard {shard_path:?}: {e}");
             })
             .unwrap();
             Some(Local(shard))
@@ -411,6 +437,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config: shared_config,
+            update_runtime,
         }
     }
 
@@ -483,6 +510,7 @@ impl ShardReplicaSet {
                     self.collection_id.clone(),
                     &self.shard_path,
                     self.collection_config.clone(),
+                    self.update_runtime.clone(),
                 )
                 .await?;
                 match state {
@@ -518,7 +546,7 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
+    pub fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
         self.locally_disabled_peers.read().contains(peer_id)
     }
 
@@ -548,7 +576,7 @@ impl ShardReplicaSet {
     /// 3 - Fallbacks to all remaining shards if the optimisations fails.
     /// It does not report failing peer_ids to the consensus.
     pub async fn execute_read_operation<'a, F, Fut, Res>(
-        &'_ self,
+        &self,
         read_operation: F,
         local: &'a Option<Shard>,
         remotes: &'a [RemoteShard],
@@ -660,6 +688,113 @@ impl ShardReplicaSet {
         captured_error.expect("at this point `captured_error` must be defined by construction")
     }
 
+    pub async fn execute_and_resolve_read_operation<'a, F, Fut, Res>(
+        &self,
+        read_operation: F,
+        local: &'a Option<Shard>,
+        remotes: &'a [RemoteShard],
+        factor: usize,
+        condition: ResolveCondition,
+    ) -> CollectionResult<Res>
+    where
+        F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
+        Fut: Future<Output = CollectionResult<Res>>,
+        Res: Resolve,
+    {
+        let local_count = usize::from(local.is_some());
+        let remotes_count = remotes.len();
+
+        let active_local = local
+            .as_ref()
+            .filter(|_| self.peer_is_active(&self.this_peer_id()));
+
+        let active_remotes_iter = remotes
+            .iter()
+            .filter(|remote| self.peer_is_active(&remote.peer_id));
+
+        let active_local_count = usize::from(active_local.is_some());
+        let active_remotes_count = active_remotes_iter.clone().count();
+
+        let total_count = local_count + remotes_count;
+        let active_count = active_local_count + active_remotes_count;
+
+        let factor = factor.clamp(1, total_count);
+
+        if active_count < factor {
+            return Err(CollectionError::service_error(format!(
+                "The replica set for shard {} on peer {} does not have enough active replicas",
+                self.shard_id,
+                self.this_peer_id(),
+            )));
+        }
+
+        let mut active_remotes: Vec<_> = active_remotes_iter.collect();
+        active_remotes.shuffle(&mut rand::thread_rng());
+
+        let local_operations = active_local
+            .into_iter()
+            .map(|local| read_operation(local.get()).left_future());
+
+        let remote_operations = active_remotes
+            .into_iter()
+            .map(|remote| read_operation(remote).right_future());
+
+        let mut operations = local_operations.chain(remote_operations);
+
+        let mut pending_operations: FuturesUnordered<_> = operations
+            .by_ref()
+            .take(factor + usize::try_from(self.read_remote_replicas).unwrap() - 1)
+            .collect();
+
+        let mut responses = Vec::new();
+
+        while let Some(result) = pending_operations.next().await {
+            match result {
+                Ok(resp) => responses.push(resp),
+
+                Err(err) => {
+                    let is_transient = matches!(
+                        &err,
+                        CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. },
+                    );
+
+                    if is_transient {
+                        log::debug!("Read operation failed: {err}");
+                    } else {
+                        return Err(err);
+                    }
+                }
+            }
+
+            if responses.len() >= factor {
+                break;
+            }
+
+            let maybe_responses = responses.len() + pending_operations.len();
+
+            let schedule = factor.saturating_sub(maybe_responses);
+            pending_operations.extend(operations.by_ref().take(schedule));
+
+            let maybe_responses = responses.len() + pending_operations.len();
+
+            if maybe_responses < factor {
+                break;
+            }
+        }
+
+        if responses.len() >= factor {
+            if factor == 1 {
+                Ok(responses.into_iter().next().unwrap())
+            } else {
+                Ok(Res::resolve(responses, condition))
+            }
+        } else {
+            Err(CollectionError::service_error(
+                "Failed to complete read operation: too many replicas returned an error".into(),
+            ))
+        }
+    }
+
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         let read_local = self.local.read().await;
         if let Some(shard) = &*read_local {
@@ -678,11 +813,9 @@ impl ShardReplicaSet {
 
     pub(crate) async fn get_telemetry_data(&self) -> ReplicaSetTelemetry {
         let local_shard = self.local.read().await;
-        let local = if let Some(local_shard) = &*local_shard {
-            Some(local_shard.get_telemetry_data().await)
-        } else {
-            None
-        };
+        let local = local_shard
+            .as_ref()
+            .map(|local_shard| local_shard.get_telemetry_data());
         ReplicaSetTelemetry {
             id: self.shard_id,
             local,
@@ -699,7 +832,7 @@ impl ShardReplicaSet {
 
     /// Returns if local shard was recovered from path
     pub async fn restore_local_replica_from(&self, replica_path: &Path) -> CollectionResult<bool> {
-        if LocalShard::check_data(replica_path).await {
+        if LocalShard::check_data(replica_path) {
             let mut local = self.local.write().await;
             let removed_local = local.take();
 
@@ -714,6 +847,7 @@ impl ShardReplicaSet {
                 self.collection_id.clone(),
                 &self.shard_path,
                 self.collection_config.clone(),
+                self.update_runtime.clone(),
             )
             .await?;
 

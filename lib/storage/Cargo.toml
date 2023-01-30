@@ -14,13 +14,13 @@ env_logger = "0.10.0"
 num_cpus = "1.15"
 thiserror = "1.0"
 rand = "0.8.5"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "492d83258fb81abcab6d5173345be09abb2e16eb" }
-tokio = { version = "~1.23", features = ["rt-multi-thread"] }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "0519d97c1f806e2787abcfecf96d13d87556e8c0" }
+tokio = { version = "~1.24", features = ["rt-multi-thread"] }
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
 schemars = { version = "0.8.11", features = ["uuid1", "preserve_order"] }
 itertools = "0.10"
-async-trait = "0.1.60"
+async-trait = "0.1.63"
 log = "0.4"
 tonic = { version = "0.8.3", features = ["gzip"] }
 http = "0.2"
@@ -31,7 +31,7 @@ chrono = { version = "~0.4", features = ["serde"] }
 # Consensus related
 atomicwrites = { version = "0.3.1" }
 raft = { git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false }
-prost = { version = "0.11.5" } # version of prost used by raft
+prost = { version = "0.11.6" } # version of prost used by raft
 serde_cbor = { version = "0.11.2" }
 
 segment = { path = "../segment" }
@@ -42,3 +42,4 @@ anyhow = "1.0.68"
 uuid = "1.2.1"
 url = "2.3.1"
 reqwest = { version = "0.11", features = ["stream", "rustls-tls"] }
+openssl = { version = "0.10", features = ["vendored"] }

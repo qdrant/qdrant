@@ -75,6 +75,12 @@ pub struct Settings {
     pub service: ServiceConfig,
     #[serde(default)]
     pub cluster: ClusterConfig,
+    #[serde(default = "default_telemetry_disabled")]
+    pub telemetry_disabled: bool,
+}
+
+fn default_telemetry_disabled() -> bool {
+    false
 }
 
 fn default_cors() -> bool {
@@ -116,16 +122,17 @@ fn default_connection_pool_size() -> usize {
 
 impl Settings {
     #[allow(dead_code)]
-    pub fn new() -> Result<Self, ConfigError> {
+    pub fn new(config_path: Option<String>) -> Result<Self, ConfigError> {
+        let config_path = config_path.unwrap_or_else(|| "config/config".into());
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         let s = Config::builder()
             // Start off by merging in the "default" configuration file
-            .add_source(File::with_name("config/config"))
+            .add_source(File::with_name(&config_path))
             // Add in the current environment file
             // Default to 'development' env
             // Note that this file is _optional_
-            .add_source(File::with_name(&format!("config/{}", env)).required(false))
+            .add_source(File::with_name(&format!("config/{env}")).required(false))
             // Add in a local configuration file
             // This file shouldn't be checked in to git
             .add_source(File::with_name("config/local").required(false))
@@ -162,6 +169,6 @@ mod tests {
     fn test_read_default_config() {
         let key = "RUN_MODE";
         env::set_var(key, "TEST");
-        Settings::new().unwrap();
+        Settings::new(None).unwrap();
     }
 }

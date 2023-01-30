@@ -50,8 +50,8 @@ pub enum ExtendedPointId {
 impl std::fmt::Display for ExtendedPointId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExtendedPointId::NumId(idx) => write!(f, "{}", idx),
-            ExtendedPointId::Uuid(uuid) => write!(f, "{}", uuid),
+            ExtendedPointId::NumId(idx) => write!(f, "{idx}"),
+            ExtendedPointId::Uuid(uuid) => write!(f, "{uuid}"),
         }
     }
 }
@@ -468,7 +468,7 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Payload(pub Map<String, Value>);
 
 impl Payload {
@@ -525,7 +525,7 @@ impl From<Value> for Payload {
     fn from(value: Value) -> Self {
         match value {
             Value::Object(map) => Payload(map),
-            _ => panic!("cannot convert from {:?}", value),
+            _ => panic!("cannot convert from {value:?}"),
         }
     }
 }
@@ -654,8 +654,7 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
             ),
             (data_type, Some(_)) => Err(format!(
-                "Payload field with type {:?} has unexpected params",
-                data_type
+                "Payload field with type {data_type:?} has unexpected params"
             )),
             (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
         }
@@ -1218,8 +1217,8 @@ mod tests {
         let payload: Payload = json!({"payload_key":"payload_value"}).into();
         let raw = rmp_serde::to_vec(&payload).unwrap();
         let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
-        eprintln!("payload = {:#?}", payload);
-        eprintln!("de_record = {:#?}", de_record);
+        eprintln!("payload = {payload:#?}");
+        eprintln!("de_record = {de_record:#?}");
     }
 
     #[test]
@@ -1233,7 +1232,7 @@ mod tests {
             should: None,
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
-        println!("{}", json)
+        println!("{json}")
     }
 
     #[test]
@@ -1330,7 +1329,7 @@ mod tests {
         "#;
 
         let filter: Filter = serde_json::from_str(query1).unwrap();
-        println!("{:?}", filter);
+        println!("{filter:?}");
         let must = filter.must.unwrap();
         let _must_not = filter.must_not;
         assert_eq!(must.len(), 2);
@@ -1413,15 +1412,15 @@ mod tests {
     fn test_payload_parsing() {
         let ft = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
         let ft_json = serde_json::to_string(&ft).unwrap();
-        eprintln!("ft_json = {:?}", ft_json);
+        eprintln!("ft_json = {ft_json:?}");
 
         let ft = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(Default::default()));
         let ft_json = serde_json::to_string(&ft).unwrap();
-        eprintln!("ft_json = {:?}", ft_json);
+        eprintln!("ft_json = {ft_json:?}");
 
         let query = r#""keyword""#;
         let field_type: PayloadSchemaType = serde_json::from_str(query).unwrap();
-        eprintln!("field_type = {:?}", field_type);
+        eprintln!("field_type = {field_type:?}");
     }
 }
 

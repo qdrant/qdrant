@@ -146,12 +146,10 @@ impl ShardOperation for LocalShard {
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
         let total_count = if request.exact {
-            let all_points = self.read_filtered(request.filter.as_ref()).await?;
+            let all_points = self.read_filtered(request.filter.as_ref())?;
             all_points.len()
         } else {
-            self.estimate_cardinality(request.filter.as_ref())
-                .await?
-                .exp
+            self.estimate_cardinality(request.filter.as_ref())?.exp
         };
         Ok(CountResult { count: total_count })
     }

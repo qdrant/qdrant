@@ -344,6 +344,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         );
 
         let pool = rayon::ThreadPoolBuilder::new()
+            .thread_name(|idx| format!("hnsw-build-{idx}"))
             .num_threads(self.config.max_rayon_threads())
             .build()?;
 
@@ -450,6 +451,17 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
             filtered_exact: tm.exact_filtered.lock().get_statistics(),
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(),
+        }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        if self.graph.is_some() {
+            vec![
+                GraphLayers::<TGraphLinks>::get_path(&self.path),
+                GraphLayers::<TGraphLinks>::get_links_path(&self.path),
+            ]
+        } else {
+            vec![]
         }
     }
 }

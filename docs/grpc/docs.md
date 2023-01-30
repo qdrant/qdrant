@@ -4,6 +4,7 @@
 ## Table of Contents
 
 - [collections.proto](#collections-proto)
+    - [AliasDescription](#qdrant-AliasDescription)
     - [AliasOperations](#qdrant-AliasOperations)
     - [ChangeAliases](#qdrant-ChangeAliases)
     - [CollectionConfig](#qdrant-CollectionConfig)
@@ -20,6 +21,9 @@
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
     - [HnswConfigDiff](#qdrant-HnswConfigDiff)
+    - [ListAliasesRequest](#qdrant-ListAliasesRequest)
+    - [ListAliasesResponse](#qdrant-ListAliasesResponse)
+    - [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest)
     - [ListCollectionsRequest](#qdrant-ListCollectionsRequest)
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
@@ -109,9 +113,11 @@
     - [VectorsSelector](#qdrant-VectorsSelector)
     - [WithPayloadSelector](#qdrant-WithPayloadSelector)
     - [WithVectorsSelector](#qdrant-WithVectorsSelector)
+    - [WriteOrdering](#qdrant-WriteOrdering)
   
     - [FieldType](#qdrant-FieldType)
     - [UpdateStatus](#qdrant-UpdateStatus)
+    - [WriteOrderingType](#qdrant-WriteOrderingType)
   
 - [points_service.proto](#points_service-proto)
     - [Points](#qdrant-Points)
@@ -126,6 +132,9 @@
     - [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest)
     - [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest)
     - [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse)
+    - [DeleteFullSnapshotRequest](#qdrant-DeleteFullSnapshotRequest)
+    - [DeleteSnapshotRequest](#qdrant-DeleteSnapshotRequest)
+    - [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse)
     - [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest)
     - [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest)
     - [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse)
@@ -141,6 +150,22 @@
 <p align="right"><a href="#top">Top</a></p>
 
 ## collections.proto
+
+
+
+<a name="qdrant-AliasDescription"></a>
+
+### AliasDescription
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| alias_name | [string](#string) |  | Name of the alias |
+| collection_name | [string](#string) |  | Name of the collection |
+
+
+
 
 
 
@@ -333,6 +358,7 @@
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain, default = 1 |
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
+| init_from_collection | [string](#string) | optional | Specify name of the other collection to copy data from |
 
 
 
@@ -415,6 +441,47 @@
 | max_indexing_threads | [uint64](#uint64) | optional | Number of parallel threads used for background index building. If 0 - auto selection. |
 | on_disk | [bool](#bool) | optional | Store HNSW index on disk. If set to false, index will be stored in RAM. |
 | payload_m | [uint64](#uint64) | optional | Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used. |
+
+
+
+
+
+
+<a name="qdrant-ListAliasesRequest"></a>
+
+### ListAliasesRequest
+
+
+
+
+
+
+
+<a name="qdrant-ListAliasesResponse"></a>
+
+### ListAliasesResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| aliases | [AliasDescription](#qdrant-AliasDescription) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-ListCollectionAliasesRequest"></a>
+
+### ListCollectionAliasesRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
 
 
 
@@ -747,6 +814,8 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Update | [UpdateCollection](#qdrant-UpdateCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update parameters of the existing collection |
 | Delete | [DeleteCollection](#qdrant-DeleteCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Drop collection and all associated data |
 | UpdateAliases | [ChangeAliases](#qdrant-ChangeAliases) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update Aliases of the existing collection |
+| ListCollectionAliases | [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for a collection |
+| ListAliases | [ListAliasesRequest](#qdrant-ListAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for all existing collections |
 
  
 
@@ -896,6 +965,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -981,6 +1051,7 @@ The JSON representation for `Value` is JSON value.
 | field_name | [string](#string) |  | Field name to index |
 | field_type | [FieldType](#qdrant-FieldType) | optional | Field type. |
 | field_index_params | [PayloadIndexParams](#qdrant-PayloadIndexParams) | optional | Payload index params. |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -998,6 +1069,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | field_name | [string](#string) |  | Field name to delete |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1017,6 +1089,7 @@ The JSON representation for `Value` is JSON value.
 | keys | [string](#string) | repeated | List of keys to delete |
 | points | [PointId](#qdrant-PointId) | repeated | Affected points, deprecated |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1034,6 +1107,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1678,6 +1752,7 @@ The JSON representation for `Value` is JSON value.
 | payload | [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry) | repeated | New payload values |
 | points | [PointId](#qdrant-PointId) | repeated | List of point to modify, deprecated |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1727,6 +1802,7 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
 
@@ -1829,6 +1905,21 @@ The JSON representation for `Value` is JSON value.
 
 
 
+
+<a name="qdrant-WriteOrdering"></a>
+
+### WriteOrdering
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| type | [WriteOrderingType](#qdrant-WriteOrderingType) |  | Write ordering guarantees |
+
+
+
+
+
  
 
 
@@ -1857,6 +1948,19 @@ The JSON representation for `Value` is JSON value.
 | UnknownUpdateStatus | 0 |  |
 | Acknowledged | 1 | Update is received, but not processed yet |
 | Completed | 2 | Update is applied and ready for search |
+
+
+
+<a name="qdrant-WriteOrderingType"></a>
+
+### WriteOrderingType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Weak | 0 | Write operations may be reordered, works faster, default |
+| Medium | 1 | Write operations go through dynamically selected leader, may be inconsistent for a short period of time in case of leader change |
+| Strong | 2 | Write operations go through the permanent leader, consistent, but may be unavailable if leader is down |
 
 
  
@@ -2007,6 +2111,52 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-DeleteFullSnapshotRequest"></a>
+
+### DeleteFullSnapshotRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| snapshot_name | [string](#string) |  | Name of the full snapshot |
+
+
+
+
+
+
+<a name="qdrant-DeleteSnapshotRequest"></a>
+
+### DeleteSnapshotRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| snapshot_name | [string](#string) |  | Name of the collection snapshot |
+
+
+
+
+
+
+<a name="qdrant-DeleteSnapshotResponse"></a>
+
+### DeleteSnapshotResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
 <a name="qdrant-ListFullSnapshotsRequest"></a>
 
 ### ListFullSnapshotsRequest
@@ -2080,8 +2230,10 @@ The JSON representation for `Value` is JSON value.
 | ----------- | ------------ | ------------- | ------------|
 | Create | [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create collection snapshot |
 | List | [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List collection snapshots |
+| Delete | [DeleteSnapshotRequest](#qdrant-DeleteSnapshotRequest) | [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse) | Delete collection snapshots |
 | CreateFull | [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create full storage snapshot |
 | ListFull | [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List full storage snapshots |
+| DeleteFull | [DeleteFullSnapshotRequest](#qdrant-DeleteFullSnapshotRequest) | [DeleteSnapshotResponse](#qdrant-DeleteSnapshotResponse) | List full storage snapshots |
 
  
 

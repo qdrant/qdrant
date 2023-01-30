@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::thread::JoinHandle;
@@ -20,8 +19,9 @@ use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::PeerAddressById;
-use tokio::runtime::Runtime;
+use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::sleep;
 use tonic::transport::Uri;
 
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
@@ -29,6 +29,9 @@ use crate::settings::ConsensusConfig;
 use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
+
+const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
+const RECOVERY_MAX_RETRY_COUNT: usize = 3;
 
 pub enum Message {
     FromClient(ConsensusOperations),
@@ -43,7 +46,7 @@ pub struct Consensus {
     /// Receives proposals from peers and client for applying in consensus
     receiver: Receiver<Message>,
     /// Runtime for async message sending
-    runtime: Runtime,
+    runtime: Handle,
     /// Uri to some other known peer, used to join the consensus
     /// ToDo: Make if many
     bootstrap_uri: Option<Uri>,
@@ -66,6 +69,7 @@ impl Consensus {
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
+        runtime: Handle,
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let (mut consensus, message_sender) = Self::new(
             logger,
@@ -75,6 +79,7 @@ impl Consensus {
             p2p_port,
             config,
             channel_service,
+            runtime.clone(),
         )?;
 
         let state_ref_clone = state_ref.clone();
@@ -86,6 +91,7 @@ impl Consensus {
                     state_ref_clone.on_consensus_thread_err(err);
                 } else {
                     log::info!("Consensus stopped");
+                    state_ref_clone.on_consensus_stopped();
                     state_ref_clone.on_consensus_stopped();
                 }
             })?;
@@ -115,6 +121,7 @@ impl Consensus {
                     p2p_host,
                     p2p_port,
                     message_sender,
+                    runtime,
                 )
             })
             .unwrap();
@@ -132,6 +139,7 @@ impl Consensus {
         p2p_port: u16,
         config: ConsensusConfig,
         channel_service: ChannelService,
+        runtime: Handle,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
@@ -151,14 +159,6 @@ impl Consensus {
             log::warn!("With current tick period of {}ms, operation commit time might exceed default wait timeout: {}ms",
                  config.tick_period_ms, op_wait.as_millis())
         }
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .thread_name_fn(|| {
-                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("consensus-tokio-rt-{}", id)
-            })
-            .enable_all()
-            .build()?;
         // bounded channel for backpressure
         let (sender, receiver) = tokio::sync::mpsc::channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
@@ -171,7 +171,7 @@ impl Consensus {
                 uri,
                 p2p_port,
                 &config,
-                &runtime,
+                runtime.clone(),
                 leader_established_in_ms,
             )
             .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {}", err))?;
@@ -214,7 +214,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
-        runtime: &Runtime,
+        runtime: Handle,
         leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
@@ -296,26 +296,44 @@ impl Consensus {
         };
 
         if do_recover {
-            for (peer_id, peer_uri) in peer_to_uri {
-                let res = Self::add_peer_to_known_for(
-                    this_peer_id,
-                    peer_uri.clone(),
-                    uri.clone(),
-                    p2p_port,
-                    config,
-                )
-                .await;
-                if res.is_err() {
-                    log::warn!(
-                        "Failed to recover from peer with id {} at {} with error {:?}, trying others",
-                        peer_id,
-                        peer_uri,
-                        res
-                    );
-                } else {
-                    return Ok(());
+            let mut tries = RECOVERY_MAX_RETRY_COUNT;
+            while tries > 0 {
+                // Try to inform any peer about the change of address
+                for (peer_id, peer_uri) in &peer_to_uri {
+                    let res = Self::add_peer_to_known_for(
+                        this_peer_id,
+                        peer_uri.clone(),
+                        uri.clone(),
+                        p2p_port,
+                        config,
+                    )
+                    .await;
+                    if res.is_err() {
+                        log::warn!(
+                            "Failed to recover from peer with id {} at {} with error {:?}, trying others",
+                            peer_id,
+                            peer_uri,
+                            res
+                        );
+                    } else {
+                        log::debug!(
+                            "Successfully recovered from peer with id {} at {}",
+                            peer_id,
+                            peer_uri
+                        );
+                        return Ok(());
+                    }
                 }
+                tries -= 1;
+                log::warn!(
+                    "Retrying recovering from known peers (retry {})",
+                    RECOVERY_MAX_RETRY_COUNT - tries
+                );
+                let exp_timeout =
+                    RECOVERY_RETRY_TIMEOUT * (RECOVERY_MAX_RETRY_COUNT - tries) as u32;
+                sleep(exp_timeout).await;
             }
+            return Err(anyhow::anyhow!("Failed to recover from any known peers"));
         }
 
         Ok(())
@@ -834,25 +852,35 @@ mod tests {
     use tempfile::Builder;
 
     use super::Consensus;
+    use crate::common::helpers::create_general_purpose_runtime;
     use crate::settings::ConsensusConfig;
 
     #[test]
     fn collection_creation_passes_consensus() {
         // Given
         let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
-        let mut settings = crate::Settings::new().expect("Can't read config.");
+        let mut settings = crate::Settings::new(None).expect("Can't read config.");
         settings.storage.storage_path = storage_dir.path().to_str().unwrap().to_string();
         std::env::set_var("RUST_LOG", log::Level::Debug.as_str());
         env_logger::init();
-        let runtime = crate::create_search_runtime(settings.storage.performance.max_search_threads)
-            .expect("Can't create runtime.");
+        let search_runtime =
+            crate::create_search_runtime(settings.storage.performance.max_search_threads)
+                .expect("Can't create search runtime.");
+        let update_runtime =
+            crate::create_update_runtime(settings.storage.performance.max_search_threads)
+                .expect("Can't create update runtime.");
+        let general_runtime =
+            create_general_purpose_runtime().expect("Can't create general purpose runtime.");
+        let handle = general_runtime.handle().clone();
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =
             Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
-            runtime,
+            search_runtime,
+            update_runtime,
+            general_runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
@@ -876,6 +904,7 @@ mod tests {
             6335,
             ConsensusConfig::default(),
             ChannelService::default(),
+            handle.clone(),
         )
         .unwrap();
 
@@ -902,8 +931,7 @@ mod tests {
         // When
 
         // New runtime is used as timers need to be enabled.
-        tokio::runtime::Runtime::new()
-            .unwrap()
+        handle
             .block_on(
                 dispatcher.submit_collection_meta_op(
                     CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
@@ -921,6 +949,7 @@ mod tests {
                             on_disk_payload: None,
                             replication_factor: None,
                             write_consistency_factor: None,
+                            init_from: None,
                             quantization_config: None,
                         },
                     )),

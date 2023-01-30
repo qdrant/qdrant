@@ -1,6 +1,5 @@
 use core::cmp;
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -85,7 +84,7 @@ impl SegmentBuilder {
 
                 if vector_storages.len() != other_vector_storages.len() {
                     return Err(OperationError::service_error(
-                        &format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
+                        format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
                     ));
                 }
 
@@ -94,9 +93,8 @@ impl SegmentBuilder {
                     check_process_stopped(stopped)?;
                     let other_vector_storage = other_vector_storages.get(vector_name);
                     if other_vector_storage.is_none() {
-                        return Err(OperationError::service_error(&format!(
-                            "Cannot update from other segment because if missing vector name {}",
-                            vector_name
+                        return Err(OperationError::service_error(format!(
+                            "Cannot update from other segment because if missing vector name {vector_name}"
                         )));
                     }
                     let other_vector_storage = other_vector_storage.unwrap();
@@ -199,11 +197,11 @@ impl SegmentBuilder {
         }
 
         // Move fully constructed segment into collection directory and load back to RAM
-        fs::rename(&self.temp_path, &self.destination_path)
+        std::fs::rename(&self.temp_path, &self.destination_path)
             .describe("Moving segment data after optimization")?;
 
         let loaded_segment = load_segment(&self.destination_path)?.ok_or_else(|| {
-            OperationError::service_error(&format!(
+            OperationError::service_error(format!(
                 "Segment loading error: {}",
                 self.destination_path.display()
             ))

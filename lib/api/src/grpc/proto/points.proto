@@ -5,6 +5,17 @@ package qdrant;
 import "json_with_int.proto";
 import "collections.proto";
 
+
+enum WriteOrderingType {
+  Weak = 0; // Write operations may be reordered, works faster, default
+  Medium = 1; // Write operations go through dynamically selected leader, may be inconsistent for a short period of time in case of leader change
+  Strong = 2; // Write operations go through the permanent leader, consistent, but may be unavailable if leader is down
+}
+
+message WriteOrdering {
+  WriteOrderingType type = 1; // Write ordering guarantees
+}
+
 // ---------------------------------------------
 // ------------- Point Id Requests -------------
 // ---------------------------------------------
@@ -28,12 +39,14 @@ message UpsertPoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   repeated PointStruct points = 3;
+  optional WriteOrdering ordering = 4; // Write ordering guarantees
 }
 
 message DeletePoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   PointsSelector points = 3; // Affected points
+  optional WriteOrdering ordering = 4; // Write ordering guarantees
 }
 
 message GetPoints {
@@ -50,6 +63,7 @@ message SetPayloadPoints {
   map<string, Value> payload = 3; // New payload values
   repeated PointId points = 4; // List of point to modify, deprecated
   optional PointsSelector points_selector = 5; // Affected points
+  optional WriteOrdering ordering = 6; // Write ordering guarantees
 }
 
 message DeletePayloadPoints {
@@ -58,12 +72,14 @@ message DeletePayloadPoints {
   repeated string keys = 3; // List of keys to delete
   repeated PointId points = 4; // Affected points, deprecated
   optional PointsSelector points_selector = 5; // Affected points
+  optional WriteOrdering ordering = 6; // Write ordering guarantees
 }
 
 message ClearPayloadPoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   PointsSelector points = 3; // Affected points
+  optional WriteOrdering ordering = 4; // Write ordering guarantees
 }
 
 enum FieldType {
@@ -80,12 +96,14 @@ message CreateFieldIndexCollection {
   string field_name = 3; // Field name to index
   optional FieldType field_type = 4; // Field type.
   optional PayloadIndexParams field_index_params = 5; // Payload index params.
+  optional WriteOrdering ordering = 6; // Write ordering guarantees
 }
 
 message DeleteFieldIndexCollection {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   string field_name = 3; // Field name to delete
+  optional WriteOrdering ordering = 4; // Write ordering guarantees
 }
 
 message PayloadIncludeSelector {

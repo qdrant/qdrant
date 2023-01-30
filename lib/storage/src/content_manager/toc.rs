@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
@@ -14,9 +14,9 @@ use collection::config::{
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
+    AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
     RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    UpdateResult,
+    UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -47,6 +47,7 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
+use crate::content_manager::data_transfer::{populate_collection, transfer_indexes};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
@@ -65,7 +66,8 @@ pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     storage_config: StorageConfig,
     search_runtime: Runtime,
-    collection_management_runtime: Runtime,
+    update_runtime: Runtime,
+    general_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
@@ -80,6 +82,8 @@ impl TableOfContent {
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
+        update_runtime: Runtime,
+        general_runtime: Runtime,
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
@@ -87,16 +91,6 @@ impl TableOfContent {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
-        let collection_management_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_time()
-            .enable_io()
-            .thread_name_fn(|| {
-                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("toc-{}", id)
-            })
-            .build()
-            .unwrap();
         create_dir_all(&collections_path).expect("Can't create Collections directory");
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
@@ -123,13 +117,10 @@ impl TableOfContent {
             let collection_snapshots_path =
                 Self::collection_snapshots_path(&snapshots_path, &collection_name);
             create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
-                panic!(
-                    "Can't create a directory for snapshot of {}: {}",
-                    collection_name, e
-                )
+                panic!("Can't create a directory for snapshot of {collection_name}: {e}")
             });
             log::info!("Loading collection: {}", collection_name);
-            let collection = collection_management_runtime.block_on(Collection::load(
+            let collection = general_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 this_peer_id,
                 &collection_path,
@@ -143,6 +134,8 @@ impl TableOfContent {
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
                 ),
+                Some(search_runtime.handle().clone()),
+                Some(update_runtime.handle().clone()),
             ));
 
             collections.insert(collection_name, collection);
@@ -154,8 +147,9 @@ impl TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
             search_runtime,
+            update_runtime,
+            general_runtime,
             alias_persistence: RwLock::new(alias_persistence),
-            collection_management_runtime,
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
@@ -196,8 +190,7 @@ impl TableOfContent {
             .await
             .map_err(|err| {
                 StorageError::service_error(&format!(
-                    "Can't create directory for snapshots {}. Error: {}",
-                    collection_name, err
+                    "Can't create directory for snapshots {collection_name}. Error: {err}"
                 ))
             })?;
 
@@ -209,8 +202,7 @@ impl TableOfContent {
 
         tokio::fs::create_dir_all(&path).await.map_err(|err| {
             StorageError::service_error(&format!(
-                "Can't create directory for collection {}. Error: {}",
-                collection_name, err
+                "Can't create directory for collection {collection_name}. Error: {err}"
             ))
         })?;
 
@@ -258,6 +250,7 @@ impl TableOfContent {
             optimizers_config: optimizers_config_diff,
             replication_factor,
             write_consistency_factor,
+            init_from,
             quantization_config,
         } = operation;
 
@@ -266,6 +259,11 @@ impl TableOfContent {
             .await
             .validate_collection_not_exists(collection_name)
             .await?;
+
+        if let Some(init_from_) = &init_from {
+            self.check_collections_compatibility(&vectors, &init_from_.collection)
+                .await?;
+        }
 
         let collection_path = self.create_collection_path(collection_name).await?;
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
@@ -339,6 +337,8 @@ impl TableOfContent {
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
             ),
+            Some(self.search_runtime.handle().clone()),
+            Some(self.update_runtime.handle().clone()),
         )
         .await?;
 
@@ -357,7 +357,65 @@ impl TableOfContent {
             self.on_peer_created(collection_name.to_string(), self.this_peer_id, shard_id)
                 .await?;
         }
+
+        if let Some(init_from) = init_from {
+            self.run_data_initialization(init_from.collection, collection_name.to_string())
+                .await;
+        }
+
         Ok(true)
+    }
+
+    async fn check_collections_compatibility(
+        &self,
+        vectors: &VectorsConfig,
+        source_collection: &CollectionId,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection(source_collection).await?;
+        let collection_vectors_schema = collection.state().await.config.params.vectors;
+        if &collection_vectors_schema != vectors {
+            return Err(StorageError::BadInput {
+                description: format!("Cannot take data from collection with vectors schema {collection_vectors_schema:?} to collection with vectors schema {vectors:?}")
+            });
+        }
+        Ok(())
+    }
+
+    pub async fn run_data_initialization(
+        &self,
+        from_collection: CollectionId,
+        to_collection: CollectionId,
+    ) {
+        let collections = self.collections.clone();
+        let this_peer_id = self.this_peer_id;
+        self.general_runtime.spawn(async move {
+            // Create indexes
+            match transfer_indexes(
+                collections.clone(),
+                &from_collection,
+                &to_collection,
+                this_peer_id,
+            )
+            .await
+            {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Initialization failed: {}", err)
+                }
+            }
+
+            // Transfer data
+            match populate_collection(collections, &from_collection, &to_collection, this_peer_id)
+                .await
+            {
+                Ok(_) => log::info!(
+                    "Collection {} initialized with data from {}",
+                    to_collection,
+                    from_collection
+                ),
+                Err(err) => log::error!("Initialization failed: {}", err),
+            }
+        });
     }
 
     async fn on_peer_created(
@@ -425,6 +483,25 @@ impl TableOfContent {
                 if let Err(send_error) = proposal_sender.send(operation) {
                     log::error!(
                         "Can't send proposal to abort transfer of shard {} of collection {}. Error: {}",
+                        transfer.shard_id,
+                        collection_name,
+                        send_error
+                    );
+                }
+            }
+        })
+    }
+
+    fn on_transfer_success_callback(
+        proposal_sender: Option<OperationSender>,
+    ) -> collection::collection::OnTransferSuccess {
+        Arc::new(move |transfer, collection_name| {
+            if let Some(proposal_sender) = &proposal_sender {
+                let operation =
+                    ConsensusOperations::finish_transfer(collection_name.clone(), transfer.clone());
+                if let Err(send_error) = proposal_sender.send(operation) {
+                    log::error!(
+                        "Can't send proposal to complete transfer of shard {} of collection {}. Error: {}",
                         transfer.shard_id,
                         collection_name,
                         send_error
@@ -647,7 +724,7 @@ impl TableOfContent {
         &self,
         operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
-        self.collection_management_runtime
+        self.general_runtime
             .block_on(self.perform_collection_meta_op(operation))
     }
 
@@ -868,11 +945,9 @@ impl TableOfContent {
         request: RecommendRequest,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        recommend_by(request, self.search_runtime.handle(), &collection, |name| {
-            self.get_collection_opt(name)
-        })
-        .await
-        .map_err(|err| err.into())
+        recommend_by(request, &collection, |name| self.get_collection_opt(name))
+            .await
+            .map_err(|err| err.into())
     }
 
     /// Recommend points in a batchig fashion using positive and negative example from the request
@@ -891,11 +966,9 @@ impl TableOfContent {
         request: RecommendRequestBatch,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        recommend_batch_by(request, self.search_runtime.handle(), &collection, |name| {
-            self.get_collection_opt(name)
-        })
-        .await
-        .map_err(|err| err.into())
+        recommend_batch_by(request, &collection, |name| self.get_collection_opt(name))
+            .await
+            .map_err(|err| err.into())
     }
 
     /// Search for the closest points using vector similarity with given restrictions defined
@@ -917,7 +990,7 @@ impl TableOfContent {
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search(request, self.search_runtime.handle(), shard_selection)
+            .search(request, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -941,7 +1014,7 @@ impl TableOfContent {
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search_batch(request, self.search_runtime.handle(), shard_selection)
+            .search_batch(request, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -1002,7 +1075,7 @@ impl TableOfContent {
 
     /// List of all collections
     pub fn all_collections_sync(&self) -> Vec<String> {
-        self.collection_management_runtime
+        self.general_runtime
             .block_on(self.collections.read())
             .keys()
             .cloned()
@@ -1020,6 +1093,22 @@ impl TableOfContent {
             .await
             .collection_aliases(collection_name);
         Ok(result)
+    }
+
+    /// List of all aliases across all collections
+    pub async fn list_aliases(&self) -> Result<Vec<AliasDescription>, StorageError> {
+        let all_collections = self.all_collections().await;
+        let mut aliases: Vec<AliasDescription> = Default::default();
+        for collection_name in &all_collections {
+            for alias in self.collection_aliases(collection_name).await? {
+                aliases.push(AliasDescription {
+                    alias_name: alias.to_string(),
+                    collection_name: collection_name.to_string(),
+                });
+            }
+        }
+
+        Ok(aliases)
     }
 
     /// Paginate over all stored points with given filtering conditions
@@ -1079,8 +1168,7 @@ impl TableOfContent {
     }
 
     pub fn collections_snapshot_sync(&self) -> consensus_manager::CollectionsSnapshot {
-        self.collection_management_runtime
-            .block_on(self.collections_snapshot())
+        self.general_runtime.block_on(self.collections_snapshot())
     }
 
     pub async fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
@@ -1098,7 +1186,7 @@ impl TableOfContent {
         &self,
         data: consensus_manager::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
-        self.collection_management_runtime.block_on(async {
+        self.general_runtime.block_on(async {
             let mut collections = self.collections.write().await;
             for (id, state) in &data.collections {
                 let collection = collections.get(id);
@@ -1152,6 +1240,8 @@ impl TableOfContent {
                                 self.consensus_proposal_sender.clone(),
                                 id.to_string(),
                             ),
+                            Some(self.search_runtime.handle().clone()),
+                            Some(self.update_runtime.handle().clone()),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;
@@ -1295,7 +1385,7 @@ impl TableOfContent {
     }
 
     pub fn remove_shards_at_peer_sync(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.collection_management_runtime
+        self.general_runtime
             .block_on(self.remove_shards_at_peer(peer_id))
     }
 }
@@ -1320,7 +1410,7 @@ impl CollectionContainer for TableOfContent {
     }
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.collection_management_runtime.block_on(async {
+        self.general_runtime.block_on(async {
             // Validation:
             // 1. Check that we are not removing some unique shards (removed)
 
@@ -1351,13 +1441,18 @@ impl CollectionContainer for TableOfContent {
     }
 
     fn sync_local_state(&self) -> Result<(), StorageError> {
-        self.collection_management_runtime.block_on(async {
+        self.general_runtime.block_on(async {
             let collections = self.collections.read().await;
             let transfer_failure_callback =
                 Self::on_transfer_failure_callback(self.consensus_proposal_sender.clone());
+            let transfer_success_callback =
+                Self::on_transfer_success_callback(self.consensus_proposal_sender.clone());
             for collection in collections.values() {
                 collection
-                    .sync_local_state(transfer_failure_callback.clone())
+                    .sync_local_state(
+                        transfer_failure_callback.clone(),
+                        transfer_success_callback.clone(),
+                    )
                     .await?;
             }
             Ok(())
@@ -1368,7 +1463,7 @@ impl CollectionContainer for TableOfContent {
 // `TableOfContent` should not be dropped from async context.
 impl Drop for TableOfContent {
     fn drop(&mut self) {
-        self.collection_management_runtime.block_on(async {
+        self.general_runtime.block_on(async {
             for (_, mut collection) in self.collections.write().await.drain() {
                 collection.before_drop().await;
             }

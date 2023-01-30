@@ -3,8 +3,9 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
-    ChangeAliases, CollectionOperationResponse, CreateCollection, DeleteCollection,
-    GetCollectionInfoRequest, GetCollectionInfoResponse, ListCollectionsRequest,
+    AliasDescription, ChangeAliases, CollectionOperationResponse, CreateCollection,
+    DeleteCollection, GetCollectionInfoRequest, GetCollectionInfoResponse, ListAliasesRequest,
+    ListAliasesResponse, ListCollectionAliasesRequest, ListCollectionsRequest,
     ListCollectionsResponse, UpdateCollection,
 };
 use storage::content_manager::conversions::error_to_status;
@@ -44,6 +45,53 @@ impl CollectionsService {
             .map_err(error_to_status)?;
 
         let response = CollectionOperationResponse::from((timing, result));
+        Ok(Response::new(response))
+    }
+
+    async fn list_aliases(
+        &self,
+        _request: Request<ListAliasesRequest>,
+    ) -> Result<Response<ListAliasesResponse>, Status> {
+        let timing = Instant::now();
+        let aliases = self
+            .dispatcher
+            .toc()
+            .list_aliases()
+            .await
+            .map(|aliases| aliases.into_iter().map(|alias| alias.into()).collect())
+            .map_err(error_to_status)?;
+        let response = ListAliasesResponse {
+            aliases,
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn list_collection_aliases(
+        &self,
+        request: Request<ListCollectionAliasesRequest>,
+    ) -> Result<Response<ListAliasesResponse>, Status> {
+        let timing = Instant::now();
+        let ListCollectionAliasesRequest { collection_name } = request.into_inner();
+        let aliases = self
+            .dispatcher
+            .toc()
+            .collection_aliases(&collection_name)
+            .await
+            .map(|aliases| {
+                aliases
+                    .into_iter()
+                    .map(|alias| AliasDescription {
+                        alias_name: alias,
+                        collection_name: collection_name.clone(),
+                    })
+                    .collect()
+            })
+            .map_err(error_to_status)?;
+        let response = ListAliasesResponse {
+            aliases,
+            time: timing.elapsed().as_secs_f64(),
+        };
         Ok(Response::new(response))
     }
 }
@@ -94,6 +142,20 @@ impl Collections for CollectionsService {
         request: Request<ChangeAliases>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         self.perform_operation(request).await
+    }
+
+    async fn list_collection_aliases(
+        &self,
+        request: Request<ListCollectionAliasesRequest>,
+    ) -> Result<Response<ListAliasesResponse>, Status> {
+        self.list_collection_aliases(request).await
+    }
+
+    async fn list_aliases(
+        &self,
+        request: Request<ListAliasesRequest>,
+    ) -> Result<Response<ListAliasesResponse>, Status> {
+        self.list_aliases(request).await
     }
 }
 

@@ -34,16 +34,16 @@ itertools = "0.10"
 anyhow = "1.0.68"
 futures = "0.3.25"
 futures-util = "0.3.24"
-clap = { version = "4.0.30", features = ["derive"] }
+clap = { version = "4.1.4", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.2", features = ["v4", "serde"] }
 sys-info = "0.9.1"
 
 config = "~0.13.3"
 
-tokio = { version = "~1.23", features = ["full"] }
+tokio = { version = "~1.24", features = ["full"] }
 
-actix-web = { version = "4.2.1", optional = true }
+actix-web = { version = "4.3.0", optional = true }
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
 tonic = { version = "0.8.3", features = ["gzip"] }
@@ -51,12 +51,14 @@ tower = "0.4.13"
 tower-layer = "0.3.2"
 num-traits = "0.2.15"
 tar = "0.4.38"
+reqwest = { version = "0.11", features = ["stream", "rustls-tls", "blocking"] }
+openssl = { version = "0.10", features = ["vendored"] }
 
 # Consensus related crates
 raft = { git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false }
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
-prost = "0.11.5"
+prost = "0.11.6"
 raft-proto = {  git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false}
 
 segment = { path = "lib/segment" }
@@ -75,3 +77,4 @@ bench = false
 
 [workspace]
 members = ["lib/*"]
+exclude = ["benches/search-points"]

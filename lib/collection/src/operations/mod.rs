@@ -1,6 +1,7 @@
 pub mod cluster_ops;
 pub mod config_diff;
-mod conversions;
+pub mod consistency_params;
+pub mod conversions;
 pub mod operation_effect;
 pub mod payload_ops;
 pub mod point_ops;
@@ -177,6 +178,6 @@ mod tests {
             });
 
         let json = serde_json::to_string_pretty(&op).unwrap();
-        println!("{}", json)
+        println!("{json}")
     }
 }

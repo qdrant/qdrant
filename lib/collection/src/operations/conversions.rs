@@ -15,15 +15,50 @@ use crate::config::{
 use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
-    Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
+    Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
 use crate::operations::types::{
-    CollectionInfo, CollectionStatus, CountResult, LookupLocation, OptimizersStatus,
-    RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus, VectorParams,
-    VectorsConfig,
+    AliasDescription, CollectionInfo, CollectionStatus, CountResult, LookupLocation,
+    OptimizersStatus, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus,
+    VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionSearchRequest;
+
+pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
+    api::grpc::qdrant::WriteOrdering {
+        r#type: match ordering {
+            WriteOrdering::Weak => api::grpc::qdrant::WriteOrderingType::Weak as i32,
+            WriteOrdering::Medium => api::grpc::qdrant::WriteOrderingType::Medium as i32,
+            WriteOrdering::Strong => api::grpc::qdrant::WriteOrderingType::Strong as i32,
+        },
+    }
+}
+
+pub fn write_ordering_from_proto(
+    ordering: Option<api::grpc::qdrant::WriteOrdering>,
+) -> Result<WriteOrdering, Status> {
+    let ordering_parsed = match ordering {
+        None => api::grpc::qdrant::WriteOrderingType::Weak,
+        Some(write_ordering) => {
+            match api::grpc::qdrant::WriteOrderingType::from_i32(write_ordering.r#type) {
+                None => {
+                    return Err(Status::invalid_argument(format!(
+                        "cannot convert ordering: {}",
+                        write_ordering.r#type
+                    )))
+                }
+                Some(res) => res,
+            }
+        }
+    };
+
+    Ok(match ordering_parsed {
+        api::grpc::qdrant::WriteOrderingType::Weak => WriteOrdering::Weak,
+        api::grpc::qdrant::WriteOrderingType::Medium => WriteOrdering::Medium,
+        api::grpc::qdrant::WriteOrderingType::Strong => WriteOrdering::Strong,
+    })
+}
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {
@@ -641,6 +676,15 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 Distance::Dot => api::grpc::qdrant::Distance::Dot,
             }
             .into(),
+        }
+    }
+}
+
+impl From<AliasDescription> for api::grpc::qdrant::AliasDescription {
+    fn from(value: AliasDescription) -> Self {
+        api::grpc::qdrant::AliasDescription {
+            alias_name: value.alias_name,
+            collection_name: value.collection_name,
         }
     }
 }

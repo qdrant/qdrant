@@ -5,7 +5,9 @@ pub mod entry;
 pub mod fixtures;
 mod id_tracker;
 pub mod index;
+pub mod madvise;
 pub mod payload_storage;
+pub mod rocksdb_backup;
 pub mod segment;
 pub mod segment_constructor;
 pub mod spaces;
@@ -14,6 +16,7 @@ pub mod telemetry;
 pub mod data_types;
 #[allow(deprecated)]
 pub mod types;
+pub mod utils;
 pub mod vector_storage;
 
 #[macro_use]

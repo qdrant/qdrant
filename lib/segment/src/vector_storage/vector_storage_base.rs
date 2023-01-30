@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use ordered_float::OrderedFloat;
@@ -95,6 +96,8 @@ pub trait VectorStorage {
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset>;
+
+    fn files(&self) -> Vec<PathBuf>;
 
     /// Iterator over `n` random ids which are not deleted
     fn sample_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {

@@ -150,7 +150,7 @@ mod tests {
         let text = "hello, мир!";
         let mut tokens = Vec::new();
         PrefixTokenizer::tokenize(text, 1, 4, |token| tokens.push(token.to_owned()));
-        eprintln!("tokens = {:#?}", tokens);
+        eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 7);
         assert_eq!(tokens.get(0), Some(&"h".to_owned()));
         assert_eq!(tokens.get(1), Some(&"he".to_owned()));
@@ -166,7 +166,7 @@ mod tests {
         let text = "hello, мир!";
         let mut tokens = Vec::new();
         PrefixTokenizer::tokenize_query(text, 4, |token| tokens.push(token.to_owned()));
-        eprintln!("tokens = {:#?}", tokens);
+        eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens.get(0), Some(&"hell".to_owned()));
         assert_eq!(tokens.get(1), Some(&"мир".to_owned()));
@@ -187,7 +187,7 @@ mod tests {
             },
             |token| tokens.push(token.to_owned()),
         );
-        eprintln!("tokens = {:#?}", tokens);
+        eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 7);
         assert_eq!(tokens.get(0), Some(&"h".to_owned()));
         assert_eq!(tokens.get(1), Some(&"he".to_owned()));

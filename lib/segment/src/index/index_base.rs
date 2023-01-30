@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use serde_json::Value;
@@ -30,6 +31,8 @@ pub trait VectorIndex {
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
 
     fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry;
+
+    fn files(&self) -> Vec<PathBuf>;
 }
 
 pub trait PayloadIndex {
@@ -102,6 +105,10 @@ pub trait PayloadIndex {
         &self,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Option<PayloadSchemaType>>;
+
+    fn take_database_snapshot(&self, path: &Path) -> OperationResult<()>;
+
+    fn files(&self) -> Vec<PathBuf>;
 }
 
 pub type VectorIndexSS = dyn VectorIndex + Sync + Send;

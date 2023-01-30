@@ -1,24 +1,19 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorElementType;
-use segment::entry::entry_point::{
-    OperationError, OperationResult, SegmentEntry, SegmentFailedState,
-};
+use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::index::field_index::CardinalityEstimation;
-use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
     WithVector,
 };
-use uuid::Uuid;
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 
@@ -700,65 +695,28 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().vector_dims()
     }
 
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<PathBuf> {
         log::info!(
             "Taking a snapshot of a proxy segment into {:?}",
             snapshot_dir_path
         );
-        // extra care is needed to capture outstanding deleted points
-        let deleted_points_guard = self.deleted_points.read();
-        let wrapped_segment_arc = self.wrapped_segment.get();
-        let wrapped_segment_guard = wrapped_segment_arc.read();
 
-        // stable copy of the deleted points at the time of the snapshot
-        let deleted_points_copy = deleted_points_guard.clone();
+        let archive_path = {
+            let wrapped_segment_arc = self.wrapped_segment.get();
+            let wrapped_segment_guard = wrapped_segment_arc.read();
 
-        // create unique dir. to hold data copy of wrapped segment
-        let copy_target_dir = snapshot_dir_path.join(format!("segment_copy_{}", Uuid::new_v4()));
-        create_dir_all(&copy_target_dir)?;
+            // snapshot wrapped segment data into the temporary dir
+            wrapped_segment_guard.take_snapshot(snapshot_dir_path)?
+        };
 
-        // copy proxy segment current wrapped data
-        let full_copy_path = wrapped_segment_guard.copy_segment_directory(&copy_target_dir)?;
         // snapshot write_segment
         let write_segment_rw = self.write_segment.get();
         let write_segment_guard = write_segment_rw.read();
 
         // Write segment is not unique to the proxy segment, therefore it might overwrite an existing snapshot.
         write_segment_guard.take_snapshot(snapshot_dir_path)?;
-        // guaranteed to be higher than anything in wrapped segment and does not exceed WAL at the same time
-        let write_segment_version = write_segment_guard.version();
 
-        // unlock deleted_points as we have a stable copy
-        drop(wrapped_segment_guard);
-        drop(deleted_points_guard);
-
-        // load copy of wrapped segment in memory
-        let mut in_memory_wrapped_segment = load_segment(&full_copy_path)?.ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Failed to load segment from {:?}",
-                full_copy_path
-            ))
-        })?;
-
-        // remove potentially deleted points from wrapped_segment
-        for deleted_point in deleted_points_copy {
-            in_memory_wrapped_segment.delete_point(write_segment_version, deleted_point)?;
-        }
-        in_memory_wrapped_segment.take_snapshot(snapshot_dir_path)?;
-        // release segment resources
-        drop(in_memory_wrapped_segment);
-        // delete temporary copy
-        remove_dir_all(copy_target_dir)?;
-        Ok(())
-    }
-
-    /// This implementation delegates to the `wrapped_segment` copy directory
-    /// Other members from the proxy segment won't be copied!
-    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf> {
-        self.wrapped_segment
-            .get()
-            .read()
-            .copy_segment_directory(target_dir_path)
+        Ok(archive_path)
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
@@ -823,7 +781,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let mut seen_points: HashSet<PointIdType> = Default::default();
         for res in search_result {
@@ -890,7 +848,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -904,7 +862,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())
@@ -943,7 +901,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_result = {:#?}", search_result);
+        eprintln!("search_result = {search_result:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -957,7 +915,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())
@@ -1007,7 +965,7 @@ mod tests {
             all_single_results.push(res);
         }
 
-        eprintln!("search_result = {:#?}", all_single_results);
+        eprintln!("search_result = {all_single_results:#?}");
 
         let search_batch_result = proxy_segment
             .search_batch(
@@ -1021,7 +979,7 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_batch_result);
+        eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert_eq!(all_single_results, search_batch_result)
     }

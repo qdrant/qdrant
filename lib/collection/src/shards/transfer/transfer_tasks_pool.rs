@@ -40,6 +40,17 @@ impl TransferTasksPool {
         }
     }
 
+    /// Return true if task finished
+    /// Return false if task failed or stopped
+    /// Return None if task not found or not finished
+    pub fn get_task_result(&self, transfer_key: &ShardTransferKey) -> Option<bool> {
+        if let Some(task) = self.tasks.get(transfer_key) {
+            task.get_result()
+        } else {
+            None
+        }
+    }
+
     /// Returns true if the task was actually stopped
     /// Returns false if the task was not found
     pub async fn stop_if_exists(&mut self, transfer_key: &ShardTransferKey) -> TaskResult {

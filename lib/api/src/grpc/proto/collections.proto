@@ -171,7 +171,8 @@ message CreateCollection {
   optional VectorsConfig vectors_config = 10; // Configuration for vectors
   optional uint32 replication_factor = 11; // Number of replicas of each shard that network tries to maintain, default = 1
   optional uint32 write_consistency_factor = 12; // How many replicas should apply the operation for us to consider it successful, default = 1
-  optional QuantizationConfig quantization_config = 13;
+  optional string init_from_collection = 13; // Specify name of the other collection to copy data from
+  optional QuantizationConfig quantization_config = 14;
 }
 
 message UpdateCollection {
@@ -278,4 +279,21 @@ message RenameAlias {
 
 message DeleteAlias {
   string alias_name = 1; // Name of the alias
+}
+
+message ListAliasesRequest {
+}
+
+message ListCollectionAliasesRequest {
+  string collection_name = 1; // Name of the collection
+}
+
+message AliasDescription {
+  string alias_name = 1; // Name of the alias
+  string collection_name = 2; // Name of the collection
+}
+
+message ListAliasesResponse {
+  repeated AliasDescription aliases = 1;
+  double time = 2; // Time spent to process
 }

@@ -81,8 +81,12 @@ pub async fn do_recover_from_snapshot(
 
     log::debug!("Unpacking snapshot to {}", tmp_collection_dir.display());
 
-    // Unpack snapshot collection to the target folder
-    Collection::restore_snapshot(&snapshot_path, &tmp_collection_dir)?;
+    let tmp_collection_dir_clone = tmp_collection_dir.clone();
+    let restoring = tokio::task::spawn_blocking(move || {
+        // Unpack snapshot collection to the target folder
+        Collection::restore_snapshot(&snapshot_path, &tmp_collection_dir_clone)
+    });
+    restoring.await??;
 
     let snapshot_config = CollectionConfig::load(&tmp_collection_dir)?;
 

@@ -183,6 +183,14 @@ impl PayloadIndex for PlainPayloadIndex {
     ) -> OperationResult<Option<PayloadSchemaType>> {
         unreachable!()
     }
+
+    fn take_database_snapshot(&self, _: &Path) -> OperationResult<()> {
+        unreachable!()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.config_path()]
+    }
 }
 
 pub struct PlainIndex {
@@ -256,6 +264,10 @@ impl VectorIndex for PlainIndex {
             filtered_exact: OperationDurationStatistics::default(),
             unfiltered_exact: OperationDurationStatistics::default(),
         }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 }
 

@@ -22,7 +22,7 @@ async fn shards_versions(
 
             let file_name = file_name_opt.unwrap();
 
-            if file_name.starts_with(&format!("{shard_id}-", shard_id = shard_id)) {
+            if file_name.starts_with(&format!("{shard_id}-")) {
                 let version_opt = file_name
                     .split('-')
                     .nth(1)
@@ -33,7 +33,7 @@ async fn shards_versions(
                 }
                 let version = version_opt.unwrap();
                 all_versions.push((version, path.clone()));
-            } else if file_name == format!("{shard_id}", shard_id = shard_id) {
+            } else if file_name == format!("{shard_id}") {
                 let version = 0;
                 all_versions.push((version, path.clone()));
             }
