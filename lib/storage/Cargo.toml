@@ -37,7 +37,7 @@ serde_cbor = { version = "0.11.2" }
 segment = { path = "../segment" }
 collection = { path = "../collection" }
 api = { path = "../api" }
-futures = "0.3.25"
+futures = "0.3.26"
 anyhow = "1.0.68"
 uuid = "1.2.1"
 url = "2.3.1"
