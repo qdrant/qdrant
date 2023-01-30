@@ -18,7 +18,7 @@ use segment::types::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
@@ -160,6 +160,8 @@ pub struct ShardReplicaSet {
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
     update_runtime: Handle,
+    /// Lock to serialized write operations on the replicaset when a write ordering is used.
+    write_ordering_lock: Mutex<()>,
 }
 
 impl ShardReplicaSet {
@@ -305,6 +307,7 @@ impl ShardReplicaSet {
             collection_id,
             collection_config: shared_config,
             update_runtime,
+            write_ordering_lock: Mutex::new(()),
         })
     }
 
@@ -498,6 +501,7 @@ impl ShardReplicaSet {
             collection_id,
             collection_config: shared_config,
             update_runtime,
+            write_ordering_lock: Mutex::new(()),
         }
     }
 
@@ -1137,6 +1141,11 @@ impl ShardReplicaSet {
             Some(leader_peer) => {
                 // If we are the leader, run the update from this replica set
                 if leader_peer == self.this_peer_id() {
+                    // lock updates if ordering is medium or strong
+                    let _guard = match ordering {
+                        WriteOrdering::Weak => None, // no locking required
+                        WriteOrdering::Medium | WriteOrdering::Strong => Some(self.write_ordering_lock.lock().await), // one request at a time
+                    };
                     self.update(operation, wait).await
                 } else {
                     // forward the update to the designated leader
