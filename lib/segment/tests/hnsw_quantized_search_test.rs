@@ -115,10 +115,7 @@ mod tests {
             sames += sames_count(&index_result, &plain_result);
         }
         let acc = 100.0 * sames as f64 / (attempts * top) as f64;
-        println!(
-            "sames = {:}, attempts = {:}, top = {:}, acc = {:}",
-            sames, attempts, top, acc
-        );
+        println!("sames = {sames}, attempts = {attempts}, top = {top}, acc = {acc}");
         assert!(acc > 40.0);
     }
 

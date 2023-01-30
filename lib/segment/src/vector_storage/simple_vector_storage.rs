@@ -453,4 +453,58 @@ mod tests {
 
         assert!(!all_ids1.contains(&top_idx))
     }
+
+    #[test]
+    fn test_score_quantized_points() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let distance = Distance::Dot;
+        let dim = 4;
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, distance).unwrap();
+        let mut borrowed_storage = storage.borrow_mut();
+
+        let vec0 = vec![1.0, 0.0, 1.0, 1.0];
+        let vec1 = vec![1.0, 0.0, 1.0, 0.0];
+        let vec2 = vec![1.0, 1.0, 1.0, 1.0];
+        let vec3 = vec![1.0, 1.0, 0.0, 1.0];
+        let vec4 = vec![1.0, 0.0, 0.0, 0.0];
+
+        borrowed_storage.put_vector(vec0).unwrap();
+        borrowed_storage.put_vector(vec1).unwrap();
+        borrowed_storage.put_vector(vec2).unwrap();
+        borrowed_storage.put_vector(vec3).unwrap();
+        borrowed_storage.put_vector(vec4).unwrap();
+
+        let quantized_meta_path = dir.path().join("quantized.meta");
+        let quantized_data_path = dir.path().join("quantized.data");
+
+        borrowed_storage
+            .quantize(&quantized_meta_path, &quantized_data_path)
+            .unwrap();
+
+        let query = vec![0.0, 1.0, 1.1, 1.0];
+
+        {
+            let scorer_orig = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+            let scorer_quant = borrowed_storage.raw_scorer(query.clone());
+            for i in 0..5 {
+                let orig = scorer_orig.score_point(i);
+                let quant = scorer_quant.score_point(i);
+                assert!((orig - quant).abs() < 0.15);
+            }
+        }
+
+        // test save-load
+        borrowed_storage
+            .load_quantization(&quantized_meta_path, &quantized_data_path)
+            .unwrap();
+
+        let scorer_orig = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+        let scorer_quant = borrowed_storage.raw_scorer(query);
+        for i in 0..5 {
+            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i);
+            assert!((orig - quant).abs() < 0.15);
+        }
+    }
 }
