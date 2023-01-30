@@ -31,6 +31,7 @@ message SyncPoints {
   repeated PointStruct points = 3;
   optional PointId from_id = 4; // Start of the sync range
   optional PointId to_id = 5; // End of the sync range
+  optional WriteOrdering ordering = 6;
 }
 
 message SyncPointsInternal {

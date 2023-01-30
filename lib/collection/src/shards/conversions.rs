@@ -22,6 +22,7 @@ pub fn internal_sync_points(
     collection_name: String,
     points_sync_operation: PointSyncOperation,
     wait: bool,
+    ordering: Option<WriteOrdering>,
 ) -> CollectionResult<SyncPointsInternal> {
     Ok(SyncPointsInternal {
         shard_id,
@@ -35,6 +36,7 @@ pub fn internal_sync_points(
                 .collect::<Result<Vec<_>, Status>>()?,
             from_id: points_sync_operation.from_id.map(|x| x.into()),
             to_id: points_sync_operation.to_id.map(|x| x.into()),
+            ordering: ordering.map(write_ordering_to_proto),
         }),
     })
 }

@@ -12,7 +12,7 @@ use api::grpc::qdrant::{
 use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
-    PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector, WriteOrdering,
+    PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector,
 };
 use collection::operations::types::{
     default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
@@ -85,6 +85,7 @@ pub async fn sync(
         points,
         from_id,
         to_id,
+        ordering,
     } = sync_points;
 
     let points = points
@@ -107,7 +108,7 @@ pub async fn sync(
             collection_operation,
             shard_selection,
             wait.unwrap_or(false),
-            WriteOrdering::default(),
+            write_ordering_from_proto(ordering)?,
         )
         .await
         .map_err(error_to_status)?;

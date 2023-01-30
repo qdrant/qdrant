@@ -3588,6 +3588,8 @@ pub struct SyncPoints {
     /// End of the sync range
     #[prost(message, optional, tag = "5")]
     pub to_id: ::core::option::Option<PointId>,
+    #[prost(message, optional, tag = "6")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -1093,7 +1093,7 @@ impl ShardReplicaSet {
                     self.update(operation, wait).await
                 } else {
                     // forward the update to the designated leader
-                    self.forward_update(leader_peer, operation, wait)
+                    self.forward_update(leader_peer, operation, wait, ordering)
                         .await
                         .map_err(|err| {
                             match err {
@@ -1129,12 +1129,17 @@ impl ShardReplicaSet {
         leader_peer: PeerId,
         operation: CollectionUpdateOperations,
         wait: bool,
+        ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
         let remotes_guard = self.remotes.read().await;
         let remote_leader = remotes_guard.iter().find(|r| r.peer_id == leader_peer);
 
         match remote_leader {
-            Some(remote_leader) => remote_leader.forward_update(operation, wait).await,
+            Some(remote_leader) => {
+                remote_leader
+                    .forward_update(operation, wait, ordering)
+                    .await
+            }
             None => Err(CollectionError::service_error(format!(
                 "Cannot forward update to shard {} because was removed from the replica set",
                 self.shard_id

@@ -22,7 +22,7 @@ use tonic::transport::{Channel, Uri};
 use tonic::Status;
 
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::PointOperations;
+use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequest, SearchRequestBatch, UpdateResult,
@@ -168,10 +168,17 @@ impl RemoteShard {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
         // the target shard is None because the operation is forwarded as if it came from the client
-        self.execute_update_operation(None, self.collection_id.clone(), operation, wait)
-            .await
+        self.execute_update_operation(
+            None,
+            self.collection_id.clone(),
+            operation,
+            wait,
+            Some(ordering),
+        )
+        .await
     }
 
     pub async fn execute_update_operation(
@@ -180,6 +187,7 @@ impl RemoteShard {
         collection_name: String,
         operation: CollectionUpdateOperations,
         wait: bool,
+        ordering: Option<WriteOrdering>,
     ) -> CollectionResult<UpdateResult> {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_update_durations);
         timer.set_success(false);
@@ -192,7 +200,7 @@ impl RemoteShard {
                         collection_name,
                         point_insert_operations,
                         wait,
-                        None,
+                        ordering,
                     )?;
                     self.with_points_client(|mut client| async move {
                         client.upsert(tonic::Request::new(request.clone())).await
@@ -202,7 +210,7 @@ impl RemoteShard {
                 }
                 PointOperations::DeletePoints { ids } => {
                     let request =
-                        &internal_delete_points(shard_id, collection_name, ids, wait, None);
+                        &internal_delete_points(shard_id, collection_name, ids, wait, ordering);
                     self.with_points_client(|mut client| async move {
                         client.delete(tonic::Request::new(request.clone())).await
                     })
@@ -215,7 +223,7 @@ impl RemoteShard {
                         collection_name,
                         filter,
                         wait,
-                        None,
+                        ordering,
                     );
                     self.with_points_client(|mut client| async move {
                         client.delete(tonic::Request::new(request.clone())).await
@@ -224,8 +232,13 @@ impl RemoteShard {
                     .into_inner()
                 }
                 PointOperations::SyncPoints(operation) => {
-                    let request =
-                        &internal_sync_points(shard_id, collection_name, operation, wait)?;
+                    let request = &internal_sync_points(
+                        shard_id,
+                        collection_name,
+                        operation,
+                        wait,
+                        ordering,
+                    )?;
                     self.with_points_client(|mut client| async move {
                         client.sync(tonic::Request::new(request.clone())).await
                     })
@@ -235,8 +248,13 @@ impl RemoteShard {
             },
             CollectionUpdateOperations::PayloadOperation(payload_ops) => match payload_ops {
                 PayloadOps::SetPayload(set_payload) => {
-                    let request =
-                        &internal_set_payload(shard_id, collection_name, set_payload, wait, None);
+                    let request = &internal_set_payload(
+                        shard_id,
+                        collection_name,
+                        set_payload,
+                        wait,
+                        ordering,
+                    );
                     self.with_points_client(|mut client| async move {
                         client
                             .set_payload(tonic::Request::new(request.clone()))
@@ -251,7 +269,7 @@ impl RemoteShard {
                         collection_name,
                         delete_payload,
                         wait,
-                        None,
+                        ordering,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -263,7 +281,7 @@ impl RemoteShard {
                 }
                 PayloadOps::ClearPayload { points } => {
                     let request =
-                        &internal_clear_payload(shard_id, collection_name, points, wait, None);
+                        &internal_clear_payload(shard_id, collection_name, points, wait, ordering);
                     self.with_points_client(|mut client| async move {
                         client
                             .clear_payload(tonic::Request::new(request.clone()))
@@ -278,7 +296,7 @@ impl RemoteShard {
                         collection_name,
                         filter,
                         wait,
-                        None,
+                        ordering,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -289,8 +307,13 @@ impl RemoteShard {
                     .into_inner()
                 }
                 PayloadOps::OverwritePayload(set_payload) => {
-                    let request =
-                        &internal_set_payload(shard_id, collection_name, set_payload, wait, None);
+                    let request = &internal_set_payload(
+                        shard_id,
+                        collection_name,
+                        set_payload,
+                        wait,
+                        ordering,
+                    );
                     self.with_points_client(|mut client| async move {
                         client
                             .overwrite_payload(tonic::Request::new(request.clone()))
@@ -303,8 +326,13 @@ impl RemoteShard {
             CollectionUpdateOperations::FieldIndexOperation(field_index_op) => match field_index_op
             {
                 FieldIndexOperations::CreateIndex(create_index) => {
-                    let request =
-                        &internal_create_index(shard_id, collection_name, create_index, wait, None);
+                    let request = &internal_create_index(
+                        shard_id,
+                        collection_name,
+                        create_index,
+                        wait,
+                        ordering,
+                    );
                     self.with_points_client(|mut client| async move {
                         client
                             .create_field_index(tonic::Request::new(request.clone()))
@@ -314,8 +342,13 @@ impl RemoteShard {
                     .into_inner()
                 }
                 FieldIndexOperations::DeleteIndex(delete_index) => {
-                    let request =
-                        &internal_delete_index(shard_id, collection_name, delete_index, wait, None);
+                    let request = &internal_delete_index(
+                        shard_id,
+                        collection_name,
+                        delete_index,
+                        wait,
+                        ordering,
+                    );
                     self.with_points_client(|mut client| async move {
                         client
                             .delete_field_index(tonic::Request::new(request.clone()))
@@ -348,7 +381,7 @@ impl ShardOperation for RemoteShard {
     ) -> CollectionResult<UpdateResult> {
         // targets the shard explicitly
         let shard_id = Some(self.id);
-        self.execute_update_operation(shard_id, self.collection_id.clone(), operation, wait)
+        self.execute_update_operation(shard_id, self.collection_id.clone(), operation, wait, None)
             .await
     }
 
