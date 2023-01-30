@@ -32,7 +32,7 @@ chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono"] }
 itertools = "0.10"
 anyhow = "1.0.68"
-futures = "0.3.25"
+futures = "0.3.26"
 futures-util = "0.3.24"
 clap = { version = "4.1.4", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
