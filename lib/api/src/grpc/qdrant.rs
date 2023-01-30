@@ -294,6 +294,7 @@ pub struct CollectionConfig {
     /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "4")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
+    /// Configuration of the vector quantization
     #[prost(message, optional, tag = "5")]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }

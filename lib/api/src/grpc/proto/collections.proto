@@ -212,7 +212,7 @@ message CollectionConfig {
   HnswConfigDiff hnsw_config = 2; // Configuration of vector index
   OptimizersConfigDiff optimizer_config = 3; // Configuration of the optimizers
   WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
-  optional QuantizationConfig quantization_config = 5;
+  optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantization
 }
 
 enum TokenizerType {

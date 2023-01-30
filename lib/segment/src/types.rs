@@ -384,7 +384,7 @@ pub struct SegmentConfig {
     /// Defines payload storage type
     #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
-
+    /// Quantization parameters. If none - quantization is disabled.
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
 }

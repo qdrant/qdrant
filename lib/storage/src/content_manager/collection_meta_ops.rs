@@ -131,6 +131,7 @@ pub struct CreateCollection {
     /// Specify other collection to copy data from.
     #[serde(default)]
     pub init_from: Option<InitFrom>,
+    /// Quantization parameters. If none - quantization is disabled.
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
 }
