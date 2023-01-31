@@ -55,7 +55,7 @@ impl<'de> Deserialize<'de> for ExtendedPointId {
             Err(_outer_error) => match Uuid::deserialize(value.clone()) {
                 Ok(uuid) => Ok(ExtendedPointId::Uuid(uuid)),
                 Err(_inner_error) => Err(serde::de::Error::custom(format!(
-                    "Cannot parse {value} as point id"
+                    "Cannot parse {value} as point id, it is neither an unsigned integer, nor a valid UUID"
                 ))),
             },
         }
