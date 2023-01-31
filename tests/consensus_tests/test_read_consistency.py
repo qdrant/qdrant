@@ -29,7 +29,7 @@ def run_update_points_in_background(peer_url, collection_name):
 
 def get_all_points(peer_url, collection_name):
     res = requests.post(
-        f"{peer_url}/collections/{collection_name}/points/scroll?consistency=quorum",
+        f"{peer_url}/collections/{collection_name}/points/scroll?consistency=majority",
         json={
             "limit": 100,
             "with_vector": True,
