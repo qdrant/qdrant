@@ -82,7 +82,7 @@ mod test {
     }
 
     fn str(value: &str) -> String {
-        format!("read_consistency={value}")
+        format!("consistency={value}")
     }
 
     fn from_type(r#type: ReadConsistencyType) -> ReadParams {
