@@ -57,12 +57,15 @@ def test_shard_consistency(tmp_path: pathlib.Path):
         for i in range(len(peer_api_uris))
     ]
 
-    print("Waiting for 5 seconds")
+    print("Push points during 5 seconds")
     time.sleep(5)
 
     # Kill all upload processes
     for p in upload_processes:
         p.kill()
+
+    # make sure replication is done
+    time.sleep(1)
 
     # Validate that all peers have the same data
     results = []
