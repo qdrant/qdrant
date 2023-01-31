@@ -431,20 +431,28 @@ impl TryFrom<ScoredPoint> for segment::types::ScoredPoint {
     type Error = Status;
 
     fn try_from(point: ScoredPoint) -> Result<Self, Self::Error> {
+        let id = match point.id {
+            Some(id) => id.try_into()?,
+            None => return Err(Status::invalid_argument("Point does not have an ID")),
+        };
+
+        let payload = if !point.payload.is_empty() {
+            Some(proto_to_payloads(point.payload)?)
+        } else {
+            None
+        };
+
         let vector = point
             .vectors
             .map(|vectors| vectors.try_into())
             .transpose()?;
 
         Ok(Self {
-            id: match point.id {
-                None => return Err(Status::invalid_argument("Point does not have an ID")),
-                Some(id) => id.try_into()?,
-            },
-            payload: Some(proto_to_payloads(point.payload)?),
-            score: point.score,
-            vector,
+            id,
             version: point.version,
+            score: point.score,
+            payload,
+            vector,
         })
     }
 }
