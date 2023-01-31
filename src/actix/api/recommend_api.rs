@@ -33,7 +33,7 @@ pub async fn recommend_points(
         toc.get_ref(),
         &name,
         request.into_inner(),
-        params.read_consistency,
+        params.consistency,
     )
     .await;
 
@@ -64,7 +64,7 @@ pub async fn recommend_batch_points(
         toc.get_ref(),
         &name,
         request.into_inner(),
-        params.read_consistency,
+        params.consistency,
     )
     .await;
 

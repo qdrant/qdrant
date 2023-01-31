@@ -63,7 +63,7 @@ pub async fn get_point(
         toc.get_ref(),
         &collection_name,
         point_id,
-        params.read_consistency,
+        params.consistency,
     )
     .await;
 
@@ -93,7 +93,7 @@ pub async fn get_points(
         toc.get_ref(),
         &collection_name,
         request.into_inner(),
-        params.read_consistency,
+        params.consistency,
         None,
     )
     .await;
@@ -114,7 +114,7 @@ pub async fn scroll_points(
         toc.get_ref(),
         &collection_name,
         request.into_inner(),
-        params.read_consistency,
+        params.consistency,
     )
     .await;
     process_response(response, timing)

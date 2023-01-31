@@ -5,7 +5,7 @@ use serde::Deserialize;
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema)]
 pub struct ReadParams {
     #[serde(default, deserialize_with = "deserialize_read_consistency")]
-    pub read_consistency: Option<ReadConsistency>,
+    pub consistency: Option<ReadConsistency>,
 }
 
 fn deserialize_read_consistency<'de, D>(
@@ -87,13 +87,13 @@ mod test {
 
     fn from_type(r#type: ReadConsistencyType) -> ReadParams {
         ReadParams {
-            read_consistency: Some(ReadConsistency::Type(r#type)),
+            consistency: Some(ReadConsistency::Type(r#type)),
         }
     }
 
     fn from_factor(factor: usize) -> ReadParams {
         ReadParams {
-            read_consistency: Some(ReadConsistency::Factor(factor)),
+            consistency: Some(ReadConsistency::Factor(factor)),
         }
     }
 }

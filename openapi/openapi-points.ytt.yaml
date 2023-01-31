@@ -21,7 +21,7 @@ paths:
           required: true
           schema:
             $ref: "#/components/schemas/ExtendedPointId"
-        - name: read_consistency
+        - name: consistency
           in: query
           description: Define read consistency guarantees for the operation
           required: false
@@ -50,7 +50,7 @@ paths:
           required: true
           schema:
             type: string
-        - name: read_consistency
+        - name: consistency
           in: query
           description: Define read consistency guarantees for the operation
           required: false

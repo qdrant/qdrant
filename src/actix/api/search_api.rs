@@ -21,7 +21,7 @@ pub async fn search_points(
         toc.get_ref(),
         &collection_name,
         request.into_inner(),
-        params.read_consistency,
+        params.consistency,
         None,
     )
     .await;
@@ -43,7 +43,7 @@ pub async fn batch_search_points(
         toc.get_ref(),
         &collection_name,
         request.into_inner(),
-        params.read_consistency,
+        params.consistency,
         None,
     )
     .await;
