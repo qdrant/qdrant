@@ -236,7 +236,7 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
     type Error = Status;
 
     fn try_from(retrieved_point: api::grpc::qdrant::RetrievedPoint) -> Result<Self, Self::Error> {
-        let payload = if retrieved_point.payload.is_empty() {
+        let payload = if !retrieved_point.payload.is_empty() {
             Some(proto_to_payloads(retrieved_point.payload)?)
         } else {
             None
