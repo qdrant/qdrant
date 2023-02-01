@@ -179,11 +179,20 @@ where
     }
 }
 
+#[derive(Debug)]
 struct ResolverRecord<'a, T> {
     item: Option<&'a T>,
     row: usize,
     index: usize,
     count: usize,
+}
+
+impl<'a> Copy for ResolverRecord<'a, T> {}
+
+impl<'a> Clone for ResolverRecord<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<'a, T> Default for ResolverRecord<'a, T> {
