@@ -42,14 +42,15 @@ fn try_unwrap_with_timeout<T>(arc: Arc<T>, spin: Duration, timeout: Duration) ->
     }
 }
 
-
 /// Try to upgrade the lock for the specified timeout.
 /// If the lock is not upgraded, the function will try to upgrade it again.
 /// The timeout is doubled on each iteration.
 ///
 /// Motivation: if there is a long-running read operation, single write operation will block all other read operations.
 /// This function will allow read operations to proceed while the write operation is waiting for the lock.
-fn aloha_upgrade(lock: RwLockUpgradableReadGuard<dyn SegmentEntry>) -> RwLockWriteGuard<dyn SegmentEntry> {
+fn aloha_upgrade(
+    lock: RwLockUpgradableReadGuard<dyn SegmentEntry>,
+) -> RwLockWriteGuard<dyn SegmentEntry> {
     let mut timeout = Duration::from_micros(1);
     let mut lock = lock;
     loop {
