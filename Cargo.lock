@@ -2026,16 +2026,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
-name = "memmap"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6585fd95e7bb50d6cc31e20d4cf9afb4e2ba16c5846fc76793f11218da9c475b"
-dependencies = [
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "memmap2"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4055,7 +4045,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?branch=migration-view-sync#2a66d8e3e44a323209bf2e0428aac5859fbf362a"
+source = "git+https://github.com/qdrant/wal.git?branch=migration-view-sync#e5f74ac69be946ae0095eaf1d4aaba5b55e46a67"
 dependencies = [
  "byteorder",
  "crc",
@@ -4064,7 +4054,7 @@ dependencies = [
  "env_logger",
  "fs2",
  "log",
- "memmap",
+ "memmap2",
  "rand",
  "rand_distr",
  "serde",
