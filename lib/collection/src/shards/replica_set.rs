@@ -763,7 +763,7 @@ impl ShardReplicaSet {
         read_operation: F,
         local: &'a Option<Shard>,
         remotes: &'a [RemoteShard],
-        read_consistency: ReadConsistency,
+        read_consistency: Option<ReadConsistency>,
     ) -> CollectionResult<Res>
     where
         F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
@@ -786,6 +786,11 @@ impl ShardReplicaSet {
 
         let total_count = local_count + remotes_count;
         let active_count = active_local_count + active_remotes_count;
+
+        let (local_only, read_consistency) = match read_consistency {
+            Some(read_consistency) => (false, read_consistency),
+            None => (true, ReadConsistency::default()),
+        };
 
         let (factor, condition) = match read_consistency {
             ReadConsistency::Type(ReadConsistencyType::All) => (total_count, ResolveCondition::All),
@@ -818,9 +823,12 @@ impl ShardReplicaSet {
             .into_iter()
             .map(|local| read_operation(local.get()).left_future());
 
+        let remote_operations_limit = if local_only { 0 } else { active_remotes.len() };
+
         let remote_operations = active_remotes
             .into_iter()
-            .map(|remote| read_operation(remote).right_future());
+            .map(|remote| read_operation(remote).right_future())
+            .take(remote_operations_limit);
 
         let mut operations = local_operations.chain(remote_operations);
 
@@ -1356,7 +1364,7 @@ impl ShardReplicaSet {
             |shard| shard.scroll_by(offset, limit, with_payload_interface, with_vector, filter),
             &local,
             &remotes,
-            read_consistency.unwrap_or_default(),
+            read_consistency,
         )
         .await
     }
@@ -1382,7 +1390,7 @@ impl ShardReplicaSet {
             |shard| shard.search(request.clone(), search_runtime_handle),
             &local,
             &remotes,
-            read_consistency.unwrap_or_default(),
+            read_consistency,
         )
         .await
     }
@@ -1420,7 +1428,7 @@ impl ShardReplicaSet {
             |shard| shard.retrieve(request.clone(), with_payload, with_vector),
             &local,
             &remotes,
-            read_consistency.unwrap_or_default(),
+            read_consistency,
         )
         .await
     }
