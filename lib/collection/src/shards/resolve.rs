@@ -187,9 +187,9 @@ struct ResolverRecord<'a, T> {
     count: usize,
 }
 
-impl<'a> Copy for ResolverRecord<'a, T> {}
+impl<'a, T> Copy for ResolverRecord<'a, T> {}
 
-impl<'a> Clone for ResolverRecord<'a, T> {
+impl<'a, T> Clone for ResolverRecord<'a, T> {
     fn clone(&self) -> Self {
         *self
     }
