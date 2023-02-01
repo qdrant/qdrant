@@ -67,6 +67,7 @@ pub struct Record {
     /// Id of the point
     pub id: PointIdType,
     /// Payload - values assigned to the point
+    #[serde(serialize_with = "segment::types::serialize_payload")]
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStruct>,

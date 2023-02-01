@@ -146,6 +146,7 @@ pub struct ScoredPoint {
     /// Points vector distance to the query vector
     pub score: ScoreType,
     /// Payload - values assigned to the point
+    #[serde(serialize_with = "serialize_payload")]
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStruct>,
@@ -521,6 +522,16 @@ impl From<Map<String, Value>> for Payload {
     fn from(value: serde_json::Map<String, Value>) -> Self {
         Payload(value)
     }
+}
+
+pub fn serialize_payload<S>(point: &Option<Payload>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    point
+        .as_ref()
+        .filter(|payload| !payload.is_empty())
+        .serialize(serializer)
 }
 
 #[derive(Clone)]
