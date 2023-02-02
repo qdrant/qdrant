@@ -60,6 +60,34 @@ pub fn write_ordering_from_proto(
     })
 }
 
+pub fn try_record_from_grpc(
+    point: api::grpc::qdrant::RetrievedPoint,
+    with_payload: bool,
+) -> Result<Record, tonic::Status> {
+    let id = point
+        .id
+        .ok_or_else(|| tonic::Status::invalid_argument("retrieved point does not have an ID"))?
+        .try_into()?;
+
+    let payload = if with_payload {
+        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+    } else {
+        debug_assert!(point.payload.is_empty());
+        None
+    };
+
+    let vector = point
+        .vectors
+        .map(|vectors| vectors.try_into())
+        .transpose()?;
+
+    Ok(Record {
+        id,
+        payload,
+        vector,
+    })
+}
+
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {
         Self {

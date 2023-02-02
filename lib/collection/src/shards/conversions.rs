@@ -7,7 +7,7 @@ use api::grpc::qdrant::{
     DeletePoints, DeletePointsInternal, PointsIdsList, PointsSelector, SetPayloadPoints,
     SetPayloadPointsInternal, SyncPoints, SyncPointsInternal, UpsertPoints, UpsertPointsInternal,
 };
-use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType};
+use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
 use tonic::Status;
 
 use crate::operations::conversions::write_ordering_to_proto;
@@ -287,4 +287,34 @@ pub fn internal_delete_index(
             ordering: ordering.map(write_ordering_to_proto),
         }),
     }
+}
+
+pub fn try_scored_point_from_grpc(
+    point: api::grpc::qdrant::ScoredPoint,
+    with_payload: bool,
+) -> Result<ScoredPoint, tonic::Status> {
+    let id = point
+        .id
+        .ok_or_else(|| tonic::Status::invalid_argument("scored point does not have an ID"))?
+        .try_into()?;
+
+    let payload = if with_payload {
+        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+    } else {
+        debug_assert!(point.payload.is_empty());
+        None
+    };
+
+    let vector = point
+        .vectors
+        .map(|vectors| vectors.try_into())
+        .transpose()?;
+
+    Ok(ScoredPoint {
+        id,
+        version: point.version,
+        score: point.score,
+        payload,
+        vector,
+    })
 }

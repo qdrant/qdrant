@@ -21,6 +21,7 @@ use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
 
+use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::types::{
@@ -33,7 +34,7 @@ use crate::shards::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
     internal_delete_index, internal_delete_payload, internal_delete_points,
     internal_delete_points_by_filter, internal_set_payload, internal_sync_points,
-    internal_upsert_points,
+    internal_upsert_points, try_scored_point_from_grpc,
 };
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
@@ -417,7 +418,7 @@ impl ShardOperation for RemoteShard {
         let result: Result<Vec<Record>, Status> = scroll_response
             .result
             .into_iter()
-            .map(|point| Record::try_from_grpc(point, with_payload_interface.is_required()))
+            .map(|point| try_record_from_grpc(point, with_payload_interface.is_required()))
             .collect();
 
         result.map_err(|e| e.into())
@@ -473,23 +474,17 @@ impl ShardOperation for RemoteShard {
         let result: Result<Vec<Vec<ScoredPoint>>, Status> = search_batch_response
             .result
             .into_iter()
-            .enumerate()
-            .map(|(index, point)| {
-                point
+            .zip(batch_request.searches.iter())
+            .map(|(batch_result, request)| {
+                let is_payload_required = request
+                    .with_payload
+                    .as_ref()
+                    .map_or(false, |with_payload| with_payload.is_required());
+
+                batch_result
                     .result
                     .into_iter()
-                    .map(|point| {
-                        try_scored_point_from_grpc(
-                            point,
-                            batch_request
-                                .searches
-                                .get(index)
-                                .unwrap()
-                                .with_payload
-                                .as_ref()
-                                .map_or(false, |with_payload| with_payload.is_required()),
-                        )
-                    })
+                    .map(|point| try_scored_point_from_grpc(point, is_payload_required))
                     .collect()
             })
             .collect();
@@ -555,39 +550,9 @@ impl ShardOperation for RemoteShard {
         let result: Result<Vec<Record>, Status> = get_response
             .result
             .into_iter()
-            .map(|point| Record::try_from_grpc(point, with_payload.enable))
+            .map(|point| try_record_from_grpc(point, with_payload.enable))
             .collect();
 
         result.map_err(|e| e.into())
     }
-}
-
-fn try_scored_point_from_grpc(
-    point: api::grpc::qdrant::ScoredPoint,
-    with_payload: bool,
-) -> Result<ScoredPoint, tonic::Status> {
-    let id = point
-        .id
-        .ok_or_else(|| tonic::Status::invalid_argument("scored point does not have an ID"))?
-        .try_into()?;
-
-    let payload = if with_payload {
-        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
-    } else {
-        // TODO: Log an error/a warning if `point.payload` is not empty!?
-        None
-    };
-
-    let vector = point
-        .vectors
-        .map(|vectors| vectors.try_into())
-        .transpose()?;
-
-    Ok(ScoredPoint {
-        id,
-        version: point.version,
-        score: point.score,
-        payload,
-        vector,
-    })
 }
