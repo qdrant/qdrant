@@ -85,10 +85,7 @@ impl Record {
         let payload = if with_payload {
             Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
         } else {
-            if !point.payload.is_empty() {
-                todo!(); // TODO: `log::warn`!?
-            }
-
+            // TODO: Log an error/a warning if `point.payload` is not empty!?
             None
         };
 
