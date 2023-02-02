@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use schemars::JsonSchema;
+use segment::common::cpu::get_num_cpus;
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use tokio::runtime::Runtime;
@@ -15,7 +16,7 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
     let mut search_threads = max_search_threads;
 
     if search_threads == 0 {
-        let num_cpu = num_cpus::get();
+        let num_cpu = get_num_cpus();
         search_threads = std::cmp::max(1, num_cpu - 1);
     }
 

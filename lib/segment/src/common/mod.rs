@@ -1,5 +1,6 @@
 pub mod anonymize;
 pub mod arc_atomic_ref_cell_iterator;
+pub mod cpu;
 pub mod error_logging;
 pub mod file_operations;
 pub mod operation_time_statistics;
