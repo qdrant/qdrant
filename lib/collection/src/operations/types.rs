@@ -72,6 +72,39 @@ pub struct Record {
     pub vector: Option<VectorStruct>,
 }
 
+impl Record {
+    pub fn try_from_grpc(
+        point: api::grpc::qdrant::RetrievedPoint,
+        with_payload: bool,
+    ) -> Result<Self, tonic::Status> {
+        let id = point
+            .id
+            .ok_or_else(|| tonic::Status::invalid_argument("retrieved point does not have an ID"))?
+            .try_into()?;
+
+        let payload = if with_payload {
+            Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+        } else {
+            if !point.payload.is_empty() {
+                todo!(); // TODO: `log::warn`!?
+            }
+
+            None
+        };
+
+        let vector = point
+            .vectors
+            .map(|vectors| vectors.try_into())
+            .transpose()?;
+
+        Ok(Self {
+            id,
+            payload,
+            vector,
+        })
+    }
+}
+
 /// Current statistics and configuration of the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CollectionInfo {
