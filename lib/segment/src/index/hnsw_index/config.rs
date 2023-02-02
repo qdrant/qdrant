@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::cpu::get_num_cpus;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::entry::entry_point::OperationResult;
 
@@ -62,7 +63,7 @@ impl HnswGraphConfig {
         let max_threads = self.max_indexing_threads;
 
         if max_threads == 0 {
-            let num_cpu = num_cpus::get();
+            let num_cpu = get_num_cpus();
             std::cmp::max(1, num_cpu - 1)
         } else {
             max_threads
