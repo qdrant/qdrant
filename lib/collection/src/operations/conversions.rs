@@ -60,6 +60,34 @@ pub fn write_ordering_from_proto(
     })
 }
 
+pub fn try_record_from_grpc(
+    point: api::grpc::qdrant::RetrievedPoint,
+    with_payload: bool,
+) -> Result<Record, tonic::Status> {
+    let id = point
+        .id
+        .ok_or_else(|| tonic::Status::invalid_argument("retrieved point does not have an ID"))?
+        .try_into()?;
+
+    let payload = if with_payload {
+        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+    } else {
+        debug_assert!(point.payload.is_empty());
+        None
+    };
+
+    let vector = point
+        .vectors
+        .map(|vectors| vectors.try_into())
+        .transpose()?;
+
+    Ok(Record {
+        id,
+        payload,
+        vector,
+    })
+}
+
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {
         Self {
@@ -229,23 +257,6 @@ impl From<Record> for api::grpc::qdrant::RetrievedPoint {
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
             vectors,
         }
-    }
-}
-
-impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
-    type Error = Status;
-
-    fn try_from(retrieved_point: api::grpc::qdrant::RetrievedPoint) -> Result<Self, Self::Error> {
-        let vectors = match retrieved_point.vectors {
-            None => None,
-            Some(vectors) => Some(vectors.try_into()?),
-        };
-
-        Ok(Self {
-            id: retrieved_point.id.unwrap().try_into()?,
-            payload: Some(proto_to_payloads(retrieved_point.payload)?),
-            vector: vectors,
-        })
     }
 }
 
@@ -585,6 +596,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
                 DEFAULT_VECTOR_NAME => None,
                 vector_name => Some(vector_name.to_string()),
             },
+            read_consistency: None,
         }
     }
 }

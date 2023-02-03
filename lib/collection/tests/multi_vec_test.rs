@@ -127,7 +127,10 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection.search(full_search_request, None).await.unwrap();
+    let result = collection
+        .search(full_search_request, None, None)
+        .await
+        .unwrap();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -152,7 +155,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection.search(failed_search_request, None).await;
+    let result = collection.search(failed_search_request, None, None).await;
 
     assert!(
         matches!(result, Err(CollectionError::BadInput { .. })),
@@ -174,7 +177,10 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection.search(full_search_request, None).await.unwrap();
+    let result = collection
+        .search(full_search_request, None, None)
+        .await
+        .unwrap();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -193,6 +199,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: WithVector::Selector(vec![VEC_NAME1.to_string()]),
             },
+            None,
             None,
         )
         .await
@@ -217,6 +224,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
+        None,
     )
     .await;
 
@@ -240,6 +248,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
+        None,
     )
     .await
     .unwrap();

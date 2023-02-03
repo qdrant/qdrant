@@ -25,6 +25,7 @@ use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
+use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
@@ -776,6 +777,7 @@ impl Collection {
     pub async fn search_batch(
         &self,
         request: SearchRequestBatch,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // shortcuts batch if all requests with limit=0
@@ -828,7 +830,7 @@ impl Collection {
                 searches: without_payload_requests,
             };
             let without_payload_results = self
-                ._search_batch(without_payload_batch, shard_selection)
+                ._search_batch(without_payload_batch, read_consistency, shard_selection)
                 .await?;
             let filled_results = without_payload_results
                 .into_iter()
@@ -838,12 +840,15 @@ impl Collection {
                         without_payload_result,
                         req.with_payload.clone(),
                         req.with_vector.unwrap_or_default(),
+                        read_consistency,
                         shard_selection,
                     )
                 });
             try_join_all(filled_results).await
         } else {
-            let result = self._search_batch(request, shard_selection).await?;
+            let result = self
+                ._search_batch(request, read_consistency, shard_selection)
+                .await?;
             Ok(result)
         }
     }
@@ -851,6 +856,7 @@ impl Collection {
     pub async fn _search_batch(
         &self,
         request: SearchRequestBatch,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
@@ -862,7 +868,7 @@ impl Collection {
             let target_shards = shard_holder.target_shard(shard_selection)?;
             let all_searches = target_shards
                 .iter()
-                .map(|shard| shard.search(request.clone(), &self.search_runtime));
+                .map(|shard| shard.search(request.clone(), read_consistency, &self.search_runtime));
             try_join_all(all_searches).await?
         };
 
@@ -911,6 +917,7 @@ impl Collection {
         search_result: Vec<ScoredPoint>,
         with_payload: Option<WithPayloadInterface>,
         with_vector: WithVector,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let retrieve_request = PointRequest {
@@ -918,7 +925,9 @@ impl Collection {
             with_payload,
             with_vector,
         };
-        let retrieved_records = self.retrieve(retrieve_request, shard_selection).await?;
+        let retrieved_records = self
+            .retrieve(retrieve_request, read_consistency, shard_selection)
+            .await?;
         let mut records_map: HashMap<ExtendedPointId, Record> = retrieved_records
             .into_iter()
             .map(|rec| (rec.id, rec))
@@ -942,6 +951,7 @@ impl Collection {
     pub async fn search(
         &self,
         request: SearchRequest,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
@@ -951,13 +961,16 @@ impl Collection {
         let request_batch = SearchRequestBatch {
             searches: vec![request],
         };
-        let results = self._search_batch(request_batch, shard_selection).await?;
+        let results = self
+            ._search_batch(request_batch, read_consistency, shard_selection)
+            .await?;
         Ok(results.into_iter().next().unwrap())
     }
 
     pub async fn scroll_by(
         &self,
         request: ScrollRequest,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
@@ -990,6 +1003,7 @@ impl Collection {
                     &with_payload_interface,
                     &with_vector,
                     request.filter.as_ref(),
+                    read_consistency,
                 )
             });
 
@@ -1039,6 +1053,7 @@ impl Collection {
     pub async fn retrieve(
         &self,
         request: PointRequest,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
@@ -1050,9 +1065,14 @@ impl Collection {
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shard(shard_selection)?;
-            let retrieve_futures = target_shards
-                .into_iter()
-                .map(|shard| shard.retrieve(request.clone(), &with_payload, &request.with_vector));
+            let retrieve_futures = target_shards.into_iter().map(|shard| {
+                shard.retrieve(
+                    request.clone(),
+                    &with_payload,
+                    &request.with_vector,
+                    read_consistency,
+                )
+            });
             try_join_all(retrieve_futures).await?
         };
         let points = all_shard_collection_results.into_iter().flatten().collect();

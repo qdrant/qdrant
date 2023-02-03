@@ -21,6 +21,7 @@ use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
 
+use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::types::{
@@ -33,7 +34,7 @@ use crate::shards::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
     internal_delete_index, internal_delete_payload, internal_delete_points,
     internal_delete_points_by_filter, internal_set_payload, internal_sync_points,
-    internal_upsert_points,
+    internal_upsert_points, try_scored_point_from_grpc,
 };
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
@@ -400,6 +401,7 @@ impl ShardOperation for RemoteShard {
             limit: Some(limit as u32),
             with_payload: Some(with_payload_interface.clone().into()),
             with_vectors: Some(with_vector.clone().into()),
+            read_consistency: None,
         };
         let request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
@@ -416,8 +418,9 @@ impl ShardOperation for RemoteShard {
         let result: Result<Vec<Record>, Status> = scroll_response
             .result
             .into_iter()
-            .map(|retrieved| retrieved.try_into())
+            .map(|point| try_record_from_grpc(point, with_payload_interface.is_required()))
             .collect();
+
         result.map_err(|e| e.into())
     }
 
@@ -442,13 +445,13 @@ impl ShardOperation for RemoteShard {
 
     async fn search(
         &self,
-        request: Arc<SearchRequestBatch>,
+        batch_request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
 
-        let search_points = request
+        let search_points = batch_request
             .searches
             .iter()
             .map(|s| CollectionSearchRequest((self.collection_id.clone(), s)).into())
@@ -471,7 +474,19 @@ impl ShardOperation for RemoteShard {
         let result: Result<Vec<Vec<ScoredPoint>>, Status> = search_batch_response
             .result
             .into_iter()
-            .map(|scored| scored.result.into_iter().map(|s| s.try_into()).collect())
+            .zip(batch_request.searches.iter())
+            .map(|(batch_result, request)| {
+                let is_payload_required = request
+                    .with_payload
+                    .as_ref()
+                    .map_or(false, |with_payload| with_payload.is_required());
+
+                batch_result
+                    .result
+                    .into_iter()
+                    .map(|point| try_scored_point_from_grpc(point, is_payload_required))
+                    .collect()
+            })
             .collect();
         let result = result.map_err(|e| e.into());
         if result.is_ok() {
@@ -518,6 +533,7 @@ impl ShardOperation for RemoteShard {
             ids: request.ids.iter().copied().map(|v| v.into()).collect(),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             with_vectors: Some(with_vector.clone().into()),
+            read_consistency: None,
         };
         let request = &GetPointsInternal {
             get_points: Some(get_points),
@@ -534,8 +550,9 @@ impl ShardOperation for RemoteShard {
         let result: Result<Vec<Record>, Status> = get_response
             .result
             .into_iter()
-            .map(|scored| scored.try_into())
+            .map(|point| try_record_from_grpc(point, with_payload.enable))
             .collect();
+
         result.map_err(|e| e.into())
     }
 }

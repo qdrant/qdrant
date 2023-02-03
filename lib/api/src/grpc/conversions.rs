@@ -427,28 +427,6 @@ impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
     }
 }
 
-impl TryFrom<ScoredPoint> for segment::types::ScoredPoint {
-    type Error = Status;
-
-    fn try_from(point: ScoredPoint) -> Result<Self, Self::Error> {
-        let vector = point
-            .vectors
-            .map(|vectors| vectors.try_into())
-            .transpose()?;
-
-        Ok(Self {
-            id: match point.id {
-                None => return Err(Status::invalid_argument("Point does not have an ID")),
-                Some(id) => id.try_into()?,
-            },
-            payload: Some(proto_to_payloads(point.payload)?),
-            score: point.score,
-            vector,
-            version: point.version,
-        })
-    }
-}
-
 impl From<segment::types::WithVector> for WithVectorsSelector {
     fn from(with_vectors: segment::types::WithVector) -> Self {
         let selector_options = match with_vectors {

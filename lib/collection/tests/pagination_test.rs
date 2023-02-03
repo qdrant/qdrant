@@ -54,7 +54,10 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let reference_result = collection.search(full_search_request, None).await.unwrap();
+    let reference_result = collection
+        .search(full_search_request, None, None)
+        .await
+        .unwrap();
 
     assert_eq!(reference_result.len(), 100);
     assert_eq!(reference_result[0].id, 999.into());
@@ -74,7 +77,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let page_1_result = collection.search(page_1_request, None).await.unwrap();
+    let page_1_result = collection.search(page_1_request, None, None).await.unwrap();
 
     // Check that the first page is the same as the reference result
     assert_eq!(page_1_result.len(), 10);
@@ -93,7 +96,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let page_9_result = collection.search(page_9_request, None).await.unwrap();
+    let page_9_result = collection.search(page_9_request, None, None).await.unwrap();
 
     // Check that the 9th page is the same as the reference result
     assert_eq!(page_9_result.len(), 10);

@@ -260,6 +260,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(reference("ScrollResult"))
 
   /collections/{collection_name}/points/search:
@@ -283,6 +289,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(reference("ScoredPoint")))
 
   /collections/{collection_name}/points/search/batch:
@@ -306,6 +318,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(array(reference("ScoredPoint"))))
 
   /collections/{collection_name}/points/recommend:
@@ -329,6 +347,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(reference("ScoredPoint")))
 
   /collections/{collection_name}/points/recommend/batch:
@@ -352,6 +376,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(array(reference("ScoredPoint"))))
 
   /collections/{collection_name}/points/count:

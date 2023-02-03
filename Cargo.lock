@@ -2717,6 +2717,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
+ "serde_urlencoded",
  "slog",
  "slog-stdlog",
  "storage",
