@@ -144,8 +144,10 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
-        let search_points =
+        let mut search_points =
             search_points.ok_or_else(|| Status::invalid_argument("SearchPoints is missing"))?;
+
+        search_points.read_consistency = None; // *Have* to be `None`!
 
         search(self.toc.as_ref(), search_points, shard_id).await
     }
@@ -160,7 +162,20 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
-        search_batch(self.toc.as_ref(), collection_name, search_points, shard_id).await
+        // Individual `read_consistency` values are ignored by `search_batch`...
+        //
+        // search_points
+        //     .iter_mut()
+        //     .for_each(|search_points| search_points.read_consistency = None);
+
+        search_batch(
+            self.toc.as_ref(),
+            collection_name,
+            search_points,
+            None, // *Have* to be `None`!
+            shard_id,
+        )
+        .await
     }
 
     async fn recommend(
@@ -173,8 +188,10 @@ impl PointsInternal for PointsInternalService {
             // because it is transformed into regular search requests on the first node
         } = request.into_inner();
 
-        let recommend_points = recommend_points
+        let mut recommend_points = recommend_points
             .ok_or_else(|| Status::invalid_argument("RecommendPoints is missing"))?;
+
+        recommend_points.read_consistency = None; // *Have* to be `None`!
 
         recommend(self.toc.as_ref(), recommend_points).await
     }
@@ -188,8 +205,10 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
-        let scroll_points =
+        let mut scroll_points =
             scroll_points.ok_or_else(|| Status::invalid_argument("ScrollPoints is missing"))?;
+
+        scroll_points.read_consistency = None; // *Have* to be `None`!
 
         scroll(self.toc.as_ref(), scroll_points, shard_id).await
     }
@@ -203,8 +222,10 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
-        let get_points =
+        let mut get_points =
             get_points.ok_or_else(|| Status::invalid_argument("GetPoints is missing"))?;
+
+        get_points.read_consistency = None; // *Have* to be `None`!
 
         get(self.toc.as_ref(), get_points, shard_id).await
     }

@@ -90,7 +90,9 @@ async fn replicate_shard_data(
         let source_collection =
             handle_get_collection(collections_read.get(source_collection_name))?;
         let _updates_guard = source_collection.lock_updates().await;
-        let scroll_result = source_collection.scroll_by(request, Some(shard_id)).await?;
+        let scroll_result = source_collection
+            .scroll_by(request, None, Some(shard_id))
+            .await?;
 
         offset = scroll_result.next_page_offset;
 

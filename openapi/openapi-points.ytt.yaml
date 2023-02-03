@@ -21,6 +21,12 @@ paths:
           required: true
           schema:
             $ref: "#/components/schemas/ExtendedPointId"
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(reference("Record"))
 
   /collections/{collection_name}/points:
@@ -44,6 +50,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(reference("Record")))
 
     put:

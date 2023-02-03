@@ -1938,6 +1938,15 @@
             "schema": {
               "$ref": "#/components/schemas/ExtendedPointId"
             }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
           }
         ],
         "responses": {
@@ -2016,6 +2025,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
             }
           }
         ],
@@ -2677,6 +2695,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
           }
         ],
         "responses": {
@@ -2755,6 +2782,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
             }
           }
         ],
@@ -2837,6 +2873,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
             }
           }
         ],
@@ -2923,6 +2968,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
           }
         ],
         "responses": {
@@ -3004,6 +3058,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
             }
           }
         ],
@@ -6673,6 +6736,28 @@
           "weak",
           "medium",
           "strong"
+        ]
+      },
+      "ReadConsistency": {
+        "description": "Read consistency parameter\n\nDefines how many replicas should be queried to get the result\n\n* `N` - send N random request and return points, which present on all of them\n\n* `majority` - send N/2+1 random request and return points, which present on all of them\n\n* `quorum` - send requests to all nodes and return points which present on majority of them\n\n* `all` - send requests to all nodes and return points which present on all of them\n\nDefault value is `Factor(1)`",
+        "anyOf": [
+          {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          {
+            "$ref": "#/components/schemas/ReadConsistencyType"
+          }
+        ]
+      },
+      "ReadConsistencyType": {
+        "description": "* `majority` - send N/2+1 random request and return points, which present on all of them\n\n* `quorum` - send requests to all nodes and return points which present on majority of nodes\n\n* `all` - send requests to all nodes and return points which present on all nodes",
+        "type": "string",
+        "enum": [
+          "majority",
+          "quorum",
+          "all"
         ]
       }
     }

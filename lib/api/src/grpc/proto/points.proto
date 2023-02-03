@@ -16,6 +16,19 @@ message WriteOrdering {
   WriteOrderingType type = 1; // Write ordering guarantees
 }
 
+enum ReadConsistencyType {
+  All = 0; // Send request to all nodes and return points which are present on all of them
+  Majority = 1; // Send requests to all nodes and return points which are present on majority of them
+  Quorum = 2; // Send requests to half + 1 nodes, return points which are present on all of them
+}
+
+message ReadConsistency {
+  oneof value {
+    ReadConsistencyType type = 1; // Common read consistency configurations
+    uint64 factor = 2; // Send request to a specified number of nodes, and return points which are present on all of them
+  }
+}
+
 // ---------------------------------------------
 // ------------- Point Id Requests -------------
 // ---------------------------------------------
@@ -55,6 +68,7 @@ message GetPoints {
   reserved 3; // deprecated "with_vector" field
   WithPayloadSelector with_payload = 4; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 5; // Options for specifying which vectors to include into response
+  optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
 }
 
 message SetPayloadPoints {
@@ -169,11 +183,13 @@ message SearchPoints {
   optional uint64 offset = 9; // Offset of the result
   optional string vector_name = 10; // Which vector to use for search, if not specified - use default vector
   optional WithVectorsSelector with_vectors = 11; // Options for specifying which vectors to include into response
+  optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
 }
 
 message SearchBatchPoints {
   string collection_name = 1; // Name of the collection
   repeated SearchPoints search_points = 2;
+  optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
 }
 
 message ScrollPoints {
@@ -184,6 +200,7 @@ message ScrollPoints {
   reserved 5; // deprecated "with_vector" field
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 7; // Options for specifying which vectors to include into response
+  optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
 }
 
 message LookupLocation {
@@ -205,11 +222,13 @@ message RecommendPoints {
   optional string using = 11; // Define which vector to use for recommendation, if not specified - default vector
   optional WithVectorsSelector with_vectors = 12; // Options for specifying which vectors to include into response
   optional LookupLocation lookup_from = 13; // Name of the collection to use for points lookup, if not specified - use current collection
+  optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
 }
 
 message RecommendBatchPoints {
   string collection_name = 1; // Name of the collection
   repeated RecommendPoints recommend_points = 2;
+  optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
 }
 
 message CountPoints {

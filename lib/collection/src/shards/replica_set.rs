@@ -25,6 +25,7 @@ use super::remote_shard::RemoteShard;
 use super::resolve::{Resolve, ResolveCondition};
 use super::{create_shard_dir, CollectionId};
 use crate::config::CollectionConfig;
+use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
@@ -762,8 +763,7 @@ impl ShardReplicaSet {
         read_operation: F,
         local: &'a Option<Shard>,
         remotes: &'a [RemoteShard],
-        factor: usize,
-        condition: ResolveCondition,
+        read_consistency: ReadConsistency,
     ) -> CollectionResult<Res>
     where
         F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
@@ -787,7 +787,21 @@ impl ShardReplicaSet {
         let total_count = local_count + remotes_count;
         let active_count = active_local_count + active_remotes_count;
 
-        let factor = factor.clamp(1, total_count);
+        let (factor, condition) = match read_consistency {
+            ReadConsistency::Type(ReadConsistencyType::All) => (total_count, ResolveCondition::All),
+
+            ReadConsistency::Type(ReadConsistencyType::Majority) => {
+                (total_count, ResolveCondition::Majority)
+            }
+
+            ReadConsistency::Type(ReadConsistencyType::Quorum) => {
+                (total_count / 2 + 1, ResolveCondition::All)
+            }
+
+            ReadConsistency::Factor(factor) => {
+                (factor.clamp(1, total_count), ResolveCondition::All)
+            }
+        };
 
         if active_count < factor {
             return Err(CollectionError::service_error(format!(
@@ -1333,14 +1347,16 @@ impl ShardReplicaSet {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        read_consistency: Option<ReadConsistency>,
     ) -> CollectionResult<Vec<Record>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
-        self.execute_read_operation(
+        self.execute_and_resolve_read_operation(
             |shard| shard.scroll_by(offset, limit, with_payload_interface, with_vector, filter),
             &local,
             &remotes,
+            read_consistency.unwrap_or_default(),
         )
         .await
     }
@@ -1356,15 +1372,17 @@ impl ShardReplicaSet {
     pub async fn search(
         &self,
         request: Arc<SearchRequestBatch>,
+        read_consistency: Option<ReadConsistency>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
-        self.execute_read_operation(
+        self.execute_and_resolve_read_operation(
             |shard| shard.search(request.clone(), search_runtime_handle),
             &local,
             &remotes,
+            read_consistency.unwrap_or_default(),
         )
         .await
     }
@@ -1393,14 +1411,16 @@ impl ShardReplicaSet {
         request: Arc<PointRequest>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        read_consistency: Option<ReadConsistency>,
     ) -> CollectionResult<Vec<Record>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
-        self.execute_read_operation(
+        self.execute_and_resolve_read_operation(
             |shard| shard.retrieve(request.clone(), with_payload, with_vector),
             &local,
             &remotes,
+            read_consistency.unwrap_or_default(),
         )
         .await
     }
