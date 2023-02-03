@@ -18,7 +18,7 @@ use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, JaccardMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
@@ -143,6 +143,16 @@ pub fn open_simple_vector_storage(
         }))),
         Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
             DotProductMetric,
+        > {
+            dim,
+            metric: PhantomData,
+            vectors,
+            deleted,
+            deleted_count,
+            db_wrapper,
+        }))),
+        Distance::Jaccard => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
+            JaccardMetric,
         > {
             dim,
             metric: PhantomData,

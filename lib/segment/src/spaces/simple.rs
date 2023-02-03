@@ -27,6 +27,9 @@ pub struct CosineMetric {}
 #[derive(Clone)]
 pub struct EuclidMetric {}
 
+#[derive(Clone)]
+pub struct JaccardMetric {}
+
 impl Metric for EuclidMetric {
     fn distance() -> Distance {
         Distance::Euclid
@@ -177,6 +180,23 @@ impl Metric for CosineMetric {
         score
     }
 }
+impl Metric for JaccardMetric {
+    fn distance() -> Distance {
+        Distance::Jaccard
+    }
+
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+        jaccard_similarity(v1, v2)
+    }
+
+    fn preprocess(_vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+        None
+    }
+
+    fn postprocess(score: ScoreType) -> ScoreType {
+        score
+    }
+}
 
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     let s: ScoreType = v1
@@ -201,6 +221,28 @@ pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> Sco
     v1.iter().zip(v2).map(|(a, b)| a * b).sum()
 }
 
+pub fn jaccard_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    // Assumes binary vectors
+
+    if v1.is_empty() || v2.is_empty() {
+        return 1.0;
+    }
+
+    let interserction_len: i64 = v1
+        .iter()
+        .zip(v2.iter())
+        .map(|(a, b)| (*a as i64) & (*b as i64))
+        .sum();
+
+    let union_len: i64 = v1
+        .iter()
+        .zip(v2.iter())
+        .map(|(a, b)| (*a as i64) | (*b as i64))
+        .sum();
+
+    interserction_len as f32 / union_len as f32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +251,19 @@ mod tests {
     fn test_cosine_preprocessing() {
         let res = CosineMetric::preprocess(&[0.0, 0.0, 0.0, 0.0]);
         assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_jaccard_similarity() {
+        assert_eq!(1.0, jaccard_similarity(&[], &[]));
+        assert_eq!(1.0, jaccard_similarity(&[1.0], &[1.0]));
+        assert_eq!(0.0, jaccard_similarity(&[1.0], &[0.0]));
+        assert_eq!(
+            0.4,
+            jaccard_similarity(
+                &[1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+                &[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+            )
+        );
     }
 }
