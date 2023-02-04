@@ -681,6 +681,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Cosine | 1 |  |
 | Euclid | 2 |  |
 | Dot | 3 |  |
+| Jaccard | 4 |  |
 
 
 
