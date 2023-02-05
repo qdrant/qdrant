@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "windows"))]
 mod prof;
 
 use std::collections::{BTreeMap, HashMap};
@@ -63,7 +64,7 @@ fn small_map_obj(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
+    config = Criterion::default();
     targets = small_map_obj
 }
 

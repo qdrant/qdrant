@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "windows"))]
 mod prof;
 
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -224,9 +225,17 @@ fn basic_scoring_vectors(c: &mut Criterion) {
     });
 }
 
+#[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
+    targets = hnsw_build_asymptotic, scoring_vectors, basic_scoring_vectors
+}
+
+#[cfg(target_os = "windows")]
+criterion_group! {
+    name = benches;
+    config = Criterion::default();
     targets = hnsw_build_asymptotic, scoring_vectors, basic_scoring_vectors
 }
 

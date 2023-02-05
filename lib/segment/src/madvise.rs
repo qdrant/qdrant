@@ -77,6 +77,8 @@ impl Madviseable for memmap2::Mmap {
     fn madvise(&self, advice: Advice) -> io::Result<()> {
         #[cfg(unix)]
         self.advise(advice.into())?;
+        #[cfg(not(unix))]
+        log::debug!("Ignore {advice:?} on this platform");
         Ok(())
     }
 }
@@ -85,6 +87,8 @@ impl Madviseable for memmap2::MmapMut {
     fn madvise(&self, advice: Advice) -> io::Result<()> {
         #[cfg(unix)]
         self.advise(advice.into())?;
+        #[cfg(not(unix))]
+        log::debug!("Ignore {advice:?} on this platform");
         Ok(())
     }
 }
