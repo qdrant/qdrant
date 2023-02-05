@@ -144,7 +144,6 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-
 #[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;

@@ -130,7 +130,6 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-
     #[cfg(not(target_os = "windows"))]
     use std::os::unix::fs::MetadataExt;
 

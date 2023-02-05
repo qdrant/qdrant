@@ -87,5 +87,4 @@ criterion_group! {
     targets = hnsw_benchmark
 }
 
-
 criterion_main!(benches);
