@@ -1,22 +1,19 @@
-# Qdrant v1.0 Roadmap
+# Qdrant 2023 Roadmap
 
 Hi!
-This document is our plan for Qdrant development till its first enterprise-ready release. 
+This document is our plan for Qdrant development in 2023.
+Previous year roadmap is available here:
+
+* [Roadmap 2022](roadmap-2022.md)
 
 Goals of the release:
 
-* **Make API and Storage stable** - ensure backward compatibility for at least one major version back.
-  * Starting from the release, breaking changes in API should only be done with a proper deprecation notice
-  * Storage should be compatible between any two consequent major versions
-* **Achieve horizontal scalability** - distributed deployment able to serve billions of points
-* **Easy integration** - make the user experience as smooth as possible
-* **Resource efficiency** - push Qdrant performance on the single machine to the limit
-
-To build a solid foundation for future development, we decided to keep Qdrant as legacy-free as possible.
-That means that while switching to `v1.0`, some breaking changes are likely.
-
-ETA of `v1.0-rc` is Q3 2022
-
+* **Maintain easy upgrades** - we plan to keep backward compatibility for at least one major version back. 
+  * That means that you can upgrade Qdrant without any downtime and without any changes in your client code within one major version.
+  * Storage should be compatible between any two consequent versions, so you can upgrade Qdrant with automatic data migration between consecutive versions.
+* **Make billion-scale serving cheap** - qdrant already can serve billions of vectors, but we want to make it even more affordable.
+* **Easy scaling** - our plan is to make it easy to dynamically scale Qdrant, so you could go from 1 to 1B vectors seamlessly.
+* **Various similarity search scenarios** - we want to support more similarity search scenarios, e.g. sparse search, grouping requests, diverse search, etc.
 
 ## How to contribute
 
@@ -31,41 +28,31 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 
 ## Milestones
 
-* :earth_americas: Distributed Deployment
-  * [x] Distributed querying
-  * [x] Integration of [raft](https://raft.github.io/) for distributed consistency
-  * [x] Sharding - group segments into shards
-  * [x] Cluster scaling
-  * [x] Replications - automatic segment replication between nodes in cluster
+* :atom_symbol: Quantization support
+  * [ ] Scalar quantization f32 -> u8 (4x compression)
+  * [ ] Advanced quantization (8x and 16x compression)
+  * [ ] Support for binary vectors
 
 ---
 
-* :electric_plug: Integration & Interfaces
-  * [x] gPRC version of each REST API endpoint
-  * [x] Split REST Endpoints for better documentation and client generation
+* :arrow_double_up: Scalability
+  * [ ] Automatic replication factor adjustment
+  * [ ] Automatic shard distribution on cluster scaling
+  * [ ] Repartitioning support
 
 ---
 
-* :truck: Payload Processing
-  * [x] Support storing any JSON as a Payload
-  * [ ] ~~Support more payload types, e.g.~~
-    * ~~Data-time~~
-  * [x] Support for `Null` values
-  * [x] Enable more types of filtering queries, e.g.
-    * [x] Filter by Score
-    * [x] Filter by number of stored elements
-    * [x] `isNull` or `isEmpty` query conditions
-    
+* :eyes: Search scenarios
+  * [ ] Diversity search - search for vectors that are different from each other
+  * [ ] Sparse vectors search - search for vectors with a small number of non-zero values
+  * [ ] Grouping requests - search within payload-defined groups
+  * [ ] Different scenarios for recommendation API
+
+---
     
 * Additionally
-  * [x] Full-text filtering support
-  * [x] Multiple vectors per record support  
+  * [ ] Extend full-text filtering support
+    * [ ] Support for phrase queries
+    * [ ] Support for logical operators
+  * [ ] Simplify update of collection parameters
 
----
-
-* :racing_car: Performance improvements
-  * [x] Indexing of geo-payload
-  * [x] On the fly payload index
-  * [x] Multiprocessing segment optimization
-  * [x] Fine-tuned HNSW index configuration
-  
