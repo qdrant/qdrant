@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
 tempfile = "3.3.0"
-proptest = "1.0.0"
+proptest = "1.1.0"
 env_logger = "0.10.0"
 
 [dependencies]
