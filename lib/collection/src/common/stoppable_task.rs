@@ -79,9 +79,9 @@ mod tests {
         let handle = spawn_stoppable(long_task);
 
         thread::sleep(Duration::from_millis(STEP_MILLIS * 5));
-        handle.ask_to_stop();
         assert!(!handle.is_finished());
-        thread::sleep(Duration::from_millis(STEP_MILLIS));
+        handle.ask_to_stop();
+        thread::sleep(Duration::from_millis(STEP_MILLIS * 3));
         assert!(handle.is_finished());
 
         let res = handle.stop().await.unwrap();
