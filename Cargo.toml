@@ -80,3 +80,6 @@ bench = false
 [workspace]
 members = ["lib/*"]
 exclude = ["benches/search-points"]
+
+[profile.release]
+lto = "fat"
