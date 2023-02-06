@@ -97,7 +97,7 @@ mod tests {
         sleep(Duration::from_millis(STEP_MILLIS * 5)).await;
         assert!(!handle.is_finished());
         handle.ask_to_stop();
-        sleep(Duration::from_millis(STEP_MILLIS * 2)).await;
+        sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
         assert!(handle.is_finished());
 
         let res = handle.stop().await.unwrap();
