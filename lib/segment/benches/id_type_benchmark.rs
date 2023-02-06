@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "windows"))]
 mod prof;
 
 use std::collections::{BTreeMap, HashMap};
@@ -172,7 +173,7 @@ fn enum_hash_search(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
+    config = Criterion::default();
     targets = id_serialization_speed, u128_hash_search, enum_hash_search
 }
 
