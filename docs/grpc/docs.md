@@ -1089,7 +1089,6 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | keys | [string](#string) | repeated | List of keys to delete |
-| points | [PointId](#qdrant-PointId) | repeated | Affected points, deprecated |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
@@ -1774,7 +1773,6 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | payload | [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry) | repeated | New payload values |
-| points | [PointId](#qdrant-PointId) | repeated | List of point to modify, deprecated |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
