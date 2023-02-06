@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "windows"))]
 mod prof;
 
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -62,7 +63,7 @@ fn serde_formats_bench(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
+    config = Criterion::default();
     targets = serde_formats_bench
 }
 

@@ -95,8 +95,8 @@ mod tests {
         let handle = spawn_async_stoppable(long_task);
 
         sleep(Duration::from_millis(STEP_MILLIS * 5)).await;
-        handle.ask_to_stop();
         assert!(!handle.is_finished());
+        handle.ask_to_stop();
         sleep(Duration::from_millis(STEP_MILLIS * 2)).await;
         assert!(handle.is_finished());
 

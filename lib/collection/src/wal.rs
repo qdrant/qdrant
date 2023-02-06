@@ -130,6 +130,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(not(target_os = "windows"))]
     use std::os::unix::fs::MetadataExt;
 
     use tempfile::Builder;
@@ -151,10 +152,12 @@ mod tests {
 
         serde_wal.write(&record).expect("Can't write");
 
-        let metadata = fs::metadata(dir.path().join("open-1").to_str().unwrap()).unwrap();
-
-        println!("file size: {}", metadata.size());
-        assert_eq!(metadata.size() as usize, wal_options.segment_capacity);
+        #[cfg(not(target_os = "windows"))]
+        {
+            let metadata = fs::metadata(dir.path().join("open-1").to_str().unwrap()).unwrap();
+            println!("file size: {}", metadata.size());
+            assert_eq!(metadata.size() as usize, wal_options.segment_capacity);
+        };
 
         for (_idx, rec) in serde_wal.read(0) {
             println!("{rec:?}");
