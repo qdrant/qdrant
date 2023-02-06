@@ -98,6 +98,9 @@ mod tests {
         assert!(!handle.is_finished());
         handle.ask_to_stop();
         sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
+        // If windows, we need to wait a bit more
+        #[cfg(windows)]
+        sleep(Duration::from_millis(STEP_MILLIS * 10));
         assert!(handle.is_finished());
 
         let res = handle.stop().await.unwrap();
