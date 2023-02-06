@@ -300,9 +300,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anyhow"
-version = "1.0.68"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cb2f989d18dd141ab8ae82f64d1a8cdd37e0840f73a406896cf5e99502fab61"
+checksum = "224afbd727c3d6e4b90103ece64b8d1b67fbb1973b1046c2281eed3f3803f800"
 
 [[package]]
 name = "api"
@@ -4046,7 +4046,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?branch=windows-support#4e34fe5cf818ceac416317652fa247a3f70938cb"
+source = "git+https://github.com/qdrant/wal.git?rev=7536f9e222d55cc53f7f7507a3028b0e303976cc#7536f9e222d55cc53f7f7507a3028b0e303976cc"
 dependencies = [
  "byteorder",
  "crc",
