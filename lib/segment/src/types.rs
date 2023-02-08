@@ -11,7 +11,7 @@ use geo::Point;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
@@ -38,28 +38,13 @@ pub type IntPayloadType = i64;
 pub const VECTOR_ELEMENT_SIZE: usize = size_of::<VectorElementType>();
 
 /// Type, used for specifying point ID in user interface
-#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema)]
+#[derive(
+    Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
+)]
 #[serde(untagged)]
 pub enum ExtendedPointId {
     NumId(u64),
     Uuid(Uuid),
-}
-
-// custom implementation to have better error reporting than Serde's untagged enum
-impl<'de> Deserialize<'de> for ExtendedPointId {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // relies on the JSON deserializer to parse the value into a Value
-        let value = Value::deserialize(deserializer)?;
-        match u64::deserialize(value.clone()) {
-            Ok(num_id) => Ok(ExtendedPointId::NumId(num_id)),
-            Err(_outer_error) => match Uuid::deserialize(value.clone()) {
-                Ok(uuid) => Ok(ExtendedPointId::Uuid(uuid)),
-                Err(_inner_error) => Err(serde::de::Error::custom(format!(
-                    "Cannot parse {value} as point id, it is neither an unsigned integer, nor a valid UUID"
-                ))),
-            },
-        }
-    }
 }
 
 impl std::fmt::Display for ExtendedPointId {
