@@ -289,10 +289,19 @@ fn default_max_indexing_threads() -> usize {
     0
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct QuantizationConfig {
     pub enable: bool,
+    pub quantile: Option<f32>,
+}
+
+impl Eq for QuantizationConfig {}
+
+impl std::hash::Hash for QuantizationConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.enable.hash(state);
+    }
 }
 
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;

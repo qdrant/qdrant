@@ -156,6 +156,7 @@ message OptimizersConfigDiff {
 
 message QuantizationConfig {
   bool enable = 1;
+  optional float quantile = 2;
 }
 
 message CreateCollection {

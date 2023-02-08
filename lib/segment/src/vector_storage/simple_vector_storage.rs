@@ -9,6 +9,7 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitVec;
 use log::debug;
 use parking_lot::RwLock;
+use quantization::encoder::EncodingParameters;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
@@ -299,17 +300,25 @@ where
         }
     }
 
-    fn quantize(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {
+    fn quantize(
+        &mut self,
+        meta_path: &Path,
+        data_path: &Path,
+        quantile: Option<f32>,
+    ) -> OperationResult<()> {
         log::info!("Quantizing vectors...");
         let quantized_vectors = EncodedVectors::encode(
             (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
             Vec::new(),
-            match TMetric::distance() {
-                Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                Distance::Dot => quantization::encoder::SimilarityType::Dot,
+            EncodingParameters {
+                distance_type: match TMetric::distance() {
+                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
+                },
+                invert: TMetric::distance() == Distance::Euclid,
+                quantile,
             },
-            TMetric::distance() == Distance::Euclid,
         )
         .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
         quantized_vectors.save(data_path, meta_path)?;
@@ -479,7 +488,7 @@ mod tests {
         let quantized_data_path = dir.path().join("quantized.data");
 
         borrowed_storage
-            .quantize(&quantized_meta_path, &quantized_data_path)
+            .quantize(&quantized_meta_path, &quantized_data_path, None)
             .unwrap();
 
         let query = vec![0.0, 1.0, 1.1, 1.0];

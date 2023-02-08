@@ -275,9 +275,14 @@ where
         }
     }
 
-    fn quantize(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {
+    fn quantize(
+        &mut self,
+        meta_path: &Path,
+        data_path: &Path,
+        quantile: Option<f32>,
+    ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.quantize(TMetric::distance(), meta_path, data_path)
+        mmap_store.quantize(TMetric::distance(), meta_path, data_path, quantile)
     }
 
     fn load_quantization(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {

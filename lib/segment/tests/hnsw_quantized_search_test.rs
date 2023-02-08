@@ -68,7 +68,7 @@ mod tests {
             vector_storage
                 .vector_storage
                 .borrow_mut()
-                .quantize(&quantized_meta_path, &quantized_data_path)
+                .quantize(&quantized_meta_path, &quantized_data_path, None)
                 .unwrap()
         });
 

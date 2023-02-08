@@ -174,6 +174,8 @@ pub struct OptimizersConfigDiff {
 pub struct QuantizationConfig {
     #[prost(bool, tag = "1")]
     pub enable: bool,
+    #[prost(float, optional, tag = "2")]
+    pub quantile: ::core::option::Option<f32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

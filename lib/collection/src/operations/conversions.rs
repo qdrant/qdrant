@@ -211,9 +211,12 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
                     wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                 }),
-                quantization_config: config
-                    .quantization_config
-                    .map(|x| api::grpc::qdrant::QuantizationConfig { enable: x.enable }),
+                quantization_config: config.quantization_config.map(|x| {
+                    api::grpc::qdrant::QuantizationConfig {
+                        enable: x.enable,
+                        quantile: x.quantile,
+                    }
+                }),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -374,9 +377,10 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 None => return Err(Status::invalid_argument("Malformed WalConfig type")),
                 Some(wal_config) => wal_config.into(),
             },
-            quantization_config: config
-                .quantization_config
-                .map(|x| QuantizationConfig { enable: x.enable }),
+            quantization_config: config.quantization_config.map(|x| QuantizationConfig {
+                enable: x.enable,
+                quantile: x.quantile,
+            }),
         })
     }
 }

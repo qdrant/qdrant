@@ -219,10 +219,11 @@ impl SegmentBuilder {
                     let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
                     let quantized_meta_path = vector_storage_path.join(QUANTIZED_META_PATH);
                     let quantized_data_path = vector_storage_path.join(QUANTIZED_DATA_PATH);
-                    vector_data
-                        .vector_storage
-                        .borrow_mut()
-                        .quantize(&quantized_meta_path, &quantized_data_path)?;
+                    vector_data.vector_storage.borrow_mut().quantize(
+                        &quantized_meta_path,
+                        &quantized_data_path,
+                        quantization.quantile,
+                    )?;
                 }
             }
         }

@@ -81,7 +81,12 @@ pub trait VectorStorage {
     fn quantized_raw_scorer(&self, vector: &[VectorElementType])
         -> Option<Box<dyn RawScorer + '_>>;
     // Generate quantized vectors and store them on disk
-    fn quantize(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()>;
+    fn quantize(
+        &mut self,
+        meta_path: &Path,
+        data_path: &Path,
+        quantile: Option<f32>,
+    ) -> OperationResult<()>;
     // Load quantized vectors from disk
     fn load_quantization(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()>;
 

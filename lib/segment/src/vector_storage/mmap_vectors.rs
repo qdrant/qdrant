@@ -7,6 +7,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use memmap2::{Mmap, MmapMut, MmapOptions};
 use parking_lot::{RwLock, RwLockReadGuard};
+use quantization::encoder::EncodingParameters;
 
 use super::quantized_vector_storage::EncodedVectors;
 use crate::common::error_logging::LogError;
@@ -105,6 +106,7 @@ impl MmapVectors {
         distance: Distance,
         meta_path: &Path,
         data_path: &Path,
+        quantile: Option<f32>,
     ) -> OperationResult<()> {
         self.enable_deleted_ram();
         let quantized_vectors = EncodedVectors::encode(
@@ -113,12 +115,15 @@ impl MmapVectors {
                 self.raw_vector_offset(offset)
             }),
             Vec::new(),
-            match distance {
-                Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                Distance::Dot => quantization::encoder::SimilarityType::Dot,
+            EncodingParameters {
+                distance_type: match distance {
+                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
+                },
+                invert: distance == Distance::Euclid,
+                quantile,
             },
-            distance == Distance::Euclid,
         )
         .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
         quantized_vectors.save(data_path, meta_path)?;

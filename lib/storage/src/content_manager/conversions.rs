@@ -60,9 +60,10 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 init_from: value
                     .init_from_collection
                     .map(|v| InitFrom { collection: v }),
-                quantization_config: value
-                    .quantization_config
-                    .map(|v| QuantizationConfig { enable: v.enable }),
+                quantization_config: value.quantization_config.map(|v| QuantizationConfig {
+                    enable: v.enable,
+                    quantile: v.quantile,
+                }),
             },
         )))
     }
