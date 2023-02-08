@@ -100,7 +100,7 @@ mod tests {
         sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
         // If windows, we need to wait a bit more
         #[cfg(windows)]
-        sleep(Duration::from_millis(STEP_MILLIS * 10));
+        sleep(Duration::from_millis(STEP_MILLIS * 10)).await;
         assert!(handle.is_finished());
 
         let res = handle.stop().await.unwrap();
