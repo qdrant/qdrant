@@ -2,17 +2,26 @@ use bitvec::vec::BitVec;
 use quantization::encoder::{EncodedQuery, EncodedVectors, Storage};
 
 use super::{RawScorer, ScoredPointOffset};
+use crate::data_types::vectors::VectorElementType;
 use crate::types::{PointOffsetType, ScoreType};
 
 pub trait QuantizedVectorStorage: Send + Sync {
-    fn raw_scorer<'a>(&'a self, query: &[f32], deleted: &'a BitVec) -> Box<dyn RawScorer + 'a>;
+    fn raw_scorer<'a>(
+        &'a self,
+        query: &[VectorElementType],
+        deleted: &'a BitVec,
+    ) -> Box<dyn RawScorer + 'a>;
 }
 
 impl<TStorage> QuantizedVectorStorage for EncodedVectors<TStorage>
 where
     TStorage: Storage + Send + Sync,
 {
-    fn raw_scorer<'a>(&'a self, query: &[f32], deleted: &'a BitVec) -> Box<dyn RawScorer + 'a> {
+    fn raw_scorer<'a>(
+        &'a self,
+        query: &[VectorElementType],
+        deleted: &'a BitVec,
+    ) -> Box<dyn RawScorer + 'a> {
         let query = self.encode_query(query);
         Box::new(QuantizedRawScorer {
             query,
