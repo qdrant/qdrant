@@ -1,17 +1,40 @@
 use bitvec::vec::BitVec;
+use quantization::encoder::{EncodedQuery, EncodedVectors, Storage};
 
 use super::{RawScorer, ScoredPointOffset};
 use crate::types::{PointOffsetType, ScoreType};
 
-pub type EncodedVectors = quantization::encoder::EncodedVectors<Vec<u8>>;
-
-pub struct QuantizedRawScorer<'a> {
-    pub query: quantization::encoder::EncodedQuery,
-    pub deleted: &'a BitVec,
-    pub quantized_data: &'a EncodedVectors,
+pub trait QuantizedVectorStorage: Send + Sync {
+    fn raw_scorer<'a>(&'a self, query: &[f32], deleted: &'a BitVec) -> Box<dyn RawScorer + 'a>;
 }
 
-impl RawScorer for QuantizedRawScorer<'_> {
+impl<TStorage> QuantizedVectorStorage for EncodedVectors<TStorage>
+where
+    TStorage: Storage + Send + Sync,
+{
+    fn raw_scorer<'a>(&'a self, query: &[f32], deleted: &'a BitVec) -> Box<dyn RawScorer + 'a> {
+        let query = self.encode_query(query);
+        Box::new(QuantizedRawScorer {
+            query,
+            deleted,
+            quantized_data: self,
+        })
+    }
+}
+
+pub struct QuantizedRawScorer<'a, TStorage>
+where
+    TStorage: Storage,
+{
+    pub query: EncodedQuery,
+    pub deleted: &'a BitVec,
+    pub quantized_data: &'a EncodedVectors<TStorage>,
+}
+
+impl<TStorage> RawScorer for QuantizedRawScorer<'_, TStorage>
+where
+    TStorage: Storage,
+{
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         let mut size: usize = 0;
         for point_id in points.iter().copied() {

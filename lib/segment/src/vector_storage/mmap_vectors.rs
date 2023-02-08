@@ -9,13 +9,14 @@ use memmap2::{Mmap, MmapMut, MmapOptions};
 use parking_lot::{RwLock, RwLockReadGuard};
 use quantization::encoder::EncodingParameters;
 
-use super::quantized_vector_storage::EncodedVectors;
+use super::quantized_mmap_storage::{QuantizedMmapStorage, QuantizedMmapStorageBuilder};
+use super::quantized_vector_storage::QuantizedVectorStorage;
 use crate::common::error_logging::LogError;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::madvise;
-use crate::types::{Distance, PointOffsetType};
+use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";
@@ -29,7 +30,7 @@ pub struct MmapVectors {
     deleted_mmap: Arc<RwLock<MmapMut>>,
     pub deleted_count: usize,
     pub deleted_ram: Option<BitVec>,
-    pub quantized_vectors: Option<EncodedVectors>,
+    pub quantized_vectors: Option<Box<dyn QuantizedVectorStorage>>,
 }
 
 fn open_read(path: &Path) -> OperationResult<Mmap> {
@@ -101,39 +102,80 @@ impl MmapVectors {
         self.deleted_ram = Some(deleted);
     }
 
+    fn create_quantized_storage<TStorage, TStorageBuilder>(
+        &self,
+        meta_path: &Path,
+        data_path: &Path,
+        encoding_parameters: EncodingParameters,
+    ) -> OperationResult<Box<dyn QuantizedVectorStorage>>
+    where
+        TStorage: quantization::encoder::Storage,
+        TStorageBuilder: quantization::encoder::StorageBuilder<TStorage>,
+    {
+        let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
+            let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
+            self.raw_vector_offset(offset)
+        });
+        let quantized_vectors = quantization::encoder::EncodedVectors::<Vec<u8>>::encode(
+            vector_data_iterator,
+            Vec::new(),
+            encoding_parameters,
+        )
+        .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
+        quantized_vectors.save(data_path, meta_path)?;
+        Ok(Box::new(quantized_vectors))
+    }
+
     pub fn quantize(
         &mut self,
         distance: Distance,
         meta_path: &Path,
         data_path: &Path,
-        quantile: Option<f32>,
+        quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         self.enable_deleted_ram();
-        let quantized_vectors = EncodedVectors::encode(
-            (0..self.num_vectors as u32).map(|i| {
-                let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
-                self.raw_vector_offset(offset)
-            }),
-            Vec::new(),
-            EncodingParameters {
-                distance_type: match distance {
-                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
-                },
-                invert: distance == Distance::Euclid,
-                quantile,
+        let encoding_parameters = EncodingParameters {
+            distance_type: match distance {
+                Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                Distance::Dot => quantization::encoder::SimilarityType::Dot,
             },
-        )
-        .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
-        quantized_vectors.save(data_path, meta_path)?;
+            invert: distance == Distance::Euclid,
+            quantile: quantization_config.quantile,
+        };
+        let quantized_vectors = if quantization_config.always_ram == Some(true) {
+            self.create_quantized_storage::<Vec<u8>, Vec<u8>>(
+                meta_path,
+                data_path,
+                encoding_parameters,
+            )?
+        } else {
+            self.create_quantized_storage::<QuantizedMmapStorage, QuantizedMmapStorageBuilder>(
+                meta_path,
+                data_path,
+                encoding_parameters,
+            )?
+        };
         self.quantized_vectors = Some(quantized_vectors);
         Ok(())
     }
 
-    pub fn load_quantization(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {
+    pub fn load_quantization(
+        &mut self,
+        meta_path: &Path,
+        data_path: &Path,
+        quantization_config: &QuantizationConfig,
+    ) -> OperationResult<()> {
         self.enable_deleted_ram();
-        self.quantized_vectors = Some(EncodedVectors::load(data_path, meta_path)?);
+        self.quantized_vectors = if quantization_config.always_ram == Some(true) {
+            Some(Box::new(
+                quantization::encoder::EncodedVectors::<Vec<u8>>::load(data_path, meta_path)?,
+            ))
+        } else {
+            Some(Box::new(quantization::encoder::EncodedVectors::<
+                QuantizedMmapStorage,
+            >::load(data_path, meta_path)?))
+        };
         Ok(())
     }
 

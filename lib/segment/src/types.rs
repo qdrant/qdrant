@@ -289,11 +289,23 @@ fn default_max_indexing_threads() -> usize {
     0
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct QuantizationConfig {
     pub enable: bool,
     pub quantile: Option<f32>,
+    /// If true, quantized data is stored in RAM even if original data is memmapped.
+    /// If false, quantized data is stored like original data.
+    /// Default value is false.
+    pub always_ram: Option<bool>,
+}
+
+impl PartialEq for QuantizationConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.enable == other.enable
+            && self.quantile == other.quantile
+            && self.always_ram == other.always_ram
+    }
 }
 
 impl Eq for QuantizationConfig {}

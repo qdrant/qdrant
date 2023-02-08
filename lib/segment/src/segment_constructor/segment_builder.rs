@@ -222,7 +222,7 @@ impl SegmentBuilder {
                     vector_data.vector_storage.borrow_mut().quantize(
                         &quantized_meta_path,
                         &quantized_data_path,
-                        quantization.quantile,
+                        quantization,
                     )?;
                 }
             }

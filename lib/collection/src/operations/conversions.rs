@@ -215,6 +215,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     api::grpc::qdrant::QuantizationConfig {
                         enable: x.enable,
                         quantile: x.quantile,
+                        always_ram: x.always_ram,
                     }
                 }),
             }),
@@ -380,6 +381,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
             quantization_config: config.quantization_config.map(|x| QuantizationConfig {
                 enable: x.enable,
                 quantile: x.quantile,
+                always_ram: x.always_ram,
             }),
         })
     }

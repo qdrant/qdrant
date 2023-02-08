@@ -9,14 +9,13 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
-use super::quantized_vector_storage::QuantizedRawScorer;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType};
+use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 
@@ -262,11 +261,7 @@ where
         if let Some(quantized_data) = &mmap_store.quantized_vectors {
             if let Some(deleted_ram) = &mmap_store.deleted_ram {
                 let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
-                Some(Box::new(QuantizedRawScorer {
-                    query: quantized_data.encode_query(&query),
-                    quantized_data,
-                    deleted: deleted_ram,
-                }))
+                Some(quantized_data.raw_scorer(&query, deleted_ram))
             } else {
                 None
             }
@@ -279,15 +274,25 @@ where
         &mut self,
         meta_path: &Path,
         data_path: &Path,
-        quantile: Option<f32>,
+        quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.quantize(TMetric::distance(), meta_path, data_path, quantile)
+        mmap_store.quantize(
+            TMetric::distance(),
+            meta_path,
+            data_path,
+            quantization_config,
+        )
     }
 
-    fn load_quantization(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {
+    fn load_quantization(
+        &mut self,
+        meta_path: &Path,
+        data_path: &Path,
+        quantization_config: &QuantizationConfig,
+    ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.load_quantization(meta_path, data_path)
+        mmap_store.load_quantization(meta_path, data_path, quantization_config)
     }
 
     fn score_points(

@@ -9,7 +9,7 @@ use rand::Rng;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{PointOffsetType, ScoreType};
+use crate::types::{PointOffsetType, QuantizationConfig, ScoreType};
 
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub struct ScoredPointOffset {
@@ -85,10 +85,15 @@ pub trait VectorStorage {
         &mut self,
         meta_path: &Path,
         data_path: &Path,
-        quantile: Option<f32>,
+        quantization_config: &QuantizationConfig,
     ) -> OperationResult<()>;
     // Load quantized vectors from disk
-    fn load_quantization(&mut self, meta_path: &Path, data_path: &Path) -> OperationResult<()>;
+    fn load_quantization(
+        &mut self,
+        meta_path: &Path,
+        data_path: &Path,
+        quantization_config: &QuantizationConfig,
+    ) -> OperationResult<()>;
 
     fn score_points(
         &self,

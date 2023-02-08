@@ -63,6 +63,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 quantization_config: value.quantization_config.map(|v| QuantizationConfig {
                     enable: v.enable,
                     quantile: v.quantile,
+                    always_ram: v.always_ram,
                 }),
             },
         )))

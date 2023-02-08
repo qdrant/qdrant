@@ -176,6 +176,8 @@ pub struct QuantizationConfig {
     pub enable: bool,
     #[prost(float, optional, tag = "2")]
     pub quantile: ::core::option::Option<f32>,
+    #[prost(bool, optional, tag = "3")]
+    pub always_ram: ::core::option::Option<bool>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
