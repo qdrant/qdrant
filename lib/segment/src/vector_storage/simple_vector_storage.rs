@@ -30,7 +30,7 @@ use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 pub struct SimpleVectorStorage<TMetric: Metric> {
     dim: usize,
     metric: PhantomData<TMetric>,
-    vectors: ChunkedVectors,
+    vectors: ChunkedVectors<VectorElementType>,
     deleted: BitVec,
     deleted_count: usize,
     quantized_vectors: Option<Box<dyn QuantizedVectorStorage>>,
@@ -45,7 +45,7 @@ struct StoredRecord {
 
 pub struct SimpleRawScorer<'a, TMetric: Metric> {
     pub query: Vec<VectorElementType>,
-    pub vectors: &'a ChunkedVectors,
+    pub vectors: &'a ChunkedVectors<VectorElementType>,
     pub deleted: &'a BitVec,
     pub metric: PhantomData<TMetric>,
 }
@@ -303,18 +303,22 @@ where
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         log::info!("Quantizing vectors...");
-        let quantized_vectors = quantization::encoder::EncodedVectors::<Vec<u8>>::encode(
-            (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
-            Vec::new(),
-            EncodingParameters {
-                distance_type: match TMetric::distance() {
-                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
-                },
-                invert: TMetric::distance() == Distance::Euclid,
-                quantile: quantization_config.quantile,
+        let encoding_parameters = EncodingParameters {
+            dim: self.dim,
+            distance_type: match TMetric::distance() {
+                Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                Distance::Dot => quantization::encoder::SimilarityType::Dot,
             },
+            invert: TMetric::distance() == Distance::Euclid,
+            quantile: quantization_config.quantile,
+        };
+        let quantized_vector_size = encoding_parameters.get_vector_data_size();
+        let vectors = ChunkedVectors::<u8>::new(quantized_vector_size);
+        let quantized_vectors = quantization::encoder::EncodedVectors::encode(
+            (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
+            vectors,
+            encoding_parameters,
         )
         .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
         quantized_vectors.save(data_path, meta_path)?;
@@ -326,11 +330,24 @@ where
         &mut self,
         meta_path: &Path,
         data_path: &Path,
-        _quantization_config: &QuantizationConfig,
+        quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
-        self.quantized_vectors = Some(Box::new(
-            quantization::encoder::EncodedVectors::<Vec<u8>>::load(data_path, meta_path)?,
-        ));
+        self.quantized_vectors = Some(Box::new(quantization::encoder::EncodedVectors::<
+            ChunkedVectors<u8>,
+        >::load(
+            data_path,
+            meta_path,
+            &EncodingParameters {
+                dim: self.dim,
+                distance_type: match TMetric::distance() {
+                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
+                },
+                invert: TMetric::distance() == Distance::Euclid,
+                quantile: quantization_config.quantile,
+            },
+        )?));
         Ok(())
     }
 

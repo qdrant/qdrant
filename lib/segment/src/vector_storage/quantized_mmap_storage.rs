@@ -15,11 +15,14 @@ pub struct QuantizedMmapStorageBuilder {
 }
 
 impl Storage for QuantizedMmapStorage {
-    fn ptr(&self) -> *const u8 {
-        self.mmap.as_ptr()
+    fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
+        &self.mmap[vector_size * index..vector_size * (index + 1)]
     }
 
-    fn from_file(path: &std::path::Path) -> std::io::Result<QuantizedMmapStorage> {
+    fn from_file(
+        path: &Path,
+        _encoding_parameters: &EncodingParameters,
+    ) -> std::io::Result<QuantizedMmapStorage> {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(false)
@@ -43,7 +46,7 @@ impl StorageBuilder<QuantizedMmapStorage> for QuantizedMmapStorageBuilder {
         QuantizedMmapStorage { mmap }
     }
 
-    fn extend_from_slice(&mut self, other: &[u8]) {
+    fn push_vector_data(&mut self, other: &[u8]) {
         self.mmap[self.cursor_pos..self.cursor_pos + other.len()].copy_from_slice(other);
         self.cursor_pos += other.len();
     }
@@ -53,11 +56,9 @@ impl QuantizedMmapStorageBuilder {
     pub fn new(
         path: &Path,
         vectors_count: usize,
-        dim: usize,
         encoding_parameters: &EncodingParameters,
     ) -> std::io::Result<Self> {
-        let encoded_storage_size =
-            encoding_parameters.estimate_encoded_storage_size(dim, vectors_count);
+        let encoded_storage_size = encoding_parameters.get_vector_data_size() * vectors_count;
         path.parent().map(std::fs::create_dir_all);
         let file = std::fs::OpenOptions::new()
             .read(true)

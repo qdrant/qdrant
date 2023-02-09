@@ -9,6 +9,7 @@ use memmap2::{Mmap, MmapMut, MmapOptions};
 use parking_lot::{RwLock, RwLockReadGuard};
 use quantization::encoder::EncodingParameters;
 
+use super::chunked_vectors::ChunkedVectors;
 use super::quantized_mmap_storage::{QuantizedMmapStorage, QuantizedMmapStorageBuilder};
 use super::quantized_vector_storage::QuantizedVectorStorage;
 use crate::common::error_logging::LogError;
@@ -140,6 +141,7 @@ impl MmapVectors {
     ) -> OperationResult<()> {
         self.enable_deleted_ram();
         let encoding_parameters = EncodingParameters {
+            dim: self.dim,
             distance_type: match distance {
                 Distance::Cosine => quantization::encoder::SimilarityType::Dot,
                 Distance::Euclid => quantization::encoder::SimilarityType::L2,
@@ -148,18 +150,14 @@ impl MmapVectors {
             invert: distance == Distance::Euclid,
             quantile: quantization_config.quantile,
         };
+        let quantized_vector_size = encoding_parameters.get_vector_data_size();
+        let vectors = ChunkedVectors::<u8>::new(quantized_vector_size);
         let quantized_vectors = if quantization_config.always_ram == Some(true) {
-            self.create_quantized_storage::<Vec<u8>, Vec<u8>>(
-                meta_path,
-                data_path,
-                encoding_parameters,
-                Vec::new(),
-            )?
+            self.create_quantized_storage(meta_path, data_path, encoding_parameters, vectors)?
         } else {
             let storage_builder = QuantizedMmapStorageBuilder::new(
                 data_path,
                 self.num_vectors,
-                self.dim,
                 &encoding_parameters,
             )?;
             self.create_quantized_storage::<QuantizedMmapStorage, QuantizedMmapStorageBuilder>(
@@ -177,17 +175,32 @@ impl MmapVectors {
         &mut self,
         meta_path: &Path,
         data_path: &Path,
+        distance: Distance,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         self.enable_deleted_ram();
+        let encoding_parameters = EncodingParameters {
+            dim: self.dim,
+            distance_type: match distance {
+                Distance::Cosine => quantization::encoder::SimilarityType::Dot,
+                Distance::Euclid => quantization::encoder::SimilarityType::L2,
+                Distance::Dot => quantization::encoder::SimilarityType::Dot,
+            },
+            invert: distance == Distance::Euclid,
+            quantile: quantization_config.quantile,
+        };
         self.quantized_vectors = if quantization_config.always_ram == Some(true) {
-            Some(Box::new(
-                quantization::encoder::EncodedVectors::<Vec<u8>>::load(data_path, meta_path)?,
-            ))
+            Some(Box::new(quantization::encoder::EncodedVectors::<
+                ChunkedVectors<u8>,
+            >::load(
+                data_path, meta_path, &encoding_parameters
+            )?))
         } else {
             Some(Box::new(quantization::encoder::EncodedVectors::<
                 QuantizedMmapStorage,
-            >::load(data_path, meta_path)?))
+            >::load(
+                data_path, meta_path, &encoding_parameters
+            )?))
         };
         Ok(())
     }

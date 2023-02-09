@@ -292,7 +292,12 @@ where
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.load_quantization(meta_path, data_path, quantization_config)
+        mmap_store.load_quantization(
+            meta_path,
+            data_path,
+            TMetric::distance(),
+            quantization_config,
+        )
     }
 
     fn score_points(
