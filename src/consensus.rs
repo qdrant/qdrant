@@ -629,9 +629,10 @@ impl Consensus {
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
             log::debug!("Applying snapshot");
-            store
-                .apply_snapshot(&ready.snapshot().clone())
-                .map_err(|err| anyhow!("Failed to apply snapshot: {}", err))?
+
+            if let Err(err) = store.apply_snapshot(&ready.snapshot().clone()) {
+                log::error!("Failed to apply snapshot: {err}");
+            }
         }
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
