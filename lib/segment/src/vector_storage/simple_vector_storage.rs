@@ -502,7 +502,7 @@ mod tests {
             )
             .unwrap();
 
-        let query = vec![0.0, 1.0, 1.1, 1.0];
+        let query = vec![0.5, 0.5, 0.5, 0.5];
 
         {
             let scorer_orig = borrowed_storage.quantized_raw_scorer(&query).unwrap();

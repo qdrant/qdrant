@@ -536,8 +536,8 @@ mod tests {
         let quantized_meta_path = dir.path().join("quantized.meta");
         borrowed_storage
             .quantize(
-                &quantized_data_path,
                 &quantized_meta_path,
+                &quantized_data_path,
                 &QuantizationConfig {
                     enable: true,
                     quantile: None,
@@ -546,7 +546,7 @@ mod tests {
             )
             .unwrap();
 
-        let query = vec![-1.0, -1.0, -1.0, -1.0];
+        let query = vec![0.5, 0.5, 0.5, 0.5];
 
         {
             let scorer_orig = borrowed_storage.quantized_raw_scorer(&query).unwrap();
