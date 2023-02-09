@@ -3,6 +3,7 @@ use actix_web::{delete, get, web, Responder};
 use serde::Deserialize;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 
 use crate::actix::helpers::process_response;
@@ -13,6 +14,12 @@ struct QueryParams {
     force: bool,
     #[serde(default)]
     timeout: Option<u64>,
+}
+
+#[actix_web::post("/cluster/request_snapshot")]
+async fn request_snapshot(toc: web::Data<TableOfContent>) -> impl Responder {
+    let timing = Instant::now();
+    process_response(toc.request_snapshot(None), timing)
 }
 
 #[get("/cluster")]
@@ -60,5 +67,7 @@ async fn remove_peer(
 
 // Configure services
 pub fn config_cluster_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(cluster_status).service(remove_peer);
+    cfg.service(cluster_status)
+        .service(remove_peer)
+        .service(request_snapshot);
 }
