@@ -441,7 +441,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 Ok(false)
             }
 
-            ConsensusOperations::ReportSnapshot { .. } => unreachable!(),
+            ConsensusOperations::RequestSnapshot { .. }
+            | ConsensusOperations::ReportSnapshot { .. } => unreachable!(),
         };
 
         if let Some(on_apply) = on_apply {

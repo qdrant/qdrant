@@ -39,6 +39,9 @@ pub mod consensus_ops {
             uri: String,
         },
         RemovePeer(PeerId),
+        RequestSnapshot {
+            request_index: Option<u64>,
+        },
         ReportSnapshot {
             peer_id: PeerId,
             status: SnapshotStatus,
@@ -142,6 +145,10 @@ pub mod consensus_ops {
                 collection_id,
                 ShardTransferOperations::Start(transfer),
             )))
+        }
+
+        pub fn request_snapshot(request_index: Option<u64>) -> Self {
+            Self::RequestSnapshot { request_index }
         }
 
         pub fn report_snapshot(peer_id: PeerId, status: impl Into<SnapshotStatus>) -> Self {
