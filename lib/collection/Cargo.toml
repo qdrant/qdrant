@@ -9,6 +9,8 @@ edition = "2021"
 [dev-dependencies]
 tempfile = "3.3.0"
 criterion = "0.4"
+
+[target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
 
 [dependencies]
@@ -21,22 +23,22 @@ serde = { version = "~1.0", features = ["derive"] }
 serde_json = { version = "~1.0", features = ["std"] }
 serde_cbor = "0.11.2"
 rmp-serde = "~1.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "0519d97c1f806e2787abcfecf96d13d87556e8c0"}
+wal = { git = "https://github.com/qdrant/wal.git", rev = "7536f9e222d55cc53f7f7507a3028b0e303976cc"}
 ordered-float = "3.4"
 hashring = "0.3.0"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 
-tokio = {version = "~1.24", features = ["full"]}
-futures = "0.3.25"
+tokio = {version = "~1.25", features = ["full"]}
+futures = "0.3.26"
 atomicwrites = "0.3.1"
 log = "0.4"
 env_logger = "0.10.0"
 merge = "0.1.0"
-async-trait = "0.1.63"
+async-trait = "0.1.64"
 arc-swap = "1.6.0"
 tonic = { version = "0.8.3", features = ["gzip"] }
 tower = "0.4.13"
-uuid = { version = "1.2", features = ["v4", "serde"] }
+uuid = { version = "1.3", features = ["v4", "serde"] }
 url = { version = "2", features = ["serde"] }
 
 segment = {path = "../segment"}
@@ -48,7 +50,7 @@ chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.11", features = ["uuid1", "preserve_order", "chrono", "url"] }
 num_cpus = "1.15.0"
 tar = "0.4.38"
-fs_extra = "1.2.0"
+fs_extra = "1.3.0"
 semver = "1.0.16"
 
 [[bench]]

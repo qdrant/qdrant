@@ -31,75 +31,76 @@ message SyncPoints {
   repeated PointStruct points = 3;
   optional PointId from_id = 4; // Start of the sync range
   optional PointId to_id = 5; // End of the sync range
+  optional WriteOrdering ordering = 6;
 }
 
 message SyncPointsInternal {
   SyncPoints sync_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message UpsertPointsInternal {
   UpsertPoints upsert_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message DeletePointsInternal {
   DeletePoints delete_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message SetPayloadPointsInternal {
   SetPayloadPoints set_payload_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message DeletePayloadPointsInternal {
   DeletePayloadPoints delete_payload_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message ClearPayloadPointsInternal {
   ClearPayloadPoints clear_payload_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message CreateFieldIndexCollectionInternal {
   CreateFieldIndexCollection create_field_index_collection = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message DeleteFieldIndexCollectionInternal {
   DeleteFieldIndexCollection delete_field_index_collection = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message SearchPointsInternal {
   SearchPoints search_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message SearchBatchPointsInternal {
   string collection_name = 1;
   repeated SearchPoints search_points = 2;
-  uint32 shard_id = 3;
+  optional uint32 shard_id = 3;
 }
 
 message ScrollPointsInternal {
   ScrollPoints scroll_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message RecommendPointsInternal {
   RecommendPoints recommend_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message GetPointsInternal {
   GetPoints get_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }
 
 message CountPointsInternal {
   CountPoints count_points = 1;
-  uint32 shard_id = 2;
+  optional uint32 shard_id = 2;
 }

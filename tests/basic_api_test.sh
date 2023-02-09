@@ -3,7 +3,7 @@
 
 set -ex
 
-QDRANT_HOST='localhost:6333'
+QDRANT_HOST=${QDRANT_HOST:-'localhost:6333'}
 
 # cleanup collection if it exists
 curl -X DELETE "http://$QDRANT_HOST/collections/test_collection" \
@@ -71,8 +71,8 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
         {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": ["Berlin", "London"]}},
         {"id": 3, "vector": [0.36, 0.55, 0.47, 0.94], "payload": {"city": ["Berlin", "Moscow"]}},
         {"id": 4, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"city": ["London", "Moscow"]}},
-        {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"count": [0]}},
-        {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]}
+        {"id": "98a9a4b1-4ef2-46fb-8315-a97d874fe1d7", "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"count": [0]}},
+        {"id": "f0e09527-b096-42a8-94e9-ea94d342b925", "vector": [0.35, 0.08, 0.11, 0.44]}
       ]
     }' | jq
 
@@ -105,7 +105,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" 
     }' | jq
 
 # search points batch
-curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search-batch" \
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search/batch" \
   -H 'Content-Type: application/json' \
   --fail -s \
   --data-raw '{

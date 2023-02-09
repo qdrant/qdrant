@@ -18,6 +18,7 @@ pub mod toc;
 
 pub mod consensus_ops {
     use collection::shards::replica_set::ReplicaState;
+    use collection::shards::replica_set::ReplicaState::Initializing;
     use collection::shards::shard::PeerId;
     use collection::shards::transfer::shard_transfer::ShardTransfer;
     use collection::shards::{replica_set, CollectionId};
@@ -72,6 +73,7 @@ pub mod consensus_ops {
             shard_id: u32,
             peer_id: PeerId,
             state: ReplicaState,
+            from_state: Option<ReplicaState>,
         ) -> Self {
             ConsensusOperations::CollectionMeta(
                 CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
@@ -79,6 +81,7 @@ pub mod consensus_ops {
                     shard_id,
                     peer_id,
                     state,
+                    from_state,
                 })
                 .into(),
             )
@@ -104,12 +107,19 @@ pub mod consensus_ops {
             )
         }
 
-        pub fn activate_replica(
+        /// Report that a replica was initialized
+        pub fn initialize_replica(
             collection_name: CollectionId,
             shard_id: u32,
             peer_id: PeerId,
         ) -> Self {
-            Self::set_replica_state(collection_name, shard_id, peer_id, ReplicaState::Active)
+            Self::set_replica_state(
+                collection_name,
+                shard_id,
+                peer_id,
+                ReplicaState::Active,
+                Some(Initializing),
+            )
         }
 
         pub fn deactivate_replica(
@@ -117,7 +127,7 @@ pub mod consensus_ops {
             shard_id: u32,
             peer_id: PeerId,
         ) -> Self {
-            Self::set_replica_state(collection_name, shard_id, peer_id, ReplicaState::Dead)
+            Self::set_replica_state(collection_name, shard_id, peer_id, ReplicaState::Dead, None)
         }
 
         pub fn start_transfer(collection_id: CollectionId, transfer: ShardTransfer) -> Self {

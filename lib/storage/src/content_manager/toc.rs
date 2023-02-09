@@ -12,6 +12,8 @@ use collection::config::{
     CollectionParams,
 };
 use collection::operations::config_diff::DiffConfig;
+use collection::operations::consistency_params::ReadConsistency;
+use collection::operations::point_ops::WriteOrdering;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
@@ -126,9 +128,11 @@ impl TableOfContent {
                 &collection_path,
                 &collection_snapshots_path,
                 channel_service.clone(),
-                Self::on_peer_failure_callback(
+                Self::change_peer_state_callback(
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
+                    ReplicaState::Dead,
+                    None,
                 ),
                 Self::request_shard_transfer_callback(
                     consensus_proposal_sender.clone(),
@@ -329,9 +333,11 @@ impl TableOfContent {
             &collection_config,
             collection_shard_distribution,
             self.channel_service.clone(),
-            Self::on_peer_failure_callback(
+            Self::change_peer_state_callback(
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
+                ReplicaState::Dead,
+                None,
             ),
             Self::request_shard_transfer_callback(
                 self.consensus_proposal_sender.clone(),
@@ -426,7 +432,7 @@ impl TableOfContent {
     ) -> CollectionResult<()> {
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             let operation =
-                ConsensusOperations::activate_replica(collection_name.clone(), shard_id, peer_id);
+                ConsensusOperations::initialize_replica(collection_name.clone(), shard_id, peer_id);
             if let Err(send_error) = proposal_sender.send(operation) {
                 log::error!(
                         "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
@@ -441,7 +447,12 @@ impl TableOfContent {
             let collections = self.collections.read().await;
             if let Some(collection) = collections.get(&collection_name) {
                 collection
-                    .set_shard_replica_state(shard_id, peer_id, ReplicaState::Active)
+                    .set_shard_replica_state(
+                        shard_id,
+                        peer_id,
+                        ReplicaState::Active,
+                        Some(ReplicaState::Initializing),
+                    )
                     .await?;
             }
         }
@@ -454,9 +465,15 @@ impl TableOfContent {
         peer_id: PeerId,
         shard_id: ShardId,
         state: ReplicaState,
+        from_state: Option<ReplicaState>,
     ) -> Result<(), StorageError> {
-        let operation =
-            ConsensusOperations::set_replica_state(collection_name, shard_id, peer_id, state);
+        let operation = ConsensusOperations::set_replica_state(
+            collection_name,
+            shard_id,
+            peer_id,
+            state,
+            from_state,
+        );
         proposal_sender.send(operation)
     }
 
@@ -511,10 +528,12 @@ impl TableOfContent {
         })
     }
 
-    fn on_peer_failure_callback(
+    fn change_peer_state_callback(
         proposal_sender: Option<OperationSender>,
         collection_name: String,
-    ) -> replica_set::OnPeerFailure {
+        state: ReplicaState,
+        from_state: Option<ReplicaState>,
+    ) -> replica_set::ChangePeerState {
         Arc::new(move |peer_id, shard_id| {
             if let Some(proposal_sender) = &proposal_sender {
                 if let Err(send_error) = Self::send_set_replica_state_proposal_op(
@@ -522,7 +541,8 @@ impl TableOfContent {
                     collection_name.clone(),
                     peer_id,
                     shard_id,
-                    ReplicaState::Dead,
+                    state,
+                    from_state,
                 ) {
                     log::error!(
                         "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
@@ -544,6 +564,7 @@ impl TableOfContent {
         peer_id: PeerId,
         shard_id: ShardId,
         state: ReplicaState,
+        from_state: Option<ReplicaState>,
     ) -> Result<(), StorageError> {
         if let Some(operation_sender) = &self.consensus_proposal_sender {
             Self::send_set_replica_state_proposal_op(
@@ -552,6 +573,7 @@ impl TableOfContent {
                 peer_id,
                 shard_id,
                 state,
+                from_state,
             )?;
         }
         Ok(())
@@ -782,7 +804,12 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         self.get_collection(&operation.collection_name)
             .await?
-            .set_shard_replica_state(operation.shard_id, operation.peer_id, operation.state)
+            .set_shard_replica_state(
+                operation.shard_id,
+                operation.peer_id,
+                operation.state,
+                operation.from_state,
+            )
             .await?;
         Ok(())
     }
@@ -943,11 +970,17 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: RecommendRequest,
+        read_consistency: Option<ReadConsistency>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        recommend_by(request, &collection, |name| self.get_collection_opt(name))
-            .await
-            .map_err(|err| err.into())
+        recommend_by(
+            request,
+            &collection,
+            |name| self.get_collection_opt(name),
+            read_consistency,
+        )
+        .await
+        .map_err(|err| err.into())
     }
 
     /// Recommend points in a batchig fashion using positive and negative example from the request
@@ -964,11 +997,17 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: RecommendRequestBatch,
+        read_consistency: Option<ReadConsistency>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        recommend_batch_by(request, &collection, |name| self.get_collection_opt(name))
-            .await
-            .map_err(|err| err.into())
+        recommend_batch_by(
+            request,
+            &collection,
+            |name| self.get_collection_opt(name),
+            read_consistency,
+        )
+        .await
+        .map_err(|err| err.into())
     }
 
     /// Search for the closest points using vector similarity with given restrictions defined
@@ -986,11 +1025,12 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: SearchRequest,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search(request, shard_selection)
+            .search(request, read_consistency, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -1010,11 +1050,12 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: SearchRequestBatch,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search_batch(request, shard_selection)
+            .search_batch(request, read_consistency, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -1059,11 +1100,12 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: PointRequest,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .retrieve(request, shard_selection)
+            .retrieve(request, read_consistency, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -1126,11 +1168,12 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: ScrollRequest,
+        read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> Result<ScrollResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .scroll_by(request, shard_selection)
+            .scroll_by(request, read_consistency, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -1141,6 +1184,7 @@ impl TableOfContent {
         operation: CollectionUpdateOperations,
         shard_selection: Option<ShardId>,
         wait: bool,
+        ordering: WriteOrdering,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         let result = match shard_selection {
@@ -1153,7 +1197,9 @@ impl TableOfContent {
                 if operation.is_write_operation() {
                     self.check_write_lock()?;
                 }
-                collection.update_from_client(operation, wait).await
+                collection
+                    .update_from_client(operation, wait, ordering)
+                    .await
             }
         };
         result.map_err(|err| err.into())
@@ -1232,9 +1278,11 @@ impl TableOfContent {
                             &state.config,
                             shard_distribution,
                             self.channel_service.clone(),
-                            Self::on_peer_failure_callback(
+                            Self::change_peer_state_callback(
                                 self.consensus_proposal_sender.clone(),
                                 id.to_string(),
+                                ReplicaState::Dead,
+                                None,
                             ),
                             Self::request_shard_transfer_callback(
                                 self.consensus_proposal_sender.clone(),
@@ -1448,10 +1496,17 @@ impl CollectionContainer for TableOfContent {
             let transfer_success_callback =
                 Self::on_transfer_success_callback(self.consensus_proposal_sender.clone());
             for collection in collections.values() {
+                let finish_shard_initialize = Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection.name(),
+                    ReplicaState::Active,
+                    Some(ReplicaState::Initializing),
+                );
                 collection
                     .sync_local_state(
                         transfer_failure_callback.clone(),
                         transfer_success_callback.clone(),
+                        finish_shard_initialize,
                     )
                     .await?;
             }

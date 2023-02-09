@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash;
 
-use segment::types::ScoredPoint;
+use segment::types::{Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
 use crate::operations::types::Record;
@@ -18,7 +18,7 @@ pub trait Resolve: Sized {
 
 impl Resolve for Vec<Record> {
     fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
-        let mut resolved = Resolver::resolve(records, |record| record.id, PartialEq::eq, condition);
+        let mut resolved = Resolver::resolve(records, |record| record.id, record_eq, condition);
         resolved.sort_unstable_by_key(|record| record.id);
         resolved
     }
@@ -35,7 +35,7 @@ impl Resolve for Vec<Vec<ScoredPoint>> {
             .into_iter()
             .map(|points| {
                 let mut resolved =
-                    Resolver::resolve(points, |point| point.id, scored_points_eq, condition);
+                    Resolver::resolve(points, |point| point.id, scored_point_eq, condition);
 
                 resolved.sort_unstable();
                 resolved
@@ -58,11 +58,22 @@ fn transpose<T>(vec: Vec<Vec<T>>) -> Vec<Vec<T>> {
         .collect()
 }
 
-fn scored_points_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
+fn record_eq(this: &Record, other: &Record) -> bool {
+    this.id == other.id && this.vector == other.vector && payload_eq(&this.payload, &other.payload)
+}
+
+fn scored_point_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
     this.id == other.id
         && this.score == other.score
         && this.vector == other.vector
-        && this.payload == other.payload
+        && payload_eq(&this.payload, &other.payload)
+}
+
+fn payload_eq(this: &Option<Payload>, other: &Option<Payload>) -> bool {
+    match (this, other) {
+        (Some(payload), None) | (None, Some(payload)) => payload.is_empty(),
+        (this, other) => this == other,
+    }
 }
 
 struct Resolver<'a, Item, Id, Ident, Cmp> {
@@ -168,11 +179,20 @@ where
     }
 }
 
+#[derive(Debug)]
 struct ResolverRecord<'a, T> {
     item: Option<&'a T>,
     row: usize,
     index: usize,
     count: usize,
+}
+
+impl<'a, T> Copy for ResolverRecord<'a, T> {}
+
+impl<'a, T> Clone for ResolverRecord<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<'a, T> Default for ResolverRecord<'a, T> {

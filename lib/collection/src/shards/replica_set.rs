@@ -18,13 +18,15 @@ use segment::types::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
 use super::resolve::{Resolve, ResolveCondition};
 use super::{create_shard_dir, CollectionId};
 use crate::config::CollectionConfig;
+use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
+use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult,
@@ -39,7 +41,8 @@ use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
-pub type OnPeerFailure = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type ActivatePeer = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 pub type OnPeerCreated = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
 
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -47,6 +50,42 @@ const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
+
+// Shard replication state machine:
+//
+//    │
+//    │    Collection Created
+//    │
+//    ▼
+//  ┌─────────────┐
+//  │             │
+//  │Initializing │
+//  │             │
+//  └─────┬─-─────┘
+//        │  Report created     ┌───────────┐
+//        └────────────────────►│           │
+//             Activate         │ Consensus │
+//        ┌─────────────────────│           │
+//        │                     └───────────┘
+//  ┌─────▼───────┐
+//  │             │
+//  │ Active      ◄───────────┐
+//  │             │           │Transfer
+//  └──┬──────────┘           │Finished
+//     │                      │
+//     │               ┌──────┴────────┐
+//     │Update         │               │
+//     │Failure        │ Partial       ├───┐
+//     │               │               │   │
+//     │               └───────▲───────┘   │
+//     │                       │           │Transfer
+//  ┌──▼──────────┐            │           │Failed/Cancelled
+//  │             │ Transfer   │           │
+//  │ Dead        ├────────────┘           │
+//  │             │ Started                │
+//  └──▲──────────┘                        │
+//     │                                   │
+//     └───────────────────────────────────┘
 
 /// State of the single shard within a replica set.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
@@ -58,6 +97,8 @@ pub enum ReplicaState {
     Dead,
     // The shard is partially loaded and is currently receiving data from other shards
     Partial,
+    // Collection is being created
+    Initializing,
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
@@ -115,11 +156,13 @@ pub struct ShardReplicaSet {
     /// Number of remote replicas to send read requests to.
     /// If actual number of peers is less than this, then read request will be sent to all of them.
     read_remote_replicas: u32,
-    notify_peer_failure_cb: OnPeerFailure,
+    notify_peer_failure_cb: ChangePeerState,
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
     update_runtime: Handle,
+    /// Lock to serialized write operations on the replicaset when a write ordering is used.
+    write_ordering_lock: Mutex<()>,
 }
 
 impl ShardReplicaSet {
@@ -138,6 +181,26 @@ impl ShardReplicaSet {
 
     pub fn this_peer_id(&self) -> PeerId {
         self.replica_state.read().this_peer_id
+    }
+
+    pub fn highest_replica_peer_id(&self) -> Option<PeerId> {
+        self.replica_state.read().peers.keys().max().cloned()
+    }
+
+    pub fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
+        self.replica_state
+            .read()
+            .peers
+            .iter()
+            .filter_map(|(peer_id, _state)| {
+                if self.peer_is_active(peer_id) {
+                    Some(peer_id)
+                } else {
+                    None
+                }
+            })
+            .max()
+            .cloned()
     }
 
     pub async fn remote_peers(&self) -> Vec<PeerId> {
@@ -186,7 +249,7 @@ impl ShardReplicaSet {
         this_peer_id: PeerId,
         local: bool,
         remotes: HashSet<PeerId>,
-        on_peer_failure: OnPeerFailure,
+        on_peer_failure: ChangePeerState,
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
@@ -212,10 +275,10 @@ impl ShardReplicaSet {
             rs.this_peer_id = this_peer_id;
             if local.is_some() {
                 rs.is_local = true;
-                rs.set_peer_state(this_peer_id, ReplicaState::Partial);
+                rs.set_peer_state(this_peer_id, ReplicaState::Initializing);
             }
             for peer in remotes {
-                rs.set_peer_state(peer, ReplicaState::Dead);
+                rs.set_peer_state(peer, ReplicaState::Initializing);
             }
         })?;
 
@@ -245,6 +308,7 @@ impl ShardReplicaSet {
             collection_id,
             collection_config: shared_config,
             update_runtime,
+            write_ordering_lock: Mutex::new(()),
         })
     }
 
@@ -376,7 +440,7 @@ impl ShardReplicaSet {
         shard_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
-        on_peer_failure: OnPeerFailure,
+        on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
     ) -> Self {
@@ -438,6 +502,7 @@ impl ShardReplicaSet {
             collection_id,
             collection_config: shared_config,
             update_runtime,
+            write_ordering_lock: Mutex::new(()),
         }
     }
 
@@ -529,6 +594,10 @@ impl ShardReplicaSet {
                         self.set_local(local_shard, Some(ReplicaState::Partial))
                             .await?;
                     }
+                    ReplicaState::Initializing => {
+                        self.set_local(local_shard, Some(ReplicaState::Initializing))
+                            .await?;
+                    }
                 }
                 continue;
             }
@@ -560,6 +629,7 @@ impl ShardReplicaSet {
         let res = match self.peer_state(peer_id) {
             Some(ReplicaState::Active) => true,
             Some(ReplicaState::Partial) => true,
+            Some(ReplicaState::Initializing) => true,
             Some(ReplicaState::Dead) => false,
             None => false,
         };
@@ -693,8 +763,7 @@ impl ShardReplicaSet {
         read_operation: F,
         local: &'a Option<Shard>,
         remotes: &'a [RemoteShard],
-        factor: usize,
-        condition: ResolveCondition,
+        read_consistency: ReadConsistency,
     ) -> CollectionResult<Res>
     where
         F: Fn(&'a (dyn ShardOperation + Send + Sync)) -> Fut,
@@ -718,7 +787,21 @@ impl ShardReplicaSet {
         let total_count = local_count + remotes_count;
         let active_count = active_local_count + active_remotes_count;
 
-        let factor = factor.clamp(1, total_count);
+        let (factor, condition) = match read_consistency {
+            ReadConsistency::Type(ReadConsistencyType::All) => (total_count, ResolveCondition::All),
+
+            ReadConsistency::Type(ReadConsistencyType::Majority) => {
+                (total_count, ResolveCondition::Majority)
+            }
+
+            ReadConsistency::Type(ReadConsistencyType::Quorum) => {
+                (total_count / 2 + 1, ResolveCondition::All)
+            }
+
+            ReadConsistency::Factor(factor) => {
+                (factor.clamp(1, total_count), ResolveCondition::All)
+            }
+        };
 
         if active_count < factor {
             return Err(CollectionError::service_error(format!(
@@ -971,6 +1054,9 @@ impl ShardReplicaSet {
                 Some(ReplicaState::Partial) => {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
+                Some(ReplicaState::Initializing) => {
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
                 Some(ReplicaState::Dead) | None => Ok(None),
             }
         } else {
@@ -1055,6 +1141,82 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    pub async fn update_with_consistency(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+        ordering: WriteOrdering,
+    ) -> CollectionResult<UpdateResult> {
+        match self.leader_peer_for_update(ordering) {
+            None => Err(CollectionError::service_error(format!(
+                "Cannot update shard {}:{} with {ordering:?} ordering because no leader could be selected",
+                self.collection_id, self.shard_id
+            ))),
+            Some(leader_peer) => {
+                // If we are the leader, run the update from this replica set
+                if leader_peer == self.this_peer_id() {
+                    // lock updates if ordering is medium or strong
+                    let _guard = match ordering {
+                        WriteOrdering::Weak => None, // no locking required
+                        WriteOrdering::Medium | WriteOrdering::Strong => Some(self.write_ordering_lock.lock().await), // one request at a time
+                    };
+                    self.update(operation, wait).await
+                } else {
+                    // forward the update to the designated leader
+                    self.forward_update(leader_peer, operation, wait, ordering)
+                        .await
+                        .map_err(|err| {
+                            match err {
+                                CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. } => {
+                                    // Deactivate the peer if forwarding failed with service error
+                                    self.locally_disabled_peers.write().insert(leader_peer);
+                                    self.notify_peer_failure(leader_peer);
+                                    // return service error
+                                    CollectionError::service_error(format!(
+                                        "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
+                                    ))
+                                }
+                                _ => err // return the original error
+                            }
+                        })
+                }
+            }
+        }
+    }
+
+    /// Designated a leader replica for the update based on the WriteOrdering
+    pub fn leader_peer_for_update(&self, ordering: WriteOrdering) -> Option<PeerId> {
+        match ordering {
+            WriteOrdering::Weak => Some(self.this_peer_id()), // no requirement for consistency
+            WriteOrdering::Medium => self.highest_replica_peer_id(), // consistency with highest replica
+            WriteOrdering::Strong => self.highest_alive_replica_peer_id(), // consistency with highest alive replica
+        }
+    }
+
+    /// Forward update to the leader replica
+    pub async fn forward_update(
+        &self,
+        leader_peer: PeerId,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+        ordering: WriteOrdering,
+    ) -> CollectionResult<UpdateResult> {
+        let remotes_guard = self.remotes.read().await;
+        let remote_leader = remotes_guard.iter().find(|r| r.peer_id == leader_peer);
+
+        match remote_leader {
+            Some(remote_leader) => {
+                remote_leader
+                    .forward_update(operation, wait, ordering)
+                    .await
+            }
+            None => Err(CollectionError::service_error(format!(
+                "Cannot forward update to shard {} because was removed from the replica set",
+                self.shard_id
+            ))),
+        }
+    }
+
     pub async fn update(
         &self,
         operation: CollectionUpdateOperations,
@@ -1071,10 +1233,10 @@ impl ShardReplicaSet {
                 .collect();
 
             // local is defined AND the peer itself can receive updates
-            let local_is_active =
+            let local_is_updatable =
                 local.is_some() && self.peer_is_active_or_pending(&self.this_peer_id());
 
-            if active_remote_shards.is_empty() && !local_is_active {
+            if active_remote_shards.is_empty() && !local_is_updatable {
                 return Err(CollectionError::service_error(format!(
                     "The replica set for shard {} on peer {} has no active replica",
                     self.shard_id,
@@ -1185,14 +1347,16 @@ impl ShardReplicaSet {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        read_consistency: Option<ReadConsistency>,
     ) -> CollectionResult<Vec<Record>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
-        self.execute_read_operation(
+        self.execute_and_resolve_read_operation(
             |shard| shard.scroll_by(offset, limit, with_payload_interface, with_vector, filter),
             &local,
             &remotes,
+            read_consistency.unwrap_or_default(),
         )
         .await
     }
@@ -1208,15 +1372,17 @@ impl ShardReplicaSet {
     pub async fn search(
         &self,
         request: Arc<SearchRequestBatch>,
+        read_consistency: Option<ReadConsistency>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
-        self.execute_read_operation(
+        self.execute_and_resolve_read_operation(
             |shard| shard.search(request.clone(), search_runtime_handle),
             &local,
             &remotes,
+            read_consistency.unwrap_or_default(),
         )
         .await
     }
@@ -1245,15 +1411,106 @@ impl ShardReplicaSet {
         request: Arc<PointRequest>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        read_consistency: Option<ReadConsistency>,
     ) -> CollectionResult<Vec<Record>> {
         let local = self.local.read().await;
         let remotes = self.remotes.read().await;
 
-        self.execute_read_operation(
+        self.execute_and_resolve_read_operation(
             |shard| shard.retrieve(request.clone(), with_payload, with_vector),
             &local,
             &remotes,
+            read_consistency.unwrap_or_default(),
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::{NonZeroU32, NonZeroU64};
+
+    use segment::types::Distance;
+    use tempfile::{Builder, TempDir};
+
+    use super::*;
+    use crate::config::*;
+    use crate::operations::types::{VectorParams, VectorsConfig};
+    use crate::optimizers_builder::OptimizersConfig;
+
+    const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
+        deleted_threshold: 0.9,
+        vacuum_min_vector_number: 1000,
+        default_segment_number: 2,
+        max_segment_size: None,
+        memmap_threshold: None,
+        indexing_threshold: 50_000,
+        flush_interval_sec: 30,
+        max_optimization_threads: 2,
+    };
+
+    pub fn dummy_on_replica_failure() -> ChangePeerState {
+        Arc::new(move |_peer_id, _shard_id| {})
+    }
+
+    async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
+        let update_runtime = Handle::current();
+        let wal_config = WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+        };
+
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParams {
+                size: NonZeroU64::new(4).unwrap(),
+                distance: Distance::Dot,
+            }),
+            shard_number: NonZeroU32::new(4).unwrap(),
+            replication_factor: NonZeroU32::new(3).unwrap(),
+            write_consistency_factor: NonZeroU32::new(2).unwrap(),
+            on_disk_payload: false,
+        };
+
+        let config = CollectionConfig {
+            params: collection_params,
+            optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
+            wal_config,
+            hnsw_config: Default::default(),
+        };
+
+        let shared_config = Arc::new(RwLock::new(config.clone()));
+        let remotes = HashSet::from([2, 3, 4, 5]);
+        ShardReplicaSet::build(
+            1,
+            "test_collection".to_string(),
+            1,
+            false,
+            remotes,
+            dummy_on_replica_failure(),
+            collection_dir.path(),
+            shared_config,
+            Default::default(),
+            update_runtime,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_highest_replica_peer_id() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let rs = new_shard_replica_set(&collection_dir).await;
+
+        assert_eq!(rs.highest_replica_peer_id(), Some(5));
+        // at build time the replicas are all dead, they need to be activated
+        assert_eq!(rs.highest_alive_replica_peer_id(), None);
+
+        rs.set_replica_state(&1, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&3, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&4, ReplicaState::Active).unwrap();
+        rs.set_replica_state(&5, ReplicaState::Partial).unwrap();
+
+        assert_eq!(rs.highest_replica_peer_id(), Some(5));
+        assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));
     }
 }

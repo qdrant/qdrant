@@ -779,62 +779,6 @@
             }
           }
         }
-      },
-      "get": {
-        "tags": [
-          "collections"
-        ],
-        "summary": "List collections aliases",
-        "description": "Get list of all existing collections aliases",
-        "operationId": "get_collections_mappings",
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request"
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "ok"
-                      ]
-                    },
-                    "result": {
-                      "$ref": "#/components/schemas/CollectionsAliasesResponse"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/collections/{collection_name}/index": {
@@ -1938,6 +1882,15 @@
             "schema": {
               "$ref": "#/components/schemas/ExtendedPointId"
             }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
           }
         ],
         "responses": {
@@ -2016,6 +1969,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
             }
           }
         ],
@@ -2677,6 +2639,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
           }
         ],
         "responses": {
@@ -2755,6 +2726,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
             }
           }
         ],
@@ -2837,6 +2817,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
             }
           }
         ],
@@ -2923,6 +2912,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
           }
         ],
         "responses": {
@@ -3004,6 +3002,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
             }
           }
         ],
@@ -5566,7 +5573,8 @@
         "enum": [
           "Active",
           "Dead",
-          "Partial"
+          "Partial",
+          "Initializing"
         ]
       },
       "RemoteShardInfo": {
@@ -6672,6 +6680,28 @@
           "weak",
           "medium",
           "strong"
+        ]
+      },
+      "ReadConsistency": {
+        "description": "Read consistency parameter\n\nDefines how many replicas should be queried to get the result\n\n* `N` - send N random request and return points, which present on all of them\n\n* `majority` - send N/2+1 random request and return points, which present on all of them\n\n* `quorum` - send requests to all nodes and return points which present on majority of them\n\n* `all` - send requests to all nodes and return points which present on all of them\n\nDefault value is `Factor(1)`",
+        "anyOf": [
+          {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          {
+            "$ref": "#/components/schemas/ReadConsistencyType"
+          }
+        ]
+      },
+      "ReadConsistencyType": {
+        "description": "* `majority` - send N/2+1 random request and return points, which present on all of them\n\n* `quorum` - send requests to all nodes and return points which present on majority of nodes\n\n* `all` - send requests to all nodes and return points which present on all nodes",
+        "type": "string",
+        "enum": [
+          "majority",
+          "quorum",
+          "all"
         ]
       }
     }

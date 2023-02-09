@@ -6,7 +6,9 @@ use std::path::Path;
 
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
+use collection::operations::point_ops::{
+    PointInsertOperations, PointOperations, PointStruct, WriteOrdering,
+};
 use collection::operations::types::{
     CollectionError, PointRequest, RecommendRequest, SearchRequest, VectorParams, VectorsConfig,
 };
@@ -105,7 +107,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         PointInsertOperations::PointsList(points),
     ));
     collection
-        .update_from_client(insert_points, true)
+        .update_from_client(insert_points, true, WriteOrdering::default())
         .await
         .unwrap();
 
@@ -126,7 +128,10 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection.search(full_search_request, None).await.unwrap();
+    let result = collection
+        .search(full_search_request, None, None)
+        .await
+        .unwrap();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -151,7 +156,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection.search(failed_search_request, None).await;
+    let result = collection.search(failed_search_request, None, None).await;
 
     assert!(
         matches!(result, Err(CollectionError::BadInput { .. })),
@@ -173,7 +178,10 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let result = collection.search(full_search_request, None).await.unwrap();
+    let result = collection
+        .search(full_search_request, None, None)
+        .await
+        .unwrap();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -192,6 +200,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: WithVector::Selector(vec![VEC_NAME1.to_string()]),
             },
+            None,
             None,
         )
         .await
@@ -216,6 +225,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
+        None,
     )
     .await;
 
@@ -239,6 +249,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
         &collection,
         |_name| async { unreachable!("should not be called in this test") },
+        None,
     )
     .await
     .unwrap();

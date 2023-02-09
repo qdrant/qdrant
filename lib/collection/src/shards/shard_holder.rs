@@ -14,7 +14,7 @@ use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::replica_set::{OnPeerFailure, ReplicaState, ShardReplicaSet};
+use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
@@ -209,7 +209,7 @@ impl ShardHolder {
         collection_id: &CollectionId,
         shared_collection_config: Arc<RwLock<CollectionConfig>>,
         channel_service: ChannelService,
-        on_peer_failure: OnPeerFailure,
+        on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
     ) {

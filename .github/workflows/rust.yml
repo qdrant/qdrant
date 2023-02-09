@@ -12,7 +12,10 @@ env:
 jobs:
   test:
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
 
     steps:
     - name: Install minimal stable
@@ -22,8 +25,10 @@ jobs:
         toolchain: stable
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
-    - name: Install dependencies
-      run: sudo apt-get install clang protobuf-compiler
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v1
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Run tests
       run: cargo test --all
 

@@ -163,6 +163,21 @@ def print_clusters_info(peer_api_uris: [str]):
             print(f"Can't retrieve cluster info for offline peer {uri}")
 
 
+def fetch_highest_peer_id(peer_api_uris: [str]) -> str:
+    max_peer_id = 0
+    max_peer_url = None
+    for uri in peer_api_uris:
+        try:
+            # do not crash if the peer is not online
+            peer_id = get_cluster_info(uri)['peer_id']
+            if peer_id > max_peer_id:
+                max_peer_id = peer_id
+                max_peer_url = uri
+        except requests.exceptions.ConnectionError:
+            print(f"Can't retrieve cluster info for offline peer {uri}")
+    return max_peer_url
+
+
 def get_collection_cluster_info(peer_api_uri: str, collection_name: str) -> dict:
     r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster")
     assert_http_ok(r)
@@ -291,6 +306,12 @@ def check_all_replicas_active(peer_api_uri: str, collection_name: str) -> bool:
 
 def check_some_replicas_not_active(peer_api_uri: str, collection_name: str) -> bool:
     return not check_all_replicas_active(peer_api_uri, collection_name)
+
+
+def check_collection_cluster(peer_url, collection_name):
+    res = requests.get(f"{peer_url}/collections/{collection_name}/cluster", timeout=10)
+    assert_http_ok(res)
+    return res.json()["result"]['local_shards'][0]
 
 
 WAIT_TIME_SEC = 30

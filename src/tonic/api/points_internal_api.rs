@@ -42,7 +42,7 @@ impl PointsInternal for PointsInternalService {
         let upsert_points =
             upsert_points.ok_or_else(|| Status::invalid_argument("UpsertPoints is missing"))?;
 
-        upsert(self.toc.as_ref(), upsert_points, Some(shard_id)).await
+        upsert(self.toc.as_ref(), upsert_points, shard_id).await
     }
 
     async fn delete(
@@ -57,7 +57,7 @@ impl PointsInternal for PointsInternalService {
         let delete_points =
             delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
 
-        delete(self.toc.as_ref(), delete_points, Some(shard_id)).await
+        delete(self.toc.as_ref(), delete_points, shard_id).await
     }
 
     async fn set_payload(
@@ -72,7 +72,7 @@ impl PointsInternal for PointsInternalService {
         let set_payload_points = set_payload_points
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
-        set_payload(self.toc.as_ref(), set_payload_points, Some(shard_id)).await
+        set_payload(self.toc.as_ref(), set_payload_points, shard_id).await
     }
 
     async fn delete_payload(
@@ -87,7 +87,7 @@ impl PointsInternal for PointsInternalService {
         let delete_payload_points = delete_payload_points
             .ok_or_else(|| Status::invalid_argument("DeletePayloadPoints is missing"))?;
 
-        delete_payload(self.toc.as_ref(), delete_payload_points, Some(shard_id)).await
+        delete_payload(self.toc.as_ref(), delete_payload_points, shard_id).await
     }
 
     async fn clear_payload(
@@ -102,7 +102,7 @@ impl PointsInternal for PointsInternalService {
         let clear_payload_points = clear_payload_points
             .ok_or_else(|| Status::invalid_argument("ClearPayloadPoints is missing"))?;
 
-        clear_payload(self.toc.as_ref(), clear_payload_points, Some(shard_id)).await
+        clear_payload(self.toc.as_ref(), clear_payload_points, shard_id).await
     }
 
     async fn create_field_index(
@@ -117,12 +117,7 @@ impl PointsInternal for PointsInternalService {
         let create_field_index_collection = create_field_index_collection
             .ok_or_else(|| Status::invalid_argument("CreateFieldIndexCollection is missing"))?;
 
-        create_field_index(
-            self.toc.as_ref(),
-            create_field_index_collection,
-            Some(shard_id),
-        )
-        .await
+        create_field_index(self.toc.as_ref(), create_field_index_collection, shard_id).await
     }
 
     async fn delete_field_index(
@@ -137,12 +132,7 @@ impl PointsInternal for PointsInternalService {
         let delete_field_index_collection = delete_field_index_collection
             .ok_or_else(|| Status::invalid_argument("DeleteFieldIndexCollection is missing"))?;
 
-        delete_field_index(
-            self.toc.as_ref(),
-            delete_field_index_collection,
-            Some(shard_id),
-        )
-        .await
+        delete_field_index(self.toc.as_ref(), delete_field_index_collection, shard_id).await
     }
 
     async fn search(
@@ -154,10 +144,12 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
-        let search_points =
+        let mut search_points =
             search_points.ok_or_else(|| Status::invalid_argument("SearchPoints is missing"))?;
 
-        search(self.toc.as_ref(), search_points, Some(shard_id)).await
+        search_points.read_consistency = None; // *Have* to be `None`!
+
+        search(self.toc.as_ref(), search_points, shard_id).await
     }
 
     async fn search_batch(
@@ -170,11 +162,18 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
+        // Individual `read_consistency` values are ignored by `search_batch`...
+        //
+        // search_points
+        //     .iter_mut()
+        //     .for_each(|search_points| search_points.read_consistency = None);
+
         search_batch(
             self.toc.as_ref(),
             collection_name,
             search_points,
-            Some(shard_id),
+            None, // *Have* to be `None`!
+            shard_id,
         )
         .await
     }
@@ -189,8 +188,10 @@ impl PointsInternal for PointsInternalService {
             // because it is transformed into regular search requests on the first node
         } = request.into_inner();
 
-        let recommend_points = recommend_points
+        let mut recommend_points = recommend_points
             .ok_or_else(|| Status::invalid_argument("RecommendPoints is missing"))?;
+
+        recommend_points.read_consistency = None; // *Have* to be `None`!
 
         recommend(self.toc.as_ref(), recommend_points).await
     }
@@ -204,10 +205,12 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
-        let scroll_points =
+        let mut scroll_points =
             scroll_points.ok_or_else(|| Status::invalid_argument("ScrollPoints is missing"))?;
 
-        scroll(self.toc.as_ref(), scroll_points, Some(shard_id)).await
+        scroll_points.read_consistency = None; // *Have* to be `None`!
+
+        scroll(self.toc.as_ref(), scroll_points, shard_id).await
     }
 
     async fn get(
@@ -219,10 +222,12 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         } = request.into_inner();
 
-        let get_points =
+        let mut get_points =
             get_points.ok_or_else(|| Status::invalid_argument("GetPoints is missing"))?;
 
-        get(self.toc.as_ref(), get_points, Some(shard_id)).await
+        get_points.read_consistency = None; // *Have* to be `None`!
+
+        get(self.toc.as_ref(), get_points, shard_id).await
     }
 
     async fn count(
@@ -236,7 +241,7 @@ impl PointsInternal for PointsInternalService {
 
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
-        count(self.toc.as_ref(), count_points, Some(shard_id)).await
+        count(self.toc.as_ref(), count_points, shard_id).await
     }
 
     async fn sync(
@@ -264,7 +269,7 @@ impl PointsInternal for PointsInternalService {
         let set_payload_points = set_payload_points
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
-        overwrite_payload(self.toc.as_ref(), set_payload_points, Some(shard_id)).await
+        overwrite_payload(self.toc.as_ref(), set_payload_points, shard_id).await
     }
 }
 

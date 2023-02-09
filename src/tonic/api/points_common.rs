@@ -5,10 +5,12 @@ use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::{
     BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints,
-    GetResponse, PayloadIndexParams, PointsOperationResponse, RecommendBatchResponse,
-    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse,
-    SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpsertPoints,
+    GetResponse, PayloadIndexParams, PointsOperationResponse,
+    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchPoints,
+    SearchResponse, SetPayloadPoints, SyncPoints, UpsertPoints,
 };
+use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
@@ -77,7 +79,7 @@ pub async fn upsert(
 pub async fn sync(
     toc: &TableOfContent,
     sync_points: SyncPoints,
-    shard_selection: ShardId,
+    shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
     let SyncPoints {
         collection_name,
@@ -85,6 +87,7 @@ pub async fn sync(
         points,
         from_id,
         to_id,
+        ordering,
     } = sync_points;
 
     let points = points
@@ -105,8 +108,9 @@ pub async fn sync(
         .update(
             &collection_name,
             collection_operation,
-            Some(shard_selection),
+            shard_selection,
             wait.unwrap_or(false),
+            write_ordering_from_proto(ordering)?,
         )
         .await
         .map_err(error_to_status)?;
@@ -157,7 +161,6 @@ pub async fn set_payload(
         collection_name,
         wait,
         payload,
-        points,
         points_selector,
         ordering,
     } = set_payload_points;
@@ -169,11 +172,7 @@ pub async fn set_payload(
             PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
         }
     } else {
-        let points = points
-            .into_iter()
-            .map(|point| point.try_into())
-            .collect::<Result<_, _>>()?;
-        (Some(points), None)
+        return Err(Status::invalid_argument("points_selector is expected"));
     };
 
     let operation = collection::operations::payload_ops::SetPayload {
@@ -207,7 +206,6 @@ pub async fn overwrite_payload(
         collection_name,
         wait,
         payload,
-        points,
         points_selector,
         ordering,
     } = set_payload_points;
@@ -219,11 +217,7 @@ pub async fn overwrite_payload(
             PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
         }
     } else {
-        let points = points
-            .into_iter()
-            .map(|point| point.try_into())
-            .collect::<Result<_, _>>()?;
-        (Some(points), None)
+        return Err(Status::invalid_argument("points_selector is expected"));
     };
 
     let operation = collection::operations::payload_ops::SetPayload {
@@ -257,7 +251,6 @@ pub async fn delete_payload(
         collection_name,
         wait,
         keys,
-        points,
         points_selector,
         ordering,
     } = delete_payload_points;
@@ -269,11 +262,7 @@ pub async fn delete_payload(
             PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
         }
     } else {
-        let points = points
-            .into_iter()
-            .map(|point| point.try_into())
-            .collect::<Result<_, _>>()?;
-        (Some(points), None)
+        return Err(Status::invalid_argument("points_selector is expected"));
     };
 
     let operation = DeletePayload {
@@ -441,6 +430,7 @@ pub async fn search(
         score_threshold,
         vector_name,
         with_vectors,
+        read_consistency,
     } = search_points;
 
     let search_request = SearchRequest {
@@ -461,10 +451,18 @@ pub async fn search(
         score_threshold,
     };
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
     let timing = Instant::now();
-    let scored_points = do_search_points(toc, &collection_name, search_request, shard_selection)
-        .await
-        .map_err(error_to_status)?;
+    let scored_points = do_search_points(
+        toc,
+        &collection_name,
+        search_request,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
 
     let response = SearchResponse {
         result: scored_points
@@ -481,21 +479,30 @@ pub async fn search_batch(
     toc: &TableOfContent,
     collection_name: String,
     search_points: Vec<SearchPoints>,
+    read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> = search_points
         .into_iter()
         .map(|search_point| search_point.try_into())
         .collect();
+
     let search_requests = SearchRequestBatch {
         searches: searches?,
     };
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
     let timing = Instant::now();
-    let scored_points =
-        do_search_batch_points(toc, &collection_name, search_requests, shard_selection)
-            .await
-            .map_err(error_to_status)?;
+    let scored_points = do_search_batch_points(
+        toc,
+        &collection_name,
+        search_requests,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
 
     let response = SearchBatchResponse {
         result: scored_points
@@ -527,6 +534,7 @@ pub async fn recommend(
         using,
         with_vectors,
         lookup_from,
+        read_consistency,
     } = recommend_points;
 
     let request = collection::operations::types::RecommendRequest {
@@ -553,9 +561,11 @@ pub async fn recommend(
         lookup_from: lookup_from.map(|l| l.into()),
     };
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
     let timing = Instant::now();
     let recommended_points = toc
-        .recommend(&collection_name, request)
+        .recommend(&collection_name, request, read_consistency)
         .await
         .map_err(error_to_status)?;
 
@@ -574,6 +584,7 @@ pub async fn recommend_batch(
     toc: &TableOfContent,
     collection_name: String,
     recommend_points: Vec<RecommendPoints>,
+    read_consistency: Option<ReadConsistencyGrpc>,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> = recommend_points
         .into_iter()
@@ -583,9 +594,11 @@ pub async fn recommend_batch(
         searches: searches?,
     };
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
     let timing = Instant::now();
     let scored_points = toc
-        .recommend_batch(&collection_name, recommend_batch)
+        .recommend_batch(&collection_name, recommend_batch, read_consistency)
         .await
         .map_err(error_to_status)?;
 
@@ -614,6 +627,7 @@ pub async fn scroll(
         limit,
         with_payload,
         with_vectors,
+        read_consistency,
     } = scroll_points;
 
     let scroll_request = ScrollRequest {
@@ -626,10 +640,18 @@ pub async fn scroll(
             .unwrap_or_default(),
     };
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
     let timing = Instant::now();
-    let scrolled_points = do_scroll_points(toc, &collection_name, scroll_request, shard_selection)
-        .await
-        .map_err(error_to_status)?;
+    let scrolled_points = do_scroll_points(
+        toc,
+        &collection_name,
+        scroll_request,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
 
     let response = ScrollResponse {
         next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
@@ -683,6 +705,7 @@ pub async fn get(
         ids,
         with_payload,
         with_vectors,
+        read_consistency,
     } = get_points;
 
     let point_request = PointRequest {
@@ -696,11 +719,19 @@ pub async fn get(
             .unwrap_or_default(),
     };
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
     let timing = Instant::now();
 
-    let records = do_get_points(toc, &collection_name, point_request, shard_selection)
-        .await
-        .map_err(error_to_status)?;
+    let records = do_get_points(
+        toc,
+        &collection_name,
+        point_request,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
 
     let response = GetResponse {
         result: records.into_iter().map(|point| point.into()).collect(),

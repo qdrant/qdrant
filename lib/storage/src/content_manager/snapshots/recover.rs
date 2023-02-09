@@ -28,6 +28,7 @@ async fn activate_shard(
             peer_id,
             *shard_id,
             ReplicaState::Active,
+            None,
         )?;
     } else {
         log::debug!(
@@ -36,7 +37,7 @@ async fn activate_shard(
             &collection.name()
         );
         collection
-            .set_shard_replica_state(*shard_id, peer_id, ReplicaState::Active)
+            .set_shard_replica_state(*shard_id, peer_id, ReplicaState::Active, None)
             .await?;
     }
     Ok(())
@@ -122,6 +123,7 @@ pub async fn do_recover_from_snapshot(
                         this_peer_id,
                         *shard_id,
                         ReplicaState::Partial,
+                        None,
                     )?;
                 }
             }
@@ -202,6 +204,7 @@ pub async fn do_recover_from_snapshot(
                                     *peer_id,
                                     *shard_id,
                                     ReplicaState::Dead,
+                                    None,
                                 )?;
                             }
                         }

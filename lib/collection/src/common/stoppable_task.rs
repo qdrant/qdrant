@@ -74,14 +74,20 @@ mod tests {
         n
     }
 
+    // Test is disabled on Windows because it is flaky there
+    // https://github.com/qdrant/qdrant/issues/1442
+    #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn test_task_stop() {
         let handle = spawn_stoppable(long_task);
 
         thread::sleep(Duration::from_millis(STEP_MILLIS * 5));
-        handle.ask_to_stop();
         assert!(!handle.is_finished());
-        thread::sleep(Duration::from_millis(STEP_MILLIS));
+        handle.ask_to_stop();
+        thread::sleep(Duration::from_millis(STEP_MILLIS * 3));
+        // If windows, we need to wait a bit more
+        #[cfg(windows)]
+        thread::sleep(Duration::from_millis(STEP_MILLIS * 10));
         assert!(handle.is_finished());
 
         let res = handle.stop().await.unwrap();

@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "windows"))]
 mod prof;
 
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -72,9 +73,17 @@ fn hnsw_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
+    targets = hnsw_benchmark
+}
+
+#[cfg(target_os = "windows")]
+criterion_group! {
+    name = benches;
+    config = Criterion::default();
     targets = hnsw_benchmark
 }
 
