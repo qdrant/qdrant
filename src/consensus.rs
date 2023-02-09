@@ -15,7 +15,7 @@ use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole, INVALID_ID};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
-use storage::content_manager::consensus_ops::ConsensusOperations;
+use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::PeerAddressById;
@@ -479,6 +479,10 @@ impl Consensus {
                         log::debug!("Proposing network configuration change: {:?}", change);
                         self.node.propose_conf_change(uri.into_bytes(), change)
                     }
+                    ConsensusOperations::ReportSnapshot { peer_id, status } => {
+                        self.node.report_snapshot(peer_id, status.into());
+                        Ok(())
+                    }
                     _ => {
                         let message = match serde_cbor::to_vec(&operation) {
                             Ok(message) => message,
@@ -806,13 +810,16 @@ async fn send_message(
     store: ConsensusStateRef,
     timeout: Duration,
 ) {
+    let is_snapshot = message.msg_type == raft::eraftpb::MessageType::MsgSnapshot as i32;
+    let peer_id = message.to;
+
     let mut bytes = Vec::new();
     if let Err(err) = <RaftMessage as prost::Message>::encode(&message, &mut bytes) {
         format!("Failed to serialize Raft message: {err}");
     }
     let message = &GrpcRaftMessage { message: bytes };
 
-    if let Err(err) = transport_channel_pool
+    let result = transport_channel_pool
         .with_channel_timeout(
             &address,
             |channel| async move {
@@ -823,11 +830,22 @@ async fn send_message(
             },
             Some(timeout),
         )
-        .await
-    {
-        store.record_message_send_failure(&address, err);
-    } else {
-        store.record_message_send_success(&address)
+        .await;
+
+    if is_snapshot {
+        store.report_snapshot(
+            peer_id,
+            if result.is_ok() {
+                SnapshotStatus::Finish
+            } else {
+                SnapshotStatus::Failure
+            },
+        );
+    }
+
+    match result {
+        Ok(_) => store.record_message_send_success(&address),
+        Err(err) => store.record_message_send_failure(&address, err),
     }
 }
 

@@ -23,7 +23,7 @@ use tokio::time::error::Elapsed;
 use tonic::transport::Uri;
 
 use super::alias_mapping::AliasMapping;
-use super::consensus_ops::ConsensusOperations;
+use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use super::errors::StorageError;
 use super::CollectionContainer;
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
@@ -116,6 +116,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }),
             message_send_failures: Default::default(),
         }
+    }
+
+    pub fn report_snapshot(&self, peer_id: u64, status: impl Into<SnapshotStatus>) {
+        let _ = self
+            .propose_sender
+            .send(ConsensusOperations::report_snapshot(peer_id, status));
     }
 
     pub fn record_message_send_failure<E: Error>(&self, peer_address: &Uri, error: E) {
@@ -422,6 +428,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             ConsensusOperations::CollectionMeta(operation) => {
                 self.toc.perform_collection_meta_op(*operation)
             }
+
             ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
                 // RemovePeer or AddPeer should be converted into native ConfChangeV2 message before sending to the Raft.
                 // So we do not expect to receive these operations as a normal entry.
@@ -433,6 +440,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 );
                 Ok(false)
             }
+
+            ConsensusOperations::ReportSnapshot { .. } => unreachable!(),
         };
 
         if let Some(on_apply) = on_apply {
