@@ -2,8 +2,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use schemars::JsonSchema;
-use segment::types::{HnswConfig, QuantizationConfig};
 use segment::common::cpu::get_num_cpus;
+use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
