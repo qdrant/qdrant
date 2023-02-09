@@ -229,6 +229,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "joein",
+      "name": "George",
+      "avatar_url": "https://avatars.githubusercontent.com/u/22641570?v=4",
+      "profile": "https://github.com/joein",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
