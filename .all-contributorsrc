@@ -247,6 +247,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "coszio",
+      "name": "Luis Cossío",
+      "avatar_url": "https://avatars.githubusercontent.com/u/62079184?v=4",
+      "profile": "http://coszio.github.io",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
