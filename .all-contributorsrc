@@ -238,6 +238,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "csko",
+      "name": "Kornél Csernai",
+      "avatar_url": "https://avatars.githubusercontent.com/u/749306?v=4",
+      "profile": "https://github.com/csko",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
