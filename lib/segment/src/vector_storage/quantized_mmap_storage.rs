@@ -44,7 +44,7 @@ impl StorageBuilder<QuantizedMmapStorage> for QuantizedMmapStorageBuilder {
     }
 
     fn extend_from_slice(&mut self, other: &[u8]) {
-        self.mmap[self.cursor_pos..other.len()].copy_from_slice(other);
+        self.mmap[self.cursor_pos..self.cursor_pos + other.len()].copy_from_slice(other);
         self.cursor_pos += other.len();
     }
 }
