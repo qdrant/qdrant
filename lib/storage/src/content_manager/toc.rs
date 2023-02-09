@@ -556,6 +556,21 @@ impl TableOfContent {
         })
     }
 
+    pub fn request_snapshot(&self, request_index: Option<u64>) -> Result<(), StorageError> {
+        let sender = match &self.consensus_proposal_sender {
+            Some(sender) => sender,
+            None => {
+                return Err(StorageError::service_error(
+                    "Qdrant is running in standalone mode",
+                ))
+            }
+        };
+
+        sender.send(ConsensusOperations::request_snapshot(request_index))?;
+
+        Ok(())
+    }
+
     pub fn send_set_replica_state_proposal(
         &self,
         collection_name: String,
