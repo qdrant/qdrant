@@ -95,7 +95,8 @@ impl<'de> serde::Deserialize<'de> for ExtendedPointId {
         }
 
         Err(serde::de::Error::custom(format!(
-            "value `{value:?}` did not match any variant of untagged enum ExtendedPointId"
+            "value `{}` did not match any variant of untagged enum ExtendedPointId",
+            crate::utils::fmt::SerdeValue(&value),
         )))
     }
 }
