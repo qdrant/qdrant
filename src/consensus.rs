@@ -630,7 +630,7 @@ impl Consensus {
             // This is a snapshot, we need to apply the snapshot at first.
             log::debug!("Applying snapshot");
 
-            if let Err(err) = store.apply_snapshot(&ready.snapshot().clone()) {
+            if let Err(err) = store.apply_snapshot(&ready.snapshot().clone())? {
                 log::error!("Failed to apply snapshot: {err}");
             }
         }

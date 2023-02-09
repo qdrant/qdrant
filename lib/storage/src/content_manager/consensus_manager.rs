@@ -453,18 +453,25 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         result
     }
 
-    pub fn apply_snapshot(&self, snapshot: &raft::eraftpb::Snapshot) -> Result<(), StorageError> {
+    // Outer `Result` is "fatal" error, inner `Result` is "transient"/"local" error.
+    pub fn apply_snapshot(
+        &self,
+        snapshot: &raft::eraftpb::Snapshot,
+    ) -> Result<Result<(), StorageError>, StorageError> {
         let meta = snapshot.get_metadata();
+
         if raft::Storage::first_index(self)? > meta.index {
-            return Err(StorageError::service_error("Snapshot out of date"));
+            return Ok(Err(StorageError::service_error("Snapshot out of date")));
         }
+
         let data: SnapshotData = snapshot.get_data().try_into()?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
         self.wal.lock().clear()?;
         self.persistent
             .write()
             .update_from_snapshot(meta, data.address_by_id)?;
-        Ok(())
+
+        Ok(Ok(()))
     }
 
     pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
