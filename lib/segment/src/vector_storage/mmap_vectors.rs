@@ -102,28 +102,33 @@ impl MmapVectors {
         self.deleted_ram = Some(deleted);
     }
 
-    fn create_quantized_storage<TStorage, TStorageBuilder>(
+    fn create_quantized_storage<'a, TStorage, TStorageBuilder>(
         &self,
         meta_path: &Path,
         data_path: &Path,
         encoding_parameters: EncodingParameters,
-    ) -> OperationResult<Box<dyn QuantizedVectorStorage>>
+        storage_builder: TStorageBuilder,
+    ) -> OperationResult<Box<dyn QuantizedVectorStorage + 'a>>
     where
-        TStorage: quantization::encoder::Storage,
+        TStorage: quantization::encoder::Storage + Send + Sync + 'a,
         TStorageBuilder: quantization::encoder::StorageBuilder<TStorage>,
     {
         let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
             self.raw_vector_offset(offset)
         });
-        let quantized_vectors = quantization::encoder::EncodedVectors::<Vec<u8>>::encode(
-            vector_data_iterator,
-            Vec::new(),
-            encoding_parameters,
-        )
-        .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
+        let quantized_vectors = Box::new(
+            quantization::encoder::EncodedVectors::encode(
+                vector_data_iterator,
+                storage_builder,
+                encoding_parameters,
+            )
+            .map_err(|e| {
+                OperationError::service_error(format!("Cannot quantize vector data: {e}"))
+            })?,
+        );
         quantized_vectors.save(data_path, meta_path)?;
-        Ok(Box::new(quantized_vectors))
+        Ok(quantized_vectors)
     }
 
     pub fn quantize(
@@ -148,12 +153,20 @@ impl MmapVectors {
                 meta_path,
                 data_path,
                 encoding_parameters,
+                Vec::new(),
             )?
         } else {
+            let storage_builder = QuantizedMmapStorageBuilder::new(
+                data_path,
+                self.num_vectors,
+                self.dim,
+                &encoding_parameters,
+            )?;
             self.create_quantized_storage::<QuantizedMmapStorage, QuantizedMmapStorageBuilder>(
                 meta_path,
                 data_path,
                 encoding_parameters,
+                storage_builder,
             )?
         };
         self.quantized_vectors = Some(quantized_vectors);

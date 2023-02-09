@@ -52,11 +52,12 @@ impl StorageBuilder<QuantizedMmapStorage> for QuantizedMmapStorageBuilder {
 impl QuantizedMmapStorageBuilder {
     pub fn new(
         path: &Path,
-        size: usize,
+        vectors_count: usize,
         dim: usize,
         encoding_parameters: &EncodingParameters,
     ) -> std::io::Result<Self> {
-        let encoded_storage_size = encoding_parameters.estimate_encoded_storage_size(dim, size);
+        let encoded_storage_size =
+            encoding_parameters.estimate_encoded_storage_size(dim, vectors_count);
         path.parent().map(std::fs::create_dir_all);
         let file = std::fs::OpenOptions::new()
             .read(true)
