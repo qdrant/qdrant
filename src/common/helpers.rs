@@ -8,10 +8,11 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use tokio::runtime::Runtime;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
+use validator::Validate;
 
 use crate::settings::{Settings, TlsConfig};
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct LocksOption {
     pub error_message: Option<String>,
     pub write: bool,

@@ -1,5 +1,6 @@
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
+use actix_web_validator::Json;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::types::{PointRequest, Record, ScrollRequest, ScrollResult};
 use segment::types::{PointIdType, WithPayloadInterface};
@@ -83,7 +84,7 @@ pub async fn get_point(
 pub async fn get_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    request: web::Json<PointRequest>,
+    request: Json<PointRequest>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -104,7 +105,7 @@ pub async fn get_points(
 pub async fn scroll_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    request: web::Json<ScrollRequest>,
+    request: Json<ScrollRequest>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
     let collection_name = path.into_inner();

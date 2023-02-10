@@ -10,6 +10,7 @@ use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
 use segment::types::QuantizationConfig;
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
@@ -95,7 +96,7 @@ pub struct InitFrom {
 }
 
 /// Operation for creating new collection and (optionally) specify index params
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
     /// Vector data config.
@@ -171,7 +172,7 @@ impl CreateCollectionOperation {
 }
 
 /// Operation for updating parameters of the existing collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollection {
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
@@ -235,7 +236,7 @@ impl UpdateCollectionOperation {
 /// Operation for performing changes of collection aliases.
 /// Alias changes are atomic, meaning that no collection modifications can happen between
 /// alias operations.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ChangeAliasesOperation {
     pub actions: Vec<AliasOperations>,

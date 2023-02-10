@@ -1,6 +1,7 @@
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, post, put, web, Responder};
+use actix_web_validator::Json;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use schemars::JsonSchema;
@@ -23,7 +24,7 @@ pub struct UpdateParam {
 pub async fn upsert_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    operation: web::Json<PointInsertOperations>,
+    operation: Json<PointInsertOperations>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -48,7 +49,7 @@ pub async fn upsert_points(
 pub async fn delete_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    operation: web::Json<PointsSelector>,
+    operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -73,7 +74,7 @@ pub async fn delete_points(
 pub async fn set_payload(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    operation: web::Json<SetPayload>,
+    operation: Json<SetPayload>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -98,7 +99,7 @@ pub async fn set_payload(
 pub async fn overwrite_payload(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    operation: web::Json<SetPayload>,
+    operation: Json<SetPayload>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -123,7 +124,7 @@ pub async fn overwrite_payload(
 pub async fn delete_payload(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    operation: web::Json<DeletePayload>,
+    operation: Json<DeletePayload>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -148,7 +149,7 @@ pub async fn delete_payload(
 pub async fn clear_payload(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    operation: web::Json<PointsSelector>,
+    operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -173,7 +174,7 @@ pub async fn clear_payload(
 pub async fn create_field_index(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    operation: web::Json<CreateFieldIndex>,
+    operation: Json<CreateFieldIndex>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();

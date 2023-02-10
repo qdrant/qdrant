@@ -6,6 +6,7 @@ use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, get, post, put, web, Responder, Result};
+use actix_web_validator::Json;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use reqwest::Url;
 use schemars::JsonSchema;
@@ -151,7 +152,7 @@ async fn upload_snapshot(
 async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    request: web::Json<SnapshotRecover>,
+    request: Json<SnapshotRecover>,
     params: Query<SnapshottingParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();

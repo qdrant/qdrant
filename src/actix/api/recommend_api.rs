@@ -1,5 +1,6 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
+use actix_web_validator::Json;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::types::{RecommendRequest, RecommendRequestBatch};
 use segment::types::ScoredPoint;
@@ -23,7 +24,7 @@ async fn do_recommend_points(
 pub async fn recommend_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    request: web::Json<RecommendRequest>,
+    request: Json<RecommendRequest>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
     let name = path.into_inner();
@@ -54,7 +55,7 @@ async fn do_recommend_batch_points(
 pub async fn recommend_batch_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    request: web::Json<RecommendRequestBatch>,
+    request: Json<RecommendRequestBatch>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
     let name = path.into_inner();

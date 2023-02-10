@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, Responder};
+use actix_web_validator::Json;
 use collection::operations::cluster_ops::ClusterOperations;
 use serde::Deserialize;
 use storage::content_manager::collection_meta_ops::{
@@ -62,7 +63,7 @@ async fn get_collection_aliases(
 async fn create_collection(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    operation: web::Json<CreateCollection>,
+    operation: Json<CreateCollection>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -83,7 +84,7 @@ async fn create_collection(
 async fn update_collection(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    operation: web::Json<UpdateCollection>,
+    operation: Json<UpdateCollection>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -120,7 +121,7 @@ async fn delete_collection(
 #[post("/collections/aliases")]
 async fn update_aliases(
     dispatcher: web::Data<Dispatcher>,
-    operation: web::Json<ChangeAliasesOperation>,
+    operation: Json<ChangeAliasesOperation>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -149,7 +150,7 @@ async fn update_collection_cluster(
     toc: web::Data<TableOfContent>,
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    operation: web::Json<ClusterOperations>,
+    operation: Json<ClusterOperations>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();

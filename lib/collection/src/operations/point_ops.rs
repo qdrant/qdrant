@@ -9,9 +9,9 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{only_default_vector, BatchVectorStruct, VectorStruct};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
-use super::types::{CollectionError, CollectionResult};
-use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard, Validate};
+use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
 use crate::operations::types::Record;
 use crate::shards::shard::ShardId;
@@ -94,13 +94,13 @@ impl Batch {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {
     pub points: Vec<PointIdType>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct FilterSelector {
     pub filter: Filter,
@@ -117,7 +117,7 @@ pub enum PointsSelector {
 }
 
 // Structure used for deriving custom JsonSchema only
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 struct PointsList {
     points: Vec<PointStruct>,
 }
@@ -140,6 +140,15 @@ pub enum PointInsertOperations {
     /// Insert points from a list
     #[serde(rename = "points")]
     PointsList(Vec<PointStruct>),
+}
+
+impl Validate for PointsSelector {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            PointsSelector::PointIdsSelector(ids) => ids.validate(),
+            PointsSelector::FilterSelector(filter) => filter.validate(),
+        }
+    }
 }
 
 impl JsonSchema for PointInsertOperations {
@@ -223,7 +232,7 @@ impl PointOperations {
 }
 
 impl Validate for PointOperations {
-    fn validate(&self) -> CollectionResult<()> {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             PointOperations::UpsertPoints(upsert_points) => upsert_points.validate(),
             PointOperations::DeletePoints { ids: _ } => Ok(()),
@@ -234,13 +243,17 @@ impl Validate for PointOperations {
 }
 
 impl Validate for PointInsertOperations {
-    fn validate(&self) -> CollectionResult<()> {
-        let bad_input_error = |ids_len: usize, vectors_len: usize| {
-            Err(CollectionError::BadInput {
-                description: format!(
-                    "Amount of ids ({ids_len}) and vectors ({vectors_len}) does not match",
-                ),
-            })
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        let bad_input_description = |ids_len: usize, vectors_len: usize| -> String {
+            format!("Amount of ids ({ids_len}) and vectors ({vectors_len}) does not match",)
+        };
+
+        let create_error = |message: String| -> validator::ValidationErrors {
+            let mut error = validator::ValidationError::new("PointInsertOperations");
+            error.add_param(std::borrow::Cow::Borrowed(""), &message);
+            let mut errors = validator::ValidationErrors::new();
+            errors.add("PointInsertOperations", error);
+            errors
         };
 
         match self {
@@ -249,26 +262,30 @@ impl Validate for PointInsertOperations {
                 match &batch.vectors {
                     BatchVectorStruct::Single(vectors) => {
                         if batch.ids.len() != vectors.len() {
-                            return bad_input_error(batch.ids.len(), vectors.len());
+                            return Err(create_error(bad_input_description(
+                                batch.ids.len(),
+                                vectors.len(),
+                            )));
                         }
                     }
                     BatchVectorStruct::Multi(named_vectors) => {
                         for vectors in named_vectors.values() {
                             if batch.ids.len() != vectors.len() {
-                                return bad_input_error(batch.ids.len(), vectors.len());
+                                return Err(create_error(bad_input_description(
+                                    batch.ids.len(),
+                                    vectors.len(),
+                                )));
                             }
                         }
                     }
                 }
                 if let Some(payload_vector) = &batch.payloads {
                     if payload_vector.len() != batch.ids.len() {
-                        return Err(CollectionError::BadInput {
-                            description: format!(
-                                "Amount of ids ({}) and payloads ({}) does not match",
-                                batch.ids.len(),
-                                payload_vector.len()
-                            ),
-                        });
+                        return Err(create_error(format!(
+                            "Amount of ids ({}) and payloads ({}) does not match",
+                            batch.ids.len(),
+                            payload_vector.len()
+                        )));
                     }
                 }
                 Ok(())
@@ -460,10 +477,7 @@ mod tests {
             vectors: vec![].into(),
             payloads: None,
         });
-        assert!(matches!(
-            batch.validate(),
-            Err(CollectionError::BadInput { description: _ })
-        ));
+        assert!(matches!(batch.validate(), Err(_)));
 
         let batch = PointInsertOperations::PointsBatch(Batch {
             ids: vec![PointIdType::NumId(0)],
@@ -477,9 +491,6 @@ mod tests {
             vectors: vec![vec![0.1]].into(),
             payloads: Some(vec![]),
         });
-        assert!(matches!(
-            batch.validate(),
-            Err(CollectionError::BadInput { description: _ })
-        ));
+        assert!(matches!(batch.validate(), Err(_)));
     }
 }
