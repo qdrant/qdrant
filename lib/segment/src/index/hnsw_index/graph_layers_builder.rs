@@ -537,6 +537,7 @@ mod tests {
         (vector_holder, graph_layers)
     }
 
+    #[cfg(not(windows))] // https://github.com/qdrant/qdrant/issues/1452
     #[test]
     fn test_parallel_graph_build() {
         let num_vectors = 1000;
