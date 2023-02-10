@@ -921,6 +921,7 @@ impl ShardReplicaSet {
 
             if let Some(mut removing_local) = removed_local {
                 removing_local.before_drop().await;
+                drop(removing_local); // release file handlers
                 LocalShard::clear(&self.shard_path).await?;
             }
             LocalShard::move_data(replica_path, &self.shard_path).await?;
