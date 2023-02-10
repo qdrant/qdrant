@@ -10,10 +10,11 @@ use segment::madvise;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
+use validator::Validate;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
 pub struct PerformanceConfig {
     pub max_search_threads: usize,
     #[serde(default = "default_max_optimization_threads")]
@@ -25,16 +26,20 @@ fn default_max_optimization_threads() -> usize {
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Validate)]
 pub struct StorageConfig {
     pub storage_path: String,
     #[serde(default = "default_snapshots_path")]
     pub snapshots_path: String,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
+    #[validate]
     pub optimizers: OptimizersConfig,
+    #[validate]
     pub wal: WalConfig,
+    #[validate]
     pub performance: PerformanceConfig,
+    #[validate]
     pub hnsw_index: HnswConfig,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,

@@ -6,6 +6,7 @@ use segment::types::HnswConfig;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use validator::Validate;
 
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
@@ -35,7 +36,9 @@ pub trait DiffConfig<T: DeserializeOwned + Serialize> {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Merge, Hash)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq, Merge, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
@@ -47,9 +50,11 @@ pub struct HnswConfigDiff {
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "full_scan_threshold_kb")]
+    #[validate(range(min = 1000))]
     pub full_scan_threshold: Option<usize>,
     /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[serde(default)]
+    #[validate(range(min = 1000))]
     pub max_indexing_threads: Option<usize>,
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     #[serde(default)]
@@ -59,7 +64,9 @@ pub struct HnswConfigDiff {
     pub payload_m: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
+)]
 pub struct WalConfigDiff {
     /// Size of a single WAL segment in MB
     pub wal_capacity_mb: Option<usize>,
@@ -75,7 +82,7 @@ pub struct CollectionParamsDiff {
     pub write_consistency_factor: Option<NonZeroU32>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     pub deleted_threshold: Option<f64>,
@@ -104,15 +111,18 @@ pub struct OptimizersConfigDiff {
     /// To enable memmap storage, lower the threshold
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "memmap_threshold_kb")]
+    #[validate(range(min = 1000))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
+    #[validate(range(min = 1000))]
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,
     /// Maximum available threads for optimization workers
+    #[validate(range(min = 1))]
     pub max_optimization_threads: Option<usize>,
 }
 
