@@ -40,6 +40,8 @@ clap = { version = "4.1.4", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.3", features = ["v4", "serde"] }
 sys-info = "0.9.1"
+actix-web-validator = "5.0.1"
+validator = { version = "0.16", features = ["derive"] }
 
 config = "~0.13.3"
 

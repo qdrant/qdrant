@@ -5,8 +5,9 @@ use segment::common::cpu::get_num_cpus;
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use tokio::runtime::Runtime;
+use validator::Validate;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct LocksOption {
     pub error_message: Option<String>,
     pub write: bool,

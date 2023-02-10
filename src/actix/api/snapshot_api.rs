@@ -1,6 +1,7 @@
 use actix_files::NamedFile;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
+use actix_web_validator::Json;
 use collection::operations::snapshot_ops::SnapshotRecover;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
@@ -67,7 +68,7 @@ async fn create_snapshot(
 async fn recover_from_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    request: web::Json<SnapshotRecover>,
+    request: Json<SnapshotRecover>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let snapshot_recover = request.into_inner();

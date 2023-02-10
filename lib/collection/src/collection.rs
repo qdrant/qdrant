@@ -19,6 +19,7 @@ use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use validator::Validate;
 
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -35,7 +36,7 @@ use crate::operations::types::{
     CountResult, LocalShardInfo, PointRequest, Record, RemoteShardInfo, ScrollRequest,
     ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
-use crate::operations::{CollectionUpdateOperations, Validate};
+use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;

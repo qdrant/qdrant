@@ -7,17 +7,16 @@ pub mod payload_ops;
 pub mod point_ops;
 pub mod snapshot_ops;
 pub mod types;
-
 use std::collections::HashMap;
 
 use segment::types::{ExtendedPointId, PayloadFieldSchema};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
-use self::types::CollectionResult;
 use crate::hash_ring::HashRing;
 use crate::shards::shard::ShardId;
 
-#[derive(Debug, Deserialize, Serialize, Default, Clone)]
+#[derive(Debug, Deserialize, Serialize, Validate, Default, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateIndex {
     pub field_name: String,
@@ -84,18 +83,21 @@ impl FieldIndexOperations {
     }
 }
 
-/// Stateless validation of operation content.
-/// Checks for `CollectionError::BadInput`
-pub trait Validate {
-    fn validate(&self) -> CollectionResult<()>;
+impl Validate for FieldIndexOperations {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            FieldIndexOperations::CreateIndex(create_index) => create_index.validate(),
+            FieldIndexOperations::DeleteIndex(_) => Ok(()),
+        }
+    }
 }
 
 impl Validate for CollectionUpdateOperations {
-    fn validate(&self) -> CollectionResult<()> {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             CollectionUpdateOperations::PointOperation(operation) => operation.validate(),
-            CollectionUpdateOperations::PayloadOperation(_) => Ok(()),
-            CollectionUpdateOperations::FieldIndexOperation(_) => Ok(()),
+            CollectionUpdateOperations::PayloadOperation(operation) => operation.validate(),
+            CollectionUpdateOperations::FieldIndexOperation(operation) => operation.validate(),
         }
     }
 }
