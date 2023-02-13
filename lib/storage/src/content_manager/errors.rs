@@ -114,19 +114,19 @@ impl From<CollectionError> for StorageError {
 
 impl From<IoError> for StorageError {
     fn from(err: IoError) -> Self {
-        StorageError::service_error(&format!("{err}"))
+        StorageError::service_error(format!("{err}"))
     }
 }
 
 impl From<FileStorageError> for StorageError {
     fn from(err: FileStorageError) -> Self {
         match err {
-            FileStorageError::IoError { description } => StorageError::service_error(&description),
+            FileStorageError::IoError { description } => StorageError::service_error(description),
             FileStorageError::UserAtomicIoError => {
                 StorageError::service_error("Unknown atomic write error")
             }
             FileStorageError::GenericError { description } => {
-                StorageError::service_error(&description)
+                StorageError::service_error(description)
             }
         }
     }

@@ -125,7 +125,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<(), StorageError> {
         self.propose_sender
             .send(ConsensusOperations::report_snapshot(peer_id, status))
-            .map_err(|err| {
+            .map_err(|_err| {
                 StorageError::service_error(
                     "failed to send ReportSnapshot message to consensus thread",
                 )
@@ -534,7 +534,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .await
             .map_err(
                 |_: Elapsed| {
-                    StorageError::service_error(&format!(
+                    StorageError::service_error(format!(
                         "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
                         wait_timeout.as_secs_f64()
                     ))
@@ -594,7 +594,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .is_leader_established
             .await_ready_for_timeout(wait_timeout)
         {
-            return Err(StorageError::service_error(&format!(
+            return Err(StorageError::service_error(format!(
                 "Failed to propose operation: leader is not established within {} secs",
                 wait_timeout.as_secs()
             )));
