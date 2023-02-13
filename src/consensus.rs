@@ -839,7 +839,17 @@ async fn send_message(
         .await;
 
     if is_snapshot {
-        store.report_snapshot(
+        // Should we ignore the error? Seems like it will only produce noise.
+        //
+        // - `send_message` is only called by the sub-task spawned by the consnsus thread.
+        // - `report_snapshot` sends a message back to the consensus thread.
+        // - It can only fail, if the "receiver" end of the channel is closed.
+        // - Which means consensus thread either resolved successfully, or failed.
+        // - So, if the consensus thread is shutting down, no need to log a misleading error...
+        // - ...or, if the consensus thread failed, then we should already have an error,
+        //   and it will only produce more noise.
+
+        let res = store.report_snapshot(
             peer_id,
             if result.is_ok() {
                 SnapshotStatus::Finish
@@ -847,6 +857,10 @@ async fn send_message(
                 SnapshotStatus::Failure
             },
         );
+
+        if let Err(err) = res {
+            log::error!("{}", err);
+        }
     }
 
     match result {

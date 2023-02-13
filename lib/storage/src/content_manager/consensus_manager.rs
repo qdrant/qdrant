@@ -118,10 +118,18 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
     }
 
-    pub fn report_snapshot(&self, peer_id: u64, status: impl Into<SnapshotStatus>) {
-        let _ = self
-            .propose_sender
-            .send(ConsensusOperations::report_snapshot(peer_id, status));
+    pub fn report_snapshot(
+        &self,
+        peer_id: u64,
+        status: impl Into<SnapshotStatus>,
+    ) -> Result<(), StorageError> {
+        self.propose_sender
+            .send(ConsensusOperations::report_snapshot(peer_id, status))
+            .map_err(|err| {
+                StorageError::service_error(
+                    "failed to send ReportSnapshot message to consensus thread",
+                )
+            })
     }
 
     pub fn record_message_send_failure<E: Error>(&self, peer_address: &Uri, error: E) {
