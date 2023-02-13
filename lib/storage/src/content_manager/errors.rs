@@ -24,9 +24,9 @@ pub enum StorageError {
 }
 
 impl StorageError {
-    pub fn service_error(description: &str) -> StorageError {
+    pub fn service_error(description: impl Into<String>) -> StorageError {
         StorageError::ServiceError {
-            description: description.to_string(),
+            description: description.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
