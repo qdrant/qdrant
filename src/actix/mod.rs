@@ -9,7 +9,6 @@ use std::sync::Arc;
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
 use actix_web::middleware::{Compress, Condition, Logger};
-use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use storage::dispatcher::Dispatcher;
 
@@ -25,15 +24,13 @@ use crate::actix::api::update_api::config_update_api;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
-fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
-    use actix_web::error::JsonPayloadError;
-
+fn json_error_handler(err: actix_web_validator::Error, _req: &HttpRequest) -> error::Error {
+    HttpResponse::UnsupportedMediaType();
     let detail = err.to_string();
     let mut resp_b = match &err {
-        JsonPayloadError::ContentType => HttpResponse::UnsupportedMediaType(),
-        JsonPayloadError::Deserialize(json_err) if json_err.is_data() => {
-            HttpResponse::UnprocessableEntity()
-        }
+        // TODO: fix error types
+        // actix_web_validator::Error::ContentType => HttpResponse::UnsupportedMediaType(),
+        actix_web_validator::Error::Deserialize(_) => HttpResponse::UnprocessableEntity(),
         _ => HttpResponse::BadRequest(),
     };
     let response = resp_b.json(ApiResponse::<()> {
@@ -69,6 +66,9 @@ pub fn init(
                 .allow_any_origin()
                 .allow_any_method()
                 .allow_any_header();
+            let json_config = actix_web_validator::JsonConfig::default()
+                .limit(settings.service.max_request_size_mb * 1024 * 1024)
+                .error_handler(json_error_handler);
 
             App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
@@ -80,11 +80,7 @@ pub fn init(
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
-                .app_data(Data::new(
-                    web::JsonConfig::default()
-                        .limit(settings.service.max_request_size_mb * 1024 * 1024)
-                        .error_handler(json_error_handler),
-                ))
+                .app_data(json_config)
                 .service(index)
                 .configure(config_collections_api)
                 .configure(config_snapshots_api)
