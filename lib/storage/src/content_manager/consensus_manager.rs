@@ -468,10 +468,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<Result<(), StorageError>, StorageError> {
         let meta = snapshot.get_metadata();
 
-        if raft::Storage::first_index(self)? > meta.index {
-            return Ok(Err(StorageError::service_error("Snapshot out of date")));
-        }
-
         let data: SnapshotData = snapshot.get_data().try_into()?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
         self.wal.lock().clear()?;
