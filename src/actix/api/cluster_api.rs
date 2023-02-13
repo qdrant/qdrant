@@ -69,5 +69,5 @@ async fn remove_peer(
 pub fn config_cluster_api(cfg: &mut web::ServiceConfig) {
     cfg.service(cluster_status)
         .service(remove_peer)
-        .service(request_snapshot);
+        .service(recover_current_peer);
 }
