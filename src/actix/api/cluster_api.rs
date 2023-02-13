@@ -1,5 +1,5 @@
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, web, Responder};
+use actix_web::{delete, get, post, web, Responder};
 use serde::Deserialize;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
@@ -16,17 +16,17 @@ struct QueryParams {
     timeout: Option<u64>,
 }
 
-#[actix_web::post("/cluster/request_snapshot")]
-async fn request_snapshot(toc: web::Data<TableOfContent>) -> impl Responder {
-    let timing = Instant::now();
-    process_response(toc.request_snapshot(None), timing)
-}
-
 #[get("/cluster")]
 async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher.cluster_status();
     process_response(Ok(response), timing)
+}
+
+#[post("/cluster/recover")]
+async fn recover_current_peer(toc: web::Data<TableOfContent>) -> impl Responder {
+    let timing = Instant::now();
+    process_response(toc.request_snapshot(None).map(|_| true), timing)
 }
 
 #[delete("/cluster/peer/{peer_id}")]
