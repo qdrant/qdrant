@@ -10,6 +10,14 @@ paths:
       operationId: cluster_status
       responses: #@ response(reference("ClusterStatus"))
 
+  /cluster/recover:
+    post:
+      tags:
+        - cluster
+      summary: Tries to recover current peer Raft state.
+      operationId: recover_current_peer
+      responses: #@ response(type("boolean"))
+
   /cluster/peer/{peer_id}:
     delete:
       tags:

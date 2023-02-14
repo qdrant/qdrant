@@ -34,8 +34,18 @@ pub mod consensus_ops {
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
     pub enum ConsensusOperations {
         CollectionMeta(Box<CollectionMetaOperations>),
-        AddPeer { peer_id: PeerId, uri: String },
+        AddPeer {
+            peer_id: PeerId,
+            uri: String,
+        },
         RemovePeer(PeerId),
+        RequestSnapshot {
+            request_index: Option<u64>,
+        },
+        ReportSnapshot {
+            peer_id: PeerId,
+            status: SnapshotStatus,
+        },
     }
 
     impl TryFrom<&RaftEntry> for ConsensusOperations {
@@ -135,6 +145,41 @@ pub mod consensus_ops {
                 collection_id,
                 ShardTransferOperations::Start(transfer),
             )))
+        }
+
+        pub fn request_snapshot(request_index: Option<u64>) -> Self {
+            Self::RequestSnapshot { request_index }
+        }
+
+        pub fn report_snapshot(peer_id: PeerId, status: impl Into<SnapshotStatus>) -> Self {
+            Self::ReportSnapshot {
+                peer_id,
+                status: status.into(),
+            }
+        }
+    }
+
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
+    pub enum SnapshotStatus {
+        Finish,
+        Failure,
+    }
+
+    impl From<raft::SnapshotStatus> for SnapshotStatus {
+        fn from(status: raft::SnapshotStatus) -> Self {
+            match status {
+                raft::SnapshotStatus::Finish => Self::Finish,
+                raft::SnapshotStatus::Failure => Self::Failure,
+            }
+        }
+    }
+
+    impl From<SnapshotStatus> for raft::SnapshotStatus {
+        fn from(status: SnapshotStatus) -> Self {
+            match status {
+                SnapshotStatus::Finish => Self::Finish,
+                SnapshotStatus::Failure => Self::Failure,
+            }
         }
     }
 }
