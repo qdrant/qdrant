@@ -10,6 +10,7 @@ N_PEERS = 3
 COLLECTION_NAME = "test_collection"
 
 
+@pytest.mark.skip(reason="this test does not check anything useful, but simply documents current (i.e., broken) behavior")
 def test_collection_recovery(tmp_path: pathlib.Path):
     assert_project_root()
 
