@@ -15,7 +15,7 @@ use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole, INVALID_ID};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
-use storage::content_manager::consensus_ops::ConsensusOperations;
+use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::PeerAddressById;
@@ -479,6 +479,15 @@ impl Consensus {
                         log::debug!("Proposing network configuration change: {:?}", change);
                         self.node.propose_conf_change(uri.into_bytes(), change)
                     }
+                    ConsensusOperations::RequestSnapshot { request_index } => {
+                        self.node.request_snapshot(
+                            request_index.unwrap_or_else(|| self.node.store().hard_state().commit),
+                        )
+                    }
+                    ConsensusOperations::ReportSnapshot { peer_id, status } => {
+                        self.node.report_snapshot(peer_id, status.into());
+                        Ok(())
+                    }
                     _ => {
                         let message = match serde_cbor::to_vec(&operation) {
                             Ok(message) => message,
@@ -620,9 +629,10 @@ impl Consensus {
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
             log::debug!("Applying snapshot");
-            store
-                .apply_snapshot(&ready.snapshot().clone())
-                .map_err(|err| anyhow!("Failed to apply snapshot: {}", err))?
+
+            if let Err(err) = store.apply_snapshot(&ready.snapshot().clone())? {
+                log::error!("Failed to apply snapshot: {err}");
+            }
         }
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
@@ -806,13 +816,16 @@ async fn send_message(
     store: ConsensusStateRef,
     timeout: Duration,
 ) {
+    let is_snapshot = message.msg_type == raft::eraftpb::MessageType::MsgSnapshot as i32;
+    let peer_id = message.to;
+
     let mut bytes = Vec::new();
     if let Err(err) = <RaftMessage as prost::Message>::encode(&message, &mut bytes) {
         format!("Failed to serialize Raft message: {err}");
     }
     let message = &GrpcRaftMessage { message: bytes };
 
-    if let Err(err) = transport_channel_pool
+    let result = transport_channel_pool
         .with_channel_timeout(
             &address,
             |channel| async move {
@@ -823,11 +836,36 @@ async fn send_message(
             },
             Some(timeout),
         )
-        .await
-    {
-        store.record_message_send_failure(&address, err);
-    } else {
-        store.record_message_send_success(&address)
+        .await;
+
+    if is_snapshot {
+        // Should we ignore the error? Seems like it will only produce noise.
+        //
+        // - `send_message` is only called by the sub-task spawned by the consnsus thread.
+        // - `report_snapshot` sends a message back to the consensus thread.
+        // - It can only fail, if the "receiver" end of the channel is closed.
+        // - Which means consensus thread either resolved successfully, or failed.
+        // - So, if the consensus thread is shutting down, no need to log a misleading error...
+        // - ...or, if the consensus thread failed, then we should already have an error,
+        //   and it will only produce more noise.
+
+        let res = store.report_snapshot(
+            peer_id,
+            if result.is_ok() {
+                SnapshotStatus::Finish
+            } else {
+                SnapshotStatus::Failure
+            },
+        );
+
+        if let Err(err) = res {
+            log::error!("{}", err);
+        }
+    }
+
+    match result {
+        Ok(_) => store.record_message_send_success(&address),
+        Err(err) => store.record_message_send_failure(&address, err),
     }
 }
 

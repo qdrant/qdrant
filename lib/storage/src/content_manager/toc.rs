@@ -193,7 +193,7 @@ impl TableOfContent {
         tokio::fs::create_dir_all(&snapshots_path)
             .await
             .map_err(|err| {
-                StorageError::service_error(&format!(
+                StorageError::service_error(format!(
                     "Can't create directory for snapshots {collection_name}. Error: {err}"
                 ))
             })?;
@@ -205,7 +205,7 @@ impl TableOfContent {
         let path = self.get_collection_path(collection_name);
 
         tokio::fs::create_dir_all(&path).await.map_err(|err| {
-            StorageError::service_error(&format!(
+            StorageError::service_error(format!(
                 "Can't create directory for collection {collection_name}. Error: {err}"
             ))
         })?;
@@ -554,6 +554,21 @@ impl TableOfContent {
                 log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");
             }
         })
+    }
+
+    pub fn request_snapshot(&self, request_index: Option<u64>) -> Result<(), StorageError> {
+        let sender = match &self.consensus_proposal_sender {
+            Some(sender) => sender,
+            None => {
+                return Err(StorageError::service_error(
+                    "Qdrant is running in standalone mode",
+                ))
+            }
+        };
+
+        sender.send(ConsensusOperations::request_snapshot(request_index))?;
+
+        Ok(())
     }
 
     pub fn send_set_replica_state_proposal(
