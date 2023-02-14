@@ -227,7 +227,10 @@ impl PayloadFieldIndex for MapIndex<String> {
                     .iter()
                     .map(|keyword| self.match_cardinality(keyword))
                     .collect::<Vec<_>>();
-                Some(combine_should_estimations(&estimations, self.indexed_points))
+                Some(combine_should_estimations(
+                    &estimations,
+                    self.indexed_points,
+                ))
             }
             _ => None,
         }
@@ -301,7 +304,10 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                     .iter()
                     .map(|integer| self.match_cardinality(integer))
                     .collect::<Vec<_>>();
-                Some(combine_should_estimations(&estimations, self.indexed_points))
+                Some(combine_should_estimations(
+                    &estimations,
+                    self.indexed_points,
+                ))
             }
             _ => None,
         }
