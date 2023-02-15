@@ -1312,6 +1312,21 @@ impl TableOfContent {
                         log::error!("Can't apply state: single node mode");
                     }
                 }
+
+                // Mark local shards as dead (to initiate shard transfer),
+                // if collection has been created during snapshot application
+                if !collection_exists {
+                    for shard_id in collection.get_local_shards().await {
+                        collection
+                            .set_shard_replica_state(
+                                shard_id,
+                                self.this_peer_id,
+                                ReplicaState::Dead,
+                                None,
+                            )
+                            .await?;
+                    }
+                }
             }
 
             // Remove collections that are present locally but are not in the snapshot state
