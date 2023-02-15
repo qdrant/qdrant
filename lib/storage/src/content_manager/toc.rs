@@ -1247,6 +1247,7 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
             let mut collections = self.collections.write().await;
+
             for (id, state) in &data.collections {
                 let collection_exists = collections.contains_key(id);
 
@@ -1333,9 +1334,10 @@ impl TableOfContent {
             for collection_name in collections.keys() {
                 if !data.collections.contains_key(collection_name) {
                     log::debug!(
-                        "Deleting collection {} because it is not part of the consensus snapshot",
-                        collection_name
+                        "Deleting collection {collection_name} \
+                         because it is not part of the consensus snapshot",
                     );
+
                     self.delete_collection(collection_name).await?;
                 }
             }
@@ -1345,6 +1347,7 @@ impl TableOfContent {
                 .write()
                 .await
                 .apply_state(data.aliases)?;
+
             Ok(())
         })
     }
