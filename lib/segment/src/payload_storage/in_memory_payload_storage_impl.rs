@@ -30,13 +30,13 @@ impl PayloadStorage for InMemoryPayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>> {
+    ) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
             Some(payload) => {
                 let res = payload.remove(key);
                 Ok(res)
             }
-            None => Ok(None),
+            None => Ok(vec![]),
         }
     }
 

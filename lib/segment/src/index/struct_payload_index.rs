@@ -181,6 +181,7 @@ impl StructPayloadIndex {
         }
 
         payload_storage.iter(|point_id, point_payload| {
+            // TODO handle more than first value
             let field_value_opt = point_payload.get_value(field).first().cloned();
             if let Some(field_value) = field_value_opt {
                 for field_index in field_indexes.iter_mut() {
@@ -424,6 +425,7 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         for (field, field_index) in &mut self.field_indexes {
+            // TODO handle more than first value
             if let Some(field_value) = payload.get_value(field).first() {
                 for index in field_index {
                     index.add_point(point_id, field_value)?;
@@ -441,7 +443,7 @@ impl PayloadIndex for StructPayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>> {
+    ) -> OperationResult<Vec<Value>> {
         if let Some(indexes) = self.field_indexes.get_mut(key) {
             for index in indexes {
                 index.remove_point(point_id)?;
@@ -491,6 +493,7 @@ impl PayloadIndex for StructPayloadIndex {
     ) -> OperationResult<Option<PayloadSchemaType>> {
         let mut schema = None;
         self.payload.borrow().iter(|_id, payload: &Payload| {
+            // TODO handle more than first value
             let field_value: Option<_> = payload.get_value(key).first().cloned();
             schema = field_value.and_then(infer_value_type);
             Ok(false)

@@ -66,7 +66,7 @@ impl PayloadStorage for PayloadStorageEnum {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>> {
+    ) -> OperationResult<Vec<Value>> {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.delete(point_id, key),

@@ -93,6 +93,7 @@ where
 }
 
 pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) -> bool {
+    // TODO handle more than first value
     match payload.get_value(&is_empty.is_empty.key).first() {
         None => true,
         Some(value) => match value {
@@ -106,7 +107,7 @@ pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) 
 pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
     payload
         .get_value(&field_condition.key)
-        .first()
+        .first()// TODO handle more than first value
         .map_or(false, |p| {
             let mut res = false;
             // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition

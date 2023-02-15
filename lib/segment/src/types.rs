@@ -496,9 +496,8 @@ impl Payload {
         utils::get_value_from_json_map(path, &self.0)
     }
 
-    pub fn remove(&mut self, path: &str) -> Option<Value> {
-        // TODO propagate vector of values
-        utils::remove_value_from_json_map(path, &mut self.0).pop()
+    pub fn remove(&mut self, path: &str) -> Vec<Value> {
+        utils::remove_value_from_json_map(path, &mut self.0)
     }
 
     pub fn len(&self) -> usize {
