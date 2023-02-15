@@ -153,7 +153,10 @@ mod tests {
                 .borrow()
                 .search(&[&query], None, top, None);
 
-            assert_eq!(index_result, plain_result, "Exact search is not equal to plain search");
+            assert_eq!(
+                index_result, plain_result,
+                "Exact search is not equal to plain search"
+            );
 
             let range_size = 40;
             let left_range = rnd.gen_range(0..400);
@@ -184,7 +187,10 @@ mod tests {
                 .borrow()
                 .search(&[&query], filter_query, top, None);
 
-            assert_eq!(index_result, plain_result, "Exact search is not equal to plain search");
+            assert_eq!(
+                index_result, plain_result,
+                "Exact search is not equal to plain search"
+            );
         }
     }
 }
