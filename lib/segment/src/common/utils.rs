@@ -81,17 +81,17 @@ pub fn get_value_from_json_map<'a>(
 ) -> Vec<&'a Value> {
     // check if leaf path element
     match path.split_once('.') {
-        Some((element, path)) => {
+        Some((element, rest_path)) => {
             // check if targeting array
             match parse_array_path(element) {
                 Some((array_element_path, array_index)) => {
-                    focus_array_path(array_element_path, array_index, Some(path), value)
+                    focus_array_path(array_element_path, array_index, Some(rest_path), value)
                 }
                 None => {
                     // targeting object
                     match value.get(element) {
-                        Some(Value::Object(map)) => get_value_from_json_map(path, map),
-                        Some(value) => match path.is_empty() {
+                        Some(Value::Object(map)) => get_value_from_json_map(rest_path, map),
+                        Some(value) => match rest_path.is_empty() {
                             true => vec![value],
                             false => vec![],
                         },
@@ -120,59 +120,61 @@ fn delete_array_path(
     array_index: Option<u32>,
     rest_path: Option<&str>,
     value: &mut serde_json::Map<String, Value>,
-) -> Option<Value> {
+) -> Vec<Value> {
     if let Some(Value::Array(array)) = value.get_mut(array_path) {
         match rest_path {
             None => {
                 // end of path - delete and collect
                 if let Some(array_index) = array_index {
                     if array.len() > array_index as usize {
-                        return Some(array.remove(array_index as usize));
+                        return vec![array.remove(array_index as usize)];
                     }
                 } else {
-                    return Some(Value::Array(array.drain(..).collect()));
+                    return vec![Value::Array(array.drain(..).collect())];
                 }
             }
             Some(rest_path) => {
                 // dig deeper
+                let mut values = Vec::new();
                 for (i, value) in array.iter_mut().enumerate() {
                     if let Value::Object(map) = value {
                         if let Some(array_index) = array_index {
                             if i == array_index as usize {
-                                return remove_value_from_json_map(rest_path, map);
+                                values.extend(remove_value_from_json_map(rest_path, map));
                             }
                         } else {
-                            return remove_value_from_json_map(rest_path, map);
+                            values.extend(remove_value_from_json_map(rest_path, map));
                         }
                     }
                 }
+                return values;
             }
         }
     }
-    None
+    vec![]
 }
 
 pub fn remove_value_from_json_map(
     path: &str,
     value: &mut serde_json::Map<String, Value>,
-) -> Option<Value> {
+) -> Vec<Value> {
     // check if leaf path element
     match path.split_once('.') {
-        Some((element, new_path)) => {
+        Some((element, rest_path)) => {
             // check if targeting array
             match parse_array_path(element) {
                 Some((array_element_path, array_index)) => {
-                    delete_array_path(array_element_path, array_index, Some(path), value)
+                    delete_array_path(array_element_path, array_index, Some(rest_path), value)
                 }
                 None => {
                     // targeting object
-                    if new_path.is_empty() {
-                        value.remove(element)
+                    if rest_path.is_empty() {
+                        value.remove(element).into_iter().collect()
                     } else {
                         match value.get_mut(element) {
-                            None => None,
-                            Some(Value::Object(map)) => remove_value_from_json_map(new_path, map),
-                            Some(_value) => None,
+                            None => vec![],
+                            Some(Value::Object(map)) => remove_value_from_json_map(rest_path, map),
+                            Some(_value) => vec![],
                         }
                     }
                 }
@@ -182,7 +184,7 @@ pub fn remove_value_from_json_map(
             Some((array_element_path, array_index)) => {
                 delete_array_path(array_element_path, array_index, None, value)
             }
-            None => value.remove(path),
+            None => value.remove(path).into_iter().collect(),
         },
     }
 }

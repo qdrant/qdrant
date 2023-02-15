@@ -497,7 +497,8 @@ impl Payload {
     }
 
     pub fn remove(&mut self, path: &str) -> Option<Value> {
-        utils::remove_value_from_json_map(path, &mut self.0)
+        // TODO propagate vector of values
+        utils::remove_value_from_json_map(path, &mut self.0).pop()
     }
 
     pub fn len(&self) -> usize {
@@ -1564,7 +1565,18 @@ mod tests {
                 "e": {
                     "f": [1,2,3],
                     "g": 7,
-                    "h": "text"
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
                 }
             }
         }
@@ -1572,53 +1584,76 @@ mod tests {
         )
         .unwrap();
         let removed = remove_value_from_json_map("b.c", &mut payload.0);
-        assert_eq!(removed, Some(Value::Number(123.into())));
+        assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("b.e.f[1]", &mut payload.0);
-        assert_eq!(removed, Some(Value::Number(2.into())));
+        assert_eq!(removed, vec![Value::Number(2.into())]);
         assert_ne!(payload, Default::default());
 
-        // TODO
-        // add test to delete all array
-        // add test to delete all objects through array
-        // add test to delete all objects through array index
+        let removed = remove_value_from_json_map("b.e.i[0].j", &mut payload.0);
+        assert_eq!(removed, vec![Value::Number(1.into())]);
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b.e.i[].k", &mut payload.0);
+        assert_eq!(
+            removed,
+            vec![Value::Number(2.into()), Value::Number(4.into())]
+        );
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b.e.i[]", &mut payload.0);
+        assert_eq!(
+            removed,
+            vec![Value::Array(vec![
+                Value::Object(serde_json::Map::from_iter(vec![])),
+                Value::Object(serde_json::Map::from_iter(vec![(
+                    "j".to_string(),
+                    Value::Number(3.into())
+                ),])),
+            ])]
+        );
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b.e.i", &mut payload.0);
+        assert_eq!(removed, vec![Value::Array(vec![])]);
+        assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("b.e.f", &mut payload.0);
-        assert_eq!(removed, Some(Value::Array(vec![1.into(), 3.into()])));
+        assert_eq!(removed, vec![Value::Array(vec![1.into(), 3.into()])]);
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("k", &mut payload.0);
-        assert_eq!(removed, None);
+        assert!(removed.is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("", &mut payload.0);
-        assert_eq!(removed, None);
+        assert!(removed.is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("b.e.l", &mut payload.0);
-        assert_eq!(removed, None);
+        assert!(removed.is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("a", &mut payload.0);
-        assert_eq!(removed, Some(Value::Number(1.into())));
+        assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("b.e", &mut payload.0);
         assert_eq!(
             removed,
-            Some(Value::Object(serde_json::Map::from_iter(vec![
+            vec![Value::Object(serde_json::Map::from_iter(vec![
                 // ("f".to_string(), Value::Array(vec![1.into(), 2.into(), 3.into()])), has been removed
                 ("g".to_string(), Value::Number(7.into())),
                 ("h".to_string(), Value::String("text".to_owned())),
-            ])))
+            ]))]
         );
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("b", &mut payload.0);
         assert_eq!(
             removed,
-            Some(Value::Object(serde_json::Map::from_iter(vec![])))
+            vec![Value::Object(serde_json::Map::from_iter(vec![]))]
         ); // empty object left
         assert_eq!(payload, Default::default());
     }
