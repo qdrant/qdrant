@@ -15,10 +15,11 @@ use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
+use crate::index::query_estimator::combine_should_estimations;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    FieldCondition, IntPayloadType, Match, MatchValue, PayloadKeyType, PointOffsetType,
-    ValueVariants,
+    AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchValue, PayloadKeyType,
+    PointOffsetType, ValueVariants,
 };
 
 /// HashMap-based type of index
@@ -219,6 +220,18 @@ impl PayloadFieldIndex for MapIndex<String> {
                     .push(PrimaryCondition::Condition(condition.clone()));
                 Some(estimation)
             }
+            Some(Match::Any(MatchAny {
+                any: AnyVariants::Keywords(keywords),
+            })) => {
+                let estimations = keywords
+                    .iter()
+                    .map(|keyword| self.match_cardinality(keyword))
+                    .collect::<Vec<_>>();
+                Some(combine_should_estimations(
+                    &estimations,
+                    self.indexed_points,
+                ))
+            }
             _ => None,
         }
     }
@@ -283,6 +296,18 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
                 Some(estimation)
+            }
+            Some(Match::Any(MatchAny {
+                any: AnyVariants::Integers(integers),
+            })) => {
+                let estimations = integers
+                    .iter()
+                    .map(|integer| self.match_cardinality(integer))
+                    .collect::<Vec<_>>();
+                Some(combine_should_estimations(
+                    &estimations,
+                    self.indexed_points,
+                ))
             }
             _ => None,
         }

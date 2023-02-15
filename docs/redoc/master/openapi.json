@@ -4148,6 +4148,9 @@
           },
           {
             "$ref": "#/components/schemas/MatchText"
+          },
+          {
+            "$ref": "#/components/schemas/MatchAny"
           }
         ]
       },
@@ -4188,6 +4191,35 @@
             "type": "string"
           }
         }
+      },
+      "MatchAny": {
+        "description": "Exact match on any of the given values",
+        "type": "object",
+        "required": [
+          "any"
+        ],
+        "properties": {
+          "any": {
+            "$ref": "#/components/schemas/AnyVariants"
+          }
+        }
+      },
+      "AnyVariants": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
       },
       "Range": {
         "description": "Range filter request",
