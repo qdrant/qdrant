@@ -1248,65 +1248,68 @@ impl TableOfContent {
         self.general_runtime.block_on(async {
             let mut collections = self.collections.write().await;
             for (id, state) in &data.collections {
-                let collection = collections.get(id);
-                match collection {
-                    // Update state if collection present locally
-                    Some(collection) => {
-                        if &collection.state().await != state {
-                            if let Some(proposal_sender) = self.consensus_proposal_sender.clone() {
-                                // In some cases on state application it might be needed to abort the transfer
-                                let abort_transfer = |transfer| {
-                                    if let Err(error) =
-                                        proposal_sender.send(ConsensusOperations::abort_transfer(
-                                            id.clone(),
-                                            transfer,
-                                            "sender was not up to date",
-                                        ))
-                                    {
-                                        log::error!(
-                                            "Can't report transfer progress to consensus: {}",
-                                            error
-                                        )
-                                    };
-                                };
-                                collection
-                                    .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
-                                    .await?;
-                            } else {
-                                log::error!("Can't apply state: single node mode");
-                            }
-                        }
-                    }
-                    // Create collection if not present locally
-                    None => {
-                        let collection_path = self.create_collection_path(id).await?;
-                        let snapshots_path = self.create_snapshots_path(id).await?;
-                        let shard_distribution =
-                            CollectionShardDistribution::from_shards_info(state.shards.clone());
-                        let collection = Collection::new(
+                let collection_exists = collections.contains_key(id);
+
+                // Create collection if not present locally
+                if !collection_exists {
+                    let collection_path = self.create_collection_path(id).await?;
+                    let snapshots_path = self.create_snapshots_path(id).await?;
+                    let shard_distribution =
+                        CollectionShardDistribution::from_shards_info(state.shards.clone());
+                    let collection = Collection::new(
+                        id.to_string(),
+                        self.this_peer_id,
+                        &collection_path,
+                        &snapshots_path,
+                        &state.config,
+                        shard_distribution,
+                        self.channel_service.clone(),
+                        Self::change_peer_state_callback(
+                            self.consensus_proposal_sender.clone(),
                             id.to_string(),
-                            self.this_peer_id,
-                            &collection_path,
-                            &snapshots_path,
-                            &state.config,
-                            shard_distribution,
-                            self.channel_service.clone(),
-                            Self::change_peer_state_callback(
-                                self.consensus_proposal_sender.clone(),
-                                id.to_string(),
-                                ReplicaState::Dead,
-                                None,
-                            ),
-                            Self::request_shard_transfer_callback(
-                                self.consensus_proposal_sender.clone(),
-                                id.to_string(),
-                            ),
-                            Some(self.search_runtime.handle().clone()),
-                            Some(self.update_runtime.handle().clone()),
-                        )
-                        .await?;
-                        collections.validate_collection_not_exists(id).await?;
-                        collections.insert(id.to_string(), collection);
+                            ReplicaState::Dead,
+                            None,
+                        ),
+                        Self::request_shard_transfer_callback(
+                            self.consensus_proposal_sender.clone(),
+                            id.to_string(),
+                        ),
+                        Some(self.search_runtime.handle().clone()),
+                        Some(self.update_runtime.handle().clone()),
+                    )
+                    .await?;
+                    collections.validate_collection_not_exists(id).await?;
+                    collections.insert(id.to_string(), collection);
+                }
+
+                let collection = match collections.get(id) {
+                    Some(collection) => collection,
+                    None => unreachable!(),
+                };
+
+                // Update collection state
+                if &collection.state().await != state {
+                    if let Some(proposal_sender) = self.consensus_proposal_sender.clone() {
+                        // In some cases on state application it might be needed to abort the transfer
+                        let abort_transfer = |transfer| {
+                            if let Err(error) =
+                                proposal_sender.send(ConsensusOperations::abort_transfer(
+                                    id.clone(),
+                                    transfer,
+                                    "sender was not up to date",
+                                ))
+                            {
+                                log::error!(
+                                    "Can't report transfer progress to consensus: {}",
+                                    error
+                                )
+                            };
+                        };
+                        collection
+                            .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
+                            .await?;
+                    } else {
+                        log::error!("Can't apply state: single node mode");
                     }
                 }
             }
