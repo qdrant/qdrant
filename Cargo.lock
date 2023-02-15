@@ -240,7 +240,7 @@ dependencies = [
  "serde_qs",
  "serde_urlencoded",
  "thiserror",
- "validator",
+ "validator 0.16.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -857,7 +857,7 @@ dependencies = [
  "tower",
  "url",
  "uuid",
- "validator",
+ "validator 0.16.0 (git+https://github.com/qdrant/validator.git?rev=44cc91749c675985468e59e126d76465fc675fb5)",
  "wal",
 ]
 
@@ -2766,7 +2766,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "uuid",
- "validator",
+ "validator 0.16.0 (git+https://github.com/qdrant/validator.git?rev=44cc91749c675985468e59e126d76465fc675fb5)",
 ]
 
 [[package]]
@@ -3302,7 +3302,7 @@ dependencies = [
  "thiserror",
  "tinyvec",
  "uuid",
- "validator",
+ "validator 0.16.0 (git+https://github.com/qdrant/validator.git?rev=44cc91749c675985468e59e126d76465fc675fb5)",
  "walkdir",
 ]
 
@@ -3551,7 +3551,7 @@ dependencies = [
  "tonic",
  "url",
  "uuid",
- "validator",
+ "validator 0.16.0 (git+https://github.com/qdrant/validator.git?rev=44cc91749c675985468e59e126d76465fc675fb5)",
  "wal",
 ]
 
@@ -4125,14 +4125,27 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "validator"
+version = "0.16.0"
+source = "git+https://github.com/qdrant/validator.git?rev=44cc91749c675985468e59e126d76465fc675fb5#44cc91749c675985468e59e126d76465fc675fb5"
+dependencies = [
+ "idna 0.2.3",
+ "lazy_static",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
  "validator_derive",
 ]
 
 [[package]]
 name = "validator_derive"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc44ca3088bb3ba384d9aecf40c6a23a676ce23e09bdaca2073d99c207f864af"
+source = "git+https://github.com/qdrant/validator.git?rev=44cc91749c675985468e59e126d76465fc675fb5#44cc91749c675985468e59e126d76465fc675fb5"
 dependencies = [
  "if_chain",
  "lazy_static",
@@ -4147,8 +4160,7 @@ dependencies = [
 [[package]]
 name = "validator_types"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "111abfe30072511849c5910134e8baf8dc05de4c0e5903d681cbd5c9c4d611e3"
+source = "git+https://github.com/qdrant/validator.git?rev=44cc91749c675985468e59e126d76465fc675fb5#44cc91749c675985468e59e126d76465fc675fb5"
 dependencies = [
  "proc-macro2",
  "syn",

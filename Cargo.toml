@@ -41,7 +41,7 @@ serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.3", features = ["v4", "serde"] }
 sys-info = "0.9.1"
 actix-web-validator = "5.0.1"
-validator = { version = "0.16", features = ["derive"] }
+validator = { git = "https://github.com/qdrant/validator.git", features = ["derive"], rev="44cc91749c675985468e59e126d76465fc675fb5" }
 
 config = "~0.13.3"
 

@@ -49,13 +49,13 @@ pub struct OptimizersConfig {
     /// If not set, mmap will not be used.
     #[serde(alias = "memmap_threshold_kb")]
     #[serde(default)]
-    #[validate(range(min = 1000))]
+    #[validate(range(min = 100))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
-    #[validate(range(min = 1000))]
+    #[validate(range(min = 100))]
     pub indexing_threshold: usize,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,

@@ -65,7 +65,7 @@ storage:
     # Maximum size (in KiloBytes) of vectors allowed for plain index.
     # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
     # Note: 1Kb = 1 vector of size 256
-    indexing_threshold_kb: 20000
+    indexing_threshold_kb: 0
 
     # Interval between forced flushes.
     flush_interval_sec: 5
@@ -81,7 +81,7 @@ storage:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     m: 16
     # Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
-    ef_construct: 100
+    ef_construct: 0
     # Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     # If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     # in this case full-scan search should be preferred by query planner and additional indexing is not required.

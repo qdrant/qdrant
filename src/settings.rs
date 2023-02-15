@@ -4,6 +4,7 @@ use config::{Config, ConfigError, Environment, File};
 use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
+use validator::{Validate, ValidationErrors};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServiceConfig {
@@ -66,12 +67,13 @@ impl Default for ConsensusConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Validate, Clone)]
 pub struct Settings {
     #[serde(default = "default_debug")]
     pub debug: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[validate]
     pub storage: StorageConfig,
     pub service: ServiceConfig,
     #[serde(default)]
@@ -144,6 +146,19 @@ impl Settings {
 
         // You can deserialize (and thus freeze) the entire configuration as
         s.try_deserialize()
+    }
+
+    pub fn check_validation(&self) -> () {
+        match self.validate() {
+            Ok(_) => {}
+            Err(errors) => {
+                for (path, err) in errors.into_errors() {
+                    let mut errs = ValidationErrors::new();
+                    errs.add_nested(path, err);
+                    log::warn!("Configuration warning: {}", errs)
+                }
+            }
+        }
     }
 }
 

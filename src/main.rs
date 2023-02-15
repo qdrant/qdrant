@@ -136,6 +136,8 @@ fn main() -> anyhow::Result<()> {
 
     welcome();
 
+    settings.check_validation();
+
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
     let search_runtime = create_search_runtime(settings.storage.performance.max_search_threads)

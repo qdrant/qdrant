@@ -105,24 +105,24 @@ pub struct OptimizersConfigDiff {
     /// If search speed is more important - make this parameter higher.
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "max_segment_size_kb")]
+    #[validate(range(min = 100))]
     pub max_segment_size: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
     /// To enable memmap storage, lower the threshold
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "memmap_threshold_kb")]
-    #[validate(range(min = 1000))]
+    #[validate(range(min = 100))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
-    #[validate(range(min = 1000))]
+    #[validate(range(min = 100))]
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,
     /// Maximum available threads for optimization workers
-    #[validate(range(min = 1))]
     pub max_optimization_threads: Option<usize>,
 }
 

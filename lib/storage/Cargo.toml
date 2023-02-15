@@ -27,7 +27,7 @@ http = "0.2"
 parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
 tar = "0.4.38"
 chrono = { version = "~0.4", features = ["serde"] }
-validator = { version = "0.16", features = ["derive"] }
+validator = { git = "https://github.com/qdrant/validator.git", features = ["derive"], rev="44cc91749c675985468e59e126d76465fc675fb5" }
 
 # Consensus related
 atomicwrites = { version = "0.3.1" }
