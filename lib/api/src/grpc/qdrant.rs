@@ -2294,7 +2294,7 @@ pub struct FieldCondition {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -2314,7 +2314,25 @@ pub mod r#match {
         /// Match text
         #[prost(string, tag = "4")]
         Text(::prost::alloc::string::String),
+        /// Match multiple keywords
+        #[prost(message, tag = "5")]
+        Keywords(super::RepeatedStrings),
+        /// Match multiple integers
+        #[prost(message, tag = "6")]
+        Integers(super::RepeatedIntegers),
     }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RepeatedStrings {
+    #[prost(string, repeated, tag = "1")]
+    pub strings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RepeatedIntegers {
+    #[prost(int64, repeated, tag = "1")]
+    pub integers: ::prost::alloc::vec::Vec<i64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

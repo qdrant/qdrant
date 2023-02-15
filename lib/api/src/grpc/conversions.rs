@@ -8,6 +8,7 @@ use segment::types::{PayloadSelector, WithPayloadInterface};
 use tonic::Status;
 use uuid::Uuid;
 
+use super::qdrant::{RepeatedIntegers, RepeatedStrings};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -765,6 +766,8 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Integer(int) => int.into(),
                 MatchValue::Boolean(flag) => flag.into(),
                 MatchValue::Text(text) => segment::types::Match::Text(text.into()),
+                MatchValue::Keywords(kwds) => kwds.strings.into(),
+                MatchValue::Integers(ints) => ints.integers.into(),
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -782,6 +785,14 @@ impl From<segment::types::Match> for Match {
             segment::types::Match::Text(segment::types::MatchText { text }) => {
                 MatchValue::Text(text)
             }
+            segment::types::Match::Any(any) => match any.any {
+                segment::types::AnyVariants::Keywords(strings) => {
+                    MatchValue::Keywords(RepeatedStrings { strings })
+                }
+                segment::types::AnyVariants::Integers(integers) => {
+                    MatchValue::Integers(RepeatedIntegers { integers })
+                }
+            },
         };
         Self {
             match_value: Some(match_value),

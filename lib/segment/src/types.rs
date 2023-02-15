@@ -721,6 +721,13 @@ pub enum ValueVariants {
     Bool(bool),
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum AnyVariants {
+    Keywords(Vec<String>),
+    Integers(Vec<IntPayloadType>),
+}
+
 /// Exact match of the given value
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -741,6 +748,13 @@ impl From<String> for MatchText {
     }
 }
 
+/// Exact match on any of the given values
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchAny {
+    pub any: AnyVariants,
+}
+
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -748,6 +762,7 @@ impl From<String> for MatchText {
 pub enum MatchInterface {
     Value(MatchValue),
     Text(MatchText),
+    Any(MatchAny),
 }
 
 /// Match filter request
@@ -757,6 +772,7 @@ pub enum MatchInterface {
 pub enum Match {
     Value(MatchValue),
     Text(MatchText),
+    Any(MatchAny),
 }
 
 impl From<MatchInterface> for Match {
@@ -764,6 +780,7 @@ impl From<MatchInterface> for Match {
         match value {
             MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
             MatchInterface::Text(text) => Self::Text(MatchText { text: text.text }),
+            MatchInterface::Any(any) => Self::Any(MatchAny { any: any.any }),
         }
     }
 }
@@ -788,6 +805,22 @@ impl From<IntPayloadType> for Match {
     fn from(integer: IntPayloadType) -> Self {
         Self::Value(MatchValue {
             value: ValueVariants::Integer(integer),
+        })
+    }
+}
+
+impl From<Vec<String>> for Match {
+    fn from(keywords: Vec<String>) -> Self {
+        Self::Any(MatchAny {
+            any: AnyVariants::Keywords(keywords),
+        })
+    }
+}
+
+impl From<Vec<IntPayloadType>> for Match {
+    fn from(integers: Vec<IntPayloadType>) -> Self {
+        Self::Any(MatchAny {
+            any: AnyVariants::Integers(integers),
         })
     }
 }
@@ -1302,6 +1335,71 @@ mod tests {
                 value: ValueVariants::Keyword("world".to_owned())
             })
         );
+    }
+
+    #[test]
+    fn test_parse_match_any() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "key": "Jason",
+                    "match": {
+                        "any": [
+                            "Bourne",
+                            "Momoa",
+                            "Statham"
+                        ]
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        println!("{filter:?}");
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::Field(c)) => c,
+            _ => panic!("Condition::Field expected"),
+        };
+
+        assert_eq!(c.key.as_str(), "Jason");
+
+        let m = match c.r#match.as_ref().unwrap() {
+            Match::Any(m) => m,
+            _ => panic!("Match::Any expected"),
+        };
+        if let AnyVariants::Keywords(kws) = &m.any {
+            assert_eq!(kws.len(), 3);
+            assert_eq!(kws.to_owned(), vec!["Bourne", "Momoa", "Statham"]);
+        } else {
+            panic!("AnyVariants::Keywords expected");
+        }
+    }
+
+    #[test]
+    fn test_parse_match_any_mixed_types() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "key": "Jason",
+                    "match": {
+                        "any": [
+                            "Bourne",
+                            42
+                        ]
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let result: Result<Filter, _> = serde_json::from_str(query);
+        assert!(result.is_err());
     }
 
     #[test]

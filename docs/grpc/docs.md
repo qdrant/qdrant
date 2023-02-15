@@ -93,6 +93,8 @@
     - [RecommendBatchResponse](#qdrant-RecommendBatchResponse)
     - [RecommendPoints](#qdrant-RecommendPoints)
     - [RecommendResponse](#qdrant-RecommendResponse)
+    - [RepeatedIntegers](#qdrant-RepeatedIntegers)
+    - [RepeatedStrings](#qdrant-RepeatedStrings)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
     - [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry)
     - [ScoredPoint](#qdrant-ScoredPoint)
@@ -1293,6 +1295,8 @@ The JSON representation for `Value` is JSON value.
 | integer | [int64](#int64) |  | Match integer |
 | boolean | [bool](#bool) |  | Match boolean |
 | text | [string](#string) |  | Match text |
+| keywords | [RepeatedStrings](#qdrant-RepeatedStrings) |  | Match multiple keywords |
+| integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match multiple integers |
 
 
 
@@ -1560,6 +1564,36 @@ The JSON representation for `Value` is JSON value.
 | ----- | ---- | ----- | ----------- |
 | result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-RepeatedIntegers"></a>
+
+### RepeatedIntegers
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| integers | [int64](#int64) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-RepeatedStrings"></a>
+
+### RepeatedStrings
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| strings | [string](#string) | repeated |  |
 
 
 

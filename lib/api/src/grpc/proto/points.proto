@@ -359,7 +359,17 @@ message Match {
     int64 integer = 2; // Match integer
     bool boolean = 3; // Match boolean
     string text = 4; // Match text
+    RepeatedStrings keywords = 5; // Match multiple keywords
+    RepeatedIntegers integers = 6; // Match multiple integers
   }
+}
+
+message RepeatedStrings {
+  repeated string strings = 1;
+}
+
+message RepeatedIntegers {
+  repeated int64 integers = 1;
 }
 
 message Range {
