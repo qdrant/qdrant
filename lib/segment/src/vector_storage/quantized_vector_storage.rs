@@ -1,14 +1,14 @@
 use std::path::Path;
 
 use bitvec::vec::BitVec;
+use quantization::EncodedVectors;
 
 use super::chunked_vectors::ChunkedVectors;
-use super::quantized_mmap_storage::{QuantizedMmapStorageBuilder, QuantizedMmapStorage};
+use super::quantized_mmap_storage::{QuantizedMmapStorage, QuantizedMmapStorageBuilder};
 use super::{RawScorer, ScoredPointOffset};
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{OperationResult, OperationError};
-use crate::types::{PointOffsetType, ScoreType, QuantizationConfig, Distance};
-use quantization::EncodedVectors;
+use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 
 pub trait QuantizedVectors: Send + Sync {
     fn raw_scorer<'a>(
@@ -17,11 +17,7 @@ pub trait QuantizedVectors: Send + Sync {
         deleted: &'a BitVec,
     ) -> Box<dyn RawScorer + 'a>;
 
-    fn save_to_file(
-        &self,
-        meta_path: &Path,
-        data_path: &Path,
-    ) -> OperationResult<()>;
+    fn save_to_file(&self, meta_path: &Path, data_path: &Path) -> OperationResult<()>;
 }
 
 pub struct QuantizedRawScorer<'a, TEncodedQuery, TEncodedVectors>
@@ -50,11 +46,7 @@ where
         })
     }
 
-    fn save_to_file(
-        &self,
-        meta_path: &Path,
-        data_path: &Path,
-    ) -> OperationResult<()> {
+    fn save_to_file(&self, meta_path: &Path, data_path: &Path) -> OperationResult<()> {
         self.save(data_path, meta_path)?;
         Ok(())
     }
@@ -110,18 +102,9 @@ pub fn create_quantized_vectors<'a>(
     let vector_parameters = get_vector_parameters(distance, dim, count);
     let is_ram = use_ram_quantization_storage(quantization_config, on_disk_vector_storage);
     let quantized_vectors = if is_ram {
-        create_quantized_vectors_ram(
-            vectors,
-            quantization_config,
-            &vector_parameters,
-        )?
+        create_quantized_vectors_ram(vectors, quantization_config, &vector_parameters)?
     } else {
-        create_quantized_vectors_mmap(
-            vectors,
-            quantization_config,
-            &vector_parameters,
-            data_path,
-        )?
+        create_quantized_vectors_mmap(vectors, quantization_config, &vector_parameters, data_path)?
     };
     quantized_vectors.save_to_file(meta_path, data_path)?;
     Ok(quantized_vectors)
@@ -157,9 +140,9 @@ fn create_quantized_vectors_ram<'a>(
     vector_parameters: &quantization::VectorParameters,
 ) -> OperationResult<Box<dyn QuantizedVectors>> {
     let quantized_vector_size =
-            quantization::EncodedVectorsU8::<ChunkedVectors<u8>>::get_quantized_vector_size(
-                vector_parameters,
-            );
+        quantization::EncodedVectorsU8::<ChunkedVectors<u8>>::get_quantized_vector_size(
+            vector_parameters,
+        );
     let storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
     Ok(Box::new(
         quantization::EncodedVectorsU8::encode(
@@ -168,9 +151,7 @@ fn create_quantized_vectors_ram<'a>(
             vector_parameters,
             quantization_config.quantile,
         )
-        .map_err(|e| {
-            OperationError::service_error(format!("Cannot quantize vector data: {e}"))
-        })?,
+        .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?,
     ))
 }
 
@@ -181,9 +162,9 @@ fn create_quantized_vectors_mmap<'a>(
     data_path: &Path,
 ) -> OperationResult<Box<dyn QuantizedVectors>> {
     let quantized_vector_size =
-            quantization::EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
-                vector_parameters,
-            );
+        quantization::EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
+            vector_parameters,
+        );
     let storage_builder = QuantizedMmapStorageBuilder::new(
         data_path,
         vector_parameters.count,
@@ -196,9 +177,7 @@ fn create_quantized_vectors_mmap<'a>(
             vector_parameters,
             quantization_config.quantile,
         )
-        .map_err(|e| {
-            OperationError::service_error(format!("Cannot quantize vector data: {e}"))
-        })?,
+        .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?,
     ))
 }
 

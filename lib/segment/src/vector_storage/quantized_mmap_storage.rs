@@ -37,7 +37,10 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("Loaded storage size {} is not equal to expected size {expected_size}", mmap.len()),
+                format!(
+                    "Loaded storage size {} is not equal to expected size {expected_size}",
+                    mmap.len()
+                ),
             ))
         }
     }

@@ -78,7 +78,11 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         self.get(index)
     }
 
-    fn from_file(path: &Path, quantized_vector_size: usize, vectors_count: usize) -> std::io::Result<Self> {
+    fn from_file(
+        path: &Path,
+        quantized_vector_size: usize,
+        vectors_count: usize,
+    ) -> std::io::Result<Self> {
         let mut vectors = Self::new(quantized_vector_size);
         let mut file = File::open(path)?;
         let mut buffer = vec![0u8; quantized_vector_size];
@@ -90,7 +94,10 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("Loaded vectors count {} is not equal to expected count {vectors_count}", vectors.len()),
+                format!(
+                    "Loaded vectors count {} is not equal to expected count {vectors_count}",
+                    vectors.len()
+                ),
             ))
         }
     }

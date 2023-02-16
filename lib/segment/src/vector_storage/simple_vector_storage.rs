@@ -13,7 +13,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
-use super::quantized_vector_storage::{QuantizedVectors, load_quantized_vectors};
+use super::quantized_vector_storage::{load_quantized_vectors, QuantizedVectors};
 use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;

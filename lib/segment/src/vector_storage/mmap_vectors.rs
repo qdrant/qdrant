@@ -8,7 +8,9 @@ use bitvec::vec::BitVec;
 use memmap2::{Mmap, MmapMut, MmapOptions};
 use parking_lot::{RwLock, RwLockReadGuard};
 
-use super::quantized_vector_storage::{QuantizedVectors, create_quantized_vectors, load_quantized_vectors};
+use super::quantized_vector_storage::{
+    create_quantized_vectors, load_quantized_vectors, QuantizedVectors,
+};
 use crate::common::error_logging::LogError;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
