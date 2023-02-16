@@ -9,12 +9,11 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitVec;
 use log::debug;
 use parking_lot::RwLock;
-use quantization::encoder::EncodingParameters;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
-use super::quantized_vector_storage::QuantizedVectorStorage;
+use super::quantized_vector_storage::{QuantizedVectors, load_quantized_vectors};
 use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -24,6 +23,7 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
+use crate::vector_storage::quantized_vector_storage::create_quantized_vectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
 /// In-memory vector storage with on-update persistence using `store`
@@ -33,7 +33,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     vectors: ChunkedVectors<VectorElementType>,
     deleted: BitVec,
     deleted_count: usize,
-    quantized_vectors: Option<Box<dyn QuantizedVectorStorage>>,
+    quantized_vectors: Option<Box<dyn QuantizedVectors>>,
     db_wrapper: DatabaseColumnWrapper,
 }
 
@@ -302,27 +302,17 @@ where
         data_path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
-        log::info!("Quantizing vectors...");
-        let encoding_parameters = EncodingParameters {
-            dim: self.dim,
-            distance_type: match TMetric::distance() {
-                Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                Distance::Dot => quantization::encoder::SimilarityType::Dot,
-            },
-            invert: TMetric::distance() == Distance::Euclid,
-            quantile: quantization_config.quantile,
-        };
-        let quantized_vector_size = encoding_parameters.get_vector_data_size();
-        let vectors = ChunkedVectors::<u8>::new(quantized_vector_size);
-        let quantized_vectors = quantization::encoder::EncodedVectors::encode(
-            (0..self.vectors.len() as u32).map(|i| self.vectors.get(i)),
-            vectors,
-            encoding_parameters,
-        )
-        .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
-        quantized_vectors.save(data_path, meta_path)?;
-        self.quantized_vectors = Some(Box::new(quantized_vectors));
+        let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
+        self.quantized_vectors = Some(create_quantized_vectors(
+            vector_data_iterator,
+            quantization_config,
+            TMetric::distance(),
+            self.dim,
+            self.vectors.len(),
+            meta_path,
+            data_path,
+            false,
+        )?);
         Ok(())
     }
 
@@ -332,22 +322,15 @@ where
         data_path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
-        self.quantized_vectors = Some(Box::new(quantization::encoder::EncodedVectors::<
-            ChunkedVectors<u8>,
-        >::load(
-            data_path,
+        self.quantized_vectors = Some(load_quantized_vectors(
+            quantization_config,
+            TMetric::distance(),
+            self.dim,
+            self.vectors.len(),
             meta_path,
-            &EncodingParameters {
-                dim: self.dim,
-                distance_type: match TMetric::distance() {
-                    Distance::Cosine => quantization::encoder::SimilarityType::Dot,
-                    Distance::Euclid => quantization::encoder::SimilarityType::L2,
-                    Distance::Dot => quantization::encoder::SimilarityType::Dot,
-                },
-                invert: TMetric::distance() == Distance::Euclid,
-                quantile: quantization_config.quantile,
-            },
-        )?));
+            data_path,
+            false,
+        )?);
         Ok(())
     }
 

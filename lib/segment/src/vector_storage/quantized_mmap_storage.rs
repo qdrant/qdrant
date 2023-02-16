@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use memmap2::{Mmap, MmapMut};
-use quantization::encoder::{EncodingParameters, Storage, StorageBuilder};
 
 use crate::madvise;
 
@@ -14,14 +13,15 @@ pub struct QuantizedMmapStorageBuilder {
     cursor_pos: usize,
 }
 
-impl Storage for QuantizedMmapStorage {
+impl quantization::EncodedStorage for QuantizedMmapStorage {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
         &self.mmap[vector_size * index..vector_size * (index + 1)]
     }
 
     fn from_file(
         path: &Path,
-        _encoding_parameters: &EncodingParameters,
+        quantized_vector_size: usize,
+        vectors_count: usize,
     ) -> std::io::Result<QuantizedMmapStorage> {
         let file = std::fs::OpenOptions::new()
             .read(true)
@@ -30,7 +30,16 @@ impl Storage for QuantizedMmapStorage {
             .open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         madvise::madvise(&mmap, madvise::get_global())?;
-        Ok(Self { mmap })
+
+        let expected_size = quantized_vector_size * vectors_count;
+        if mmap.len() == expected_size {
+            Ok(Self { mmap })
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Loaded storage size {} is not equal to expected size {expected_size}", mmap.len()),
+            ))
+        }
     }
 
     fn save_to_file(&self, _path: &Path) -> std::io::Result<()> {
@@ -39,7 +48,7 @@ impl Storage for QuantizedMmapStorage {
     }
 }
 
-impl StorageBuilder<QuantizedMmapStorage> for QuantizedMmapStorageBuilder {
+impl quantization::EncodedStorageBuilder<QuantizedMmapStorage> for QuantizedMmapStorageBuilder {
     fn build(self) -> QuantizedMmapStorage {
         self.mmap.flush().unwrap();
         let mmap = self.mmap.make_read_only().unwrap(); // TODO: remove unwrap
@@ -56,9 +65,9 @@ impl QuantizedMmapStorageBuilder {
     pub fn new(
         path: &Path,
         vectors_count: usize,
-        encoding_parameters: &EncodingParameters,
+        quantized_vector_size: usize,
     ) -> std::io::Result<Self> {
-        let encoded_storage_size = encoding_parameters.get_vector_data_size() * vectors_count;
+        let encoded_storage_size = quantized_vector_size * vectors_count;
         path.parent().map(std::fs::create_dir_all);
         let file = std::fs::OpenOptions::new()
             .read(true)

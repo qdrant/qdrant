@@ -4,8 +4,6 @@ use std::io::{Read, Write};
 use std::mem;
 use std::path::Path;
 
-use quantization::encoder::EncodingParameters;
-
 use crate::types::PointOffsetType;
 
 // chunk size in bytes
@@ -75,20 +73,26 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     }
 }
 
-impl quantization::encoder::Storage for ChunkedVectors<u8> {
+impl quantization::EncodedStorage for ChunkedVectors<u8> {
     fn get_vector_data(&self, index: usize, _vector_size: usize) -> &[u8] {
         self.get(index)
     }
 
-    fn from_file(path: &Path, encoding_parameters: &EncodingParameters) -> std::io::Result<Self> {
-        let vector_data_size = encoding_parameters.get_vector_data_size();
-        let mut vectors = Self::new(vector_data_size);
+    fn from_file(path: &Path, quantized_vector_size: usize, vectors_count: usize) -> std::io::Result<Self> {
+        let mut vectors = Self::new(quantized_vector_size);
         let mut file = File::open(path)?;
-        let mut buffer = vec![0u8; vector_data_size];
+        let mut buffer = vec![0u8; quantized_vector_size];
         while file.read_exact(&mut buffer).is_ok() {
             vectors.push(&buffer);
         }
-        Ok(vectors)
+        if vectors.len() == vectors_count {
+            Ok(vectors)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Loaded vectors count {} is not equal to expected count {vectors_count}", vectors.len()),
+            ))
+        }
     }
 
     fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
@@ -101,7 +105,7 @@ impl quantization::encoder::Storage for ChunkedVectors<u8> {
     }
 }
 
-impl quantization::encoder::StorageBuilder<ChunkedVectors<u8>> for ChunkedVectors<u8> {
+impl quantization::EncodedStorageBuilder<ChunkedVectors<u8>> for ChunkedVectors<u8> {
     fn build(self) -> ChunkedVectors<u8> {
         self
     }
