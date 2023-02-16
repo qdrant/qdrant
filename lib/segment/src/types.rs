@@ -493,11 +493,11 @@ impl Payload {
     }
 
     pub fn get_value(&self, path: &str) -> Vec<&Value> {
-        utils::get_value_from_json_map(path, &self.0)
+        utils::get_value_from_json_map(path, &self.0).values()
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {
-        utils::remove_value_from_json_map(path, &mut self.0)
+        utils::remove_value_from_json_map(path, &mut self.0).values()
     }
 
     pub fn len(&self) -> usize {
@@ -1582,26 +1582,26 @@ mod tests {
         "#,
         )
         .unwrap();
-        let removed = remove_value_from_json_map("b.c", &mut payload.0);
+        let removed = remove_value_from_json_map("b.c", &mut payload.0).values();
         assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.f[1]", &mut payload.0);
+        let removed = remove_value_from_json_map("b.e.f[1]", &mut payload.0).values();
         assert_eq!(removed, vec![Value::Number(2.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[0].j", &mut payload.0);
+        let removed = remove_value_from_json_map("b.e.i[0].j", &mut payload.0).values();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[].k", &mut payload.0);
+        let removed = remove_value_from_json_map("b.e.i[].k", &mut payload.0).values();
         assert_eq!(
             removed,
             vec![Value::Number(2.into()), Value::Number(4.into())]
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[]", &mut payload.0);
+        let removed = remove_value_from_json_map("b.e.i[]", &mut payload.0).values();
         assert_eq!(
             removed,
             vec![Value::Array(vec![
@@ -1614,11 +1614,11 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i", &mut payload.0);
+        let removed = remove_value_from_json_map("b.e.i", &mut payload.0).values();
         assert_eq!(removed, vec![Value::Array(vec![])]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.f", &mut payload.0);
+        let removed = remove_value_from_json_map("b.e.f", &mut payload.0).values();
         assert_eq!(removed, vec![Value::Array(vec![1.into(), 3.into()])]);
         assert_ne!(payload, Default::default());
 
@@ -1634,11 +1634,11 @@ mod tests {
         assert!(removed.is_empty());
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("a", &mut payload.0);
+        let removed = remove_value_from_json_map("a", &mut payload.0).values();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e", &mut payload.0);
+        let removed = remove_value_from_json_map("b.e", &mut payload.0).values();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![
@@ -1649,7 +1649,7 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b", &mut payload.0);
+        let removed = remove_value_from_json_map("b", &mut payload.0).values();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![]))]
