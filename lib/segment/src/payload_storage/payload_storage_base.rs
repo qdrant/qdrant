@@ -24,7 +24,7 @@ pub trait PayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>>;
+    ) -> OperationResult<Vec<Value>>;
 
     /// Drop all payload of the point
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;

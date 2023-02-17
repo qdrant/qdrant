@@ -492,12 +492,12 @@ impl Payload {
         }
     }
 
-    pub fn get_value(&self, path: &str) -> Option<&Value> {
-        utils::get_value_from_json_map(path, &self.0)
+    pub fn get_value(&self, path: &str) -> Vec<&Value> {
+        utils::get_value_from_json_map(path, &self.0).values()
     }
 
-    pub fn remove(&mut self, path: &str) -> Option<Value> {
-        utils::remove_value_from_json_map(path, &mut self.0)
+    pub fn remove(&mut self, path: &str) -> Vec<Value> {
+        utils::remove_value_from_json_map(path, &mut self.0).values()
     }
 
     pub fn len(&self) -> usize {
@@ -1276,7 +1276,7 @@ mod tests {
             should: None,
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
-        println!("{json}")
+        eprintln!("{json}")
     }
 
     #[test]
@@ -1403,6 +1403,52 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_nested_match_query() {
+        let query = r#"
+        {
+            "key": "hello.nested",
+            "match": { "value": 42 }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(42)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello.nested",
+            "match": { "value": true }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Bool(true)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello.nested",
+            "match": { "value": "world" }
+        }
+        "#;
+
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Keyword("world".to_owned())
+            })
+        );
+    }
+
+    #[test]
     fn test_payload_query_parse() {
         let query1 = r#"
         {
@@ -1438,7 +1484,7 @@ mod tests {
         "#;
 
         let filter: Filter = serde_json::from_str(query1).unwrap();
-        println!("{filter:?}");
+        eprintln!("{filter:?}");
         let must = filter.must.unwrap();
         let _must_not = filter.must_not;
         assert_eq!(must.len(), 2);
@@ -1452,6 +1498,32 @@ mod tests {
             }
             _ => panic!("Condition expected"),
         }
+    }
+
+    #[test]
+    fn test_nested_payload_query_parse() {
+        let query1 = r#"
+        {
+            "must": [
+                {
+                    "key": "hello.nested.world",
+                    "match": {
+                        "value": 42
+                    }
+                },
+                {
+                    "key": "foo.nested.bar",
+                    "match": {
+                        "value": 1
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query1).unwrap();
+        let must = filter.must.unwrap();
+        assert_eq!(must.len(), 2);
     }
 
     #[test]
@@ -1492,28 +1564,96 @@ mod tests {
                 "e": {
                     "f": [1,2,3],
                     "g": 7,
-                    "h": "text"
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
                 }
             }
         }
         "#,
         )
         .unwrap();
-        remove_value_from_json_map("b.c", &mut payload.0);
+        let removed = remove_value_from_json_map("b.c", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("b.e.f", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.f[1]", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Number(2.into())]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("k", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.i[0].j", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.i[].k", &mut payload.0).values();
+        assert_eq!(
+            removed,
+            vec![Value::Number(2.into()), Value::Number(4.into())]
+        );
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("b.e.l", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.i[]", &mut payload.0).values();
+        assert_eq!(
+            removed,
+            vec![Value::Array(vec![
+                Value::Object(serde_json::Map::from_iter(vec![])),
+                Value::Object(serde_json::Map::from_iter(vec![(
+                    "j".to_string(),
+                    Value::Number(3.into())
+                ),])),
+            ])]
+        );
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("a", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.i", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Array(vec![])]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("b.e", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.f", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Array(vec![1.into(), 3.into()])]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("b", &mut payload.0);
+
+        let removed = remove_value_from_json_map("k", &mut payload.0);
+        assert!(removed.is_empty());
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("", &mut payload.0);
+        assert!(removed.is_empty());
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b.e.l", &mut payload.0);
+        assert!(removed.is_empty());
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("a", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Number(1.into())]);
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b.e", &mut payload.0).values();
+        assert_eq!(
+            removed,
+            vec![Value::Object(serde_json::Map::from_iter(vec![
+                // ("f".to_string(), Value::Array(vec![1.into(), 2.into(), 3.into()])), has been removed
+                ("g".to_string(), Value::Number(7.into())),
+                ("h".to_string(), Value::String("text".to_owned())),
+            ]))]
+        );
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b", &mut payload.0).values();
+        assert_eq!(
+            removed,
+            vec![Value::Object(serde_json::Map::from_iter(vec![]))]
+        ); // empty object left
         assert_eq!(payload, Default::default());
     }
 

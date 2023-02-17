@@ -161,7 +161,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &mut self,
         _point_id: PointOffsetType,
         _key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>> {
+    ) -> OperationResult<Vec<Value>> {
         unreachable!()
     }
 

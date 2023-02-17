@@ -264,14 +264,10 @@ mod tests {
         // Check payload is preserved in optimized segment
         for &point_id in &segment_points_to_assign1 {
             assert!(segment_guard.has_point(point_id));
-            let payload = segment_guard
-                .payload(point_id)
-                .unwrap()
-                .get_value("color")
-                .unwrap()
-                .clone();
+            let payload = segment_guard.payload(point_id).unwrap();
+            let payload_color = &(*payload.get_value("color").first().unwrap()).clone();
 
-            match payload {
+            match payload_color {
                 Value::String(x) => assert_eq!(x, "red"),
                 _ => panic!(),
             }
