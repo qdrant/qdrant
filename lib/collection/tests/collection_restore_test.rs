@@ -111,6 +111,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         .as_ref()
         .expect("has payload")
         .get_value("k")
+        .first()
         .expect("has value")
     {
         Value::String(value) => assert_eq!("v1", value),
@@ -185,6 +186,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .as_ref()
         .expect("has payload")
         .get_value("k2")
+        .first()
         .expect("has value")
     {
         Value::String(value) => assert_eq!("v3", value),
@@ -226,6 +228,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .as_ref()
         .expect("has payload")
         .get_value("k3")
+        .first()
         .expect("has value")
     {
         Value::String(value) => assert_eq!("v4", value),

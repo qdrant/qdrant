@@ -219,14 +219,18 @@ mod tests {
 
                 assert!(payload.contains_key("key1"));
 
-                let payload_type = payload.get_value("key1").expect("No key key1");
+                let payload_type = payload
+                    .get_value("key1")
+                    .first()
+                    .cloned()
+                    .expect("No key key1");
 
                 match payload_type {
                     Value::String(x) => assert_eq!(x, "hello"),
                     _ => panic!("Wrong payload type"),
                 }
 
-                let payload_type_json = payload.get_value("key3");
+                let payload_type_json = payload.get_value("key3").first().cloned();
 
                 assert!(matches!(payload_type_json, Some(Value::Object(_))))
             }

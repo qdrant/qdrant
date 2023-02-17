@@ -93,7 +93,8 @@ where
 }
 
 pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) -> bool {
-    match payload.get_value(&is_empty.is_empty.key) {
+    // TODO handle more than first value
+    match payload.get_value(&is_empty.is_empty.key).first() {
         None => true,
         Some(value) => match value {
             Value::Null => true,
@@ -104,36 +105,39 @@ pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) 
 }
 
 pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
-    payload.get_value(&field_condition.key).map_or(false, |p| {
-        let mut res = false;
-        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-        res = res
-            || field_condition
-                .r#match
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .range
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .geo_radius
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .geo_bounding_box
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .values_count
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res
-    })
+    payload
+        .get_value(&field_condition.key)
+        .first() // TODO handle more than first value
+        .map_or(false, |p| {
+            let mut res = false;
+            // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
+            res = res
+                || field_condition
+                    .r#match
+                    .as_ref()
+                    .map_or(false, |condition| condition.check(p));
+            res = res
+                || field_condition
+                    .range
+                    .as_ref()
+                    .map_or(false, |condition| condition.check(p));
+            res = res
+                || field_condition
+                    .geo_radius
+                    .as_ref()
+                    .map_or(false, |condition| condition.check(p));
+            res = res
+                || field_condition
+                    .geo_bounding_box
+                    .as_ref()
+                    .map_or(false, |condition| condition.check(p));
+            res = res
+                || field_condition
+                    .values_count
+                    .as_ref()
+                    .map_or(false, |condition| condition.check(p));
+            res
+        })
 }
 
 pub struct SimpleConditionChecker {
