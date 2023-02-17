@@ -21,9 +21,9 @@ use crate::grpc::qdrant::{
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
     HnswConfigDiff, IsEmptyCondition, ListCollectionsResponse, ListValue, Match, NamedVectors,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
-    PayloadSchemaType, PointId, Range, ScoredPoint, SearchParams, Struct, TextIndexParams,
-    TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector,
-    WithVectorsSelector,
+    PayloadSchemaType, PointId, QuantizationConfig, Range, ScalarU8Quantization, ScoredPoint,
+    SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector, Vectors,
+    VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -471,6 +471,41 @@ impl TryFrom<PointId> for segment::types::PointIdType {
             _ => Err(Status::invalid_argument(
                 "No ID options provided".to_string(),
             )),
+        }
+    }
+}
+
+impl From<segment::types::QuantizationConfig> for QuantizationConfig {
+    fn from(value: segment::types::QuantizationConfig) -> Self {
+        match value {
+            segment::types::QuantizationConfig::ScalarU8(config) => Self {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Scalar(
+                    ScalarU8Quantization {
+                        quantile: config.quantile,
+                        always_ram: config.always_ram,
+                    },
+                )),
+            },
+        }
+    }
+}
+
+impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
+    type Error = Status;
+
+    fn try_from(value: QuantizationConfig) -> Result<Self, Self::Error> {
+        let value = value
+            .quantization
+            .ok_or_else(|| Status::invalid_argument("Unable to convert quantization config"))?;
+        match value {
+            super::qdrant::quantization_config::Quantization::Scalar(config) => {
+                Ok(segment::types::QuantizationConfig::ScalarU8(
+                    segment::types::ScalarU8Quantization {
+                        quantile: config.quantile,
+                        always_ram: config.always_ram,
+                    },
+                ))
+            }
         }
     }
 }

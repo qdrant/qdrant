@@ -315,29 +315,31 @@ fn default_max_indexing_threads() -> usize {
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct QuantizationConfig {
-    pub enable: bool,
+pub struct ScalarU8Quantization {
+    /// Number of bits to use for quantization
     pub quantile: Option<f32>,
-    /// If true, quantized data is stored in RAM even if original data is memmapped.
-    /// If false, quantized data is stored like original data.
-    /// Default value is false.
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     pub always_ram: Option<bool>,
 }
 
-impl PartialEq for QuantizationConfig {
+impl PartialEq for ScalarU8Quantization {
     fn eq(&self, other: &Self) -> bool {
-        self.enable == other.enable
-            && self.quantile == other.quantile
-            && self.always_ram == other.always_ram
+        self.quantile == other.quantile && self.always_ram == other.always_ram
     }
 }
 
-impl Eq for QuantizationConfig {}
-
-impl std::hash::Hash for QuantizationConfig {
+impl std::hash::Hash for ScalarU8Quantization {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.enable.hash(state);
+        self.always_ram.hash(state);
     }
+}
+
+impl Eq for ScalarU8Quantization {}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum QuantizationConfig {
+    ScalarU8(ScalarU8Quantization),
 }
 
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;

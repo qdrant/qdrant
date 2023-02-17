@@ -171,13 +171,28 @@ pub struct OptimizersConfigDiff {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QuantizationConfig {
-    #[prost(bool, tag = "1")]
-    pub enable: bool,
-    #[prost(float, optional, tag = "2")]
+pub struct ScalarU8Quantization {
+    /// Number of bits to use for quantization
+    #[prost(float, optional, tag = "1")]
     pub quantile: ::core::option::Option<f32>,
-    #[prost(bool, optional, tag = "3")]
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "2")]
     pub always_ram: ::core::option::Option<bool>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuantizationConfig {
+    #[prost(oneof = "quantization_config::Quantization", tags = "1")]
+    pub quantization: ::core::option::Option<quantization_config::Quantization>,
+}
+/// Nested message and enum types in `QuantizationConfig`.
+pub mod quantization_config {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Quantization {
+        #[prost(message, tag = "1")]
+        Scalar(super::ScalarU8Quantization),
+    }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -4,7 +4,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{Distance, QuantizationConfig};
+use segment::types::Distance;
 use tonic::Status;
 
 use super::config_diff::CollectionParamsDiff;
@@ -239,13 +239,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
                     wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                 }),
-                quantization_config: config.quantization_config.map(|x| {
-                    api::grpc::qdrant::QuantizationConfig {
-                        enable: x.enable,
-                        quantile: x.quantile,
-                        always_ram: x.always_ram,
-                    }
-                }),
+                quantization_config: config.quantization_config.map(|x| x.into()),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -389,11 +383,13 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 None => return Err(Status::invalid_argument("Malformed WalConfig type")),
                 Some(wal_config) => wal_config.into(),
             },
-            quantization_config: config.quantization_config.map(|x| QuantizationConfig {
-                enable: x.enable,
-                quantile: x.quantile,
-                always_ram: x.always_ram,
-            }),
+            quantization_config: {
+                if let Some(config) = config.quantization_config {
+                    Some(config.try_into()?)
+                } else {
+                    None
+                }
+            },
         })
     }
 }

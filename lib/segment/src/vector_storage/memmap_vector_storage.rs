@@ -368,6 +368,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::types::ScalarU8Quantization;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 
     #[test]
@@ -537,50 +538,39 @@ mod tests {
                 .unwrap();
         }
 
+        let config = QuantizationConfig::ScalarU8(ScalarU8Quantization {
+            quantile: None,
+            always_ram: None,
+        });
+
         let quantized_data_path = dir.path().join("quantized.data");
         let quantized_meta_path = dir.path().join("quantized.meta");
         borrowed_storage
-            .quantize(
-                &quantized_meta_path,
-                &quantized_data_path,
-                &QuantizationConfig {
-                    enable: true,
-                    quantile: None,
-                    always_ram: None,
-                },
-            )
+            .quantize(&quantized_meta_path, &quantized_data_path, &config)
             .unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
         {
-            let scorer_orig = borrowed_storage.quantized_raw_scorer(&query).unwrap();
-            let scorer_quant = borrowed_storage.raw_scorer(query.clone());
+            let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+            let scorer_orig = borrowed_storage.raw_scorer(query.clone());
             for i in 0..5 {
-                let orig = scorer_orig.score_point(i);
                 let quant = scorer_quant.score_point(i);
+                let orig = scorer_orig.score_point(i);
                 assert!((orig - quant).abs() < 0.15);
             }
         }
 
         // test save-load
         borrowed_storage
-            .load_quantization(
-                &quantized_meta_path,
-                &quantized_data_path,
-                &QuantizationConfig {
-                    enable: true,
-                    quantile: None,
-                    always_ram: None,
-                },
-            )
+            .load_quantization(&quantized_meta_path, &quantized_data_path, &config)
             .unwrap();
 
-        let scorer_orig = borrowed_storage.quantized_raw_scorer(&query).unwrap();
-        let scorer_quant = borrowed_storage.raw_scorer(query);
+        let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+        let scorer_orig = borrowed_storage.raw_scorer(query);
         for i in 0..5 {
-            let orig = scorer_orig.score_point(i);
             let quant = scorer_quant.score_point(i);
+            let orig = scorer_orig.score_point(i);
             assert!((orig - quant).abs() < 0.15);
         }
     }

@@ -8,7 +8,9 @@ use super::quantized_mmap_storage::{QuantizedMmapStorage, QuantizedMmapStorageBu
 use super::{RawScorer, ScoredPointOffset};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
+use crate::types::{
+    Distance, PointOffsetType, QuantizationConfig, ScalarU8Quantization, ScoreType,
+};
 
 pub trait QuantizedVectors: Send + Sync {
     fn raw_scorer<'a>(
@@ -100,21 +102,53 @@ pub fn create_quantized_vectors<'a>(
     on_disk_vector_storage: bool,
 ) -> OperationResult<Box<dyn QuantizedVectors>> {
     let vector_parameters = get_vector_parameters(distance, dim, count);
-    let is_ram = use_ram_quantization_storage(quantization_config, on_disk_vector_storage);
-    let quantized_vectors = if is_ram {
-        create_quantized_vectors_ram(vectors, quantization_config, &vector_parameters)?
-    } else {
-        create_quantized_vectors_mmap(vectors, quantization_config, &vector_parameters, data_path)?
+    let quantized_vectors = match quantization_config {
+        QuantizationConfig::ScalarU8(scalar_u8_config) => {
+            let is_ram = use_ram_quantization_storage(scalar_u8_config, on_disk_vector_storage);
+            if is_ram {
+                create_quantized_vectors_ram(vectors, scalar_u8_config, &vector_parameters)?
+            } else {
+                create_quantized_vectors_mmap(
+                    vectors,
+                    scalar_u8_config,
+                    &vector_parameters,
+                    data_path,
+                )?
+            }
+        }
     };
     quantized_vectors.save_to_file(meta_path, data_path)?;
     Ok(quantized_vectors)
 }
 
-fn use_ram_quantization_storage(
+pub fn load_quantized_vectors(
     quantization_config: &QuantizationConfig,
+    distance: Distance,
+    dim: usize,
+    count: usize,
+    meta_path: &Path,
+    data_path: &Path,
     on_disk_vector_storage: bool,
-) -> bool {
-    !on_disk_vector_storage || quantization_config.always_ram == Some(true)
+) -> OperationResult<Box<dyn QuantizedVectors>> {
+    let vector_parameters = get_vector_parameters(distance, dim, count);
+    match quantization_config {
+        QuantizationConfig::ScalarU8(scalar_u8_config) => {
+            let is_ram = use_ram_quantization_storage(scalar_u8_config, on_disk_vector_storage);
+            if is_ram {
+                Ok(Box::new(quantization::EncodedVectorsU8::<
+                    ChunkedVectors<u8>,
+                >::load(
+                    data_path, meta_path, &vector_parameters
+                )?))
+            } else {
+                Ok(Box::new(quantization::EncodedVectorsU8::<
+                    QuantizedMmapStorage,
+                >::load(
+                    data_path, meta_path, &vector_parameters
+                )?))
+            }
+        }
+    }
 }
 
 fn get_vector_parameters(
@@ -134,9 +168,16 @@ fn get_vector_parameters(
     }
 }
 
+fn use_ram_quantization_storage(
+    config: &ScalarU8Quantization,
+    on_disk_vector_storage: bool,
+) -> bool {
+    !on_disk_vector_storage || config.always_ram == Some(true)
+}
+
 fn create_quantized_vectors_ram<'a>(
     vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
-    quantization_config: &QuantizationConfig,
+    config: &ScalarU8Quantization,
     vector_parameters: &quantization::VectorParameters,
 ) -> OperationResult<Box<dyn QuantizedVectors>> {
     let quantized_vector_size =
@@ -149,7 +190,7 @@ fn create_quantized_vectors_ram<'a>(
             vectors,
             storage_builder,
             vector_parameters,
-            quantization_config.quantile,
+            config.quantile,
         )
         .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?,
     ))
@@ -157,7 +198,7 @@ fn create_quantized_vectors_ram<'a>(
 
 fn create_quantized_vectors_mmap<'a>(
     vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
-    quantization_config: &QuantizationConfig,
+    config: &ScalarU8Quantization,
     vector_parameters: &quantization::VectorParameters,
     data_path: &Path,
 ) -> OperationResult<Box<dyn QuantizedVectors>> {
@@ -175,34 +216,8 @@ fn create_quantized_vectors_mmap<'a>(
             vectors,
             storage_builder,
             vector_parameters,
-            quantization_config.quantile,
+            config.quantile,
         )
         .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?,
     ))
-}
-
-pub fn load_quantized_vectors(
-    quantization_config: &QuantizationConfig,
-    distance: Distance,
-    dim: usize,
-    count: usize,
-    meta_path: &Path,
-    data_path: &Path,
-    on_disk_vector_storage: bool,
-) -> OperationResult<Box<dyn QuantizedVectors>> {
-    let vector_parameters = get_vector_parameters(distance, dim, count);
-    let is_ram = use_ram_quantization_storage(quantization_config, on_disk_vector_storage);
-    if is_ram {
-        Ok(Box::new(quantization::EncodedVectorsU8::<
-            ChunkedVectors<u8>,
-        >::load(
-            data_path, meta_path, &vector_parameters
-        )?))
-    } else {
-        Ok(Box::new(quantization::EncodedVectorsU8::<
-            QuantizedMmapStorage,
-        >::load(
-            data_path, meta_path, &vector_parameters
-        )?))
-    }
 }

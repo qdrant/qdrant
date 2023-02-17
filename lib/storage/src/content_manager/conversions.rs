@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use collection::operations::types::VectorsConfig;
-use segment::types::QuantizationConfig;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -60,11 +59,13 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 init_from: value
                     .init_from_collection
                     .map(|v| InitFrom { collection: v }),
-                quantization_config: value.quantization_config.map(|v| QuantizationConfig {
-                    enable: v.enable,
-                    quantile: v.quantile,
-                    always_ram: v.always_ram,
-                }),
+                quantization_config: {
+                    if let Some(config) = value.quantization_config {
+                        Some(config.try_into()?)
+                    } else {
+                        None
+                    }
+                },
             },
         )))
     }
