@@ -558,6 +558,10 @@ mod tests {
                 let quant = scorer_quant.score_point(i);
                 let orig = scorer_orig.score_point(i);
                 assert!((orig - quant).abs() < 0.15);
+
+                let quant = scorer_quant.score_internal(0, i);
+                let orig = scorer_orig.score_internal(0, i);
+                assert!((orig - quant).abs() < 0.15);
             }
         }
 
@@ -571,6 +575,10 @@ mod tests {
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
             let orig = scorer_orig.score_point(i);
+            assert!((orig - quant).abs() < 0.15);
+
+            let quant = scorer_quant.score_internal(0, i);
+            let orig = scorer_orig.score_internal(0, i);
             assert!((orig - quant).abs() < 0.15);
         }
     }
