@@ -9,7 +9,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
-use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
+use crate::operations::types::{CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
@@ -152,20 +152,6 @@ impl ShardHolder {
             .filter(|transfer| transfer.from == *peer_id || transfer.to == *peer_id)
             .cloned()
             .collect()
-    }
-
-    pub fn set_shard_replica_state(
-        &self,
-        shard_id: ShardId,
-        peer_id: PeerId,
-        active: ReplicaState,
-    ) -> CollectionResult<()> {
-        let replica_set = self
-            .get_shard(&shard_id)
-            .ok_or_else(|| CollectionError::NotFound {
-                what: format!("Shard {shard_id}"),
-            })?;
-        replica_set.set_replica_state(&peer_id, active)
     }
 
     pub fn target_shard(

@@ -50,6 +50,7 @@ mod tests {
             },
             hnsw_index: Default::default(),
             mmap_advice: madvise::Advice::Random,
+            node_type: Default::default(),
         };
 
         let search_runtime = Runtime::new().unwrap();
