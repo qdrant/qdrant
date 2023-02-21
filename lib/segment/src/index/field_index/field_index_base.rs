@@ -67,7 +67,10 @@ pub trait ValueIndexer<T> {
                 for value in values {
                     match value {
                         Value::Array(values) => {
-                            self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())?;
+                            self.add_many(
+                                id,
+                                values.iter().flat_map(|x| self.get_value(x)).collect(),
+                            )?;
                         }
                         _ => {
                             if let Some(x) = self.get_value(value) {
