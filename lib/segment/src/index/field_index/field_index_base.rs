@@ -64,7 +64,19 @@ pub trait ValueIndexer<T> {
         match payload {
             MultiValue::Multiple(values) => {
                 self.remove_point(id)?;
-                self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())
+                for value in values {
+                    match value {
+                        Value::Array(values) => {
+                            self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())?;
+                        }
+                        _ => {
+                            if let Some(x) = self.get_value(value) {
+                                self.add_many(id, vec![x])?;
+                            }
+                        }
+                    }
+                }
+                Ok(())
             }
             MultiValue::Single(Some(Value::Array(values))) => {
                 self.remove_point(id)?;

@@ -702,23 +702,16 @@ pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
 
 pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
     match value {
-        Value::Array(array) => infer_collection_value_type_bis(array),
+        Value::Array(array) => infer_collection_value_type(array),
         _ => value_type(value),
     }
 }
 
-// TODO deduplicate
-pub fn infer_collection_value_type_bis(values: &[Value]) -> Option<PayloadSchemaType> {
-    let possible_types = values.iter().map(value_type).unique().collect_vec();
-    if possible_types.len() != 1 {
-        None // There is an ambiguity or empty array
-    } else {
-        possible_types.into_iter().next().unwrap()
-    }
-}
-
-pub fn infer_collection_value_type(values: &[&Value]) -> Option<PayloadSchemaType> {
-    let possible_types = values.iter().map(|&v| value_type(v)).unique().collect_vec();
+pub fn infer_collection_value_type<'a, I>(values: I) -> Option<PayloadSchemaType>
+where
+    I: IntoIterator<Item = &'a Value>,
+{
+    let possible_types = values.into_iter().map(value_type).unique().collect_vec();
     if possible_types.len() != 1 {
         None // There is an ambiguity or empty array
     } else {

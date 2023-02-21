@@ -494,7 +494,7 @@ impl PayloadIndex for StructPayloadIndex {
             match field_value {
                 MultiValue::Single(field_value) => schema = field_value.and_then(infer_value_type),
                 MultiValue::Multiple(fields_values) => {
-                    schema = infer_collection_value_type(&fields_values)
+                    schema = infer_collection_value_type(fields_values)
                 }
             }
             Ok(false)
