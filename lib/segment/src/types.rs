@@ -16,6 +16,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::common::utils;
+use crate::common::utils::MultiValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
@@ -492,8 +493,8 @@ impl Payload {
         }
     }
 
-    pub fn get_value(&self, path: &str) -> Vec<&Value> {
-        utils::get_value_from_json_map(path, &self.0).values()
+    pub fn get_value(&self, path: &str) -> MultiValue<&Value> {
+        utils::get_value_from_json_map(path, &self.0)
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {
@@ -701,15 +702,27 @@ pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
 
 pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
     match value {
-        Value::Array(array) => {
-            let possible_types = array.iter().map(value_type).unique().collect_vec();
-            if possible_types.len() != 1 {
-                None // There is an ambiguity or empty array
-            } else {
-                possible_types.into_iter().next().unwrap()
-            }
-        }
+        Value::Array(array) => infer_collection_value_type_bis(array),
         _ => value_type(value),
+    }
+}
+
+// TODO deduplicate
+pub fn infer_collection_value_type_bis(values: &[Value]) -> Option<PayloadSchemaType> {
+    let possible_types = values.iter().map(value_type).unique().collect_vec();
+    if possible_types.len() != 1 {
+        None // There is an ambiguity or empty array
+    } else {
+        possible_types.into_iter().next().unwrap()
+    }
+}
+
+pub fn infer_collection_value_type(values: &[&Value]) -> Option<PayloadSchemaType> {
+    let possible_types = values.iter().map(|&v| value_type(v)).unique().collect_vec();
+    if possible_types.len() != 1 {
+        None // There is an ambiguity or empty array
+    } else {
+        possible_types.into_iter().next().unwrap()
     }
 }
 

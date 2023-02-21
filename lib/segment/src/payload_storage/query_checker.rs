@@ -3,7 +3,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use serde_json::Value;
 
 use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::ValueChecker;
@@ -93,51 +92,45 @@ where
 }
 
 pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) -> bool {
-    // TODO handle more than first value
-    match payload.get_value(&is_empty.is_empty.key).first() {
-        None => true,
-        Some(value) => match value {
-            Value::Null => true,
-            Value::Array(array) => array.is_empty(),
-            _ => false,
-        },
-    }
+    payload.get_value(&is_empty.is_empty.key).is_empty()
 }
 
 pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
-    payload
-        .get_value(&field_condition.key)
-        .first() // TODO handle more than first value
-        .map_or(false, |p| {
-            let mut res = false;
-            // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-            res = res
-                || field_condition
-                    .r#match
-                    .as_ref()
-                    .map_or(false, |condition| condition.check(p));
-            res = res
-                || field_condition
-                    .range
-                    .as_ref()
-                    .map_or(false, |condition| condition.check(p));
-            res = res
-                || field_condition
-                    .geo_radius
-                    .as_ref()
-                    .map_or(false, |condition| condition.check(p));
-            res = res
-                || field_condition
-                    .geo_bounding_box
-                    .as_ref()
-                    .map_or(false, |condition| condition.check(p));
-            res = res
-                || field_condition
-                    .values_count
-                    .as_ref()
-                    .map_or(false, |condition| condition.check(p));
-            res
-        })
+    let field_values = payload.get_value(&field_condition.key);
+    if field_values.is_empty() {
+        return false;
+    }
+
+    let mut res = false;
+    for p in field_values {
+        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
+        res = res
+            || field_condition
+                .r#match
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res = res
+            || field_condition
+                .range
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res = res
+            || field_condition
+                .geo_radius
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res = res
+            || field_condition
+                .geo_bounding_box
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res = res
+            || field_condition
+                .values_count
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+    }
+    res
 }
 
 pub struct SimpleConditionChecker {
