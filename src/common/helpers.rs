@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use schemars::JsonSchema;
@@ -17,7 +18,19 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
 
     if search_threads == 0 {
         let num_cpu = get_num_cpus();
-        search_threads = std::cmp::max(1, num_cpu - 1);
+        // At least one thread, but not more than number of CPUs - 1 if there are more than 2 CPU
+        // Example:
+        // Num CPU = 1 -> 1 thread
+        // Num CPU = 2 -> 2 thread - if we use one thread with 2 cpus, its too much un-utilized resources
+        // Num CPU = 3 -> 2 thread
+        // Num CPU = 4 -> 3 thread
+        // Num CPU = 5 -> 4 thread
+        search_threads = match num_cpu {
+            0 => 1,
+            1 => 1,
+            2 => 2,
+            _ => num_cpu - 1,
+        };
     }
 
     runtime::Builder::new_multi_thread()
@@ -54,6 +67,7 @@ pub fn create_general_purpose_runtime() -> std::io::Result<Runtime> {
     runtime::Builder::new_multi_thread()
         .enable_time()
         .enable_io()
+        .worker_threads(max(get_num_cpus(), 2))
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let general_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
