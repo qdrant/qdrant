@@ -17,6 +17,7 @@ def test_collection_recovery(tmp_path: pathlib.Path):
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_urls[0])
+    create_collection(peer_urls[0], shard_number=2, replication_factor=2)
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_urls)
     upsert_random_points(peer_urls[0], 100)
 
