@@ -50,7 +50,23 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                         "country": {
                             "name": "Germany",
                             "capital": "Berlin",
-                            "sightseeing": ["Brandenburg Gate", "Reichstag"]
+                            "cities": [
+                                {
+                                    "name": "Berlin",
+                                    "population": 3.7,
+                                    "sightseeing": ["Brandenburg Gate", "Reichstag"]
+                                },
+                                {
+                                    "name": "Munich",
+                                    "population": 1.5,
+                                    "sightseeing": ["Marienplatz", "Olympiapark"]
+                                },
+                                {
+                                    "name": "Hamburg",
+                                    "population": 1.8,
+                                    "sightseeing": ["Reeperbahn", "Elbphilharmonie"]
+                                }
+                            ],
                         }
                     }
                 },
@@ -61,7 +77,23 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                         "country": {
                             "name": "England",
                             "capital": "London",
-                            "sightseeing": ["Big Ben", "London Eye"]
+                            "cities": [
+                                {
+                                    "name": "London",
+                                    "population": 8.9,
+                                    "sightseeing": ["Big Ben", "London Eye"]
+                                },
+                                {
+                                    "name": "Manchester",
+                                    "population": 2.5,
+                                    "sightseeing": ["Manchester United", "Manchester City"]
+                                },
+                                {
+                                    "name": "Liverpool",
+                                    "population": 0.5,
+                                    "sightseeing": ["Anfield", "Albert Dock"]
+                                }
+                            ]
                         }
                     }
                 },
@@ -72,7 +104,23 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                         "country": {
                             "name": "France",
                             "capital": "Paris",
-                            "sightseeing": ["Eiffel Tower", "Louvre"]
+                            "cities": [
+                                {
+                                    "name": "Paris",
+                                    "population": 2.2,
+                                    "sightseeing": ["Eiffel Tower", "Louvre"]
+                                },
+                                {
+                                    "name": "Marseille",
+                                    "population": 0.9,
+                                    "sightseeing": ["Vieux Port", "Notre Dame de la Garde"]
+                                },
+                                {
+                                    "name": "Lyon",
+                                    "population": 0.5,
+                                    "sightseeing": ["Place Bellecour", "Fourvière Basilica"]
+                                }
+                            ]
                         }
                     }
                 },
@@ -83,7 +131,23 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                         "country": {
                             "name": "Japan",
                             "capital": "Tokyo",
-                            "sightseeing": ["Tokyo Tower", "Shibuya Crossing"]
+                            "cities": [
+                                {
+                                    "name": "Tokyo",
+                                    "population": 9.3,
+                                    "sightseeing": ["Tokyo Tower", "Tokyo Skytree"]
+                                },
+                                {
+                                    "name": "Osaka",
+                                    "population": 2.7,
+                                    "sightseeing": ["Osaka Castle", "Universal Studios Japan"]
+                                },
+                                {
+                                    "name": "Kyoto",
+                                    "population": 1.5,
+                                    "sightseeing": ["Kiyomizu-dera", "Fushimi Inari-taisha"]
+                                }
+                            ]
                         }
                     }
                 },
@@ -93,7 +157,6 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                     "payload": {
                         "country": {
                             "name": "Nauru",
-                            "sightseeing": ["Nauru Island"]
                         }
                     }
                 },
@@ -142,8 +205,8 @@ def test_payload_indexing_operations():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "field_name": "country.sightseeing",
-            "field_schema": "keyword"
+            "field_name": "country.cities[].population",
+            "field_schema": "float"
         }
     )
     assert response.ok
@@ -157,10 +220,10 @@ def test_payload_indexing_operations():
     assert response.ok
     assert response.json()['result']['payload_schema']['country.capital']['data_type'] == "keyword"
     assert response.json()['result']['payload_schema']['country.capital']['points'] == 4
-    assert response.json()['result']['payload_schema']['country.sightseeing']['data_type'] == "keyword"
-    assert response.json()['result']['payload_schema']['country.sightseeing']['points'] == 5
+    assert response.json()['result']['payload_schema']['country.cities[].population']['data_type'] == "float"
+    assert response.json()['result']['payload_schema']['country.cities[].population']['points'] == 12 # 3 cities * 4 countries
 
-    # Search through payload index
+    # Search nested through payload index
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",
@@ -183,7 +246,7 @@ def test_payload_indexing_operations():
     assert len(response.json()['result']['points']) == 1
     assert response.json()['result']['points'][0]['payload']['country']['name'] == "England"
 
-    # Search without payload index
+    # Search nested without payload index
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",
@@ -206,7 +269,7 @@ def test_payload_indexing_operations():
     assert len(response.json()['result']['points']) == 1
     assert response.json()['result']['points'][0]['payload']['country']['capital'] == "Paris"
 
-    # Search with payload index
+    # Search through array without payload index
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",
@@ -215,7 +278,32 @@ def test_payload_indexing_operations():
             "filter": {
                 "should": [
                     {
-                        "key": "country.sightseeing",
+                        "key": "country.cities.population",
+                        "range": {
+                            "gte": 9.0,
+                        }
+                    }
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 1
+    # Only Japan has a city with population greater than 9.0
+    # TODO: Need nested filters to get the actual city name
+    assert response.json()['result']['points'][0]['payload']['country']['name'] == "Japan"
+
+    # Search through array without payload index
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "should": [
+                    {
+                        "key": "country.cities[].sightseeing",
                         "match": {
                             "value": "Eiffel Tower"
                         }
@@ -241,7 +329,7 @@ def test_payload_indexing_operations():
     response = request_with_validation(
         api='/collections/{collection_name}/index/{field_name}',
         method="DELETE",
-        path_params={'collection_name': collection_name, 'field_name': 'country.sightseeing'},
+        path_params={'collection_name': collection_name, 'field_name': 'country.cities[].population'},
         query_params={'wait': 'true'},
     )
     assert response.ok
