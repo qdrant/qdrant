@@ -223,7 +223,7 @@ def test_payload_indexing_operations():
     assert response.json()['result']['payload_schema']['country.cities[].population']['data_type'] == "float"
     assert response.json()['result']['payload_schema']['country.cities[].population']['points'] == 12 # 3 cities * 4 countries
 
-    # Search nested through payload index
+    # Search nested through with payload index
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",
@@ -291,7 +291,30 @@ def test_payload_indexing_operations():
     assert response.ok
     assert len(response.json()['result']['points']) == 1
     # Only Japan has a city with population greater than 9.0
-    # TODO: Need nested filters to get the actual city name
+    assert response.json()['result']['points'][0]['payload']['country']['name'] == "Japan"
+
+    # Search through array with payload index
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "should": [
+                    {
+                        "key": "country.cities[].population",
+                        "range": {
+                            "gte": 9.0,
+                        }
+                    }
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 1
+    # Only Japan has a city with population greater than 9.0
     assert response.json()['result']['points'][0]['payload']['country']['name'] == "Japan"
 
     # Search through array without payload index
