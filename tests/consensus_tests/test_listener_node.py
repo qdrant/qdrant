@@ -24,8 +24,11 @@ def get_states(peer_api_uri: str, collection_name: str):
         all_shard_states.append(shard['state'])
 
     return all_shard_states
+
+
 def has_listener_shard(peer_api_uri: str, collection_name: str):
     return 'Listener' in get_states(peer_api_uri, collection_name)
+
 
 def has_no_listener_shard(peer_api_uri: str, collection_name: str):
     return 'Listener' not in get_states(peer_api_uri, collection_name)
@@ -105,5 +108,3 @@ def test_listener_node(tmp_path: pathlib.Path):
     res2 = search(peer_api_uris[0], query_vector, city="London", collection=COLLECTION_NAME)
 
     assert res1 == res2
-
-
