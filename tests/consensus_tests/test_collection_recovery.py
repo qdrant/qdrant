@@ -10,13 +10,12 @@ N_PEERS = 3
 COLLECTION_NAME = "test_collection"
 
 
-@pytest.mark.skip(reason="this test does not check anything useful, but simply documents current (i.e., broken) behavior")
 def test_collection_recovery(tmp_path: pathlib.Path):
     assert_project_root()
 
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, N_PEERS)
 
-    create_collection(peer_urls[0])
+    create_collection(peer_urls[0], shard_number=2, replication_factor=2)
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_urls)
     upsert_random_points(peer_urls[0], 100)
 
@@ -44,25 +43,13 @@ def test_collection_recovery(tmp_path: pathlib.Path):
     recover_raft_state(peer_url)
 
     # Wait for the Raft state to be recovered
-    wait_for(collection_exists, peer_url, COLLECTION_NAME)
-
-    # Check, that remote shards are broken on recovered node 🥲
-    info = get_collection_cluster_info(peer_url, COLLECTION_NAME)
-
-    for remote_shard in info["remote_shards"]:
-        assert remote_shard["state"] == "Initializing"
-
-    # Recover Raft state once again
-    recover_raft_state(peer_url)
-
-    # Wait for the Raft state to be recovered
     wait_for(all_collection_shards_are_active, peer_url, COLLECTION_NAME)
 
-    # Check, that the collection is empty on recovered node
+    # Check, that the collection is not empty on recovered node
     info = get_collection_cluster_info(peer_url, COLLECTION_NAME)
 
     for shard in info["local_shards"]:
-        assert shard["points_count"] == 0
+        assert shard["points_count"] > 0
 
 
 def get_collection_cluser_info(peer_url, collection_name):
@@ -79,9 +66,6 @@ def request_result(resp):
 
 def collection_exists(peer_url, collection_name):
     try:
-        # It is crusial to query the collection *cluster* info instead of collection info,
-        # because collection info is permanently broken after the first recovery,
-        # but collection cluster info works fine.
         get_collection_cluster_info(peer_url, collection_name)
     except:
         return False

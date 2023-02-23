@@ -125,8 +125,7 @@ impl Collection {
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
-            let is_local = peers.contains(&this_peer_id);
-            peers.remove(&this_peer_id);
+            let is_local = peers.remove(&this_peer_id);
 
             let replica_set = ReplicaSetShard::build(
                 shard_id,
@@ -149,6 +148,7 @@ impl Collection {
                     return Err(err);
                 }
             };
+
             shard_holder.add_shard(shard_id, replica_set);
         }
 
