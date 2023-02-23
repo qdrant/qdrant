@@ -226,7 +226,7 @@ pub fn random_nested_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
     let nested_str_key = if nested_or_proj {
         format!("{}.{}.{}", STR_KEY, "nested_1", "nested_2")
     } else {
-        format!("{}.{}.{}", STR_PROJ_KEY, "nested_1", "nested_2")
+        format!("{}.{}[].{}", STR_PROJ_KEY, "nested_1", "nested_2")
     };
     let condition = Condition::Field(FieldCondition::new_match(
         nested_str_key,

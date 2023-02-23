@@ -160,7 +160,7 @@ mod tests {
 
         // Nested payload keys
         let nested_str_key = format!("{}.{}.{}", STR_KEY, "nested_1", "nested_2");
-        let nested_str_proj_key = format!("{}.{}.{}", STR_PROJ_KEY, "nested_1", "nested_2");
+        let nested_str_proj_key = format!("{}.{}[].{}", STR_PROJ_KEY, "nested_1", "nested_2");
 
         let mut opnum = 0;
         struct_segment

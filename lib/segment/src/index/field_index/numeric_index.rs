@@ -145,7 +145,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
             self.points_count += 1;
             self.max_values_per_point = self.max_values_per_point.max(values.len());
         }
-        self.point_to_values[idx as usize].extend(values);
+        self.point_to_values[idx as usize] = values;
         Ok(())
     }
 

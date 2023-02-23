@@ -221,7 +221,7 @@ def test_payload_indexing_operations():
     assert response.json()['result']['payload_schema']['country.capital']['data_type'] == "keyword"
     assert response.json()['result']['payload_schema']['country.capital']['points'] == 4
     assert response.json()['result']['payload_schema']['country.cities[].population']['data_type'] == "float"
-    assert response.json()['result']['payload_schema']['country.cities[].population']['points'] == 12 # 3 cities * 4 countries
+    assert response.json()['result']['payload_schema']['country.cities[].population']['points'] == 4 # indexed records
 
     # Search nested through with payload index
     response = request_with_validation(
@@ -278,7 +278,7 @@ def test_payload_indexing_operations():
             "filter": {
                 "should": [
                     {
-                        "key": "country.cities.population",
+                        "key": "country.cities.population", # Do not implicitly do inside nested array
                         "range": {
                             "gte": 9.0,
                         }
@@ -289,9 +289,7 @@ def test_payload_indexing_operations():
         }
     )
     assert response.ok
-    assert len(response.json()['result']['points']) == 1
-    # Only Japan has a city with population greater than 9.0
-    assert response.json()['result']['points'][0]['payload']['country']['name'] == "Japan"
+    assert len(response.json()['result']['points']) == 0
 
     # Search through array with payload index
     response = request_with_validation(

@@ -50,6 +50,7 @@ pub trait PayloadFieldIndex {
 
 pub trait ValueIndexer<T> {
     /// Add multiple values associated with a single point
+    /// This function should be called only once for each point
     fn add_many(&mut self, id: PointOffsetType, values: Vec<T>) -> OperationResult<()>;
 
     /// Extract index-able value from payload `Value`
@@ -64,22 +65,21 @@ pub trait ValueIndexer<T> {
         match payload {
             MultiValue::Multiple(values) => {
                 self.remove_point(id)?;
+                let mut flatten_values: Vec<_> = vec![];
+
                 for value in values {
                     match value {
                         Value::Array(values) => {
-                            self.add_many(
-                                id,
-                                values.iter().flat_map(|x| self.get_value(x)).collect(),
-                            )?;
+                            flatten_values.extend(values.iter().flat_map(|x| self.get_value(x)));
                         }
                         _ => {
                             if let Some(x) = self.get_value(value) {
-                                self.add_many(id, vec![x])?;
+                                flatten_values.push(x);
                             }
                         }
                     }
                 }
-                Ok(())
+                self.add_many(id, flatten_values)
             }
             MultiValue::Single(Some(Value::Array(values))) => {
                 self.remove_point(id)?;

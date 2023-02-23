@@ -161,9 +161,6 @@ pub fn get_value_from_json_map<'a>(
                     // no array notation
                     match value.get(element) {
                         Some(Value::Object(map)) => get_value_from_json_map(rest_path, map),
-                        Some(Value::Array(_)) => {
-                            focus_array_path(element, None, Some(rest_path), value)
-                        }
                         Some(value) => match rest_path.is_empty() {
                             true => MultiValue::one(value),
                             false => MultiValue::default(),
@@ -248,9 +245,6 @@ pub fn remove_value_from_json_map(
                         match value.get_mut(element) {
                             None => MultiValue::default(),
                             Some(Value::Object(map)) => remove_value_from_json_map(rest_path, map),
-                            Some(Value::Array(_)) => {
-                                delete_array_path(element, None, Some(rest_path), value)
-                            }
                             Some(_value) => MultiValue::default(),
                         }
                     }
