@@ -130,6 +130,8 @@ pub async fn do_recover_from_snapshot(
         }
     }
 
+    let priority = priority.unwrap_or_default();
+
     // Recover shards from the snapshot
     for (shard_id, shard_info) in &state.shards {
         let shards = latest_shard_paths(&tmp_collection_dir, *shard_id).await?;
