@@ -41,7 +41,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::replica_set::ReplicaState::{Dead, Initializing};
+use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
 use crate::shards::replica_set::{
     Change, ChangePeerState, ReplicaState, ShardReplicaSet as ReplicaSetShard,
 }; // TODO rename ReplicaShard to ReplicaSetShard
@@ -1491,6 +1491,9 @@ impl Collection {
         on_transfer_failure: OnTransferFailure,
         on_transfer_success: OnTransferSuccess,
         on_finish_init: ChangePeerState,
+        on_convert_to_listener: ChangePeerState,
+        on_convert_from_listener: ChangePeerState,
+        is_listener_node: bool,
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
@@ -1529,12 +1532,14 @@ impl Collection {
             }
         }
 
-        // Check for dead replicas without pending transfers
+        // Check for proper replica states
         for replica_set in shard_holder.all_shards() {
             let this_peer_id = &replica_set.this_peer_id();
             let shard_id = replica_set.shard_id;
 
-            let this_peer_state = replica_set.peers().get(this_peer_id).copied();
+            let peers = replica_set.peers();
+            let this_peer_state = peers.get(this_peer_id).copied();
+            let is_last_active = peers.values().filter(|state| **state == Active).count() == 1;
 
             if this_peer_state == Some(Initializing) {
                 // It is possible, that collection creation didn't report
@@ -1543,10 +1548,23 @@ impl Collection {
                 continue;
             }
 
+            if is_listener_node {
+                if this_peer_state == Some(Active) && !is_last_active {
+                    // Convert active node from active to listener
+                    on_convert_to_listener(*this_peer_id, shard_id);
+                    continue;
+                }
+            } else if this_peer_state == Some(Listener) {
+                // Convert listener node to active
+                on_convert_from_listener(*this_peer_id, shard_id);
+                continue;
+            }
+
             if this_peer_state != Some(Dead) {
                 continue; // All good
             }
 
+            // Try to find dead replicas with no active transfers
             let transfers = self.get_transfers(|_| true).await;
 
             // Try to find a replica to transfer from

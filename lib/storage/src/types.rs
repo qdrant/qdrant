@@ -24,6 +24,17 @@ fn default_max_optimization_threads() -> usize {
     1
 }
 
+#[derive(Clone, Debug, Deserialize, Default)]
+pub enum NodeType {
+    /// Regular node, participates in the cluster
+    #[default]
+    Normal,
+    /// Node that does only receive data, but is not used for search/read operations
+    /// This is useful for nodes that are only used for writing data
+    /// and backup purposes
+    Listener,
+}
+
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
 #[derive(Clone, Debug, Deserialize)]
 pub struct StorageConfig {
@@ -38,6 +49,8 @@ pub struct StorageConfig {
     pub hnsw_index: HnswConfig,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,
+    #[serde(default)]
+    pub node_type: NodeType,
 }
 
 fn default_snapshots_path() -> String {

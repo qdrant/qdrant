@@ -52,7 +52,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::data_transfer::{populate_collection, transfer_indexes};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::types::{PeerAddressById, StorageConfig};
+use crate::types::{NodeType, PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
@@ -1508,6 +1508,7 @@ impl CollectionContainer for TableOfContent {
                 Self::on_transfer_failure_callback(self.consensus_proposal_sender.clone());
             let transfer_success_callback =
                 Self::on_transfer_success_callback(self.consensus_proposal_sender.clone());
+
             for collection in collections.values() {
                 let finish_shard_initialize = Self::change_peer_state_callback(
                     self.consensus_proposal_sender.clone(),
@@ -1515,11 +1516,27 @@ impl CollectionContainer for TableOfContent {
                     ReplicaState::Active,
                     Some(ReplicaState::Initializing),
                 );
+                let convert_to_listener_callback = Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection.name(),
+                    ReplicaState::Listener,
+                    Some(ReplicaState::Active),
+                );
+                let convert_from_listener_to_active_callback = Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection.name(),
+                    ReplicaState::Active,
+                    Some(ReplicaState::Listener),
+                );
+
                 collection
                     .sync_local_state(
                         transfer_failure_callback.clone(),
                         transfer_success_callback.clone(),
                         finish_shard_initialize,
+                        convert_to_listener_callback,
+                        convert_from_listener_to_active_callback,
+                        matches!(self.storage_config.node_type, NodeType::Listener),
                     )
                     .await?;
             }
