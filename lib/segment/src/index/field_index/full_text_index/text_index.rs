@@ -211,6 +211,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
+    use crate::common::utils::MultiValue;
     use crate::data_types::text_index::{TextIndexType, TokenizerType};
     use crate::types::MatchText;
 
@@ -257,7 +258,9 @@ mod tests {
             index.recreate().unwrap();
 
             for (idx, payload) in payloads.iter().enumerate() {
-                index.add_point(idx as PointOffsetType, payload).unwrap();
+                index
+                    .add_point(idx as PointOffsetType, &MultiValue::one(payload))
+                    .unwrap();
             }
 
             assert_eq!(index.count_indexed_points(), payloads.len());
@@ -282,19 +285,16 @@ mod tests {
 
             assert_eq!(index.count_indexed_points(), payloads.len() - 2);
 
-            index
-                .add_point(
-                    3,
-                    &serde_json::json!([
+            let payload = serde_json::json!([
                 "The last question was asked for the first time, half in jest, on May 21, 2061,",
                 "at a time when humanity first stepped into the light."
-            ]),
-                )
-                .unwrap();
+            ]);
+            index.add_point(3, &MultiValue::one(&payload)).unwrap();
 
-            index.add_point(4, &serde_json::json!(
+            let payload = serde_json::json!([
                 "The question came about as a result of a five dollar bet over highballs, and it happened this way: "
-            )).unwrap();
+            ]);
+            index.add_point(4, &MultiValue::one(&payload)).unwrap();
 
             assert_eq!(index.count_indexed_points(), payloads.len() - 1);
 

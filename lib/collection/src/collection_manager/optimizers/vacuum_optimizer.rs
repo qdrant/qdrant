@@ -265,7 +265,7 @@ mod tests {
         for &point_id in &segment_points_to_assign1 {
             assert!(segment_guard.has_point(point_id));
             let payload = segment_guard.payload(point_id).unwrap();
-            let payload_color = &(*payload.get_value("color").first().unwrap()).clone();
+            let payload_color = &(*payload.get_value("color").into_iter().next().unwrap()).clone();
 
             match payload_color {
                 Value::String(x) => assert_eq!(x, "red"),

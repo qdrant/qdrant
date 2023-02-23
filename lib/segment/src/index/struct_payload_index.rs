@@ -12,6 +12,7 @@ use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
+use crate::common::utils::MultiValue;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
@@ -30,8 +31,9 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    infer_value_type, Condition, FieldCondition, Filter, IsEmptyCondition, Payload,
-    PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
+    IsEmptyCondition, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -181,12 +183,9 @@ impl StructPayloadIndex {
         }
 
         payload_storage.iter(|point_id, point_payload| {
-            // TODO handle more than first value
-            let field_value_opt = point_payload.get_value(field).first().cloned();
-            if let Some(field_value) = field_value_opt {
-                for field_index in field_indexes.iter_mut() {
-                    field_index.add_point(point_id, field_value)?;
-                }
+            let field_value = &point_payload.get_value(field);
+            for field_index in field_indexes.iter_mut() {
+                field_index.add_point(point_id, field_value)?;
             }
             Ok(true)
         })?;
@@ -425,11 +424,9 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         for (field, field_index) in &mut self.field_indexes {
-            // TODO handle more than first value
-            if let Some(field_value) = payload.get_value(field).first() {
-                for index in field_index {
-                    index.add_point(point_id, field_value)?;
-                }
+            let field_value = &payload.get_value(field);
+            for index in field_index {
+                index.add_point(point_id, field_value)?;
             }
         }
         self.payload.borrow_mut().assign(point_id, payload)
@@ -493,9 +490,13 @@ impl PayloadIndex for StructPayloadIndex {
     ) -> OperationResult<Option<PayloadSchemaType>> {
         let mut schema = None;
         self.payload.borrow().iter(|_id, payload: &Payload| {
-            // TODO handle more than first value
-            let field_value: Option<_> = payload.get_value(key).first().cloned();
-            schema = field_value.and_then(infer_value_type);
+            let field_value = payload.get_value(key);
+            match field_value {
+                MultiValue::Single(field_value) => schema = field_value.and_then(infer_value_type),
+                MultiValue::Multiple(fields_values) => {
+                    schema = infer_collection_value_type(fields_values)
+                }
+            }
             Ok(false)
         })?;
         Ok(schema)
