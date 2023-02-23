@@ -31,7 +31,7 @@ pub struct SnapshotRecover {
     /// If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten.
     /// If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.
     #[serde(default)]
-    pub priority: SnapshotPriority,
+    pub priority: Option<SnapshotPriority>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
