@@ -6,19 +6,20 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 
 /// Avoids allocating Vec with a single element
-pub enum JsonPathTarget<T> {
+#[derive(Debug)]
+pub enum MultiValue<T> {
     Single(Option<T>),
     Multiple(Vec<T>),
 }
 
-impl<T> Default for JsonPathTarget<T> {
+impl<T> Default for MultiValue<T> {
     fn default() -> Self {
         Self::Single(None)
     }
 }
 
-impl<T> JsonPathTarget<T> {
-    fn one(value: T) -> Self {
+impl<T> MultiValue<T> {
+    pub(crate) fn one(value: T) -> Self {
         Self::Single(Some(value))
     }
 
@@ -64,7 +65,7 @@ impl<T> JsonPathTarget<T> {
     }
 }
 
-impl<T> Iterator for JsonPathTarget<T> {
+impl<T> Iterator for MultiValue<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -113,10 +114,10 @@ fn focus_array_path<'a>(
     array_index: Option<u32>,
     rest_path: Option<&str>,
     value: &'a serde_json::Map<String, Value>,
-) -> JsonPathTarget<&'a Value> {
+) -> MultiValue<&'a Value> {
     match value.get(array_path) {
         Some(Value::Array(array)) => {
-            let mut values: JsonPathTarget<_> = JsonPathTarget::default();
+            let mut values: MultiValue<_> = MultiValue::default();
             for (i, value) in array.iter().enumerate() {
                 if let Value::Object(map) = value {
                     if let Some(array_index) = array_index {
@@ -140,14 +141,14 @@ fn focus_array_path<'a>(
             }
             values
         }
-        _ => JsonPathTarget::default(),
+        _ => MultiValue::default(),
     }
 }
 
 pub fn get_value_from_json_map<'a>(
     path: &str,
     value: &'a serde_json::Map<String, Value>,
-) -> JsonPathTarget<&'a Value> {
+) -> MultiValue<&'a Value> {
     // check if leaf path element
     match path.split_once('.') {
         Some((element, rest_path)) => {
@@ -157,14 +158,14 @@ pub fn get_value_from_json_map<'a>(
                     focus_array_path(array_element_path, array_index, Some(rest_path), value)
                 }
                 None => {
-                    // targeting object
+                    // no array notation
                     match value.get(element) {
                         Some(Value::Object(map)) => get_value_from_json_map(rest_path, map),
                         Some(value) => match rest_path.is_empty() {
-                            true => JsonPathTarget::one(value),
-                            false => JsonPathTarget::default(),
+                            true => MultiValue::one(value),
+                            false => MultiValue::default(),
                         },
-                        None => JsonPathTarget::default(),
+                        None => MultiValue::default(),
                     }
                 }
             }
@@ -174,8 +175,8 @@ pub fn get_value_from_json_map<'a>(
                 focus_array_path(array_element_path, array_index, None, value)
             }
             None => match value.get(path) {
-                Some(value) => JsonPathTarget::one(value),
-                None => JsonPathTarget::default(),
+                Some(value) => MultiValue::one(value),
+                None => MultiValue::default(),
             },
         },
     }
@@ -189,22 +190,22 @@ fn delete_array_path(
     array_index: Option<u32>,
     rest_path: Option<&str>,
     value: &mut serde_json::Map<String, Value>,
-) -> JsonPathTarget<Value> {
+) -> MultiValue<Value> {
     if let Some(Value::Array(array)) = value.get_mut(array_path) {
         match rest_path {
             None => {
                 // end of path - delete and collect
                 if let Some(array_index) = array_index {
                     if array.len() > array_index as usize {
-                        return JsonPathTarget::one(array.remove(array_index as usize));
+                        return MultiValue::one(array.remove(array_index as usize));
                     }
                 } else {
-                    return JsonPathTarget::one(Value::Array(array.drain(..).collect()));
+                    return MultiValue::one(Value::Array(array.drain(..).collect()));
                 }
             }
             Some(rest_path) => {
                 // dig deeper
-                let mut values = JsonPathTarget::default();
+                let mut values = MultiValue::default();
                 for (i, value) in array.iter_mut().enumerate() {
                     if let Value::Object(map) = value {
                         if let Some(array_index) = array_index {
@@ -221,13 +222,13 @@ fn delete_array_path(
         }
     }
     // no array found
-    JsonPathTarget::default()
+    MultiValue::default()
 }
 
 pub fn remove_value_from_json_map(
     path: &str,
     value: &mut serde_json::Map<String, Value>,
-) -> JsonPathTarget<Value> {
+) -> MultiValue<Value> {
     // check if leaf path element
     match path.split_once('.') {
         Some((element, rest_path)) => {
@@ -237,14 +238,14 @@ pub fn remove_value_from_json_map(
                     delete_array_path(array_element_path, array_index, Some(rest_path), value)
                 }
                 None => {
-                    // targeting object
+                    // no array notation
                     if rest_path.is_empty() {
-                        JsonPathTarget::option(value.remove(element))
+                        MultiValue::option(value.remove(element))
                     } else {
                         match value.get_mut(element) {
-                            None => JsonPathTarget::default(),
+                            None => MultiValue::default(),
                             Some(Value::Object(map)) => remove_value_from_json_map(rest_path, map),
-                            Some(_value) => JsonPathTarget::default(),
+                            Some(_value) => MultiValue::default(),
                         }
                     }
                 }
@@ -254,7 +255,7 @@ pub fn remove_value_from_json_map(
             Some((array_element_path, array_index)) => {
                 delete_array_path(array_element_path, array_index, None, value)
             }
-            None => JsonPathTarget::option(value.remove(path)),
+            None => MultiValue::option(value.remove(path)),
         },
     }
 }
