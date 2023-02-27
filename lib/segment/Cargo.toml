@@ -35,7 +35,7 @@ thiserror = "1.0"
 atomic_refcell = "0.1.9"
 atomicwrites = "0.3.1"
 memmap2 = "0.5.10"
-schemars = { version = "0.8.11", features = ["uuid1", "preserve_order"] }
+schemars = { version = "0.8.12", features = ["uuid1", "preserve_order"] }
 log = "0.4"
 geo = "0.23.1"
 geohash = "0.13.0"
