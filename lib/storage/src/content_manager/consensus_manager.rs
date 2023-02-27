@@ -23,7 +23,7 @@ use tokio::time::error::Elapsed;
 use tonic::transport::Uri;
 
 use super::alias_mapping::AliasMapping;
-use super::consensus_ops::ConsensusOperations;
+use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use super::errors::StorageError;
 use super::CollectionContainer;
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
@@ -116,6 +116,20 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }),
             message_send_failures: Default::default(),
         }
+    }
+
+    pub fn report_snapshot(
+        &self,
+        peer_id: u64,
+        status: impl Into<SnapshotStatus>,
+    ) -> Result<(), StorageError> {
+        self.propose_sender
+            .send(ConsensusOperations::report_snapshot(peer_id, status))
+            .map_err(|_err| {
+                StorageError::service_error(
+                    "failed to send ReportSnapshot message to consensus thread",
+                )
+            })
     }
 
     pub fn record_message_send_failure<E: Error>(&self, peer_address: &Uri, error: E) {
@@ -422,6 +436,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             ConsensusOperations::CollectionMeta(operation) => {
                 self.toc.perform_collection_meta_op(*operation)
             }
+
             ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
                 // RemovePeer or AddPeer should be converted into native ConfChangeV2 message before sending to the Raft.
                 // So we do not expect to receive these operations as a normal entry.
@@ -433,6 +448,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 );
                 Ok(false)
             }
+
+            ConsensusOperations::RequestSnapshot { .. }
+            | ConsensusOperations::ReportSnapshot { .. } => unreachable!(),
         };
 
         if let Some(on_apply) = on_apply {
@@ -443,18 +461,21 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         result
     }
 
-    pub fn apply_snapshot(&self, snapshot: &raft::eraftpb::Snapshot) -> Result<(), StorageError> {
+    // Outer `Result` is "fatal" error, inner `Result` is "transient"/"local" error.
+    pub fn apply_snapshot(
+        &self,
+        snapshot: &raft::eraftpb::Snapshot,
+    ) -> Result<Result<(), StorageError>, StorageError> {
         let meta = snapshot.get_metadata();
-        if raft::Storage::first_index(self)? > meta.index {
-            return Err(StorageError::service_error("Snapshot out of date"));
-        }
+
         let data: SnapshotData = snapshot.get_data().try_into()?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
         self.wal.lock().clear()?;
         self.persistent
             .write()
             .update_from_snapshot(meta, data.address_by_id)?;
-        Ok(())
+
+        Ok(Ok(()))
     }
 
     pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
@@ -509,7 +530,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .await
             .map_err(
                 |_: Elapsed| {
-                    StorageError::service_error(&format!(
+                    StorageError::service_error(format!(
                         "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
                         wait_timeout.as_secs_f64()
                     ))
@@ -569,7 +590,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .is_leader_established
             .await_ready_for_timeout(wait_timeout)
         {
-            return Err(StorageError::service_error(&format!(
+            return Err(StorageError::service_error(format!(
                 "Failed to propose operation: leader is not established within {} secs",
                 wait_timeout.as_secs()
             )));

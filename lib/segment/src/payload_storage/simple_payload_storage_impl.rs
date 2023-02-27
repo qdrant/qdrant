@@ -33,16 +33,16 @@ impl PayloadStorage for SimplePayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>> {
+    ) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
             Some(payload) => {
                 let res = payload.remove(key);
-                if res.is_some() {
+                if !res.is_empty() {
                     self.update_storage(&point_id)?;
                 }
                 Ok(res)
             }
-            None => Ok(None),
+            None => Ok(vec![]),
         }
     }
 

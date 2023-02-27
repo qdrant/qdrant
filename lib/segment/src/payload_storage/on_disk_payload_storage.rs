@@ -92,18 +92,18 @@ impl PayloadStorage for OnDiskPayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>> {
+    ) -> OperationResult<Vec<Value>> {
         let stored_payload = self.read_payload(point_id)?;
 
         match stored_payload {
             Some(mut payload) => {
                 let res = payload.remove(key);
-                if res.is_some() {
+                if !res.is_empty() {
                     self.update_storage(point_id, &payload)?;
                 }
                 Ok(res)
             }
-            None => Ok(None),
+            None => Ok(vec![]),
         }
     }
 

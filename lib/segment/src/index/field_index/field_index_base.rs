@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use crate::common::utils::MultiValue;
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
@@ -49,26 +50,50 @@ pub trait PayloadFieldIndex {
 
 pub trait ValueIndexer<T> {
     /// Add multiple values associated with a single point
+    /// This function should be called only once for each point
     fn add_many(&mut self, id: PointOffsetType, values: Vec<T>) -> OperationResult<()>;
 
     /// Extract index-able value from payload `Value`
     fn get_value(&self, value: &Value) -> Option<T>;
 
     /// Add point with payload to index
-    fn add_point(&mut self, id: PointOffsetType, payload: &Value) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &MultiValue<&Value>,
+    ) -> OperationResult<()> {
         match payload {
-            Value::Array(values) => {
+            MultiValue::Multiple(values) => {
+                self.remove_point(id)?;
+                let mut flatten_values: Vec<_> = vec![];
+
+                for value in values {
+                    match value {
+                        Value::Array(values) => {
+                            flatten_values.extend(values.iter().flat_map(|x| self.get_value(x)));
+                        }
+                        _ => {
+                            if let Some(x) = self.get_value(value) {
+                                flatten_values.push(x);
+                            }
+                        }
+                    }
+                }
+                self.add_many(id, flatten_values)
+            }
+            MultiValue::Single(Some(Value::Array(values))) => {
                 self.remove_point(id)?;
                 self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())
             }
-            _ => {
-                if let Some(x) = self.get_value(payload) {
+            MultiValue::Single(Some(value)) => {
+                if let Some(x) = self.get_value(value) {
                     self.remove_point(id)?;
                     self.add_many(id, vec![x])
                 } else {
                     Ok(())
                 }
             }
+            MultiValue::Single(None) => Ok(()),
         }
     }
 
@@ -182,7 +207,11 @@ impl FieldIndex {
         self.get_payload_field_index().count_indexed_points()
     }
 
-    pub fn add_point(&mut self, id: PointOffsetType, payload: &Value) -> OperationResult<()> {
+    pub fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &MultiValue<&Value>,
+    ) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)

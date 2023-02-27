@@ -1,8 +1,9 @@
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, web, Responder};
+use actix_web::{delete, get, post, web, Responder};
 use serde::Deserialize;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 
 use crate::actix::helpers::process_response;
@@ -20,6 +21,12 @@ async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher.cluster_status();
     process_response(Ok(response), timing)
+}
+
+#[post("/cluster/recover")]
+async fn recover_current_peer(toc: web::Data<TableOfContent>) -> impl Responder {
+    let timing = Instant::now();
+    process_response(toc.request_snapshot(None).map(|_| true), timing)
 }
 
 #[delete("/cluster/peer/{peer_id}")]
@@ -60,5 +67,7 @@ async fn remove_peer(
 
 // Configure services
 pub fn config_cluster_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(cluster_status).service(remove_peer);
+    cfg.service(cluster_status)
+        .service(remove_peer)
+        .service(recover_current_peer);
 }

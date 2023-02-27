@@ -36,7 +36,7 @@ itertools = "0.10"
 anyhow = "1.0.69"
 futures = "0.3.26"
 futures-util = "0.3.24"
-clap = { version = "4.1.4", features = ["derive"] }
+clap = { version = "4.1.6", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.3", features = ["v4", "serde"] }
 sys-info = "0.9.1"
@@ -60,7 +60,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 raft = { git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false }
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
-prost = "0.11.6"
+prost = "0.11.7"
 raft-proto = {  git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false}
 
 segment = { path = "lib/segment" }

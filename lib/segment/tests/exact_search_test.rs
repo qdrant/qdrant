@@ -154,8 +154,8 @@ mod tests {
                 .borrow()
                 .search(&[&query], None, top, None);
 
-            assert!(
-                index_result == plain_result,
+            assert_eq!(
+                index_result, plain_result,
                 "Exact search is not equal to plain search"
             );
 
@@ -189,8 +189,8 @@ mod tests {
                 .borrow()
                 .search(&[&query], filter_query, top, None);
 
-            assert!(
-                index_result == plain_result,
+            assert_eq!(
+                index_result, plain_result,
                 "Exact search is not equal to plain search"
             );
         }

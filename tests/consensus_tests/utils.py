@@ -72,11 +72,16 @@ def init_pytest_log_folder() -> str:
 
 
 # Starts a peer and returns its api_uri
-def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None) -> str:
+def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None) -> str:
+    if extra_env is None:
+        extra_env = {}
     p2p_port = get_port() if port is None else port + 0
     grpc_port = get_port() if port is None else port + 1
     http_port = get_port() if port is None else port + 2
-    env = get_env(p2p_port, grpc_port, http_port)
+    env = {
+        **get_env(p2p_port, grpc_port, http_port),
+        **extra_env
+    }
     test_log_folder = init_pytest_log_folder()
     log_file = open(f"{test_log_folder}/{log_file}", "w")
     print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"

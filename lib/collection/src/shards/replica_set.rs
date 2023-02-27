@@ -51,41 +51,41 @@ const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
-// Shard replication state machine:
-//
-//    │
 //    │    Collection Created
 //    │
 //    ▼
 //  ┌─────────────┐
 //  │             │
-//  │Initializing │
+//  │ Initilizing │
 //  │             │
-//  └─────┬─-─────┘
-//        │  Report created     ┌───────────┐
-//        └────────────────────►│           │
+//  └──────┬──────┘
+//         │  Report created    ┌───────────┐
+//         └────────────────────►           │
 //             Activate         │ Consensus │
-//        ┌─────────────────────│           │
+//        ┌─────────────────────┤           │
 //        │                     └───────────┘
-//  ┌─────▼───────┐
-//  │             │
-//  │ Active      ◄───────────┐
-//  │             │           │Transfer
-//  └──┬──────────┘           │Finished
-//     │                      │
-//     │               ┌──────┴────────┐
-//     │Update         │               │
-//     │Failure        │ Partial       ├───┐
-//     │               │               │   │
-//     │               └───────▲───────┘   │
-//     │                       │           │Transfer
-//  ┌──▼──────────┐            │           │Failed/Cancelled
-//  │             │ Transfer   │           │
-//  │ Dead        ├────────────┘           │
-//  │             │ Started                │
-//  └──▲──────────┘                        │
-//     │                                   │
-//     └───────────────────────────────────┘
+//  ┌─────▼───────┐   User Promote           ┌──────────┐
+//  │             ◄──────────────────────────►          │
+//  │ Active      │                          │ Listener │
+//  │             ◄───────────┐              │          │
+//  └──┬──────────┘           │Transfer      └──┬───────┘
+//     │                      │Finished         │
+//     │               ┌──────┴────────┐        │Update
+//     │Update         │               │        │Failure
+//     │Failure        │ Partial       ├───┐    │
+//     │               │               │   │    │
+//     │               └───────▲───────┘   │    │
+//     │                       │           │    │
+//  ┌──▼──────────┐ Transfer   │           │    │
+//  │             │ Started    │           │    │
+//  │ Dead        ├────────────┘           │    │
+//  │             │                        │    │
+//  └─▲───────▲───┘        Transfer        │    │
+//    │       │            Failed/Cancelled│    │
+//    │       └────────────────────────────┘    │
+//    │                                         │
+//    └─────────────────────────────────────────┘
+//
 
 /// State of the single shard within a replica set.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
@@ -99,6 +99,9 @@ pub enum ReplicaState {
     Partial,
     // Collection is being created
     Initializing,
+    // A shard which receives data, but is not used for search
+    // Useful for backup shards
+    Listener,
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
@@ -598,6 +601,12 @@ impl ShardReplicaSet {
                         self.set_local(local_shard, Some(ReplicaState::Initializing))
                             .await?;
                     }
+                    ReplicaState::Listener => {
+                        // Same as `Active`, we report a failure to consensus
+                        self.set_local(local_shard, Some(ReplicaState::Listener))
+                            .await?;
+                        self.notify_peer_failure(peer_id);
+                    }
                 }
                 continue;
             }
@@ -631,6 +640,7 @@ impl ShardReplicaSet {
             Some(ReplicaState::Partial) => true,
             Some(ReplicaState::Initializing) => true,
             Some(ReplicaState::Dead) => false,
+            Some(ReplicaState::Listener) => true,
             None => false,
         };
         res && !self.is_locally_disabled(peer_id)
@@ -1057,6 +1067,9 @@ impl ShardReplicaSet {
                 }
                 Some(ReplicaState::Initializing) => {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
+                Some(ReplicaState::Listener) => {
+                    Ok(Some(local_shard.get().update(operation, false).await?))
                 }
                 Some(ReplicaState::Dead) | None => Ok(None),
             }

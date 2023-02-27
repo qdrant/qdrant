@@ -16,6 +16,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::common::utils;
+use crate::common::utils::MultiValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
@@ -528,12 +529,12 @@ impl Payload {
         }
     }
 
-    pub fn get_value(&self, path: &str) -> Option<&Value> {
+    pub fn get_value(&self, path: &str) -> MultiValue<&Value> {
         utils::get_value_from_json_map(path, &self.0)
     }
 
-    pub fn remove(&mut self, path: &str) -> Option<Value> {
-        utils::remove_value_from_json_map(path, &mut self.0)
+    pub fn remove(&mut self, path: &str) -> Vec<Value> {
+        utils::remove_value_from_json_map(path, &mut self.0).values()
     }
 
     pub fn len(&self) -> usize {
@@ -737,15 +738,20 @@ pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
 
 pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
     match value {
-        Value::Array(array) => {
-            let possible_types = array.iter().map(value_type).unique().collect_vec();
-            if possible_types.len() != 1 {
-                None // There is an ambiguity or empty array
-            } else {
-                possible_types.into_iter().next().unwrap()
-            }
-        }
+        Value::Array(array) => infer_collection_value_type(array),
         _ => value_type(value),
+    }
+}
+
+pub fn infer_collection_value_type<'a, I>(values: I) -> Option<PayloadSchemaType>
+where
+    I: IntoIterator<Item = &'a Value>,
+{
+    let possible_types = values.into_iter().map(value_type).unique().collect_vec();
+    if possible_types.len() != 1 {
+        None // There is an ambiguity or empty array
+    } else {
+        possible_types.into_iter().next().unwrap()
     }
 }
 
@@ -755,6 +761,13 @@ pub enum ValueVariants {
     Keyword(String),
     Integer(IntPayloadType),
     Bool(bool),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum AnyVariants {
+    Keywords(Vec<String>),
+    Integers(Vec<IntPayloadType>),
 }
 
 /// Exact match of the given value
@@ -777,6 +790,13 @@ impl From<String> for MatchText {
     }
 }
 
+/// Exact match on any of the given values
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchAny {
+    pub any: AnyVariants,
+}
+
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -784,6 +804,7 @@ impl From<String> for MatchText {
 pub enum MatchInterface {
     Value(MatchValue),
     Text(MatchText),
+    Any(MatchAny),
 }
 
 /// Match filter request
@@ -793,6 +814,7 @@ pub enum MatchInterface {
 pub enum Match {
     Value(MatchValue),
     Text(MatchText),
+    Any(MatchAny),
 }
 
 impl From<MatchInterface> for Match {
@@ -800,6 +822,7 @@ impl From<MatchInterface> for Match {
         match value {
             MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
             MatchInterface::Text(text) => Self::Text(MatchText { text: text.text }),
+            MatchInterface::Any(any) => Self::Any(MatchAny { any: any.any }),
         }
     }
 }
@@ -824,6 +847,22 @@ impl From<IntPayloadType> for Match {
     fn from(integer: IntPayloadType) -> Self {
         Self::Value(MatchValue {
             value: ValueVariants::Integer(integer),
+        })
+    }
+}
+
+impl From<Vec<String>> for Match {
+    fn from(keywords: Vec<String>) -> Self {
+        Self::Any(MatchAny {
+            any: AnyVariants::Keywords(keywords),
+        })
+    }
+}
+
+impl From<Vec<IntPayloadType>> for Match {
+    fn from(integers: Vec<IntPayloadType>) -> Self {
+        Self::Any(MatchAny {
+            any: AnyVariants::Integers(integers),
         })
     }
 }
@@ -1279,7 +1318,7 @@ mod tests {
             should: None,
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
-        println!("{json}")
+        eprintln!("{json}")
     }
 
     #[test]
@@ -1341,6 +1380,117 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_match_any() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "key": "Jason",
+                    "match": {
+                        "any": [
+                            "Bourne",
+                            "Momoa",
+                            "Statham"
+                        ]
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        println!("{filter:?}");
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::Field(c)) => c,
+            _ => panic!("Condition::Field expected"),
+        };
+
+        assert_eq!(c.key.as_str(), "Jason");
+
+        let m = match c.r#match.as_ref().unwrap() {
+            Match::Any(m) => m,
+            _ => panic!("Match::Any expected"),
+        };
+        if let AnyVariants::Keywords(kws) = &m.any {
+            assert_eq!(kws.len(), 3);
+            assert_eq!(kws.to_owned(), vec!["Bourne", "Momoa", "Statham"]);
+        } else {
+            panic!("AnyVariants::Keywords expected");
+        }
+    }
+
+    #[test]
+    fn test_parse_match_any_mixed_types() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "key": "Jason",
+                    "match": {
+                        "any": [
+                            "Bourne",
+                            42
+                        ]
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let result: Result<Filter, _> = serde_json::from_str(query);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_nested_match_query() {
+        let query = r#"
+        {
+            "key": "hello.nested",
+            "match": { "value": 42 }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(42)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello.nested",
+            "match": { "value": true }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Bool(true)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello.nested",
+            "match": { "value": "world" }
+        }
+        "#;
+
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Keyword("world".to_owned())
+            })
+        );
+    }
+
+    #[test]
     fn test_payload_query_parse() {
         let query1 = r#"
         {
@@ -1376,7 +1526,7 @@ mod tests {
         "#;
 
         let filter: Filter = serde_json::from_str(query1).unwrap();
-        println!("{filter:?}");
+        eprintln!("{filter:?}");
         let must = filter.must.unwrap();
         let _must_not = filter.must_not;
         assert_eq!(must.len(), 2);
@@ -1390,6 +1540,32 @@ mod tests {
             }
             _ => panic!("Condition expected"),
         }
+    }
+
+    #[test]
+    fn test_nested_payload_query_parse() {
+        let query1 = r#"
+        {
+            "must": [
+                {
+                    "key": "hello.nested.world",
+                    "match": {
+                        "value": 42
+                    }
+                },
+                {
+                    "key": "foo.nested.bar",
+                    "match": {
+                        "value": 1
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query1).unwrap();
+        let must = filter.must.unwrap();
+        assert_eq!(must.len(), 2);
     }
 
     #[test]
@@ -1430,28 +1606,96 @@ mod tests {
                 "e": {
                     "f": [1,2,3],
                     "g": 7,
-                    "h": "text"
+                    "h": "text",
+                    "i": [
+                        {
+                            "j": 1,
+                            "k": 2
+
+                        },
+                        {
+                            "j": 3,
+                            "k": 4
+                        }
+                    ]
                 }
             }
         }
         "#,
         )
         .unwrap();
-        remove_value_from_json_map("b.c", &mut payload.0);
+        let removed = remove_value_from_json_map("b.c", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("b.e.f", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.f[1]", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Number(2.into())]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("k", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.i[0].j", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.i[].k", &mut payload.0).values();
+        assert_eq!(
+            removed,
+            vec![Value::Number(2.into()), Value::Number(4.into())]
+        );
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("b.e.l", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.i[]", &mut payload.0).values();
+        assert_eq!(
+            removed,
+            vec![Value::Array(vec![
+                Value::Object(serde_json::Map::from_iter(vec![])),
+                Value::Object(serde_json::Map::from_iter(vec![(
+                    "j".to_string(),
+                    Value::Number(3.into())
+                ),])),
+            ])]
+        );
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("a", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.i", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Array(vec![])]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("b.e", &mut payload.0);
+
+        let removed = remove_value_from_json_map("b.e.f", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Array(vec![1.into(), 3.into()])]);
         assert_ne!(payload, Default::default());
-        remove_value_from_json_map("b", &mut payload.0);
+
+        let removed = remove_value_from_json_map("k", &mut payload.0);
+        assert!(removed.is_empty());
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("", &mut payload.0);
+        assert!(removed.is_empty());
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b.e.l", &mut payload.0);
+        assert!(removed.is_empty());
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("a", &mut payload.0).values();
+        assert_eq!(removed, vec![Value::Number(1.into())]);
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b.e", &mut payload.0).values();
+        assert_eq!(
+            removed,
+            vec![Value::Object(serde_json::Map::from_iter(vec![
+                // ("f".to_string(), Value::Array(vec![1.into(), 2.into(), 3.into()])), has been removed
+                ("g".to_string(), Value::Number(7.into())),
+                ("h".to_string(), Value::String("text".to_owned())),
+            ]))]
+        );
+        assert_ne!(payload, Default::default());
+
+        let removed = remove_value_from_json_map("b", &mut payload.0).values();
+        assert_eq!(
+            removed,
+            vec![Value::Object(serde_json::Map::from_iter(vec![]))]
+        ); // empty object left
         assert_eq!(payload, Default::default());
     }
 
