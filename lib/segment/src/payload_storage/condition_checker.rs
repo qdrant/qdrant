@@ -95,6 +95,10 @@ impl ValueChecker for ValuesCount {
     fn check_match(&self, payload: &Value) -> bool {
         self.check_count(payload)
     }
+
+    fn check(&self, payload: &Value) -> bool {
+        self.check_count(payload)
+    }
 }
 
 #[cfg(test)]
@@ -134,5 +138,41 @@ mod tests {
 
         assert!(near_berlin_query.check(&berlin_and_moscow));
         assert!(!miss_geo_query.check(&berlin_and_moscow));
+    }
+
+    #[test]
+    fn test_value_count() {
+        let countries = json!([
+            {
+                "country": "Germany",
+            },
+            {
+                "country": "France",
+            }
+        ]);
+
+        let gt_one_country_query = ValuesCount {
+            lt: None,
+            gt: Some(1),
+            gte: None,
+            lte: None,
+        };
+        assert!(gt_one_country_query.check(&countries));
+
+        let gt_two_countries_query = ValuesCount {
+            lt: None,
+            gt: Some(2),
+            gte: None,
+            lte: None,
+        };
+        assert!(!gt_two_countries_query.check(&countries));
+
+        let gte_two_countries_query = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(2),
+            lte: None,
+        };
+        assert!(gte_two_countries_query.check(&countries));
     }
 }
