@@ -318,6 +318,11 @@ impl TableOfContent {
             Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
         };
 
+        let quantization_config = match quantization_config {
+            None => self.storage_config.quantization_config.clone(),
+            Some(diff) => Some(diff),
+        };
+
         let collection_config = CollectionConfig {
             wal_config,
             params: collection_params,

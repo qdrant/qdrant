@@ -49,6 +49,7 @@ mod tests {
                 max_optimization_threads: 1,
             },
             hnsw_index: Default::default(),
+            quantization_config: None,
             mmap_advice: madvise::Advice::Random,
             node_type: Default::default(),
         };
