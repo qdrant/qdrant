@@ -126,6 +126,7 @@ pub struct CreateCollection {
     /// Custom params for WAL. If none - values from service configuration file are used.
     pub wal_config: Option<WalConfigDiff>,
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
+    #[serde(alias = "optimizer_config")]
     pub optimizers_config: Option<OptimizersConfigDiff>,
     /// Specify other collection to copy data from.
     #[serde(default)]
@@ -169,6 +170,7 @@ impl CreateCollectionOperation {
 pub struct UpdateCollection {
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
     /// This operation is blocking, it will only proceed ones all current optimizations are complete
+    #[serde(alias = "optimizer_config")]
     pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
     /// Collection base params.  If none - values from service configuration file are used.
     pub params: Option<CollectionParamsDiff>,
