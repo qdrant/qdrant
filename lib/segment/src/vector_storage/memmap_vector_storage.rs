@@ -395,7 +395,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::types::ScalarU8Quantization;
+    use crate::types::ScalarQuantizationConfig;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 
     #[test]
@@ -565,10 +565,12 @@ mod tests {
                 .unwrap();
         }
 
-        let config = QuantizationConfig::ScalarU8(ScalarU8Quantization {
+        let config: QuantizationConfig = ScalarQuantizationConfig {
+            r#type: Default::default(),
             quantile: None,
             always_ram: None,
-        });
+        }
+        .into();
 
         let quantized_data_path = dir.path().join("quantized.data");
         let quantized_meta_path = dir.path().join("quantized.meta");

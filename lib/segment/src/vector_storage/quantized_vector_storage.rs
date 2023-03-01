@@ -9,7 +9,8 @@ use super::{RawScorer, ScoredPointOffset};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{
-    Distance, PointOffsetType, QuantizationConfig, ScalarU8Quantization, ScoreType,
+    Distance, PointOffsetType, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
+    ScoreType,
 };
 
 pub trait QuantizedVectors: Send + Sync {
@@ -103,7 +104,9 @@ pub fn create_quantized_vectors<'a>(
 ) -> OperationResult<Box<dyn QuantizedVectors>> {
     let vector_parameters = get_vector_parameters(distance, dim, count);
     let quantized_vectors = match quantization_config {
-        QuantizationConfig::ScalarU8(scalar_u8_config) => {
+        QuantizationConfig::Scalar(ScalarQuantization {
+            scalar: scalar_u8_config,
+        }) => {
             let is_ram = use_ram_quantization_storage(scalar_u8_config, on_disk_vector_storage);
             if is_ram {
                 create_quantized_vectors_ram(vectors, scalar_u8_config, &vector_parameters)?
@@ -132,7 +135,9 @@ pub fn load_quantized_vectors(
 ) -> OperationResult<Box<dyn QuantizedVectors>> {
     let vector_parameters = get_vector_parameters(distance, dim, count);
     match quantization_config {
-        QuantizationConfig::ScalarU8(scalar_u8_config) => {
+        QuantizationConfig::Scalar(ScalarQuantization {
+            scalar: scalar_u8_config,
+        }) => {
             let is_ram = use_ram_quantization_storage(scalar_u8_config, on_disk_vector_storage);
             if is_ram {
                 Ok(Box::new(quantization::EncodedVectorsU8::<
@@ -169,7 +174,7 @@ fn get_vector_parameters(
 }
 
 fn use_ram_quantization_storage(
-    config: &ScalarU8Quantization,
+    config: &ScalarQuantizationConfig,
     on_disk_vector_storage: bool,
 ) -> bool {
     !on_disk_vector_storage || config.always_ram == Some(true)
@@ -177,7 +182,7 @@ fn use_ram_quantization_storage(
 
 fn create_quantized_vectors_ram<'a>(
     vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
-    config: &ScalarU8Quantization,
+    config: &ScalarQuantizationConfig,
     vector_parameters: &quantization::VectorParameters,
 ) -> OperationResult<Box<dyn QuantizedVectors>> {
     let quantized_vector_size =
@@ -198,7 +203,7 @@ fn create_quantized_vectors_ram<'a>(
 
 fn create_quantized_vectors_mmap<'a>(
     vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
-    config: &ScalarU8Quantization,
+    config: &ScalarQuantizationConfig,
     vector_parameters: &quantization::VectorParameters,
     data_path: &Path,
 ) -> OperationResult<Box<dyn QuantizedVectors>> {

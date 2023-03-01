@@ -410,7 +410,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::types::ScalarU8Quantization;
+    use crate::types::ScalarQuantizationConfig;
 
     #[test]
     fn test_score_points() {
@@ -508,10 +508,12 @@ mod tests {
         borrowed_storage.put_vector(vec3).unwrap();
         borrowed_storage.put_vector(vec4).unwrap();
 
-        let config = QuantizationConfig::ScalarU8(ScalarU8Quantization {
+        let config: QuantizationConfig = ScalarQuantizationConfig {
+            r#type: Default::default(),
             quantile: None,
             always_ram: None,
-        });
+        }
+        .into();
         let quantized_meta_path = dir.path().join("quantized.meta");
         let quantized_data_path = dir.path().join("quantized.data");
 

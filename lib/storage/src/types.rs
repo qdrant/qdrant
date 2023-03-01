@@ -47,7 +47,7 @@ pub struct StorageConfig {
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
     pub hnsw_index: HnswConfig,
-    pub quantization_config: Option<QuantizationConfig>,
+    pub quantization: Option<QuantizationConfig>,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,
     #[serde(default)]

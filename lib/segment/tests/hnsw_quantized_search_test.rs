@@ -12,8 +12,8 @@ mod tests {
     use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Distance, HnswConfig, Indexes, QuantizationConfig, ScalarU8Quantization, SearchParams,
-        SegmentConfig, SeqNumberType, StorageType, VectorDataConfig,
+        Distance, HnswConfig, Indexes, ScalarQuantizationConfig, SearchParams, SegmentConfig,
+        SeqNumberType, StorageType, VectorDataConfig,
     };
     use segment::vector_storage::ScoredPointOffset;
     use tempfile::Builder;
@@ -74,10 +74,12 @@ mod tests {
                 .quantize(
                     &quantized_meta_path,
                     &quantized_data_path,
-                    &QuantizationConfig::ScalarU8(ScalarU8Quantization {
+                    &ScalarQuantizationConfig {
+                        r#type: Default::default(),
                         quantile: None,
                         always_ram: None,
-                    }),
+                    }
+                    .into(),
                 )
                 .unwrap();
             if !quantized_data_path.exists() || !quantized_meta_path.exists() {

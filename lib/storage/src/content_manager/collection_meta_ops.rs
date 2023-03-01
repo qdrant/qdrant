@@ -133,6 +133,7 @@ pub struct CreateCollection {
     pub init_from: Option<InitFrom>,
     /// Quantization parameters. If none - quantization is disabled.
     #[serde(default)]
+    #[serde(alias = "quantization")]
     pub quantization_config: Option<QuantizationConfig>,
 }
 
