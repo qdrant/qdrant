@@ -13,7 +13,7 @@ use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, JaccardMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
@@ -118,6 +118,14 @@ pub fn open_memmap_vector_storage(
         }))),
         Distance::Dot => Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage::<
             DotProductMetric,
+        > {
+            vectors_path,
+            deleted_path,
+            mmap_store: Some(mmap_store),
+            metric: PhantomData,
+        }))),
+        Distance::Jaccard => Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage::<
+            JaccardMetric,
         > {
             vectors_path,
             deleted_path,

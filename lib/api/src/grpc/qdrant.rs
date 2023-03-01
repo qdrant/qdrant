@@ -455,6 +455,7 @@ pub enum Distance {
     Cosine = 1,
     Euclid = 2,
     Dot = 3,
+	Jaccard = 4,
 }
 impl Distance {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -467,6 +468,7 @@ impl Distance {
             Distance::Cosine => "Cosine",
             Distance::Euclid => "Euclid",
             Distance::Dot => "Dot",
+			Distance::Jaccard => "Jaccard",
         }
     }
 }
