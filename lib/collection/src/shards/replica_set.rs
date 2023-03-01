@@ -54,11 +54,11 @@ const REPLICA_STATE_FILE: &str = "replica_state.json";
 //    │    Collection Created
 //    │
 //    ▼
-//  ┌─────────────┐
-//  │             │
-//  │ Initilizing │
-//  │             │
-//  └──────┬──────┘
+//  ┌──────────────┐
+//  │              │
+//  │ Initializing │
+//  │              │
+//  └──────┬───────┘
 //         │  Report created    ┌───────────┐
 //         └────────────────────►           │
 //             Activate         │ Consensus │
