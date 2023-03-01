@@ -449,6 +449,7 @@ mod tests {
 
     const M: usize = 8;
 
+    #[cfg(not(windows))]
     fn parallel_graph_build<TMetric: Metric + Sync + Send, R>(
         num_vectors: usize,
         dim: usize,
