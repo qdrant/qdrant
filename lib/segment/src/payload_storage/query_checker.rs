@@ -4,8 +4,10 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
+use crate::common::utils::JsonPathPayload;
 use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::ValueChecker;
+use crate::payload_storage::nested_query_checker::check_nested_filter;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{
@@ -87,6 +89,11 @@ where
             };
             has_id.has_id.contains(&external_id)
         }
+        Condition::Nested(nested) => {
+            let nested_filter = nested.filter();
+            let nested_path = JsonPathPayload::new(nested.array_key());
+            check_nested_filter(&nested_path, nested_filter, &get_payload)
+        }
         Condition::Filter(_) => unreachable!(),
     };
 
@@ -136,6 +143,7 @@ pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload
     res
 }
 
+/// Only used for testing
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,

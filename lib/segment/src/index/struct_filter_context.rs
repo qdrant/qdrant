@@ -29,6 +29,7 @@ impl<'a> StructFilterContext<'a> {
             payload_provider,
             estimator,
             total,
+            None,
         );
 
         Self { optimized_filter }

@@ -12,6 +12,7 @@ use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
+use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
@@ -112,6 +113,15 @@ impl PayloadIndex for PlainPayloadIndex {
             exp: available_points / 2,
             max: available_points,
         }
+    }
+
+    /// Forward to non nested implementation.
+    fn estimate_nested_cardinality(
+        &self,
+        query: &Filter,
+        _nested_path: &JsonPathPayload,
+    ) -> CardinalityEstimation {
+        self.estimate_cardinality(query)
     }
 
     fn query_points<'a>(

@@ -351,6 +351,7 @@ message Condition {
     HasIdCondition has_id = 3;
     Filter filter = 4;
     IsNullCondition is_null = 5;
+    NestedCondition nested = 6;
   }
 }
 
@@ -364,6 +365,11 @@ message IsNullCondition {
 
 message HasIdCondition {
   repeated PointId has_id = 1;
+}
+
+message NestedCondition {
+  string key = 1; // Path to nested object
+  Filter filter = 2; // Filter condition
 }
 
 message FieldCondition {

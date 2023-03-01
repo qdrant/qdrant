@@ -58,6 +58,7 @@ pub fn condition_converter<'a>(
             Box::new(move |point_id| segment_ids.contains(&point_id))
         }
         Condition::Filter(_) => unreachable!(),
+        Condition::Nested(_) => unreachable!(),
     }
 }
 
