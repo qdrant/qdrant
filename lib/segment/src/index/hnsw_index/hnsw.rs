@@ -233,6 +233,32 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .map(|vector| self.search_with_graph(vector, filter, top, params))
             .collect()
     }
+
+    fn search_vectors_plain(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: &Filter,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        let payload_index = self.payload_index.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let mut filtered_iter = payload_index.query_points(filter);
+        let ignore_quantization = params.map(|p| p.ignore_quantization).unwrap_or(false);
+        if ignore_quantization {
+            vectors
+                .iter()
+                .map(|vector| vector_storage.score_points(vector, filtered_iter.as_mut(), top))
+                .collect()
+        } else {
+            vectors
+                .iter()
+                .map(|vector| {
+                    vector_storage.score_quantized_points(vector, filtered_iter.as_mut(), top)
+                })
+                .collect()
+        }
+    }
 }
 
 impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
@@ -264,24 +290,24 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // - to retrieve possible points and score them after
                 // - to use HNSW index with filtering condition
 
-                let payload_index = self.payload_index.borrow();
-                let vector_storage = self.vector_storage.borrow();
-
-                let plain_search = || -> Vec<Vec<ScoredPointOffset>> {
-                    let mut filtered_iter = payload_index.query_points(query_filter);
-                    return vectors
-                        .iter()
-                        .map(|vector| {
-                            vector_storage.score_points(vector, filtered_iter.as_mut(), top)
-                        })
-                        .collect();
-                };
-
                 // if exact search is requested, we should not use HNSW index
                 if exact {
-                    return plain_search();
+                    let exact_params = params.map(|params| {
+                        let mut params = *params;
+                        params.ignore_quantization = true; // disable quantization for exact search
+                        params
+                    });
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.exact_filtered);
+                    return self.search_vectors_plain(
+                        vectors,
+                        query_filter,
+                        top,
+                        exact_params.as_ref(),
+                    );
                 }
 
+                let payload_index = self.payload_index.borrow();
                 let query_cardinality = payload_index.estimate_cardinality(query_filter);
 
                 // debug!("query_cardinality: {:#?}", query_cardinality);
@@ -290,7 +316,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    return plain_search();
+                    return self.search_vectors_plain(vectors, query_filter, top, params);
                 }
 
                 if query_cardinality.min > self.config.indexing_threshold {
@@ -304,6 +330,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
 
+                let vector_storage = self.vector_storage.borrow();
                 if sample_check_cardinality(
                     vector_storage.sample_ids(),
                     |idx| filter_context.check(idx),
@@ -318,7 +345,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    plain_search()
+                    self.search_vectors_plain(vectors, query_filter, top, params)
                 }
             }
         }

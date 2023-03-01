@@ -296,6 +296,26 @@ where
         }
     }
 
+    fn score_quantized_points(
+        &self,
+        vector: &[VectorElementType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        match self.quantized_raw_scorer(vector) {
+            Some(scorer) => {
+                let scores = points
+                    .filter(|idx| !self.deleted[*idx as usize])
+                    .map(|idx| {
+                        let score = scorer.score_point(idx);
+                        ScoredPointOffset { idx, score }
+                    });
+                peek_top_largest_iterable(scores, top)
+            }
+            None => self.score_points(vector, points, top),
+        }
+    }
+
     fn quantize(
         &mut self,
         meta_path: &Path,

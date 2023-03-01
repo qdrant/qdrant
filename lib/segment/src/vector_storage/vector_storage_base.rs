@@ -80,6 +80,13 @@ pub trait VectorStorage {
     // Generate RawScorer on quantized vectors if present
     fn quantized_raw_scorer(&self, vector: &[VectorElementType])
         -> Option<Box<dyn RawScorer + '_>>;
+    // Try peek top nearest points from quantized vectors. If quantized vectors are not present, do it on raw vectors
+    fn score_quantized_points(
+        &self,
+        vector: &[VectorElementType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset>;
     // Generate quantized vectors and store them on disk
     fn quantize(
         &mut self,
