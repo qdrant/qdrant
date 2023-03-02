@@ -14,9 +14,7 @@ use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::madvise;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
-use crate::vector_storage::quantized::quantized_vectors_base::{
-    create_quantized_vectors, load_quantized_vectors, QuantizedVectors,
-};
+use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";
@@ -30,7 +28,7 @@ pub struct MmapVectors {
     deleted_flags_mmap: Arc<RwLock<MmapMut>>,
     pub deleted_count: usize,
     pub deleted_flags: Option<BitVec>,
-    pub quantized_vectors: Option<Box<dyn QuantizedVectors>>,
+    pub quantized_vectors: Option<QuantizedVectorsStorage>,
 }
 
 fn open_read(path: &Path) -> OperationResult<Mmap> {
@@ -113,7 +111,7 @@ impl MmapVectors {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
             self.raw_vector_offset(offset)
         });
-        self.quantized_vectors = Some(create_quantized_vectors(
+        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
             vector_data_iterator,
             quantization_config,
             distance,
@@ -125,20 +123,11 @@ impl MmapVectors {
         Ok(())
     }
 
-    pub fn load_quantization(
-        &mut self,
-        data_path: &Path,
-        distance: Distance,
-    ) -> OperationResult<()> {
-        self.init_deleted_flags();
-        self.quantized_vectors = Some(load_quantized_vectors(
-            quantization_config,
-            distance,
-            self.dim,
-            self.num_vectors,
-            data_path,
-            true,
-        )?);
+    pub fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
+        if QuantizedVectorsStorage::check_exists(data_path) {
+            self.init_deleted_flags();
+            self.quantized_vectors = Some(QuantizedVectorsStorage::load(data_path, true)?);
+        }
         Ok(())
     }
 

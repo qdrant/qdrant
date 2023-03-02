@@ -18,6 +18,7 @@ use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
+use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
@@ -308,7 +309,7 @@ where
 
     fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.load_quantization(data_path, TMetric::distance())
+        mmap_store.load_quantization(data_path)
     }
 
     fn score_points(

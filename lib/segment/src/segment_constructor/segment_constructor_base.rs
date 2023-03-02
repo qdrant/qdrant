@@ -108,15 +108,13 @@ fn create_segment(
             )?,
         };
 
-        if let Some(quantization_config) = &config.quantization_config {
+        if config.quantization_config.is_some() {
             let quantized_data_path = vector_storage_path;
-            if quantized_meta_path.exists() && quantized_data_path.exists() {
-                vector_storage.borrow_mut().load_quantization(
-                    &quantized_meta_path,
-                    &quantized_data_path,
-                    quantization_config,
-                )?;
-            }
+            // Try to load quantization data from disk, if exists
+            // If not exists or it's a new segment, just ignore it
+            vector_storage
+                .borrow_mut()
+                .load_quantization(&quantized_data_path)?;
         }
 
         let vector_index: Arc<AtomicRefCell<VectorIndexSS>> = match config.index {

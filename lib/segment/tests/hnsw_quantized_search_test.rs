@@ -29,8 +29,7 @@ mod tests {
     fn hnsw_quantized_search_test(distance: Distance) {
         let stopped = AtomicBool::new(false);
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let quantized_meta_path = dir.path().join("quantized.meta");
-        let quantized_data_path = dir.path().join("quantized.data");
+        let quantized_data_path = dir.path();
 
         let dim = 128;
         let m = 16;
@@ -72,7 +71,6 @@ mod tests {
                 .vector_storage
                 .borrow_mut()
                 .quantize(
-                    &quantized_meta_path,
                     &quantized_data_path,
                     &ScalarQuantizationConfig {
                         r#type: Default::default(),

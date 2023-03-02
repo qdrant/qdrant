@@ -23,7 +23,7 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::quantized::quantized_vectors_base::{
-    create_quantized_vectors, load_quantized_vectors, QuantizedVectors,
+    QuantizedVectors, QuantizedVectorsStorage,
 };
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
@@ -34,7 +34,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     vectors: ChunkedVectors<VectorElementType>,
     deleted: BitVec,
     deleted_count: usize,
-    quantized_vectors: Option<Box<dyn QuantizedVectors>>,
+    quantized_vectors: Option<QuantizedVectorsStorage>,
     db_wrapper: DatabaseColumnWrapper,
 }
 
@@ -319,39 +319,26 @@ where
 
     fn quantize(
         &mut self,
-        meta_path: &Path,
-        data_path: &Path,
+        path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
-        self.quantized_vectors = Some(create_quantized_vectors(
+        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
             vector_data_iterator,
             quantization_config,
             TMetric::distance(),
             self.dim,
             self.vectors.len(),
-            meta_path,
-            data_path,
+            path,
             false,
         )?);
         Ok(())
     }
 
-    fn load_quantization(
-        &mut self,
-        meta_path: &Path,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-    ) -> OperationResult<()> {
-        self.quantized_vectors = Some(load_quantized_vectors(
-            quantization_config,
-            TMetric::distance(),
-            self.dim,
-            self.vectors.len(),
-            meta_path,
-            data_path,
-            false,
-        )?);
+    fn load_quantization(&mut self, path: &Path) -> OperationResult<()> {
+        if QuantizedVectorsStorage::check_exists(path) {
+            self.quantized_vectors = Some(QuantizedVectorsStorage::load(path, false)?);
+        }
         Ok(())
     }
 
@@ -401,10 +388,7 @@ where
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        if self.quantized_vectors.is_some() {
-        } else {
-            vec![]
-        }
+        todo!()
     }
 }
 

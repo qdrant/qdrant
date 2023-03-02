@@ -1,14 +1,12 @@
 use std::path::Path;
 
 use memmap2::{Mmap, MmapMut};
+use quantization::EncodedVectors;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::madvise;
 use crate::types::ScalarQuantizationConfig;
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
-use crate::vector_storage::quantized::scalar_quantized::{
-    ScalarQuantizedVectors, ScalarQuantizedVectorsConfig,
-};
+use crate::vector_storage::quantized::scalar_quantized::{QUANTIZED_DATA_PATH, QUANTIZED_META_PATH, ScalarQuantizedVectors};
 
 pub struct QuantizedMmapStorage {
     mmap: Mmap,
@@ -98,7 +96,7 @@ pub fn create_scalar_quantized_vectors_mmap<'a>(
     config: &ScalarQuantizationConfig,
     vector_parameters: &quantization::VectorParameters,
     data_path: &Path,
-) -> OperationResult<Box<dyn QuantizedVectors>> {
+) -> OperationResult<ScalarQuantizedVectors<QuantizedMmapStorage>> {
     let quantized_vector_size =
         quantization::EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
             vector_parameters,
@@ -116,13 +114,21 @@ pub fn create_scalar_quantized_vectors_mmap<'a>(
     )
     .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
 
-    let quantized_vectors_config = ScalarQuantizedVectorsConfig {
-        quantization_config: config.clone(),
-        vector_parameters: vector_parameters.clone(),
-    };
+    Ok(ScalarQuantizedVectors::new(quantized_vectors))
+}
 
-    Ok(Box::new(ScalarQuantizedVectors::new(
-        quantized_vectors,
-        quantized_vectors_config,
-    )))
+pub fn load_scalar_quantized_vectors_mmap(
+    path: &Path,
+    vector_parameters: &quantization::VectorParameters,
+) -> OperationResult<ScalarQuantizedVectors<QuantizedMmapStorage>> {
+    let data_path = path.join(QUANTIZED_DATA_PATH);
+    let meta_path = path.join(QUANTIZED_META_PATH);
+
+    let storage = quantization::EncodedVectorsU8::<QuantizedMmapStorage>::load(
+        &data_path,
+        &meta_path,
+        vector_parameters,
+    )?;
+
+    Ok(ScalarQuantizedVectors::new(storage))
 }
