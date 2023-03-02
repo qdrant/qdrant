@@ -13,7 +13,6 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
-use super::quantized_vector_storage::{load_quantized_vectors, QuantizedVectors};
 use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -23,7 +22,9 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
-use crate::vector_storage::quantized_vector_storage::create_quantized_vectors;
+use crate::vector_storage::quantized::quantized_vectors_base::{
+    create_quantized_vectors, load_quantized_vectors, QuantizedVectors,
+};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
 /// In-memory vector storage with on-update persistence using `store`
@@ -400,7 +401,10 @@ where
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        vec![]
+        if self.quantized_vectors.is_some() {
+        } else {
+            vec![]
+        }
     }
 }
 

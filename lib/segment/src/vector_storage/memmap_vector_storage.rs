@@ -259,7 +259,7 @@ where
     ) -> Option<Box<dyn RawScorer + '_>> {
         let mmap_store = self.mmap_store.as_ref().unwrap();
         if let Some(quantized_data) = &mmap_store.quantized_vectors {
-            if let Some(deleted_ram) = &mmap_store.deleted_ram {
+            if let Some(deleted_ram) = &mmap_store.deleted_flags {
                 let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
                 Some(quantized_data.raw_scorer(&query, deleted_ram))
             } else {
@@ -299,32 +299,16 @@ where
 
     fn quantize(
         &mut self,
-        meta_path: &Path,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.quantize(
-            TMetric::distance(),
-            meta_path,
-            data_path,
-            quantization_config,
-        )
+        mmap_store.quantize(TMetric::distance(), data_path, quantization_config)
     }
 
-    fn load_quantization(
-        &mut self,
-        meta_path: &Path,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-    ) -> OperationResult<()> {
+    fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.load_quantization(
-            meta_path,
-            data_path,
-            TMetric::distance(),
-            quantization_config,
-        )
+        mmap_store.load_quantization(data_path, TMetric::distance())
     }
 
     fn score_points(
@@ -572,11 +556,7 @@ mod tests {
         }
         .into();
 
-        let quantized_data_path = dir.path().join("quantized.data");
-        let quantized_meta_path = dir.path().join("quantized.meta");
-        borrowed_storage
-            .quantize(&quantized_meta_path, &quantized_data_path, &config)
-            .unwrap();
+        borrowed_storage.quantize(dir.path(), &config).unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
