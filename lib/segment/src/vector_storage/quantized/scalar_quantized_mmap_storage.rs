@@ -6,7 +6,9 @@ use quantization::EncodedVectors;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::madvise;
 use crate::types::ScalarQuantizationConfig;
-use crate::vector_storage::quantized::scalar_quantized::{QUANTIZED_DATA_PATH, QUANTIZED_META_PATH, ScalarQuantizedVectors};
+use crate::vector_storage::quantized::scalar_quantized::{
+    ScalarQuantizedVectors, QUANTIZED_DATA_PATH, QUANTIZED_META_PATH,
+};
 
 pub struct QuantizedMmapStorage {
     mmap: Mmap,

@@ -5,7 +5,9 @@ use quantization::EncodedVectors;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::ScalarQuantizationConfig;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::quantized::scalar_quantized::{ScalarQuantizedVectors, QUANTIZED_DATA_PATH, QUANTIZED_META_PATH};
+use crate::vector_storage::quantized::scalar_quantized::{
+    ScalarQuantizedVectors, QUANTIZED_DATA_PATH, QUANTIZED_META_PATH,
+};
 
 pub fn create_scalar_quantized_vectors_ram<'a>(
     vectors: impl IntoIterator<Item = &'a [f32]> + Clone,

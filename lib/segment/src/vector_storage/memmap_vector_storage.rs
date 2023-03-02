@@ -17,8 +17,8 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
