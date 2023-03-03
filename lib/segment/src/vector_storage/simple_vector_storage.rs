@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ops::Range;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -20,16 +21,20 @@ use crate::entry::entry_point::{check_process_stopped, OperationError, Operation
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType};
+use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
+use crate::vector_storage::quantized::quantized_vectors_base::{
+    QuantizedVectors, QuantizedVectorsStorage,
+};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage<TMetric: Metric> {
     dim: usize,
     metric: PhantomData<TMetric>,
-    vectors: ChunkedVectors,
+    vectors: ChunkedVectors<VectorElementType>,
     deleted: BitVec,
     deleted_count: usize,
+    quantized_vectors: Option<QuantizedVectorsStorage>,
     db_wrapper: DatabaseColumnWrapper,
 }
 
@@ -41,7 +46,7 @@ struct StoredRecord {
 
 pub struct SimpleRawScorer<'a, TMetric: Metric> {
     pub query: Vec<VectorElementType>,
-    pub vectors: &'a ChunkedVectors,
+    pub vectors: &'a ChunkedVectors<VectorElementType>,
     pub deleted: &'a BitVec,
     pub metric: PhantomData<TMetric>,
 }
@@ -129,6 +134,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
+            quantized_vectors: None,
             db_wrapper,
         }))),
         Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
@@ -139,6 +145,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
+            quantized_vectors: None,
             db_wrapper,
         }))),
         Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
@@ -149,6 +156,7 @@ pub fn open_simple_vector_storage(
             vectors,
             deleted,
             deleted_count,
+            quantized_vectors: None,
             db_wrapper,
         }))),
     }
@@ -277,6 +285,63 @@ where
         })
     }
 
+    fn quantized_raw_scorer(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Box<dyn RawScorer + '_>> {
+        if let Some(quantized_data) = &self.quantized_vectors {
+            let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
+            Some(quantized_data.raw_scorer(&query, &self.deleted))
+        } else {
+            None
+        }
+    }
+
+    fn score_quantized_points(
+        &self,
+        vector: &[VectorElementType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        match self.quantized_raw_scorer(vector) {
+            Some(scorer) => {
+                let scores = points
+                    .filter(|idx| !self.deleted[*idx as usize])
+                    .map(|idx| {
+                        let score = scorer.score_point(idx);
+                        ScoredPointOffset { idx, score }
+                    });
+                peek_top_largest_iterable(scores, top)
+            }
+            None => self.score_points(vector, points, top),
+        }
+    }
+
+    fn quantize(
+        &mut self,
+        path: &Path,
+        quantization_config: &QuantizationConfig,
+    ) -> OperationResult<()> {
+        let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
+        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
+            vector_data_iterator,
+            quantization_config,
+            TMetric::distance(),
+            self.dim,
+            self.vectors.len(),
+            path,
+            false,
+        )?);
+        Ok(())
+    }
+
+    fn load_quantization(&mut self, path: &Path) -> OperationResult<()> {
+        if QuantizedVectorsStorage::check_exists(path) {
+            self.quantized_vectors = Some(QuantizedVectorsStorage::load(path, false)?);
+        }
+        Ok(())
+    }
+
     fn score_points(
         &self,
         vector: &[VectorElementType],
@@ -323,7 +388,11 @@ where
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        vec![]
+        if let Some(quantized_vectors) = &self.quantized_vectors {
+            quantized_vectors.files()
+        } else {
+            vec![]
+        }
     }
 }
 
@@ -333,6 +402,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::types::ScalarQuantizationConfig;
 
     #[test]
     fn test_score_points() {
@@ -407,5 +477,67 @@ mod tests {
         assert_eq!(all_ids1, all_ids2);
 
         assert!(!all_ids1.contains(&top_idx))
+    }
+
+    #[test]
+    fn test_score_quantized_points() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let distance = Distance::Dot;
+        let dim = 4;
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, distance).unwrap();
+        let mut borrowed_storage = storage.borrow_mut();
+
+        let vec0 = vec![1.0, 0.0, 1.0, 1.0];
+        let vec1 = vec![1.0, 0.0, 1.0, 0.0];
+        let vec2 = vec![1.0, 1.0, 1.0, 1.0];
+        let vec3 = vec![1.0, 1.0, 0.0, 1.0];
+        let vec4 = vec![1.0, 0.0, 0.0, 0.0];
+
+        borrowed_storage.put_vector(vec0).unwrap();
+        borrowed_storage.put_vector(vec1).unwrap();
+        borrowed_storage.put_vector(vec2).unwrap();
+        borrowed_storage.put_vector(vec3).unwrap();
+        borrowed_storage.put_vector(vec4).unwrap();
+
+        let config: QuantizationConfig = ScalarQuantizationConfig {
+            r#type: Default::default(),
+            quantile: None,
+            always_ram: None,
+        }
+        .into();
+
+        borrowed_storage.quantize(dir.path(), &config).unwrap();
+
+        let query = vec![0.5, 0.5, 0.5, 0.5];
+
+        {
+            let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+            let scorer_orig = borrowed_storage.raw_scorer(query.clone());
+            for i in 0..5 {
+                let quant = scorer_quant.score_point(i);
+                let orig = scorer_orig.score_point(i);
+                assert!((orig - quant).abs() < 0.15);
+
+                let quant = scorer_quant.score_internal(0, i);
+                let orig = scorer_orig.score_internal(0, i);
+                assert!((orig - quant).abs() < 0.15);
+            }
+        }
+
+        // test save-load
+        borrowed_storage.load_quantization(dir.path()).unwrap();
+
+        let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+        let scorer_orig = borrowed_storage.raw_scorer(query.clone());
+        for i in 0..5 {
+            let quant = scorer_quant.score_point(i);
+            let orig = scorer_orig.score_point(i);
+            assert!((orig - quant).abs() < 0.15);
+
+            let quant = scorer_quant.score_internal(0, i);
+            let orig = scorer_orig.score_internal(0, i);
+            assert!((orig - quant).abs() < 0.15);
+        }
     }
 }

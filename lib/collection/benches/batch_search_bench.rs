@@ -84,6 +84,7 @@ fn batch_search_bench(c: &mut Criterion) {
         },
         wal_config,
         hnsw_config: Default::default(),
+        quantization_config: Default::default(),
     };
 
     let shared_config = Arc::new(RwLock::new(collection_config));

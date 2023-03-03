@@ -156,7 +156,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     check_process_stopped(stopped)?;
 
                     let vector = vector_storage.get_vector(block_point_id).unwrap();
-                    let raw_scorer = vector_storage.raw_scorer(vector);
+                    let raw_scorer = if let Some(quantized_raw_scorer) =
+                        vector_storage.quantized_raw_scorer(&vector)
+                    {
+                        quantized_raw_scorer
+                    } else {
+                        vector_storage.raw_scorer(vector.to_owned())
+                    };
                     let block_condition_checker = BuildConditionChecker {
                         filter_list: block_filter_list,
                         current_point: block_point_id,
@@ -185,7 +191,14 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let ef = max(req_ef, top);
 
         let vector_storage = self.vector_storage.borrow();
-        let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
+        let ignore_quantization = params.map(|p| p.ignore_quantization).unwrap_or(false);
+        let (raw_scorer, quantized) = if ignore_quantization {
+            (vector_storage.raw_scorer(vector.to_owned()), false)
+        } else if let Some(quantized_raw_scorer) = vector_storage.quantized_raw_scorer(vector) {
+            (quantized_raw_scorer, true)
+        } else {
+            (vector_storage.raw_scorer(vector.to_owned()), false)
+        };
         let payload_index = self.payload_index.borrow();
 
         let filter_context = filter.map(|f| payload_index.filter_context(f));
@@ -193,7 +206,16 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
         if let Some(graph) = &self.graph {
-            graph.search(top, ef, points_scorer)
+            let mut search_result = graph.search(top, ef, points_scorer);
+            if quantized {
+                let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
+                search_result.iter_mut().for_each(|scored_point| {
+                    scored_point.score = raw_scorer.score_point(scored_point.idx);
+                });
+                search_result
+            } else {
+                search_result
+            }
         } else {
             Vec::new()
         }
@@ -210,6 +232,32 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .iter()
             .map(|vector| self.search_with_graph(vector, filter, top, params))
             .collect()
+    }
+
+    fn search_vectors_plain(
+        &self,
+        vectors: &[&[VectorElementType]],
+        filter: &Filter,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        let payload_index = self.payload_index.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let mut filtered_iter = payload_index.query_points(filter);
+        let ignore_quantization = params.map(|p| p.ignore_quantization).unwrap_or(false);
+        if ignore_quantization {
+            vectors
+                .iter()
+                .map(|vector| vector_storage.score_points(vector, filtered_iter.as_mut(), top))
+                .collect()
+        } else {
+            vectors
+                .iter()
+                .map(|vector| {
+                    vector_storage.score_quantized_points(vector, filtered_iter.as_mut(), top)
+                })
+                .collect()
+        }
     }
 }
 
@@ -242,24 +290,24 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // - to retrieve possible points and score them after
                 // - to use HNSW index with filtering condition
 
-                let payload_index = self.payload_index.borrow();
-                let vector_storage = self.vector_storage.borrow();
-
-                let plain_search = || -> Vec<Vec<ScoredPointOffset>> {
-                    let mut filtered_iter = payload_index.query_points(query_filter);
-                    return vectors
-                        .iter()
-                        .map(|vector| {
-                            vector_storage.score_points(vector, filtered_iter.as_mut(), top)
-                        })
-                        .collect();
-                };
-
                 // if exact search is requested, we should not use HNSW index
                 if exact {
-                    return plain_search();
+                    let exact_params = params.map(|params| {
+                        let mut params = *params;
+                        params.ignore_quantization = true; // disable quantization for exact search
+                        params
+                    });
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.exact_filtered);
+                    return self.search_vectors_plain(
+                        vectors,
+                        query_filter,
+                        top,
+                        exact_params.as_ref(),
+                    );
                 }
 
+                let payload_index = self.payload_index.borrow();
                 let query_cardinality = payload_index.estimate_cardinality(query_filter);
 
                 // debug!("query_cardinality: {:#?}", query_cardinality);
@@ -268,7 +316,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    return plain_search();
+                    return self.search_vectors_plain(vectors, query_filter, top, params);
                 }
 
                 if query_cardinality.min > self.config.indexing_threshold {
@@ -282,6 +330,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
 
+                let vector_storage = self.vector_storage.borrow();
                 if sample_check_cardinality(
                     vector_storage.sample_ids(),
                     |idx| filter_context.check(idx),
@@ -296,7 +345,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    plain_search()
+                    self.search_vectors_plain(vectors, query_filter, top, params)
                 }
             }
         }
@@ -337,7 +386,13 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 ids.into_par_iter().try_for_each(|vector_id| {
                     check_process_stopped(stopped)?;
                     let vector = vector_storage.get_vector(vector_id).unwrap();
-                    let raw_scorer = vector_storage.raw_scorer(vector);
+                    let raw_scorer = if let Some(quantized_raw_scorer) =
+                        vector_storage.quantized_raw_scorer(&vector)
+                    {
+                        quantized_raw_scorer
+                    } else {
+                        vector_storage.raw_scorer(vector)
+                    };
                     let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
                     graph_layers_builder.link_new_point(vector_id, points_scorer);

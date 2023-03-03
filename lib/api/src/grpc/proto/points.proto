@@ -169,6 +169,11 @@ message SearchParams {
   Search without approximation. If set to true, search may run long but with exact results.
   */
   optional bool exact = 2;
+
+  /*
+  If set to true, search will ignore quantized vector data 
+  */
+  optional bool ignore_quantization = 3;
 }
 
 message SearchPoints {

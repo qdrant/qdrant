@@ -1497,6 +1497,7 @@ mod tests {
             optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
             wal_config,
             hnsw_config: Default::default(),
+            quantization_config: None,
         };
 
         let shared_config = Arc::new(RwLock::new(config.clone()));

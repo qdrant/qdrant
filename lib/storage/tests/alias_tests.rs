@@ -49,6 +49,7 @@ mod tests {
                 max_optimization_threads: 1,
             },
             hnsw_index: Default::default(),
+            quantization: None,
             mmap_advice: madvise::Advice::Random,
             node_type: Default::default(),
         };
@@ -93,6 +94,7 @@ mod tests {
                             replication_factor: None,
                             write_consistency_factor: None,
                             init_from: None,
+                            quantization_config: None,
                         },
                     )),
                     None,

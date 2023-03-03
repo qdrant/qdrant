@@ -254,7 +254,7 @@ pub struct SegmentInfo {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
@@ -264,6 +264,10 @@ pub struct SearchParams {
     /// Search without approximation. If set to true, search may run long but with exact results.
     #[serde(default)]
     pub exact: bool,
+
+    /// If set to true, search will ignore quantized vector data
+    #[serde(default)]
+    pub ignore_quantization: bool,
 }
 
 /// Vector index configuration of the segment
@@ -308,6 +312,62 @@ pub struct HnswConfig {
 
 fn default_max_indexing_threads() -> usize {
     0
+}
+
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum ScalarType {
+    #[default]
+    Int8,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ScalarQuantizationConfig {
+    /// Type of quantization to use
+    /// If `int8` - 8 bit quantization will be used
+    pub r#type: ScalarType,
+    /// Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantile: Option<f32>,
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+pub struct ScalarQuantization {
+    pub scalar: ScalarQuantizationConfig,
+}
+
+impl PartialEq for ScalarQuantizationConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.quantile == other.quantile
+            && self.always_ram == other.always_ram
+            && self.r#type == other.r#type
+    }
+}
+
+impl std::hash::Hash for ScalarQuantizationConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.always_ram.hash(state);
+        self.r#type.hash(state);
+    }
+}
+
+impl Eq for ScalarQuantizationConfig {}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum QuantizationConfig {
+    Scalar(ScalarQuantization),
+}
+
+impl From<ScalarQuantizationConfig> for QuantizationConfig {
+    fn from(config: ScalarQuantizationConfig) -> Self {
+        QuantizationConfig::Scalar(ScalarQuantization { scalar: config })
+    }
 }
 
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
@@ -388,7 +448,7 @@ impl Default for PayloadStorageType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_data: HashMap<String, VectorDataConfig>,
@@ -399,6 +459,9 @@ pub struct SegmentConfig {
     /// Defines payload storage type
     #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
+    /// Quantization parameters. If none - quantization is disabled.
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Config of single vector data storage

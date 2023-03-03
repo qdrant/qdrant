@@ -23,7 +23,7 @@ impl FilterContext for FakeFilterContext {
 }
 
 pub struct TestRawScorerProducer<TMetric: Metric> {
-    pub vectors: ChunkedVectors,
+    pub vectors: ChunkedVectors<VectorElementType>,
     pub deleted: BitVec,
     pub metric: PhantomData<TMetric>,
 }

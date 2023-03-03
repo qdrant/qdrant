@@ -255,6 +255,7 @@ impl TableOfContent {
             replication_factor,
             write_consistency_factor,
             init_from,
+            quantization_config,
         } = operation;
 
         self.collections
@@ -317,11 +318,17 @@ impl TableOfContent {
             Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
         };
 
+        let quantization_config = match quantization_config {
+            None => self.storage_config.quantization.clone(),
+            Some(diff) => Some(diff),
+        };
+
         let collection_config = CollectionConfig {
             wal_config,
             params: collection_params,
             optimizer_config: optimizers_config,
             hnsw_config,
+            quantization_config,
         };
         let collection = Collection::new(
             collection_name.to_string(),

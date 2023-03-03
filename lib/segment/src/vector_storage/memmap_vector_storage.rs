@@ -15,8 +15,9 @@ use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType};
+use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
+use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
@@ -253,6 +254,64 @@ where
         })
     }
 
+    fn quantized_raw_scorer(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Box<dyn RawScorer + '_>> {
+        let mmap_store = self.mmap_store.as_ref().unwrap();
+        if let Some(quantized_data) = &mmap_store.quantized_vectors {
+            if let Some(deleted_ram) = &mmap_store.deleted_flags {
+                let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
+                Some(quantized_data.raw_scorer(&query, deleted_ram))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    fn score_quantized_points(
+        &self,
+        vector: &[VectorElementType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        match self.quantized_raw_scorer(vector) {
+            Some(scorer) => {
+                let scores = points
+                    .filter(|idx| {
+                        !self
+                            .mmap_store
+                            .as_ref()
+                            .unwrap()
+                            .deleted(*idx)
+                            .unwrap_or(true)
+                    })
+                    .map(|idx| {
+                        let score = scorer.score_point(idx);
+                        ScoredPointOffset { idx, score }
+                    });
+                peek_top_largest_iterable(scores, top)
+            }
+            None => self.score_points(vector, points, top),
+        }
+    }
+
+    fn quantize(
+        &mut self,
+        data_path: &Path,
+        quantization_config: &QuantizationConfig,
+    ) -> OperationResult<()> {
+        let mmap_store = self.mmap_store.as_mut().unwrap();
+        mmap_store.quantize(TMetric::distance(), data_path, quantization_config)
+    }
+
+    fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
+        let mmap_store = self.mmap_store.as_mut().unwrap();
+        mmap_store.load_quantization(data_path)
+    }
+
     fn score_points(
         &self,
         vector: &[VectorElementType],
@@ -309,7 +368,13 @@ where
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![self.vectors_path.clone(), self.deleted_path.clone()]
+        let mut files = vec![self.vectors_path.clone(), self.deleted_path.clone()];
+        if let Some(Some(quantized_vectors)) =
+            &self.mmap_store.as_ref().map(|x| &x.quantized_vectors)
+        {
+            files.extend(quantized_vectors.files())
+        }
+        files
     }
 }
 
@@ -321,6 +386,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::types::ScalarQuantizationConfig;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 
     #[test]
@@ -457,6 +523,78 @@ mod tests {
 
         for (idx, element) in slice.iter().enumerate() {
             println!("slice[{idx}]  = {element:?}");
+        }
+    }
+
+    #[test]
+    fn test_mmap_quantization() {
+        let dist = Distance::Dot;
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
+        let mut borrowed_storage = storage.borrow_mut();
+
+        let vec1 = vec![1.0, 0.0, 1.0, 1.0];
+        let vec2 = vec![1.0, 0.0, 1.0, 0.0];
+        let vec3 = vec![1.0, 1.0, 1.0, 1.0];
+        let vec4 = vec![1.0, 1.0, 0.0, 1.0];
+        let vec5 = vec![1.0, 0.0, 0.0, 0.0];
+
+        {
+            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
+            {
+                let mut borrowed_storage2 = storage2.borrow_mut();
+                borrowed_storage2.put_vector(vec1).unwrap();
+                borrowed_storage2.put_vector(vec2).unwrap();
+                borrowed_storage2.put_vector(vec3).unwrap();
+                borrowed_storage2.put_vector(vec4).unwrap();
+                borrowed_storage2.put_vector(vec5).unwrap();
+            }
+            borrowed_storage
+                .update_from(&*storage2.borrow(), &Default::default())
+                .unwrap();
+        }
+
+        let config: QuantizationConfig = ScalarQuantizationConfig {
+            r#type: Default::default(),
+            quantile: None,
+            always_ram: None,
+        }
+        .into();
+
+        borrowed_storage.quantize(dir.path(), &config).unwrap();
+
+        let query = vec![0.5, 0.5, 0.5, 0.5];
+
+        {
+            let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+            let scorer_orig = borrowed_storage.raw_scorer(query.clone());
+            for i in 0..5 {
+                let quant = scorer_quant.score_point(i);
+                let orig = scorer_orig.score_point(i);
+                assert!((orig - quant).abs() < 0.15);
+
+                let quant = scorer_quant.score_internal(0, i);
+                let orig = scorer_orig.score_internal(0, i);
+                assert!((orig - quant).abs() < 0.15);
+            }
+        }
+
+        // test save-load
+        borrowed_storage.load_quantization(dir.path()).unwrap();
+
+        let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+        let scorer_orig = borrowed_storage.raw_scorer(query);
+
+        for i in 0..5 {
+            let quant = scorer_quant.score_point(i);
+            let orig = scorer_orig.score_point(i);
+            assert!((orig - quant).abs() < 0.15);
+
+            let quant = scorer_quant.score_internal(0, i);
+            let orig = scorer_orig.score_internal(0, i);
+            assert!((orig - quant).abs() < 0.15);
         }
     }
 }
