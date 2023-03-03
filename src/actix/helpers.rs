@@ -38,8 +38,14 @@ where
             let mut resp = match err {
                 StorageError::BadInput { .. } => HttpResponse::BadRequest(),
                 StorageError::NotFound { .. } => HttpResponse::NotFound(),
-                StorageError::ServiceError { .. } => {
-                    log::warn!("error processing request: {}", err);
+                StorageError::ServiceError {
+                    description,
+                    backtrace,
+                } => {
+                    log::warn!("error processing request: {}", description);
+                    if let Some(backtrace) = backtrace {
+                        log::warn!("backtrace: {}", backtrace);
+                    }
                     HttpResponse::InternalServerError()
                 }
                 StorageError::BadRequest { .. } => HttpResponse::BadRequest(),

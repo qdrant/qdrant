@@ -35,8 +35,6 @@ use crate::vector_storage::VectorStorageSS;
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
 pub const VECTOR_STORAGE_PATH: &str = "vector_storage";
 pub const VECTOR_INDEX_PATH: &str = "vector_index";
-pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
-pub const QUANTIZED_META_PATH: &str = "quantized.meta";
 
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
     Arc::new(AtomicRefCell::new(t))
@@ -110,16 +108,13 @@ fn create_segment(
             )?,
         };
 
-        if let Some(quantization_config) = &config.quantization_config {
-            let quantized_meta_path = vector_storage_path.join(QUANTIZED_META_PATH);
-            let quantized_data_path = vector_storage_path.join(QUANTIZED_DATA_PATH);
-            if quantized_meta_path.exists() && quantized_data_path.exists() {
-                vector_storage.borrow_mut().load_quantization(
-                    &quantized_meta_path,
-                    &quantized_data_path,
-                    quantization_config,
-                )?;
-            }
+        if config.quantization_config.is_some() {
+            let quantized_data_path = vector_storage_path;
+            // Try to load quantization data from disk, if exists
+            // If not exists or it's a new segment, just ignore it
+            vector_storage
+                .borrow_mut()
+                .load_quantization(&quantized_data_path)?;
         }
 
         let vector_index: Arc<AtomicRefCell<VectorIndexSS>> = match config.index {

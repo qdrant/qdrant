@@ -8,15 +8,13 @@ use bitvec::vec::BitVec;
 use memmap2::{Mmap, MmapMut, MmapOptions};
 use parking_lot::{RwLock, RwLockReadGuard};
 
-use super::quantized_vector_storage::{
-    create_quantized_vectors, load_quantized_vectors, QuantizedVectors,
-};
 use crate::common::error_logging::LogError;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::madvise;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";
@@ -27,10 +25,10 @@ pub struct MmapVectors {
     pub dim: usize,
     pub num_vectors: usize,
     mmap: Mmap,
-    deleted_mmap: Arc<RwLock<MmapMut>>,
+    deleted_flags_mmap: Arc<RwLock<MmapMut>>,
     pub deleted_count: usize,
-    pub deleted_ram: Option<BitVec>,
-    pub quantized_vectors: Option<Box<dyn QuantizedVectors>>,
+    pub deleted_flags: Option<BitVec>,
+    pub quantized_vectors: Option<QuantizedVectorsStorage>,
 }
 
 fn open_read(path: &Path) -> OperationResult<Mmap> {
@@ -86,64 +84,50 @@ impl MmapVectors {
             dim,
             num_vectors,
             mmap,
-            deleted_mmap: Arc::new(RwLock::new(deleted_mmap)),
+            deleted_flags_mmap: Arc::new(RwLock::new(deleted_mmap)),
             deleted_count,
-            deleted_ram: None,
+            deleted_flags: None,
             quantized_vectors: None,
         })
     }
 
-    fn enable_deleted_ram(&mut self) {
+    fn init_deleted_flags(&mut self) {
         let mut deleted = BitVec::new();
         deleted.resize(self.num_vectors, false);
         for i in 0..self.num_vectors {
             deleted.set(i, self.deleted(i as PointOffsetType).unwrap_or_default());
         }
-        self.deleted_ram = Some(deleted);
+        self.deleted_flags = Some(deleted);
     }
 
     pub fn quantize(
         &mut self,
         distance: Distance,
-        meta_path: &Path,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
-        self.enable_deleted_ram();
+        self.init_deleted_flags();
         let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
             self.raw_vector_offset(offset)
         });
-        self.quantized_vectors = Some(create_quantized_vectors(
+        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
             vector_data_iterator,
             quantization_config,
             distance,
             self.dim,
             self.num_vectors,
-            meta_path,
             data_path,
             true,
         )?);
         Ok(())
     }
 
-    pub fn load_quantization(
-        &mut self,
-        meta_path: &Path,
-        data_path: &Path,
-        distance: Distance,
-        quantization_config: &QuantizationConfig,
-    ) -> OperationResult<()> {
-        self.enable_deleted_ram();
-        self.quantized_vectors = Some(load_quantized_vectors(
-            quantization_config,
-            distance,
-            self.dim,
-            self.num_vectors,
-            meta_path,
-            data_path,
-            true,
-        )?);
+    pub fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
+        if QuantizedVectorsStorage::check_exists(data_path) {
+            self.init_deleted_flags();
+            self.quantized_vectors = Some(QuantizedVectorsStorage::load(data_path, true)?);
+        }
         Ok(())
     }
 
@@ -176,14 +160,14 @@ impl MmapVectors {
     }
 
     pub fn read_deleted_map(&self) -> RwLockReadGuard<MmapMut> {
-        self.deleted_mmap.read()
+        self.deleted_flags_mmap.read()
     }
 
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
-        if let Some(deleted_ram) = &self.deleted_ram {
-            deleted_ram.get(key as usize).map(|x| *x)
+        if let Some(deleted_flags) = &self.deleted_flags {
+            deleted_flags.get(key as usize).map(|x| *x)
         } else {
-            Self::check_deleted(&self.deleted_mmap.read(), key)
+            Self::check_deleted(&self.deleted_flags_mmap.read(), key)
         }
     }
 
@@ -199,10 +183,10 @@ impl MmapVectors {
 
     pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         if key < (self.num_vectors as PointOffsetType) {
-            let mut deleted_mmap = self.deleted_mmap.write();
+            let mut deleted_mmap = self.deleted_flags_mmap.write();
             let flag = deleted_mmap.get_mut((key as usize) + HEADER_SIZE).unwrap();
 
-            if let Some(deleted_ram) = &mut self.deleted_ram {
+            if let Some(deleted_ram) = &mut self.deleted_flags {
                 deleted_ram.set(key as usize, true);
             }
 
@@ -215,7 +199,7 @@ impl MmapVectors {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let deleted_mmap = self.deleted_mmap.clone();
+        let deleted_mmap = self.deleted_flags_mmap.clone();
         Box::new(move || {
             deleted_mmap.read().flush()?;
             Ok(())

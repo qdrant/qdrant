@@ -13,7 +13,6 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
-use super::quantized_vector_storage::{load_quantized_vectors, QuantizedVectors};
 use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -23,7 +22,9 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
-use crate::vector_storage::quantized_vector_storage::create_quantized_vectors;
+use crate::vector_storage::quantized::quantized_vectors_base::{
+    QuantizedVectors, QuantizedVectorsStorage,
+};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
 /// In-memory vector storage with on-update persistence using `store`
@@ -33,7 +34,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     vectors: ChunkedVectors<VectorElementType>,
     deleted: BitVec,
     deleted_count: usize,
-    quantized_vectors: Option<Box<dyn QuantizedVectors>>,
+    quantized_vectors: Option<QuantizedVectorsStorage>,
     db_wrapper: DatabaseColumnWrapper,
 }
 
@@ -318,39 +319,26 @@ where
 
     fn quantize(
         &mut self,
-        meta_path: &Path,
-        data_path: &Path,
+        path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
-        self.quantized_vectors = Some(create_quantized_vectors(
+        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
             vector_data_iterator,
             quantization_config,
             TMetric::distance(),
             self.dim,
             self.vectors.len(),
-            meta_path,
-            data_path,
+            path,
             false,
         )?);
         Ok(())
     }
 
-    fn load_quantization(
-        &mut self,
-        meta_path: &Path,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-    ) -> OperationResult<()> {
-        self.quantized_vectors = Some(load_quantized_vectors(
-            quantization_config,
-            TMetric::distance(),
-            self.dim,
-            self.vectors.len(),
-            meta_path,
-            data_path,
-            false,
-        )?);
+    fn load_quantization(&mut self, path: &Path) -> OperationResult<()> {
+        if QuantizedVectorsStorage::check_exists(path) {
+            self.quantized_vectors = Some(QuantizedVectorsStorage::load(path, false)?);
+        }
         Ok(())
     }
 
@@ -400,7 +388,11 @@ where
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        vec![]
+        if let Some(quantized_vectors) = &self.quantized_vectors {
+            quantized_vectors.files()
+        } else {
+            vec![]
+        }
     }
 }
 
@@ -410,7 +402,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::types::ScalarU8Quantization;
+    use crate::types::ScalarQuantizationConfig;
 
     #[test]
     fn test_score_points() {
@@ -508,16 +500,14 @@ mod tests {
         borrowed_storage.put_vector(vec3).unwrap();
         borrowed_storage.put_vector(vec4).unwrap();
 
-        let config = QuantizationConfig::ScalarU8(ScalarU8Quantization {
+        let config: QuantizationConfig = ScalarQuantizationConfig {
+            r#type: Default::default(),
             quantile: None,
             always_ram: None,
-        });
-        let quantized_meta_path = dir.path().join("quantized.meta");
-        let quantized_data_path = dir.path().join("quantized.data");
+        }
+        .into();
 
-        borrowed_storage
-            .quantize(&quantized_meta_path, &quantized_data_path, &config)
-            .unwrap();
+        borrowed_storage.quantize(dir.path(), &config).unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
@@ -536,9 +526,7 @@ mod tests {
         }
 
         // test save-load
-        borrowed_storage
-            .load_quantization(&quantized_meta_path, &quantized_data_path, &config)
-            .unwrap();
+        borrowed_storage.load_quantization(dir.path()).unwrap();
 
         let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
         let scorer_orig = borrowed_storage.raw_scorer(query.clone());

@@ -61,6 +61,11 @@ enum PayloadSchemaType {
   Text = 5;
 }
 
+enum QuantizationType {
+  UnknownQuantization = 0;
+  Int8 = 1;
+}
+
 message OptimizerStatus {
   bool ok = 1;
   string error = 2;
@@ -154,14 +159,15 @@ message OptimizersConfigDiff {
   optional uint64 max_optimization_threads = 8;
 }
 
-message ScalarU8Quantization {
-  optional float quantile = 1; // Number of bits to use for quantization
-  optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+message ScalarQuantization {
+  QuantizationType type = 1; // Type of quantization
+  optional float quantile = 2; // Number of bits to use for quantization
+  optional bool always_ram = 3; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
 message QuantizationConfig {
   oneof quantization {
-    ScalarU8Quantization scalar = 1;
+    ScalarQuantization scalar = 1;
   }
 }
 

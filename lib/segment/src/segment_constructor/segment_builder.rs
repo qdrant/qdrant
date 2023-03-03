@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use super::{get_vector_storage_path, QUANTIZED_DATA_PATH, QUANTIZED_META_PATH};
+use super::get_vector_storage_path;
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{
     check_process_stopped, OperationError, OperationResult, SegmentEntry,
@@ -216,13 +216,10 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
 
                 let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
-                let quantized_meta_path = vector_storage_path.join(QUANTIZED_META_PATH);
-                let quantized_data_path = vector_storage_path.join(QUANTIZED_DATA_PATH);
-                vector_data.vector_storage.borrow_mut().quantize(
-                    &quantized_meta_path,
-                    &quantized_data_path,
-                    quantization,
-                )?;
+                vector_data
+                    .vector_storage
+                    .borrow_mut()
+                    .quantize(&vector_storage_path, quantization)?;
             }
         }
         Ok(())

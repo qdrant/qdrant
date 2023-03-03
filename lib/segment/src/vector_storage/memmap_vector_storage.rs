@@ -17,6 +17,7 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
+use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
@@ -259,7 +260,7 @@ where
     ) -> Option<Box<dyn RawScorer + '_>> {
         let mmap_store = self.mmap_store.as_ref().unwrap();
         if let Some(quantized_data) = &mmap_store.quantized_vectors {
-            if let Some(deleted_ram) = &mmap_store.deleted_ram {
+            if let Some(deleted_ram) = &mmap_store.deleted_flags {
                 let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
                 Some(quantized_data.raw_scorer(&query, deleted_ram))
             } else {
@@ -299,32 +300,16 @@ where
 
     fn quantize(
         &mut self,
-        meta_path: &Path,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.quantize(
-            TMetric::distance(),
-            meta_path,
-            data_path,
-            quantization_config,
-        )
+        mmap_store.quantize(TMetric::distance(), data_path, quantization_config)
     }
 
-    fn load_quantization(
-        &mut self,
-        meta_path: &Path,
-        data_path: &Path,
-        quantization_config: &QuantizationConfig,
-    ) -> OperationResult<()> {
+    fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.load_quantization(
-            meta_path,
-            data_path,
-            TMetric::distance(),
-            quantization_config,
-        )
+        mmap_store.load_quantization(data_path)
     }
 
     fn score_points(
@@ -383,7 +368,13 @@ where
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![self.vectors_path.clone(), self.deleted_path.clone()]
+        let mut files = vec![self.vectors_path.clone(), self.deleted_path.clone()];
+        if let Some(Some(quantized_vectors)) =
+            &self.mmap_store.as_ref().map(|x| &x.quantized_vectors)
+        {
+            files.extend(quantized_vectors.files())
+        }
+        files
     }
 }
 
@@ -395,7 +386,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::types::ScalarU8Quantization;
+    use crate::types::ScalarQuantizationConfig;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 
     #[test]
@@ -565,16 +556,14 @@ mod tests {
                 .unwrap();
         }
 
-        let config = QuantizationConfig::ScalarU8(ScalarU8Quantization {
+        let config: QuantizationConfig = ScalarQuantizationConfig {
+            r#type: Default::default(),
             quantile: None,
             always_ram: None,
-        });
+        }
+        .into();
 
-        let quantized_data_path = dir.path().join("quantized.data");
-        let quantized_meta_path = dir.path().join("quantized.meta");
-        borrowed_storage
-            .quantize(&quantized_meta_path, &quantized_data_path, &config)
-            .unwrap();
+        borrowed_storage.quantize(dir.path(), &config).unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
@@ -593,12 +582,11 @@ mod tests {
         }
 
         // test save-load
-        borrowed_storage
-            .load_quantization(&quantized_meta_path, &quantized_data_path, &config)
-            .unwrap();
+        borrowed_storage.load_quantization(dir.path()).unwrap();
 
         let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
         let scorer_orig = borrowed_storage.raw_scorer(query);
+
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
             let orig = scorer_orig.score_point(i);

@@ -171,12 +171,15 @@ pub struct OptimizersConfigDiff {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ScalarU8Quantization {
+pub struct ScalarQuantization {
+    /// Type of quantization
+    #[prost(enumeration = "QuantizationType", tag = "1")]
+    pub r#type: i32,
     /// Number of bits to use for quantization
-    #[prost(float, optional, tag = "1")]
+    #[prost(float, optional, tag = "2")]
     pub quantile: ::core::option::Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-    #[prost(bool, optional, tag = "2")]
+    #[prost(bool, optional, tag = "3")]
     pub always_ram: ::core::option::Option<bool>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -191,7 +194,7 @@ pub mod quantization_config {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Quantization {
         #[prost(message, tag = "1")]
-        Scalar(super::ScalarU8Quantization),
+        Scalar(super::ScalarQuantization),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -548,6 +551,24 @@ impl PayloadSchemaType {
             PayloadSchemaType::Float => "Float",
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum QuantizationType {
+    UnknownQuantization = 0,
+    Int8 = 1,
+}
+impl QuantizationType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            QuantizationType::UnknownQuantization => "UnknownQuantization",
+            QuantizationType::Int8 => "Int8",
         }
     }
 }

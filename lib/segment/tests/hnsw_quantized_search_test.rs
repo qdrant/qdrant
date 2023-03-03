@@ -12,8 +12,8 @@ mod tests {
     use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Distance, HnswConfig, Indexes, QuantizationConfig, ScalarU8Quantization, SearchParams,
-        SegmentConfig, SeqNumberType, StorageType, VectorDataConfig,
+        Distance, HnswConfig, Indexes, ScalarQuantizationConfig, SearchParams, SegmentConfig,
+        SeqNumberType, StorageType, VectorDataConfig,
     };
     use segment::vector_storage::ScoredPointOffset;
     use tempfile::Builder;
@@ -29,8 +29,7 @@ mod tests {
     fn hnsw_quantized_search_test(distance: Distance) {
         let stopped = AtomicBool::new(false);
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let quantized_meta_path = dir.path().join("quantized.meta");
-        let quantized_data_path = dir.path().join("quantized.data");
+        let quantized_data_path = dir.path();
 
         let dim = 128;
         let m = 16;
@@ -65,24 +64,19 @@ mod tests {
                 .unwrap();
         }
         segment.vector_data.values_mut().for_each(|vector_storage| {
-            if quantized_data_path.exists() || quantized_meta_path.exists() {
-                panic!("quantization files shouldn't exists");
-            }
             vector_storage
                 .vector_storage
                 .borrow_mut()
                 .quantize(
-                    &quantized_meta_path,
-                    &quantized_data_path,
-                    &QuantizationConfig::ScalarU8(ScalarU8Quantization {
+                    quantized_data_path,
+                    &ScalarQuantizationConfig {
+                        r#type: Default::default(),
                         quantile: None,
                         always_ram: None,
-                    }),
+                    }
+                    .into(),
                 )
                 .unwrap();
-            if !quantized_data_path.exists() || !quantized_meta_path.exists() {
-                panic!("quantization was not saved");
-            }
         });
 
         let hnsw_config = HnswConfig {

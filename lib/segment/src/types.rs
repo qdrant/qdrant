@@ -314,33 +314,60 @@ fn default_max_indexing_threads() -> usize {
     0
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum ScalarType {
+    #[default]
+    Int8,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct ScalarU8Quantization {
-    /// Number of bits to use for quantization
+pub struct ScalarQuantizationConfig {
+    /// Type of quantization to use
+    /// If `int8` - 8 bit quantization will be used
+    pub r#type: ScalarType,
+    /// Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quantile: Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
 }
 
-impl PartialEq for ScalarU8Quantization {
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+pub struct ScalarQuantization {
+    pub scalar: ScalarQuantizationConfig,
+}
+
+impl PartialEq for ScalarQuantizationConfig {
     fn eq(&self, other: &Self) -> bool {
-        self.quantile == other.quantile && self.always_ram == other.always_ram
+        self.quantile == other.quantile
+            && self.always_ram == other.always_ram
+            && self.r#type == other.r#type
     }
 }
 
-impl std::hash::Hash for ScalarU8Quantization {
+impl std::hash::Hash for ScalarQuantizationConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.always_ram.hash(state);
+        self.r#type.hash(state);
     }
 }
 
-impl Eq for ScalarU8Quantization {}
+impl Eq for ScalarQuantizationConfig {}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum QuantizationConfig {
-    ScalarU8(ScalarU8Quantization),
+    Scalar(ScalarQuantization),
+}
+
+impl From<ScalarQuantizationConfig> for QuantizationConfig {
+    fn from(config: ScalarQuantizationConfig) -> Self {
+        QuantizationConfig::Scalar(ScalarQuantization { scalar: config })
+    }
 }
 
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
