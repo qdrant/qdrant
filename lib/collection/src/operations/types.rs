@@ -1,5 +1,6 @@
 use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashMap};
+use std::error::Error as _;
 use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
