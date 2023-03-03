@@ -21,7 +21,6 @@ RUN echo "Building for $TARGETARCH, arch: $(bash target_arch.sh)"
 
 COPY --from=planner /qdrant/recipe.json recipe.json
 
-# RUN apt-get update && apt-get install -y gcc-multilib && apt-get install -y clang cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu protobuf-compiler && rustup component add rustfmt
 RUN apt-get update && apt-get install -y gcc-multilib && apt-get install -y clang cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu protobuf-compiler && rustup component add rustfmt
 
 RUN rustup target add $(bash target_arch.sh)
