@@ -42,7 +42,7 @@ do
 	    deploy:
 	      resources:
 	        limits:
-	          cpus: 0.3
+	          cpus: "0.3"
 
 	EOF
 done
