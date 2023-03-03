@@ -388,7 +388,11 @@ where
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        todo!()
+        if let Some(quantized_vectors) = &self.quantized_vectors {
+            quantized_vectors.files()
+        } else {
+            vec![]
+        }
     }
 }
 
@@ -502,12 +506,8 @@ mod tests {
             always_ram: None,
         }
         .into();
-        let quantized_meta_path = dir.path().join("quantized.meta");
-        let quantized_data_path = dir.path().join("quantized.data");
 
-        borrowed_storage
-            .quantize(&quantized_meta_path, &quantized_data_path, &config)
-            .unwrap();
+        borrowed_storage.quantize(dir.path(), &config).unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
@@ -526,9 +526,7 @@ mod tests {
         }
 
         // test save-load
-        borrowed_storage
-            .load_quantization(&quantized_meta_path, &quantized_data_path, &config)
-            .unwrap();
+        borrowed_storage.load_quantization(dir.path()).unwrap();
 
         let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
         let scorer_orig = borrowed_storage.raw_scorer(query.clone());

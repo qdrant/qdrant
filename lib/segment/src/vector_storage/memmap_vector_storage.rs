@@ -368,7 +368,13 @@ where
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![self.vectors_path.clone(), self.deleted_path.clone()]
+        let mut files = vec![self.vectors_path.clone(), self.deleted_path.clone()];
+        if let Some(Some(quantized_vectors)) =
+            &self.mmap_store.as_ref().map(|x| &x.quantized_vectors)
+        {
+            files.extend(quantized_vectors.files())
+        }
+        files
     }
 }
 
@@ -576,12 +582,11 @@ mod tests {
         }
 
         // test save-load
-        borrowed_storage
-            .load_quantization(&quantized_meta_path, &quantized_data_path, &config)
-            .unwrap();
+        borrowed_storage.load_quantization(dir.path()).unwrap();
 
         let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
         let scorer_orig = borrowed_storage.raw_scorer(query);
+
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
             let orig = scorer_orig.score_point(i);

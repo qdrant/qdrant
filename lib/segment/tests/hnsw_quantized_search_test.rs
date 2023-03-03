@@ -64,14 +64,11 @@ mod tests {
                 .unwrap();
         }
         segment.vector_data.values_mut().for_each(|vector_storage| {
-            if quantized_data_path.exists() || quantized_meta_path.exists() {
-                panic!("quantization files shouldn't exists");
-            }
             vector_storage
                 .vector_storage
                 .borrow_mut()
                 .quantize(
-                    &quantized_data_path,
+                    quantized_data_path,
                     &ScalarQuantizationConfig {
                         r#type: Default::default(),
                         quantile: None,
@@ -80,9 +77,6 @@ mod tests {
                     .into(),
                 )
                 .unwrap();
-            if !quantized_data_path.exists() || !quantized_meta_path.exists() {
-                panic!("quantization was not saved");
-            }
         });
 
         let hnsw_config = HnswConfig {

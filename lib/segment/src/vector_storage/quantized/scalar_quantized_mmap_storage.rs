@@ -103,8 +103,10 @@ pub fn create_scalar_quantized_vectors_mmap<'a>(
         quantization::EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
             vector_parameters,
         );
+    let mmap_data_path = data_path.join(QUANTIZED_DATA_PATH);
+
     let storage_builder = QuantizedMmapStorageBuilder::new(
-        data_path,
+        mmap_data_path.as_path(),
         vector_parameters.count,
         quantized_vector_size,
     )?;

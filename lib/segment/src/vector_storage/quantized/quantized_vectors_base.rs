@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use bitvec::prelude::BitVec;
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,7 @@ pub enum QuantizedVectorStorageImpl {
 pub struct QuantizedVectorsStorage {
     storage_impl: QuantizedVectorStorageImpl,
     config: QuantizedVectorsConfig,
+    path: PathBuf,
 }
 
 pub trait QuantizedVectors: Send + Sync {
@@ -43,6 +44,9 @@ pub trait QuantizedVectors: Send + Sync {
     ) -> Box<dyn RawScorer + 'a>;
 
     fn save_to(&self, path: &Path) -> OperationResult<()>;
+
+    /// List all files used by the quantized vectors storage
+    fn files(&self) -> Vec<PathBuf>;
 }
 
 impl QuantizedVectors for QuantizedVectorsStorage {
@@ -62,6 +66,17 @@ impl QuantizedVectors for QuantizedVectorsStorage {
             QuantizedVectorStorageImpl::ScalarRam(storage) => storage.save_to(path),
             QuantizedVectorStorageImpl::ScalarMmap(storage) => storage.save_to(path),
         }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        let mut result = vec![self.path.join(QUANTIZED_CONFIG_PATH)];
+        let storage_files = match &self.storage_impl {
+            QuantizedVectorStorageImpl::ScalarRam(storage) => storage.files(),
+            QuantizedVectorStorageImpl::ScalarMmap(storage) => storage.files(),
+        };
+
+        result.extend(storage_files.into_iter().map(|file| self.path.join(file)));
+        result
     }
 }
 
@@ -134,6 +149,7 @@ impl QuantizedVectorsStorage {
         let quantized_vectors = QuantizedVectorsStorage {
             storage_impl: quantized_storage,
             config: quantized_vectors_config,
+            path: path.to_path_buf(),
         };
 
         quantized_vectors.save_to(path)?;
@@ -170,6 +186,7 @@ impl QuantizedVectorsStorage {
         Ok(QuantizedVectorsStorage {
             storage_impl: quantized_store,
             config,
+            path: data_path.to_path_buf(),
         })
     }
 }

@@ -40,7 +40,7 @@ pub fn load_scalar_quantized_vectors_ram(
     let storage = quantization::EncodedVectorsU8::<ChunkedVectors<u8>>::load(
         &data_path,
         &meta_path,
-        &vector_parameters,
+        vector_parameters,
     )?;
 
     Ok(ScalarQuantizedVectors::new(storage))

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use bitvec::prelude::BitVec;
 use quantization::EncodedVectors;
@@ -89,5 +89,9 @@ where
         let meta_path = path.join(QUANTIZED_META_PATH);
         self.storage.save(&data_path, &meta_path)?;
         Ok(())
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![QUANTIZED_DATA_PATH.into(), QUANTIZED_META_PATH.into()]
     }
 }
