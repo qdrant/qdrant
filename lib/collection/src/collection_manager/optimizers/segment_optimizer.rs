@@ -136,7 +136,8 @@ pub trait SegmentOptimizer {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,
             },
-            quantization_config: if is_indexed { // TODO: separate config for applying quantization
+            quantization_config: if is_indexed {
+                // TODO: separate config for applying quantization
                 self.quantization_config()
             } else {
                 Default::default()
