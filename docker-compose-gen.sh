@@ -39,6 +39,10 @@ do
 	    ports:
 	      - "$HTTP_PORT:6333"
 	      - "$GRPC_PORT:6334"
+	    deploy:
+	      resources:
+	        limits:
+	          cpus: 0.3
 
 	EOF
 done
