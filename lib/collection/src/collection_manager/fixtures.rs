@@ -183,6 +183,7 @@ pub(crate) fn get_merge_optimizer(
             write_consistency_factor: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
+        Default::default(),
     )
 }
 
@@ -209,6 +210,7 @@ pub(crate) fn get_indexing_optimizer(
             replication_factor: NonZeroU32::new(1).unwrap(),
             write_consistency_factor: NonZeroU32::new(1).unwrap(),
         },
+        Default::default(),
         Default::default(),
     )
 }

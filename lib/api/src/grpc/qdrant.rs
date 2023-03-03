@@ -171,6 +171,34 @@ pub struct OptimizersConfigDiff {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScalarQuantization {
+    /// Type of quantization
+    #[prost(enumeration = "QuantizationType", tag = "1")]
+    pub r#type: i32,
+    /// Number of bits to use for quantization
+    #[prost(float, optional, tag = "2")]
+    pub quantile: ::core::option::Option<f32>,
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "3")]
+    pub always_ram: ::core::option::Option<bool>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuantizationConfig {
+    #[prost(oneof = "quantization_config::Quantization", tags = "1")]
+    pub quantization: ::core::option::Option<quantization_config::Quantization>,
+}
+/// Nested message and enum types in `QuantizationConfig`.
+pub mod quantization_config {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Quantization {
+        #[prost(message, tag = "1")]
+        Scalar(super::ScalarQuantization),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
@@ -205,6 +233,8 @@ pub struct CreateCollection {
     /// Specify name of the other collection to copy data from
     #[prost(string, optional, tag = "13")]
     pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "14")]
+    pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -286,6 +316,9 @@ pub struct CollectionConfig {
     /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "4")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
+    /// Configuration of the vector quantization
+    #[prost(message, optional, tag = "5")]
+    pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -518,6 +551,24 @@ impl PayloadSchemaType {
             PayloadSchemaType::Float => "Float",
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum QuantizationType {
+    UnknownQuantization = 0,
+    Int8 = 1,
+}
+impl QuantizationType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            QuantizationType::UnknownQuantization => "UnknownQuantization",
+            QuantizationType::Int8 => "Int8",
         }
     }
 }
@@ -1947,6 +1998,10 @@ pub struct SearchParams {
     /// Search without approximation. If set to true, search may run long but with exact results.
     #[prost(bool, optional, tag = "2")]
     pub exact: ::core::option::Option<bool>,
+    ///
+    /// If set to true, search will ignore quantized vector data
+    #[prost(bool, optional, tag = "3")]
+    pub ignore_quantization: ::core::option::Option<bool>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

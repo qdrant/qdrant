@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use super::get_vector_storage_path;
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{
     check_process_stopped, OperationError, OperationResult, SegmentEntry,
@@ -185,6 +186,8 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
             }
 
+            Self::update_quantization(&segment, stopped)?;
+
             for vector_data in segment.vector_data.values_mut() {
                 vector_data.vector_index.borrow_mut().build_index(stopped)?;
             }
@@ -197,11 +200,28 @@ impl SegmentBuilder {
         std::fs::rename(&self.temp_path, &self.destination_path)
             .describe("Moving segment data after optimization")?;
 
-        load_segment(&self.destination_path)?.ok_or_else(|| {
+        let loaded_segment = load_segment(&self.destination_path)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "Segment loading error: {}",
                 self.destination_path.display()
             ))
-        })
+        })?;
+        Ok(loaded_segment)
+    }
+
+    fn update_quantization(segment: &Segment, stopped: &AtomicBool) -> OperationResult<()> {
+        if let Some(quantization) = &segment.config().quantization_config {
+            let segment_path = segment.current_path.as_path();
+            for (vector_name, vector_data) in &segment.vector_data {
+                check_process_stopped(stopped)?;
+
+                let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+                vector_data
+                    .vector_storage
+                    .borrow_mut()
+                    .quantize(&vector_storage_path, quantization)?;
+            }
+        }
+        Ok(())
     }
 }

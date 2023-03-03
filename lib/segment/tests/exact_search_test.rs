@@ -49,7 +49,7 @@ mod tests {
             )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            payload_storage_type: Default::default(),
+            ..Default::default()
         };
 
         let int_key = "int";
@@ -146,6 +146,7 @@ mod tests {
                 Some(&SearchParams {
                     hnsw_ef: Some(ef),
                     exact: true,
+                    ..Default::default()
                 }),
             );
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -180,6 +181,7 @@ mod tests {
                 Some(&SearchParams {
                     hnsw_ef: Some(ef),
                     exact: true,
+                    ..Default::default()
                 }),
             );
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]

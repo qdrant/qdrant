@@ -7,6 +7,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
+use segment::types::QuantizationConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -131,6 +132,10 @@ pub struct CreateCollection {
     /// Specify other collection to copy data from.
     #[serde(default)]
     pub init_from: Option<InitFrom>,
+    /// Quantization parameters. If none - quantization is disabled.
+    #[serde(default)]
+    #[serde(alias = "quantization")]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params

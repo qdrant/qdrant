@@ -48,6 +48,7 @@ pub async fn handle_existing_collections(
                 wal_config: Some(collection_state.config.wal_config.into()),
                 optimizers_config: Some(collection_state.config.optimizer_config.into()),
                 init_from: None,
+                quantization_config: collection_state.config.quantization_config,
             },
         );
 

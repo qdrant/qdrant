@@ -4,6 +4,7 @@ use std::mem::{size_of, transmute};
 use std::path::Path;
 use std::sync::Arc;
 
+use bitvec::vec::BitVec;
 use memmap2::{Mmap, MmapMut, MmapOptions};
 use parking_lot::{RwLock, RwLockReadGuard};
 
@@ -12,7 +13,8 @@ use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::madvise;
-use crate::types::PointOffsetType;
+use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";
@@ -23,8 +25,10 @@ pub struct MmapVectors {
     pub dim: usize,
     pub num_vectors: usize,
     mmap: Mmap,
-    deleted_mmap: Arc<RwLock<MmapMut>>,
+    deleted_flags_mmap: Arc<RwLock<MmapMut>>,
     pub deleted_count: usize,
+    pub deleted_flags: Option<BitVec>,
+    pub quantized_vectors: Option<QuantizedVectorsStorage>,
 }
 
 fn open_read(path: &Path) -> OperationResult<Mmap> {
@@ -80,9 +84,51 @@ impl MmapVectors {
             dim,
             num_vectors,
             mmap,
-            deleted_mmap: Arc::new(RwLock::new(deleted_mmap)),
+            deleted_flags_mmap: Arc::new(RwLock::new(deleted_mmap)),
             deleted_count,
+            deleted_flags: None,
+            quantized_vectors: None,
         })
+    }
+
+    fn init_deleted_flags(&mut self) {
+        let mut deleted = BitVec::new();
+        deleted.resize(self.num_vectors, false);
+        for i in 0..self.num_vectors {
+            deleted.set(i, self.deleted(i as PointOffsetType).unwrap_or_default());
+        }
+        self.deleted_flags = Some(deleted);
+    }
+
+    pub fn quantize(
+        &mut self,
+        distance: Distance,
+        data_path: &Path,
+        quantization_config: &QuantizationConfig,
+    ) -> OperationResult<()> {
+        self.init_deleted_flags();
+        let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
+            let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
+            self.raw_vector_offset(offset)
+        });
+        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
+            vector_data_iterator,
+            quantization_config,
+            distance,
+            self.dim,
+            self.num_vectors,
+            data_path,
+            true,
+        )?);
+        Ok(())
+    }
+
+    pub fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
+        if QuantizedVectorsStorage::check_exists(data_path) {
+            self.init_deleted_flags();
+            self.quantized_vectors = Some(QuantizedVectorsStorage::load(data_path, true)?);
+        }
+        Ok(())
     }
 
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
@@ -114,11 +160,15 @@ impl MmapVectors {
     }
 
     pub fn read_deleted_map(&self) -> RwLockReadGuard<MmapMut> {
-        self.deleted_mmap.read()
+        self.deleted_flags_mmap.read()
     }
 
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
-        Self::check_deleted(&self.deleted_mmap.read(), key)
+        if let Some(deleted_flags) = &self.deleted_flags {
+            deleted_flags.get(key as usize).map(|x| *x)
+        } else {
+            Self::check_deleted(&self.deleted_flags_mmap.read(), key)
+        }
     }
 
     /// Creates returns owned vector (copy of internal vector)
@@ -133,8 +183,12 @@ impl MmapVectors {
 
     pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         if key < (self.num_vectors as PointOffsetType) {
-            let mut deleted_mmap = self.deleted_mmap.write();
+            let mut deleted_mmap = self.deleted_flags_mmap.write();
             let flag = deleted_mmap.get_mut((key as usize) + HEADER_SIZE).unwrap();
+
+            if let Some(deleted_ram) = &mut self.deleted_flags {
+                deleted_ram.set(key as usize, true);
+            }
 
             if *flag == 0 {
                 *flag = 1;
@@ -145,7 +199,7 @@ impl MmapVectors {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let deleted_mmap = self.deleted_mmap.clone();
+        let deleted_mmap = self.deleted_flags_mmap.clone();
         Box::new(move || {
             deleted_mmap.read().flush()?;
             Ok(())

@@ -59,6 +59,13 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 init_from: value
                     .init_from_collection
                     .map(|v| InitFrom { collection: v }),
+                quantization_config: {
+                    if let Some(config) = value.quantization_config {
+                        Some(config.try_into()?)
+                    } else {
+                        None
+                    }
+                },
             },
         )))
     }

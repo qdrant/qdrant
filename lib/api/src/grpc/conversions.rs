@@ -4,7 +4,6 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{PayloadSelector, WithPayloadInterface};
 use tonic::Status;
 use uuid::Uuid;
 
@@ -22,9 +21,9 @@ use crate::grpc::qdrant::{
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
     HnswConfigDiff, IsEmptyCondition, ListCollectionsResponse, ListValue, Match, NamedVectors,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
-    PayloadSchemaType, PointId, Range, ScoredPoint, SearchParams, Struct, TextIndexParams,
-    TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector,
-    WithVectorsSelector,
+    PayloadSchemaType, PointId, QuantizationConfig, Range, ScalarQuantization, ScoredPoint,
+    SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector, Vectors,
+    VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -310,15 +309,15 @@ impl TryFrom<WithPayloadSelector> for segment::types::WithPayloadInterface {
 impl From<segment::types::WithPayloadInterface> for WithPayloadSelector {
     fn from(value: segment::types::WithPayloadInterface) -> Self {
         let selector_options = match value {
-            WithPayloadInterface::Bool(flag) => SelectorOptions::Enable(flag),
-            WithPayloadInterface::Fields(fields) => {
+            segment::types::WithPayloadInterface::Bool(flag) => SelectorOptions::Enable(flag),
+            segment::types::WithPayloadInterface::Fields(fields) => {
                 SelectorOptions::Include(PayloadIncludeSelector { fields })
             }
-            WithPayloadInterface::Selector(selector) => match selector {
-                PayloadSelector::Include(s) => {
+            segment::types::WithPayloadInterface::Selector(selector) => match selector {
+                segment::types::PayloadSelector::Include(s) => {
                     SelectorOptions::Include(PayloadIncludeSelector { fields: s.include })
                 }
-                PayloadSelector::Exclude(s) => {
+                segment::types::PayloadSelector::Exclude(s) => {
                     SelectorOptions::Exclude(PayloadExcludeSelector { fields: s.exclude })
                 }
             },
@@ -334,6 +333,7 @@ impl From<SearchParams> for segment::types::SearchParams {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as usize),
             exact: params.exact.unwrap_or(false),
+            ignore_quantization: params.ignore_quantization.unwrap_or(false),
         }
     }
 }
@@ -343,6 +343,7 @@ impl From<segment::types::SearchParams> for SearchParams {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as u64),
             exact: Some(params.exact),
+            ignore_quantization: Some(params.ignore_quantization),
         }
     }
 }
@@ -470,6 +471,62 @@ impl TryFrom<PointId> for segment::types::PointIdType {
             _ => Err(Status::invalid_argument(
                 "No ID options provided".to_string(),
             )),
+        }
+    }
+}
+
+impl From<segment::types::QuantizationConfig> for QuantizationConfig {
+    fn from(value: segment::types::QuantizationConfig) -> Self {
+        match value {
+            segment::types::QuantizationConfig::Scalar(segment::types::ScalarQuantization {
+                scalar: config,
+            }) => Self {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Scalar(
+                    ScalarQuantization {
+                        r#type: match config.r#type {
+                            segment::types::ScalarType::Int8 => {
+                                crate::grpc::qdrant::QuantizationType::Int8 as i32
+                            }
+                        },
+                        quantile: config.quantile,
+                        always_ram: config.always_ram,
+                    },
+                )),
+            },
+        }
+    }
+}
+
+impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
+    type Error = Status;
+
+    fn try_from(value: QuantizationConfig) -> Result<Self, Self::Error> {
+        let value = value
+            .quantization
+            .ok_or_else(|| Status::invalid_argument("Unable to convert quantization config"))?;
+        match value {
+            super::qdrant::quantization_config::Quantization::Scalar(config) => {
+                Ok(segment::types::ScalarQuantizationConfig {
+                    r#type: match crate::grpc::qdrant::QuantizationType::from_i32(config.r#type) {
+                        None => {
+                            return Err(Status::invalid_argument(
+                                "Error converting quantization type: None",
+                            ));
+                        }
+                        Some(crate::grpc::qdrant::QuantizationType::UnknownQuantization) => {
+                            return Err(Status::invalid_argument(
+                                "Error converting quantization type: UnknownQuantization",
+                            ));
+                        }
+                        Some(crate::grpc::qdrant::QuantizationType::Int8) => {
+                            segment::types::ScalarType::Int8
+                        }
+                    },
+                    quantile: config.quantile,
+                    always_ram: config.always_ram,
+                }
+                .into())
+            }
         }
     }
 }

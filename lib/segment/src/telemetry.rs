@@ -110,6 +110,7 @@ impl Anonymize for SegmentConfig {
             index: self.index,
             storage_type: self.storage_type,
             payload_storage_type: self.payload_storage_type,
+            quantization_config: self.quantization_config.clone(),
         }
     }
 }
