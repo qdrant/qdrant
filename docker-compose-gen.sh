@@ -5,8 +5,11 @@ set -euo pipefail
 declare NODES="${1:-5}"
 declare BASE_PORT="${2:-6330}"
 
-echo 'version: "3.7"'
-echo 'services:'
+cat <<-EOF
+version: "3.7"
+
+services:
+EOF
 
 for ((node=0; node<NODES; node++))
 do
@@ -19,7 +22,7 @@ do
 	then
 		declare COMMAND="./qdrant --uri 'http://$SERVICE_NAME:6335'"
 	else
-		declare COMMAND="bash -c \"sleep $((5 + node)) && ./qdrant --bootstrap 'http://qdrant_node_0:6335' --uri 'http://$SERVICE_NAME:6335'\""
+		declare COMMAND="bash -c \"sleep $((10 + node / 10 + RANDOM % 10)) && ./qdrant --bootstrap 'http://qdrant_node_0:6335' --uri 'http://$SERVICE_NAME:6335'\""
 	fi
 
 	cat <<-EOF
