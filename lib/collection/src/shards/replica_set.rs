@@ -843,10 +843,8 @@ impl ShardReplicaSet {
             max(factor, usize::try_from(self.read_remote_replicas).unwrap())
         };
 
-        let mut pending_operations: FuturesUnordered<_> = operations
-            .by_ref()
-            .take(required_reads)
-            .collect();
+        let mut pending_operations: FuturesUnordered<_> =
+            operations.by_ref().take(required_reads).collect();
 
         let mut responses = Vec::new();
 
