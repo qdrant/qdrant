@@ -1,4 +1,5 @@
 use std::cmp;
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ops::Deref;
@@ -824,10 +825,16 @@ impl ShardReplicaSet {
 
         let mut operations = local_operations.chain(remote_operations);
 
-        let mut pending_operations: FuturesUnordered<_> = operations
-            .by_ref()
-            .take(factor + usize::try_from(self.read_remote_replicas).unwrap() - 1)
-            .collect();
+        let required_reads = if active_local_count > 0 {
+            // If there is a local shard, we can ignore fan-out `read_remote_replicas` param,
+            // as we already know that the local peer is working.
+            factor
+        } else {
+            max(factor, usize::try_from(self.read_remote_replicas).unwrap())
+        };
+
+        let mut pending_operations: FuturesUnordered<_> =
+            operations.by_ref().take(required_reads).collect();
 
         let mut responses = Vec::new();
 
