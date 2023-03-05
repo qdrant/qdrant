@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
 edition = "2021"
 
