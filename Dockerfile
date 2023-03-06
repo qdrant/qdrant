@@ -36,7 +36,7 @@ RUN cargo build --release --target $(bash target_arch.sh) --bin qdrant
 
 RUN mv target/$(bash target_arch.sh)/release/qdrant /qdrant/qdrant
 
-FROM debian:11-slim
+FROM --platform=${BUILDPLATFORM:-linux/amd64} debian:11-slim
 ARG APP=/qdrant
 
 RUN apt-get update \
