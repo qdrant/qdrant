@@ -20,7 +20,7 @@ pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
 [dependencies]
 
 parking_lot = "0.12"
-rayon = "1.6.1"
+rayon = "1.7.0"
 num_cpus = "1.15"
 itertools = "0.10"
 rocksdb = { version = "0.20.1", default-features = false, features = [ "snappy" ] }
