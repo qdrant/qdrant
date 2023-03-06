@@ -98,6 +98,8 @@ async fn test_snapshot_collection() {
     Collection::restore_snapshot(
         &snapshots_path.path().join(snapshot_description.name),
         recover_dir.path(),
+        0,
+        false,
     )
     .unwrap();
 

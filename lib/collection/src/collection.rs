@@ -1443,7 +1443,12 @@ impl Collection {
     /// Restore collection from snapshot
     ///
     /// This method performs blocking IO.
-    pub fn restore_snapshot(snapshot_path: &Path, target_dir: &Path) -> CollectionResult<()> {
+    pub fn restore_snapshot(
+        snapshot_path: &Path,
+        target_dir: &Path,
+        this_peer_id: PeerId,
+        is_distributed: bool,
+    ) -> CollectionResult<()> {
         // decompress archive
         let archive_file = std::fs::File::open(snapshot_path)?;
         let mut ar = tar::Archive::new(archive_file);
@@ -1463,7 +1468,11 @@ impl Collection {
                     }
                     shard_config::ShardType::Temporary => {}
                     shard_config::ShardType::ReplicaSet { .. } => {
-                        ReplicaSetShard::restore_snapshot(&shard_path)?
+                        ReplicaSetShard::restore_snapshot(
+                            &shard_path,
+                            this_peer_id,
+                            is_distributed,
+                        )?
                     }
                 }
             } else {

@@ -117,11 +117,19 @@ fn main() -> anyhow::Result<()> {
 
     segment::madvise::set_global(settings.storage.mmap_advice);
 
+    // Saved state of the consensus.
+    let persistent_consensus_state =
+        Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
+
+    let is_distributed_deployment = settings.cluster.enabled;
+
     let restored_collections = if let Some(full_snapshot) = args.storage_snapshot {
         recover_full_snapshot(
             &full_snapshot,
             &settings.storage.storage_path,
             args.force_snapshot,
+            persistent_consensus_state.this_peer_id(),
+            is_distributed_deployment,
         )
     } else if let Some(snapshots) = args.snapshot {
         // recover from snapshots
@@ -129,6 +137,8 @@ fn main() -> anyhow::Result<()> {
             &snapshots,
             args.force_snapshot,
             &settings.storage.storage_path,
+            persistent_consensus_state.this_peer_id(),
+            is_distributed_deployment,
         )
     } else {
         vec![]
@@ -159,10 +169,6 @@ fn main() -> anyhow::Result<()> {
         // We don't need sender for the single-node mode
         None
     };
-
-    // Saved state of the consensus.
-    let persistent_consensus_state =
-        Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
 
     // Channel service is used to manage connections between peers.
     // It allocates required number of channels and manages proper reconnection handling

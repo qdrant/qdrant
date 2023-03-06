@@ -8,6 +8,7 @@ use storage::content_manager::snapshots::{
     do_list_full_snapshots, get_full_snapshot_path,
 };
 use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 
 use crate::actix::helpers::{
     collection_into_actix_error, process_response, storage_into_actix_error,
@@ -65,7 +66,7 @@ async fn create_snapshot(
 
 #[put("/collections/{name}/snapshots/recover")]
 async fn recover_from_snapshot(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     request: web::Json<SnapshotRecover>,
 ) -> impl Responder {
@@ -74,7 +75,7 @@ async fn recover_from_snapshot(
 
     let timing = Instant::now();
     let response =
-        do_recover_from_snapshot(toc.get_ref(), &collection_name, snapshot_recover).await;
+        do_recover_from_snapshot(dispatcher.get_ref(), &collection_name, snapshot_recover).await;
     process_response(response, timing)
 }
 
