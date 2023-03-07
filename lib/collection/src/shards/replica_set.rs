@@ -959,9 +959,38 @@ impl ShardReplicaSet {
         }
     }
 
-    pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
+    pub fn restore_snapshot(
+        snapshot_path: &Path,
+        this_peer_id: PeerId,
+        is_distributed: bool,
+    ) -> CollectionResult<()> {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(snapshot_path.join(REPLICA_STATE_FILE))?;
+
+        // If this shard have local data
+        let is_snapshot_local = replica_state.read().is_local;
+
+        if !is_distributed && !is_snapshot_local {
+            return Err(CollectionError::service_error(format!(
+                "Can't restore snapshot is local mode with missing data at shard: {}",
+                snapshot_path.display()
+            )));
+        }
+
+        replica_state.write(|state| {
+            state.this_peer_id = this_peer_id;
+            if is_distributed {
+                state
+                    .peers
+                    .remove(&this_peer_id)
+                    .and_then(|replica_state| state.peers.insert(this_peer_id, replica_state));
+            } else {
+                // In local mode we don't want any remote peers
+                state.peers.clear();
+                state.peers.insert(this_peer_id, ReplicaState::Active);
+            }
+        })?;
+
         if replica_state.read().is_local {
             LocalShard::restore_snapshot(snapshot_path)?;
         }
