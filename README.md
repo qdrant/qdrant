@@ -23,7 +23,7 @@ Qdrant is written in Rust 🦀, which makes it fast and reliable even under high
 
 With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
 
-Also available as managed solution in the **Qdrant Cloud** https://qdrant.to/cloud ⛅
+Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.io/ ⛅
 
 ## Demo Projects
 
