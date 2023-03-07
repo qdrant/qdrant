@@ -117,6 +117,8 @@ fn main() -> anyhow::Result<()> {
 
     segment::madvise::set_global(settings.storage.mmap_advice);
 
+    welcome();
+
     // Saved state of the consensus.
     let persistent_consensus_state =
         Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
@@ -143,8 +145,6 @@ fn main() -> anyhow::Result<()> {
     } else {
         vec![]
     };
-
-    welcome();
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
