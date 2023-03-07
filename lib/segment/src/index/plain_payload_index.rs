@@ -26,7 +26,7 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
 };
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -194,7 +194,7 @@ impl PayloadIndex for PlainPayloadIndex {
 }
 
 pub struct PlainIndex {
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
@@ -202,7 +202,7 @@ pub struct PlainIndex {
 
 impl PlainIndex {
     pub fn new(
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     ) -> PlainIndex {
         PlainIndex {

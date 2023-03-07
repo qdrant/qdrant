@@ -30,6 +30,7 @@ use crate::types::{
 };
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
+use crate::vector_storage::VectorStorage;
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
 pub const VECTOR_STORAGE_PATH: &str = "vector_storage";

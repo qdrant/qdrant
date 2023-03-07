@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
-use super::ScorerBuilder;
+use super::{ScorerBuilder, VectorStorageEnum};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
@@ -19,7 +19,7 @@ use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage};
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
@@ -98,7 +98,7 @@ pub fn open_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     create_dir_all(path)?;
 
     let vectors_path = path.join("matrix.dat");
@@ -106,12 +106,14 @@ pub fn open_memmap_vector_storage(
 
     let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
 
-    Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage {
-        vectors_path,
-        deleted_path,
-        mmap_store: Some(mmap_store),
-        distance,
-    })))
+    Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Memmap(
+        Box::new(MemmapVectorStorage {
+            vectors_path,
+            deleted_path,
+            mmap_store: Some(mmap_store),
+            distance,
+        }),
+    ))))
 }
 
 impl<'a, TMetric> ScorerBuilder for MemmapVectorScorerBuilder<'a, TMetric>
@@ -268,7 +270,7 @@ impl VectorStorage for MemmapVectorStorage {
 
     fn update_from(
         &mut self,
-        other: &VectorStorageSS,
+        other: &VectorStorageEnum,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();

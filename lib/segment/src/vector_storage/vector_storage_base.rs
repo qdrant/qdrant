@@ -6,6 +6,8 @@ use std::sync::atomic::AtomicBool;
 use ordered_float::OrderedFloat;
 use rand::Rng;
 
+use super::memmap_vector_storage::MemmapVectorStorage;
+use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
@@ -92,7 +94,7 @@ pub trait VectorStorage {
     ) -> OperationResult<()>;
     fn update_from(
         &mut self,
-        other: &VectorStorageSS,
+        other: &VectorStorageEnum,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
@@ -126,4 +128,133 @@ pub trait VectorStorage {
     fn scorer_builder(&self) -> Box<dyn ScorerBuilder + Sync + Send + '_>;
 }
 
-pub type VectorStorageSS = dyn VectorStorage + Sync + Send;
+pub enum VectorStorageEnum {
+    Simple(SimpleVectorStorage),
+    Memmap(Box<MemmapVectorStorage>),
+}
+
+impl VectorStorage for VectorStorageEnum {
+    fn vector_dim(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.vector_dim(),
+            VectorStorageEnum::Memmap(v) => v.vector_dim(),
+        }
+    }
+
+    fn vector_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.vector_count(),
+            VectorStorageEnum::Memmap(v) => v.vector_count(),
+        }
+    }
+
+    fn deleted_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.deleted_count(),
+            VectorStorageEnum::Memmap(v) => v.deleted_count(),
+        }
+    }
+
+    fn total_vector_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.total_vector_count(),
+            VectorStorageEnum::Memmap(v) => v.total_vector_count(),
+        }
+    }
+
+    fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.get_vector(key),
+            VectorStorageEnum::Memmap(v) => v.get_vector(key),
+        }
+    }
+
+    fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.put_vector(vector),
+            VectorStorageEnum::Memmap(v) => v.put_vector(vector),
+        }
+    }
+
+    fn insert_vector(
+        &mut self,
+        key: PointOffsetType,
+        vector: Vec<VectorElementType>,
+    ) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.insert_vector(key, vector),
+            VectorStorageEnum::Memmap(v) => v.insert_vector(key, vector),
+        }
+    }
+
+    fn update_from(
+        &mut self,
+        other: &VectorStorageEnum,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.update_from(other, stopped),
+            VectorStorageEnum::Memmap(v) => v.update_from(other, stopped),
+        }
+    }
+
+    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.delete(key),
+            VectorStorageEnum::Memmap(v) => v.delete(key),
+        }
+    }
+
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        match self {
+            VectorStorageEnum::Simple(v) => v.is_deleted(key),
+            VectorStorageEnum::Memmap(v) => v.is_deleted(key),
+        }
+    }
+
+    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.iter_ids(),
+            VectorStorageEnum::Memmap(v) => v.iter_ids(),
+        }
+    }
+
+    fn flusher(&self) -> Flusher {
+        match self {
+            VectorStorageEnum::Simple(v) => v.flusher(),
+            VectorStorageEnum::Memmap(v) => v.flusher(),
+        }
+    }
+
+    fn quantize(
+        &mut self,
+        data_path: &Path,
+        quantization_config: &QuantizationConfig,
+    ) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.quantize(data_path, quantization_config),
+            VectorStorageEnum::Memmap(v) => v.quantize(data_path, quantization_config),
+        }
+    }
+
+    fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.load_quantization(data_path),
+            VectorStorageEnum::Memmap(v) => v.load_quantization(data_path),
+        }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.files(),
+            VectorStorageEnum::Memmap(v) => v.files(),
+        }
+    }
+
+    fn scorer_builder(&self) -> Box<dyn ScorerBuilder + Sync + Send + '_> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.scorer_builder(),
+            VectorStorageEnum::Memmap(v) => v.scorer_builder(),
+        }
+    }
+}

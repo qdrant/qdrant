@@ -9,7 +9,7 @@ use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::VectorElementType;
 use segment::types::Distance;
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use segment::vector_storage::VectorStorageSS;
+use segment::vector_storage::{VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 50000;
@@ -26,7 +26,7 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> Arc<AtomicRefCell<VectorStorageSS>> {
+) -> Arc<AtomicRefCell<VectorStorageEnum>> {
     let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
     let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, dist).unwrap();
     {

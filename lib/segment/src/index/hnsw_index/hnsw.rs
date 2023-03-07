@@ -29,13 +29,13 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
@@ -54,7 +54,7 @@ struct SearchesTelemetry {
 impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     pub fn open(
         path: &Path,
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
         hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {

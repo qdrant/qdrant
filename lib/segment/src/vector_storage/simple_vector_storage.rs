@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use super::ScorerBuilder;
+use super::{ScorerBuilder, VectorStorageEnum};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -26,7 +26,7 @@ use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 use crate::vector_storage::quantized::quantized_vectors_base::{
     QuantizedVectors, QuantizedVectorsStorage,
 };
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
+use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage {
@@ -102,7 +102,7 @@ pub fn open_simple_vector_storage(
     database_column_name: &str,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let mut vectors = ChunkedVectors::new(dim);
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
@@ -131,15 +131,17 @@ pub fn open_simple_vector_storage(
         vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
     );
 
-    Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage {
-        dim,
-        distance,
-        vectors,
-        deleted,
-        deleted_count,
-        quantized_vectors: None,
-        db_wrapper,
-    })))
+    Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Simple(
+        SimpleVectorStorage {
+            dim,
+            distance,
+            vectors,
+            deleted,
+            deleted_count,
+            quantized_vectors: None,
+            db_wrapper,
+        },
+    ))))
 }
 
 impl SimpleVectorStorage {
@@ -289,7 +291,7 @@ impl VectorStorage for SimpleVectorStorage {
 
     fn update_from(
         &mut self,
-        other: &VectorStorageSS,
+        other: &VectorStorageEnum,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
