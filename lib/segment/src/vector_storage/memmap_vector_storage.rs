@@ -425,7 +425,7 @@ mod tests {
                 borrowed_storage2.put_vector(vec3.clone()).unwrap();
             }
             borrowed_storage
-                .update_from(&*storage2.borrow(), &Default::default())
+                .update_from(&storage2.borrow(), &Default::default())
                 .unwrap();
         }
 
@@ -449,7 +449,7 @@ mod tests {
                 borrowed_storage2.put_vector(vec5).unwrap();
             }
             borrowed_storage
-                .update_from(&*storage2.borrow(), &Default::default())
+                .update_from(&storage2.borrow(), &Default::default())
                 .unwrap();
         }
 
@@ -501,7 +501,7 @@ mod tests {
                 borrowed_storage2.put_vector(vec5).unwrap();
             }
             borrowed_storage
-                .update_from(&*storage2.borrow(), &Default::default())
+                .update_from(&storage2.borrow(), &Default::default())
                 .unwrap();
         }
 
@@ -568,7 +568,7 @@ mod tests {
                 borrowed_storage2.put_vector(vec5).unwrap();
             }
             borrowed_storage
-                .update_from(&*storage2.borrow(), &Default::default())
+                .update_from(&storage2.borrow(), &Default::default())
                 .unwrap();
         }
 
