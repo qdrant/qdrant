@@ -15,7 +15,7 @@ mod tests {
         Distance, HnswConfig, Indexes, ScalarQuantizationConfig, SearchParams, SegmentConfig,
         SeqNumberType, StorageType, VectorDataConfig,
     };
-    use segment::vector_storage::ScoredPointOffset;
+    use segment::vector_storage::{ScoredPointOffset, VectorStorage};
     use tempfile::Builder;
 
     fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
