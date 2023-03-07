@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
+use super::ScorerBuilder;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
@@ -81,10 +82,15 @@ where
 /// but possible to mark some vectors as removed
 ///
 /// Mem-mapped storage can only be constructed from another storage
-pub struct MemmapVectorStorage<TMetric: Metric> {
+pub struct MemmapVectorStorage {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
     mmap_store: Option<MmapVectors>,
+    distance: Distance,
+}
+
+pub struct MemmapVectorScorerBuilder<'a, TMetric: Metric> {
+    vector_storage: &'a MemmapVectorStorage,
     metric: PhantomData<TMetric>,
 }
 
@@ -100,38 +106,131 @@ pub fn open_memmap_vector_storage(
 
     let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
 
-    match distance {
-        Distance::Cosine => Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage::<
-            CosineMetric,
-        > {
-            vectors_path,
-            deleted_path,
-            mmap_store: Some(mmap_store),
-            metric: PhantomData,
-        }))),
-        Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage::<
-            EuclidMetric,
-        > {
-            vectors_path,
-            deleted_path,
-            mmap_store: Some(mmap_store),
-            metric: PhantomData,
-        }))),
-        Distance::Dot => Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage::<
-            DotProductMetric,
-        > {
-            vectors_path,
-            deleted_path,
-            mmap_store: Some(mmap_store),
-            metric: PhantomData,
-        }))),
-    }
+    Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage {
+        vectors_path,
+        deleted_path,
+        mmap_store: Some(mmap_store),
+        distance,
+    })))
 }
 
-impl<TMetric> VectorStorage for MemmapVectorStorage<TMetric>
+impl<'a, TMetric> ScorerBuilder for MemmapVectorScorerBuilder<'a, TMetric>
 where
     TMetric: Metric,
 {
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
+        Box::new(MemmapRawScorer::<TMetric> {
+            query: TMetric::preprocess(&vector).unwrap_or(vector),
+            metric: PhantomData,
+            mmap_store: self.vector_storage.mmap_store.as_ref().unwrap(),
+        })
+    }
+
+    fn quantized_raw_scorer(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Box<dyn RawScorer + '_>> {
+        let mmap_store = self.vector_storage.mmap_store.as_ref().unwrap();
+        if let Some(quantized_data) = &mmap_store.quantized_vectors {
+            if let Some(deleted_ram) = &mmap_store.deleted_flags {
+                let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
+                Some(quantized_data.raw_scorer(&query, deleted_ram))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    fn score_quantized_points(
+        &self,
+        vector: &[VectorElementType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        match self.quantized_raw_scorer(vector) {
+            Some(scorer) => {
+                let scores = points
+                    .filter(|idx| {
+                        !self
+                            .vector_storage
+                            .mmap_store
+                            .as_ref()
+                            .unwrap()
+                            .deleted(*idx)
+                            .unwrap_or(true)
+                    })
+                    .map(|idx| {
+                        let score = scorer.score_point(idx);
+                        ScoredPointOffset { idx, score }
+                    });
+                peek_top_largest_iterable(scores, top)
+            }
+            None => self.score_points(vector, points, top),
+        }
+    }
+
+    fn score_points(
+        &self,
+        vector: &[VectorElementType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        let preprocessed_vector_opt = TMetric::preprocess(vector);
+        let preprocessed_vector = preprocessed_vector_opt
+            .as_ref()
+            .map_or(vector, |x| x as &[_]);
+        let scores = points
+            .filter(|point| {
+                !self
+                    .vector_storage
+                    .mmap_store
+                    .as_ref()
+                    .unwrap()
+                    .deleted(*point)
+                    .unwrap_or(true)
+            })
+            .map(|point| {
+                let other_vector = self
+                    .vector_storage
+                    .mmap_store
+                    .as_ref()
+                    .unwrap()
+                    .raw_vector(point)
+                    .unwrap();
+                ScoredPointOffset {
+                    idx: point,
+                    score: TMetric::similarity(preprocessed_vector, other_vector),
+                }
+            });
+        peek_top_largest_iterable(scores, top)
+    }
+
+    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
+        let preprocessed_vector_opt = TMetric::preprocess(vector);
+        let preprocessed_vector = preprocessed_vector_opt
+            .as_ref()
+            .map_or(vector, |x| x as &[_]);
+        let scores = self.vector_storage.iter_ids().map(|point| {
+            let other_vector = self
+                .vector_storage
+                .mmap_store
+                .as_ref()
+                .unwrap()
+                .raw_vector(point)
+                .unwrap();
+            ScoredPointOffset {
+                idx: point,
+                score: TMetric::similarity(preprocessed_vector, other_vector),
+            }
+        });
+
+        peek_top_largest_iterable(scores, top)
+    }
+}
+
+impl VectorStorage for MemmapVectorStorage {
     fn vector_dim(&self) -> usize {
         self.mmap_store.as_ref().unwrap().dim
     }
@@ -246,125 +345,18 @@ where
         }
     }
 
-    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        Box::new(MemmapRawScorer::<TMetric> {
-            query: TMetric::preprocess(&vector).unwrap_or(vector),
-            metric: PhantomData,
-            mmap_store: self.mmap_store.as_ref().unwrap(),
-        })
-    }
-
-    fn quantized_raw_scorer(
-        &self,
-        vector: &[VectorElementType],
-    ) -> Option<Box<dyn RawScorer + '_>> {
-        let mmap_store = self.mmap_store.as_ref().unwrap();
-        if let Some(quantized_data) = &mmap_store.quantized_vectors {
-            if let Some(deleted_ram) = &mmap_store.deleted_flags {
-                let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
-                Some(quantized_data.raw_scorer(&query, deleted_ram))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    fn score_quantized_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset> {
-        match self.quantized_raw_scorer(vector) {
-            Some(scorer) => {
-                let scores = points
-                    .filter(|idx| {
-                        !self
-                            .mmap_store
-                            .as_ref()
-                            .unwrap()
-                            .deleted(*idx)
-                            .unwrap_or(true)
-                    })
-                    .map(|idx| {
-                        let score = scorer.score_point(idx);
-                        ScoredPointOffset { idx, score }
-                    });
-                peek_top_largest_iterable(scores, top)
-            }
-            None => self.score_points(vector, points, top),
-        }
-    }
-
     fn quantize(
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.quantize(TMetric::distance(), data_path, quantization_config)
+        mmap_store.quantize(self.distance, data_path, quantization_config)
     }
 
     fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
         mmap_store.load_quantization(data_path)
-    }
-
-    fn score_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector_opt = TMetric::preprocess(vector);
-        let preprocessed_vector = preprocessed_vector_opt
-            .as_ref()
-            .map_or(vector, |x| x as &[_]);
-        let scores = points
-            .filter(|point| {
-                !self
-                    .mmap_store
-                    .as_ref()
-                    .unwrap()
-                    .deleted(*point)
-                    .unwrap_or(true)
-            })
-            .map(|point| {
-                let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
-                ScoredPointOffset {
-                    idx: point,
-                    score: TMetric::similarity(preprocessed_vector, other_vector),
-                }
-            });
-        peek_top_largest_iterable(scores, top)
-    }
-
-    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector_opt = TMetric::preprocess(vector);
-        let preprocessed_vector = preprocessed_vector_opt
-            .as_ref()
-            .map_or(vector, |x| x as &[_]);
-        let scores = self.iter_ids().map(|point| {
-            let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
-            ScoredPointOffset {
-                idx: point,
-                score: TMetric::similarity(preprocessed_vector, other_vector),
-            }
-        });
-
-        peek_top_largest_iterable(scores, top)
-    }
-
-    fn score_internal(
-        &self,
-        point: PointOffsetType,
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset> {
-        let vector = self.get_vector(point).unwrap();
-        self.score_points(&vector, points, top)
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -375,6 +367,23 @@ where
             files.extend(quantized_vectors.files())
         }
         files
+    }
+
+    fn scorer_builder(&self) -> Box<dyn ScorerBuilder + Sync + Send + '_> {
+        match self.distance {
+            Distance::Cosine => Box::new(MemmapVectorScorerBuilder::<CosineMetric> {
+                vector_storage: self,
+                metric: Default::default(),
+            }),
+            Distance::Euclid => Box::new(MemmapVectorScorerBuilder::<EuclidMetric> {
+                vector_storage: self,
+                metric: Default::default(),
+            }),
+            Distance::Dot => Box::new(MemmapVectorScorerBuilder::<DotProductMetric> {
+                vector_storage: self,
+                metric: Default::default(),
+            }),
+        }
     }
 }
 
@@ -448,13 +457,17 @@ mod tests {
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 
-        let res = borrowed_storage.score_all(&vec3, 2);
+        let res = borrowed_storage.scorer_builder().score_all(&vec3, 2);
 
         assert_eq!(res.len(), 2);
 
         assert_ne!(res[0].idx, 2);
 
-        let res = borrowed_storage.score_points(&vec3, &mut vec![0, 1, 2, 3, 4].iter().cloned(), 2);
+        let res = borrowed_storage.scorer_builder().score_points(
+            &vec3,
+            &mut vec![0, 1, 2, 3, 4].iter().cloned(),
+            2,
+        );
 
         assert_eq!(res.len(), 2);
         assert_ne!(res[0].idx, 2);
@@ -493,7 +506,8 @@ mod tests {
         let query = vec![-1.0, -1.0, -1.0, -1.0];
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
-        let scorer = borrowed_storage.raw_scorer(query);
+        let scorer_builder = borrowed_storage.scorer_builder();
+        let scorer = scorer_builder.raw_scorer(query);
 
         let mut res = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
         let res_count = scorer.score_points(&query_points, &mut res);
@@ -568,8 +582,9 @@ mod tests {
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
         {
-            let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
-            let scorer_orig = borrowed_storage.raw_scorer(query.clone());
+            let scorer_builder = borrowed_storage.scorer_builder();
+            let scorer_quant = scorer_builder.quantized_raw_scorer(&query).unwrap();
+            let scorer_orig = scorer_builder.raw_scorer(query.clone());
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
                 let orig = scorer_orig.score_point(i);
@@ -584,8 +599,9 @@ mod tests {
         // test save-load
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
-        let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
-        let scorer_orig = borrowed_storage.raw_scorer(query);
+        let scorer_builder = borrowed_storage.scorer_builder();
+        let scorer_quant = scorer_builder.quantized_raw_scorer(&query).unwrap();
+        let scorer_orig = scorer_builder.raw_scorer(query);
 
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);

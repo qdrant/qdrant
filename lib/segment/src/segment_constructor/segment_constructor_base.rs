@@ -30,7 +30,6 @@ use crate::types::{
 };
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use crate::vector_storage::VectorStorageSS;
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
 pub const VECTOR_STORAGE_PATH: &str = "vector_storage";
@@ -91,7 +90,7 @@ fn create_segment(
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
-        let vector_storage: Arc<AtomicRefCell<VectorStorageSS>> = match config.storage_type {
+        let vector_storage = match config.storage_type {
             StorageType::InMemory => {
                 let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
                 open_simple_vector_storage(

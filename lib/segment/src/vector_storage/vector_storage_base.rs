@@ -46,6 +46,32 @@ pub trait RawScorer {
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 }
 
+pub trait ScorerBuilder {
+    /// Generate a `RawScorer` object which contains all required context for searching similar vector
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
+
+    // Generate RawScorer on quantized vectors if present
+    fn quantized_raw_scorer(&self, vector: &[VectorElementType])
+        -> Option<Box<dyn RawScorer + '_>>;
+
+    // Try peek top nearest points from quantized vectors. If quantized vectors are not present, do it on raw vectors
+    fn score_quantized_points(
+        &self,
+        vector: &[VectorElementType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset>;
+
+    fn score_points(
+        &self,
+        vector: &[VectorElementType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset>;
+
+    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset>;
+}
+
 /// Trait for vector storage
 /// El - type of vector element, expected numerical type
 /// Storage operates with internal IDs (`PointOffsetType`), which always starts with zero and have no skips
@@ -74,21 +100,6 @@ pub trait VectorStorage {
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
     fn flusher(&self) -> Flusher;
 
-    /// Generate a `RawScorer` object which contains all required context for searching similar vector
-    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
-
-    // Generate RawScorer on quantized vectors if present
-    fn quantized_raw_scorer(&self, vector: &[VectorElementType])
-        -> Option<Box<dyn RawScorer + '_>>;
-
-    // Try peek top nearest points from quantized vectors. If quantized vectors are not present, do it on raw vectors
-    fn score_quantized_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset>;
-
     // Generate quantized vectors and store them on disk
     fn quantize(
         &mut self,
@@ -98,20 +109,6 @@ pub trait VectorStorage {
 
     // Load quantized vectors from disk
     fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()>;
-
-    fn score_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset>;
-    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset>;
-    fn score_internal(
-        &self,
-        point: PointOffsetType,
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset>;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -125,6 +122,8 @@ pub trait VectorStorage {
                 .filter(move |x| !self.is_deleted(*x)),
         )
     }
+
+    fn scorer_builder(&self) -> Box<dyn ScorerBuilder + Sync + Send + '_>;
 }
 
 pub type VectorStorageSS = dyn VectorStorage + Sync + Send;
