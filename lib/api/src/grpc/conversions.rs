@@ -8,7 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{RepeatedIntegers, RepeatedStrings};
+use super::qdrant::{RepeatedIntegers, RepeatedStrings, UpsertPoints};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -105,6 +105,20 @@ fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
                 Ok(serde_json::Value::Array(list))
             }
         },
+    }
+}
+
+impl UpsertPoints {
+    /// Allocate IDs and transform into `PointInsertOperations`.
+    ///
+    /// Allocate an unique ID for each vector that has none specified.
+    pub fn allocate_ids(&mut self) {
+        self.points
+            .iter_mut()
+            .filter(|point| point.id.is_none())
+            .for_each(|point| {
+                point.id.replace(PointId::random());
+            });
     }
 }
 
@@ -365,6 +379,15 @@ impl From<segment::types::SearchParams> for SearchParams {
             hnsw_ef: params.hnsw_ef.map(|x| x as u64),
             exact: Some(params.exact),
             quantization: params.quantization.map(|q| q.into()),
+        }
+    }
+}
+
+impl PointId {
+    /// Generate secure random point ID (UUID).
+    pub fn random() -> Self {
+        Self {
+            point_id_options: Some(PointIdOptions::Uuid(Uuid::new_v4().to_string())),
         }
     }
 }

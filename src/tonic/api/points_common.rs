@@ -46,9 +46,10 @@ pub fn points_operation_response(
 
 pub async fn upsert(
     toc: &TableOfContent,
-    upsert_points: UpsertPoints,
+    mut upsert_points: UpsertPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
+    upsert_points.allocate_ids();
     let UpsertPoints {
         collection_name,
         wait,
