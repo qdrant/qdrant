@@ -8,7 +8,11 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_config::ShardType;
 use collection::shards::shard_versioning::latest_shard_paths;
 
+use crate::content_manager::collection_meta_ops::{
+    CollectionMetaOperations, CreateCollectionOperation,
+};
 use crate::content_manager::snapshots::download::{download_snapshot, downloaded_snapshots_dir};
+use crate::dispatcher::Dispatcher;
 use crate::{StorageError, TableOfContent};
 
 async fn activate_shard(
@@ -44,13 +48,35 @@ async fn activate_shard(
 }
 
 pub async fn do_recover_from_snapshot(
-    toc: &TableOfContent,
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    source: SnapshotRecover,
+    wait: bool,
+) -> Result<bool, StorageError> {
+    let dispatch = dispatcher.clone();
+    let collection_name = collection_name.to_string();
+    let recovery =
+        tokio::spawn(
+            async move { _do_recover_from_snapshot(dispatch, &collection_name, source).await },
+        );
+    if wait {
+        Ok(recovery.await??)
+    } else {
+        Ok(true)
+    }
+}
+
+async fn _do_recover_from_snapshot(
+    dispatcher: Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
 ) -> Result<bool, StorageError> {
     let SnapshotRecover { location, priority } = source;
+    let toc = dispatcher.toc();
 
-    let collection = toc.get_collection(collection_name).await?;
+    let this_peer_id = toc.this_peer_id;
+
+    let is_distributed = toc.is_distributed();
 
     let snapshot_download_path = downloaded_snapshots_dir(toc.snapshots_path());
     tokio::fs::create_dir_all(&snapshot_download_path).await?;
@@ -85,11 +111,32 @@ pub async fn do_recover_from_snapshot(
     let tmp_collection_dir_clone = tmp_collection_dir.clone();
     let restoring = tokio::task::spawn_blocking(move || {
         // Unpack snapshot collection to the target folder
-        Collection::restore_snapshot(&snapshot_path, &tmp_collection_dir_clone)
+        Collection::restore_snapshot(
+            &snapshot_path,
+            &tmp_collection_dir_clone,
+            this_peer_id,
+            is_distributed,
+        )
     });
     restoring.await??;
 
     let snapshot_config = CollectionConfig::load(&tmp_collection_dir)?;
+
+    let collection = match toc.get_collection(collection_name).await.ok() {
+        Some(collection) => collection,
+        None => {
+            log::debug!("Collection {} does not exist, creating it", collection_name);
+            let operation =
+                CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
+                    collection_name.to_string(),
+                    snapshot_config.clone().into(),
+                ));
+            dispatcher
+                .submit_collection_meta_op(operation, None)
+                .await?;
+            toc.get_collection(collection_name).await?
+        }
+    };
 
     let state = collection.state().await;
 
@@ -110,8 +157,6 @@ pub async fn do_recover_from_snapshot(
     }
 
     // Deactivate collection local shards during recovery
-    let this_peer_id = toc.this_peer_id;
-
     for (shard_id, shard_info) in &state.shards {
         let local_shard_state = shard_info.replicas.get(&this_peer_id);
         match local_shard_state {
