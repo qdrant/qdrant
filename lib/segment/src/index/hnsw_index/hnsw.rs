@@ -259,7 +259,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
-            .unwrap_or(false);
+            .unwrap_or(default_quantization_ignore_value());
         if ignore_quantization {
             vectors
                 .iter()
