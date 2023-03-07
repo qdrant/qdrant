@@ -1,7 +1,10 @@
 use actix_files::NamedFile;
 use actix_web::rt::time::Instant;
+use actix_web::web::Query;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use collection::operations::snapshot_ops::SnapshotRecover;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
@@ -14,6 +17,11 @@ use crate::actix::helpers::{
     collection_into_actix_error, process_response, storage_into_actix_error,
 };
 use crate::common::collections::*;
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct SnapshottingParam {
+    pub wait: Option<bool>,
+}
 
 // Actix specific code
 pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> Result<NamedFile> {
@@ -69,13 +77,20 @@ async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     request: web::Json<SnapshotRecover>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let snapshot_recover = request.into_inner();
+    let wait = params.wait.unwrap_or(true);
 
     let timing = Instant::now();
-    let response =
-        do_recover_from_snapshot(dispatcher.get_ref(), &collection_name, snapshot_recover).await;
+    let response = do_recover_from_snapshot(
+        dispatcher.get_ref(),
+        &collection_name,
+        snapshot_recover,
+        wait,
+    )
+    .await;
     process_response(response, timing)
 }
 

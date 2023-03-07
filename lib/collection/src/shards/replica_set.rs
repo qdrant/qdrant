@@ -120,13 +120,6 @@ pub struct ReplicaSetState {
 }
 
 impl ReplicaSetState {
-    pub fn update_this_peer_id(&mut self, peer_id: PeerId) {
-        self.this_peer_id = peer_id;
-        self.peers
-            .remove(&peer_id)
-            .and_then(|state| self.peers.insert(peer_id, state));
-    }
-
     pub fn get_peer_state(&self, peer_id: &PeerId) -> Option<&ReplicaState> {
         self.peers.get(peer_id)
     }

@@ -51,6 +51,25 @@ pub async fn do_recover_from_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
+    wait: bool,
+) -> Result<bool, StorageError> {
+    let dispatch = dispatcher.clone();
+    let collection_name = collection_name.to_string();
+    let recovery =
+        tokio::spawn(
+            async move { _do_recover_from_snapshot(dispatch, &collection_name, source).await },
+        );
+    if wait {
+        Ok(recovery.await??)
+    } else {
+        Ok(true)
+    }
+}
+
+async fn _do_recover_from_snapshot(
+    dispatcher: Dispatcher,
+    collection_name: &str,
+    source: SnapshotRecover,
 ) -> Result<bool, StorageError> {
     let SnapshotRecover { location, priority } = source;
     let toc = dispatcher.toc();

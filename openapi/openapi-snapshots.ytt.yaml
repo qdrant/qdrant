@@ -7,7 +7,7 @@ paths:
         - snapshots
         - collections
       summary: Recover from a snapshot
-      description: Recover local collection data from a snapshot. This will overwrite any data, stored on this node, for the collection.
+      description: Recover local collection data from a snapshot. This will overwrite any data, stored on this node, for the collection. If collection does not exist - it will be created.
       operationId: recover_from_snapshot
       parameters:
         - name: collection_name
@@ -16,6 +16,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true."
+          required: false
+          schema:
+            type: boolean
       requestBody:
         description: Snapshot to recover from
         content:
