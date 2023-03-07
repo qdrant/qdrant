@@ -158,6 +158,18 @@ message WithVectorsSelector {
   }
 }
 
+message QuantizationSearchParams {
+  /*
+  If set to true, search will ignore quantized vector data
+   */
+  optional bool ignore = 1;
+
+  /*
+  If true, use original vectors to re-score top-k results. Default is true.
+   */
+  optional bool rescore = 2;
+}
+
 message SearchParams {
   /*
   Params relevant to HNSW index. Size of the beam in a beam-search.
@@ -173,7 +185,7 @@ message SearchParams {
   /*
   If set to true, search will ignore quantized vector data 
   */
-  optional bool ignore_quantization = 3;
+  optional QuantizationSearchParams quantization = 3;
 }
 
 message SearchPoints {

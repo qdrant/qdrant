@@ -4,6 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
+use segment::types::{default_quantization_ignore_value, default_quantization_rescore_value};
 use tonic::Status;
 use uuid::Uuid;
 
@@ -21,9 +22,9 @@ use crate::grpc::qdrant::{
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
     HnswConfigDiff, IsEmptyCondition, ListCollectionsResponse, ListValue, Match, NamedVectors,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
-    PayloadSchemaType, PointId, QuantizationConfig, Range, ScalarQuantization, ScoredPoint,
-    SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector, Vectors,
-    VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    PayloadSchemaType, PointId, QuantizationConfig, QuantizationSearchParams, Range,
+    ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value,
+    ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -328,12 +329,32 @@ impl From<segment::types::WithPayloadInterface> for WithPayloadSelector {
     }
 }
 
+impl From<QuantizationSearchParams> for segment::types::QuantizationSearchParams {
+    fn from(params: QuantizationSearchParams) -> Self {
+        Self {
+            ignore: params.ignore.unwrap_or(default_quantization_ignore_value()),
+            rescore: params
+                .rescore
+                .unwrap_or(default_quantization_rescore_value()),
+        }
+    }
+}
+
+impl From<segment::types::QuantizationSearchParams> for QuantizationSearchParams {
+    fn from(params: segment::types::QuantizationSearchParams) -> Self {
+        Self {
+            ignore: Some(params.ignore),
+            rescore: Some(params.rescore),
+        }
+    }
+}
+
 impl From<SearchParams> for segment::types::SearchParams {
     fn from(params: SearchParams) -> Self {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as usize),
             exact: params.exact.unwrap_or(false),
-            ignore_quantization: params.ignore_quantization.unwrap_or(false),
+            quantization: params.quantization.map(|q| q.into()),
         }
     }
 }
@@ -343,7 +364,7 @@ impl From<segment::types::SearchParams> for SearchParams {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as u64),
             exact: Some(params.exact),
-            ignore_quantization: Some(params.ignore_quantization),
+            quantization: params.quantization.map(|q| q.into()),
         }
     }
 }
