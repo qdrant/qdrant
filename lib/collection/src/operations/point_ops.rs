@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::iter;
 
 use itertools::izip;
 use schemars::gen::SchemaGenerator;
@@ -70,6 +71,28 @@ impl TryFrom<Record> for PointStruct {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
+pub struct NewPointStruct {
+    /// Optional point id
+    pub id: Option<PointIdType>,
+    /// Vectors
+    #[serde(alias = "vectors")]
+    pub vector: VectorStruct,
+    /// Payload values (optional)
+    pub payload: Option<Payload>,
+}
+
+impl From<PointStruct> for NewPointStruct {
+    fn from(other: PointStruct) -> Self {
+        Self {
+            id: Some(other.id),
+            vector: other.vector,
+            payload: other.payload,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct Batch {
     pub ids: Vec<PointIdType>,
     pub vectors: BatchVectorStruct,
@@ -92,6 +115,14 @@ impl Batch {
             payloads: None,
         }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct NewBatch {
+    pub ids: Option<Vec<Option<PointIdType>>>,
+    pub vectors: BatchVectorStruct,
+    pub payloads: Option<Vec<Option<Payload>>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -195,6 +226,54 @@ impl JsonSchema for PointInsertOperations {
             })),
             ..Default::default()
         })
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum NewPointInsertOperations {
+    /// Inset points from a batch.
+    #[serde(rename = "batch")]
+    PointsBatch(NewBatch),
+    /// Insert points from a list
+    #[serde(rename = "points")]
+    PointsList(Vec<NewPointStruct>),
+}
+
+impl NewPointInsertOperations {
+    /// Allocate IDs and transform into `PointInsertOperations`.
+    ///
+    /// Allocate an unique ID for each vector that has none specified.
+    pub fn allocate_ids(self) -> PointInsertOperations {
+        match self {
+            Self::PointsBatch(batch) => {
+                // Get or allocate list of IDs for each vector
+                let ids = match batch.ids {
+                    Some(ids) => ids
+                        .into_iter()
+                        .map(|id| id.unwrap_or_else(PointIdType::random))
+                        .collect(),
+                    None => iter::from_fn(|| Some(PointIdType::random()))
+                        .take(batch.vectors.len())
+                        .collect(),
+                };
+
+                PointInsertOperations::PointsBatch(Batch {
+                    ids,
+                    vectors: batch.vectors,
+                    payloads: batch.payloads,
+                })
+            }
+            Self::PointsList(list) => PointInsertOperations::PointsList(
+                list.into_iter()
+                    .map(|p| PointStruct {
+                        id: p.id.unwrap_or_else(PointIdType::random),
+                        vector: p.vector,
+                        payload: p.payload,
+                    })
+                    .collect(),
+            ),
+        }
     }
 }
 

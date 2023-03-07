@@ -2,7 +2,7 @@ use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, post, put, web, Responder};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
+use collection::operations::point_ops::{NewPointInsertOperations, PointsSelector, WriteOrdering};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
@@ -23,11 +23,11 @@ pub struct UpdateParam {
 pub async fn upsert_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    operation: web::Json<PointInsertOperations>,
+    operation: web::Json<NewPointInsertOperations>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
-    let operation = operation.into_inner();
+    let operation = operation.into_inner().allocate_ids();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
     let timing = Instant::now();

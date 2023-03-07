@@ -198,4 +198,18 @@ impl BatchVectorStruct {
             }
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self {
+            BatchVectorStruct::Single(v) => v.len(),
+            BatchVectorStruct::Multi(v) => v.values().next().map(|v| v.len()).unwrap_or(0),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            BatchVectorStruct::Single(_) => false,
+            BatchVectorStruct::Multi(v) => v.values().next().map(|v| v.is_empty()).unwrap_or(true),
+        }
+    }
 }

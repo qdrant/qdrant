@@ -46,6 +46,13 @@ pub enum ExtendedPointId {
     Uuid(Uuid),
 }
 
+impl ExtendedPointId {
+    /// Generate secure random point ID (UUID).
+    pub fn random() -> Self {
+        Self::Uuid(Uuid::new_v4())
+    }
+}
+
 impl std::fmt::Display for ExtendedPointId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
