@@ -44,6 +44,8 @@ docker run --rm -v "${PWD}":/workdir mikefarah/yq eval-all '. as $item ireduce (
   ./openapi/openapi-main.yaml \
   ./openapi/models.yaml > ./openapi/openapi-merged.yaml
 
+sleep 5
+
 docker run --rm -v "${PWD}"/openapi:/spec redocly/openapi-cli lint openapi-merged.yaml
 
 docker run --rm -i mikefarah/yq eval -o=json - <./openapi/openapi-merged.yaml | jq > ./openapi/openapi-merged.json
