@@ -267,7 +267,7 @@ pub struct QuantizationSearchParams {
 }
 
 pub fn default_quantization_ignore_value() -> bool {
-    true
+    false
 }
 
 pub fn default_quantization_rescore_value() -> bool {
