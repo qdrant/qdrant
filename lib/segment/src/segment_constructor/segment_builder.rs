@@ -8,7 +8,7 @@ use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{
     check_process_stopped, OperationError, OperationResult, SegmentEntry,
 };
-use crate::index::PayloadIndex;
+use crate::index::{PayloadIndex, VectorIndex};
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadFieldSchema, PayloadKeyType, SegmentConfig};

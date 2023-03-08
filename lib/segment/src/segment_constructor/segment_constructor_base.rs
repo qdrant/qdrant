@@ -20,7 +20,7 @@ use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::VectorIndexSS;
+use crate::index::VectorIndexEnum;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
@@ -117,26 +117,28 @@ fn create_segment(
                 .load_quantization(&quantized_data_path)?;
         }
 
-        let vector_index: Arc<AtomicRefCell<VectorIndexSS>> = match config.index {
-            Indexes::Plain { .. } => sp(PlainIndex::new(
+        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match config.index {
+            Indexes::Plain { .. } => sp(VectorIndexEnum::Plain(PlainIndex::new(
                 vector_storage.clone(),
                 payload_index.clone(),
-            )),
+            ))),
             Indexes::Hnsw(hnsw_config) => {
                 if hnsw_config.on_disk.unwrap_or(false) {
-                    sp(HNSWIndex::<GraphLinksMmap>::open(
-                        &vector_index_path,
-                        vector_storage.clone(),
-                        payload_index.clone(),
-                        hnsw_config,
-                    )?)
+                    sp(VectorIndexEnum::HnswMmap(
+                        HNSWIndex::<GraphLinksMmap>::open(
+                            &vector_index_path,
+                            vector_storage.clone(),
+                            payload_index.clone(),
+                            hnsw_config,
+                        )?,
+                    ))
                 } else {
-                    sp(HNSWIndex::<GraphLinksRam>::open(
+                    sp(VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
                         &vector_index_path,
                         vector_storage.clone(),
                         payload_index.clone(),
                         hnsw_config,
-                    )?)
+                    )?))
                 }
             }
         };
