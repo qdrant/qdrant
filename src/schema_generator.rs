@@ -2,7 +2,7 @@ use api::grpc::models::CollectionsResponse;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
+use collection::operations::point_ops::{NewPointInsertOperations, PointsSelector, WriteOrdering};
 use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
@@ -44,7 +44,7 @@ struct AllDefinitions {
     af: ChangeAliasesOperation,
     ag: CreateFieldIndex,
     ah: PointsSelector,
-    ai: PointInsertOperations,
+    ai: NewPointInsertOperations,
     aj: SetPayload,
     ak: DeletePayload,
     al: ClusterStatus,

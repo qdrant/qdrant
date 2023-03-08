@@ -34,7 +34,7 @@ pub enum WriteOrdering {
     Strong,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct PointStruct {
     /// Point id
@@ -72,7 +72,7 @@ impl TryFrom<Record> for PointStruct {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct NewPointStruct {
-    /// Optional point id
+    /// Point id (optional)
     pub id: Option<PointIdType>,
     /// Vectors
     #[serde(alias = "vectors")]
@@ -91,7 +91,7 @@ impl From<PointStruct> for NewPointStruct {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Batch {
     pub ids: Vec<PointIdType>,
@@ -120,8 +120,11 @@ impl Batch {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct NewBatch {
+    /// Point ids (optional)
     pub ids: Option<Vec<Option<PointIdType>>>,
+    /// Point vectors
     pub vectors: BatchVectorStruct,
+    /// Point payloads (optional)
     pub payloads: Option<Vec<Option<Payload>>>,
 }
 
@@ -149,8 +152,8 @@ pub enum PointsSelector {
 
 // Structure used for deriving custom JsonSchema only
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-struct PointsList {
-    points: Vec<PointStruct>,
+struct NewPointsList {
+    points: Vec<NewPointStruct>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -171,62 +174,6 @@ pub enum PointInsertOperations {
     /// Insert points from a list
     #[serde(rename = "points")]
     PointsList(Vec<PointStruct>),
-}
-
-impl JsonSchema for PointInsertOperations {
-    fn schema_name() -> String {
-        "PointInsertOperations".to_string()
-    }
-
-    fn json_schema(gen: &mut SchemaGenerator) -> Schema {
-        let def_path = gen.settings().definitions_path.clone();
-        let a_schema: Schema = Batch::json_schema(gen);
-        let proxy_b_schema = PointsList::json_schema(gen);
-        let definitions = gen.definitions_mut();
-        definitions.insert(Batch::schema_name(), a_schema);
-
-        let field_a_name = "batch".to_string();
-
-        let get_obj_schema = |field: String, schema_name: String| {
-            let schema_ref = Schema::Object(SchemaObject {
-                reference: Some(format!("{def_path}{schema_name}")),
-                ..Default::default()
-            });
-            Schema::Object(SchemaObject {
-                object: Some(Box::new(ObjectValidation {
-                    required: vec![field.clone()].into_iter().collect(),
-                    properties: vec![(field, schema_ref)].into_iter().collect(),
-                    ..Default::default()
-                })),
-                ..Default::default()
-            })
-        };
-
-        let proxy_a_schema = get_obj_schema(field_a_name, Batch::schema_name());
-
-        let proxy_a_name = "PointsBatch".to_string();
-
-        definitions.insert(proxy_a_name.clone(), proxy_a_schema);
-        definitions.insert(PointsList::schema_name(), proxy_b_schema);
-
-        let proxy_a_ref = Schema::Object(SchemaObject {
-            reference: Some(format!("{def_path}{proxy_a_name}")),
-            ..Default::default()
-        });
-
-        let proxy_b_ref = Schema::Object(SchemaObject {
-            reference: Some(format!("{}{}", def_path, PointsList::schema_name())),
-            ..Default::default()
-        });
-
-        Schema::Object(SchemaObject {
-            subschemas: Some(Box::new(SubschemaValidation {
-                one_of: Some(vec![proxy_a_ref, proxy_b_ref]),
-                ..Default::default()
-            })),
-            ..Default::default()
-        })
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -274,6 +221,62 @@ impl NewPointInsertOperations {
                     .collect(),
             ),
         }
+    }
+}
+
+impl JsonSchema for NewPointInsertOperations {
+    fn schema_name() -> String {
+        "NewPointInsertOperations".to_string()
+    }
+
+    fn json_schema(gen: &mut SchemaGenerator) -> Schema {
+        let def_path = gen.settings().definitions_path.clone();
+        let a_schema: Schema = NewBatch::json_schema(gen);
+        let proxy_b_schema = NewPointsList::json_schema(gen);
+        let definitions = gen.definitions_mut();
+        definitions.insert(NewBatch::schema_name(), a_schema);
+
+        let field_a_name = "batch".to_string();
+
+        let get_obj_schema = |field: String, schema_name: String| {
+            let schema_ref = Schema::Object(SchemaObject {
+                reference: Some(format!("{def_path}{schema_name}")),
+                ..Default::default()
+            });
+            Schema::Object(SchemaObject {
+                object: Some(Box::new(ObjectValidation {
+                    required: vec![field.clone()].into_iter().collect(),
+                    properties: vec![(field, schema_ref)].into_iter().collect(),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            })
+        };
+
+        let proxy_a_schema = get_obj_schema(field_a_name, NewBatch::schema_name());
+
+        let proxy_a_name = "NewPointsBatch".to_string();
+
+        definitions.insert(proxy_a_name.clone(), proxy_a_schema);
+        definitions.insert(NewPointsList::schema_name(), proxy_b_schema);
+
+        let proxy_a_ref = Schema::Object(SchemaObject {
+            reference: Some(format!("{def_path}{proxy_a_name}")),
+            ..Default::default()
+        });
+
+        let proxy_b_ref = Schema::Object(SchemaObject {
+            reference: Some(format!("{}{}", def_path, NewPointsList::schema_name())),
+            ..Default::default()
+        });
+
+        Schema::Object(SchemaObject {
+            subschemas: Some(Box::new(SubschemaValidation {
+                one_of: Some(vec![proxy_a_ref, proxy_b_ref]),
+                ..Default::default()
+            })),
+            ..Default::default()
+        })
     }
 }
 

@@ -2252,7 +2252,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PointInsertOperations"
+                "$ref": "#/components/schemas/NewPointInsertOperations"
               }
             }
           }
@@ -5378,13 +5378,13 @@
           }
         }
       },
-      "PointInsertOperations": {
+      "NewPointInsertOperations": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/PointsBatch"
+            "$ref": "#/components/schemas/NewPointsBatch"
           },
           {
-            "$ref": "#/components/schemas/PointsList"
+            "$ref": "#/components/schemas/NewPointsList"
           }
         ]
       },
@@ -5415,15 +5415,22 @@
           }
         ]
       },
-      "PointStruct": {
+      "NewPointStruct": {
         "type": "object",
         "required": [
-          "id",
           "vector"
         ],
         "properties": {
           "id": {
-            "$ref": "#/components/schemas/ExtendedPointId"
+            "description": "Point id (optional)",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtendedPointId"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "vector": {
             "$ref": "#/components/schemas/VectorStruct"
@@ -5441,23 +5448,32 @@
           }
         }
       },
-      "Batch": {
+      "NewBatch": {
         "type": "object",
         "required": [
-          "ids",
           "vectors"
         ],
         "properties": {
           "ids": {
+            "description": "Point ids (optional)",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
-            }
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ExtendedPointId"
+                },
+                {
+                  "nullable": true
+                }
+              ]
+            },
+            "nullable": true
           },
           "vectors": {
             "$ref": "#/components/schemas/BatchVectorStruct"
           },
           "payloads": {
+            "description": "Point payloads (optional)",
             "type": "array",
             "items": {
               "anyOf": [
@@ -5473,17 +5489,17 @@
           }
         }
       },
-      "PointsBatch": {
+      "NewPointsBatch": {
         "required": [
           "batch"
         ],
         "properties": {
           "batch": {
-            "$ref": "#/components/schemas/Batch"
+            "$ref": "#/components/schemas/NewBatch"
           }
         }
       },
-      "PointsList": {
+      "NewPointsList": {
         "type": "object",
         "required": [
           "points"
@@ -5492,7 +5508,7 @@
           "points": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PointStruct"
+              "$ref": "#/components/schemas/NewPointStruct"
             }
           }
         }
