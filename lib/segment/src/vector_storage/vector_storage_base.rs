@@ -48,7 +48,7 @@ pub trait RawScorer {
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 }
 
-pub trait ScorerBuilder {
+pub trait VectorScorer {
     /// Generate a `RawScorer` object which contains all required context for searching similar vector
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
 
@@ -125,7 +125,7 @@ pub trait VectorStorage {
         )
     }
 
-    fn scorer_builder(&self) -> Box<dyn ScorerBuilder + Sync + Send + '_>;
+    fn scorer(&self) -> Box<dyn VectorScorer + Sync + Send + '_>;
 }
 
 pub enum VectorStorageEnum {
@@ -251,10 +251,10 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn scorer_builder(&self) -> Box<dyn ScorerBuilder + Sync + Send + '_> {
+    fn scorer(&self) -> Box<dyn VectorScorer + Sync + Send + '_> {
         match self {
-            VectorStorageEnum::Simple(v) => v.scorer_builder(),
-            VectorStorageEnum::Memmap(v) => v.scorer_builder(),
+            VectorStorageEnum::Simple(v) => v.scorer(),
+            VectorStorageEnum::Memmap(v) => v.scorer(),
         }
     }
 }

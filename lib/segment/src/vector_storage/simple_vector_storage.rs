@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use super::{ScorerBuilder, VectorStorageEnum};
+use super::{VectorScorer, VectorStorageEnum};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -162,7 +162,7 @@ impl SimpleVectorStorage {
     }
 }
 
-impl<'a, TMetric> ScorerBuilder for SimpleVectorScorerBuilder<'a, TMetric>
+impl<'a, TMetric> VectorScorer for SimpleVectorScorerBuilder<'a, TMetric>
 where
     TMetric: Metric,
 {
@@ -366,7 +366,7 @@ impl VectorStorage for SimpleVectorStorage {
         }
     }
 
-    fn scorer_builder(&self) -> Box<dyn ScorerBuilder + Sync + Send + '_> {
+    fn scorer(&self) -> Box<dyn VectorScorer + Sync + Send + '_> {
         match self.distance {
             Distance::Cosine => Box::new(SimpleVectorScorerBuilder::<CosineMetric> {
                 vector_storage: self,
@@ -418,11 +418,10 @@ mod tests {
 
         let query = vec![0.0, 1.0, 1.1, 1.0];
 
-        let closest = borrowed_storage.scorer_builder().score_points(
-            &query,
-            &mut [0, 1, 2, 3, 4].iter().cloned(),
-            2,
-        );
+        let closest =
+            borrowed_storage
+                .scorer()
+                .score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         let top_idx = match closest.get(0) {
             Some(scored_point) => {
@@ -436,14 +435,13 @@ mod tests {
 
         borrowed_storage.delete(top_idx).unwrap();
 
-        let closest = borrowed_storage.scorer_builder().score_points(
-            &query,
-            &mut [0, 1, 2, 3, 4].iter().cloned(),
-            2,
-        );
+        let closest =
+            borrowed_storage
+                .scorer()
+                .score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
-        let scorer_builder = borrowed_storage.scorer_builder();
-        let raw_scorer = scorer_builder.raw_scorer(query);
+        let vector_scorer = borrowed_storage.scorer();
+        let raw_scorer = vector_scorer.raw_scorer(query);
         let query_points = vec![0, 1, 2, 3, 4];
 
         let mut raw_res1 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
@@ -507,9 +505,9 @@ mod tests {
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
         {
-            let scorer_builder = borrowed_storage.scorer_builder();
-            let scorer_quant = scorer_builder.quantized_raw_scorer(&query).unwrap();
-            let scorer_orig = scorer_builder.raw_scorer(query.clone());
+            let vector_scorer = borrowed_storage.scorer();
+            let scorer_quant = vector_scorer.quantized_raw_scorer(&query).unwrap();
+            let scorer_orig = vector_scorer.raw_scorer(query.clone());
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
                 let orig = scorer_orig.score_point(i);
@@ -524,9 +522,9 @@ mod tests {
         // test save-load
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
-        let scorer_builder = borrowed_storage.scorer_builder();
-        let scorer_quant = scorer_builder.quantized_raw_scorer(&query).unwrap();
-        let scorer_orig = scorer_builder.raw_scorer(query.clone());
+        let vector_scorer = borrowed_storage.scorer();
+        let scorer_quant = vector_scorer.quantized_raw_scorer(&query).unwrap();
+        let scorer_orig = vector_scorer.raw_scorer(query.clone());
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
             let orig = scorer_orig.score_point(i);
