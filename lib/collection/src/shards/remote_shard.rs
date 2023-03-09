@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
@@ -37,7 +37,6 @@ use crate::shards::conversions::{
     internal_upsert_points, try_scored_point_from_grpc,
 };
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::RemoteShardTelemetry;
 use crate::shards::CollectionId;
@@ -72,33 +71,8 @@ impl RemoteShard {
         }
     }
 
-    /// Initialize remote shard by persisting its info on the file system.
-    pub fn init(
-        id: ShardId,
-        collection_id: CollectionId,
-        peer_id: PeerId,
-        shard_path: PathBuf,
-        channel_service: ChannelService,
-    ) -> CollectionResult<Self> {
-        // initialize remote shard config file
-        let shard_config = ShardConfig::new_remote(peer_id);
-        shard_config.save(&shard_path)?;
-        Ok(RemoteShard::new(
-            id,
-            collection_id,
-            peer_id,
-            channel_service,
-        ))
-    }
-
     pub fn restore_snapshot(_snapshot_path: &Path) {
         // NO extra actions needed for remote shards
-    }
-
-    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
-        let shard_config = ShardConfig::new_remote(self.peer_id);
-        shard_config.save(target_path)?;
-        Ok(())
     }
 
     fn current_address(&self) -> CollectionResult<Uri> {

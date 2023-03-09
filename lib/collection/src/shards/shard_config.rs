@@ -10,9 +10,9 @@ pub const SHARD_CONFIG_FILE: &str = "shard_config.json";
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub enum ShardType {
-    Local,
-    Remote { peer_id: PeerId },
-    Temporary, // same as local, but not ready yet
+    Local,                      // Deprecated
+    Remote { peer_id: PeerId }, // Deprecated
+    Temporary,                  // Deprecated
     ReplicaSet,
 }
 
@@ -30,21 +30,6 @@ impl ShardConfig {
         Self {
             r#type: ShardType::ReplicaSet,
         }
-    }
-
-    pub fn new_remote(peer_id: PeerId) -> Self {
-        let r#type = ShardType::Remote { peer_id };
-        Self { r#type }
-    }
-
-    pub fn new_local() -> Self {
-        let r#type = ShardType::Local;
-        Self { r#type }
-    }
-
-    pub fn new_temp() -> Self {
-        let r#type = ShardType::Temporary;
-        Self { r#type }
     }
 
     pub fn load(shard_path: &Path) -> CollectionResult<Option<Self>> {

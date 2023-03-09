@@ -250,7 +250,7 @@ impl LocalShard {
         update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
-        let local_shard_config = ShardConfig::new_local();
+        let local_shard_config = ShardConfig::new_replica_set();
         let shard =
             Self::build(id, collection_id, shard_path, shared_config, update_runtime).await?;
         local_shard_config.save(shard_path)?;

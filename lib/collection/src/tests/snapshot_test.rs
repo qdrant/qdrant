@@ -95,11 +95,24 @@ async fn test_snapshot_collection() {
         .await
         .unwrap();
 
-    Collection::restore_snapshot(
+    // Do not recover in local mode if some shards are remote
+    assert!(Collection::restore_snapshot(
+        &snapshots_path.path().join(&snapshot_description.name),
+        recover_dir.path(),
+        0,
+        false,
+    )
+    .is_err());
+
+    if let Err(err) = Collection::restore_snapshot(
         &snapshots_path.path().join(snapshot_description.name),
         recover_dir.path(),
-    )
-    .unwrap();
+        0,
+        true,
+    ) {
+        collection.before_drop().await;
+        panic!("Failed to restore snapshot: {err}")
+    }
 
     let mut recovered_collection = Collection::load(
         collection_name_rec,

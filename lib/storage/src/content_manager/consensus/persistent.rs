@@ -36,7 +36,7 @@ pub struct Persistent {
     /// Last known cluster topology
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
-    pub this_peer_id: u64,
+    pub this_peer_id: PeerId,
     #[serde(skip)]
     pub path: PathBuf,
     /// Tracks if there are some unsaved changes due to the failure on save
@@ -146,7 +146,7 @@ impl Persistent {
         self.peer_address_by_id.read().clone()
     }
 
-    pub fn this_peer_id(&self) -> u64 {
+    pub fn this_peer_id(&self) -> PeerId {
         self.this_peer_id
     }
 
