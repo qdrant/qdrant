@@ -9,7 +9,7 @@ use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::VectorElementType;
 use segment::types::Distance;
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use segment::vector_storage::VectorStorageSS;
+use segment::vector_storage::{VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 50000;
@@ -26,7 +26,7 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> Arc<AtomicRefCell<VectorStorageSS>> {
+) -> Arc<AtomicRefCell<VectorStorageEnum>> {
     let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
     let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, dist).unwrap();
     {
@@ -46,6 +46,7 @@ fn benchmark_naive(c: &mut Criterion) {
     let dist = Distance::Dot;
     let storage = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
     let borrowed_storage = storage.borrow();
+    let vector_scorer = borrowed_storage.scorer();
 
     let mut group = c.benchmark_group("storage-score-all");
     group.sample_size(1000);
@@ -53,7 +54,7 @@ fn benchmark_naive(c: &mut Criterion) {
     group.bench_function("storage vector search", |b| {
         b.iter(|| {
             let vector = random_vector(DIM);
-            borrowed_storage.score_all(&vector, 10)
+            vector_scorer.score_all(&vector, 10)
         })
     });
 }

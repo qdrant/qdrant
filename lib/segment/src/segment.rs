@@ -32,7 +32,7 @@ use crate::types::{
     SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
 use crate::utils;
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -82,7 +82,7 @@ pub struct Segment {
 
 pub struct VectorData {
     pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
-    pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
 }
 
 impl Segment {
