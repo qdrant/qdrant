@@ -669,7 +669,7 @@ mod tests {
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
         holder.snapshot_all_segments(snapshot_dir.path()).unwrap();
 
-        let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();
+        let archive_count = read_dir(&snapshot_dir).unwrap().count();
         // one archive produced per concrete segment in the SegmentHolder
         assert_eq!(archive_count, 2);
     }
