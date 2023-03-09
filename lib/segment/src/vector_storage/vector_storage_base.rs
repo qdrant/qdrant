@@ -46,32 +46,14 @@ pub trait RawScorer {
     /// Return distance between stored points selected by ids
     /// Panics if any id is out of range
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
-}
 
-pub trait VectorScorer {
-    /// Generate a `RawScorer` object which contains all required context for searching similar vector
-    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
-
-    // Generate RawScorer on quantized vectors if present
-    fn quantized_raw_scorer(&self, vector: &[VectorElementType])
-        -> Option<Box<dyn RawScorer + '_>>;
-
-    // Try peek top nearest points from quantized vectors. If quantized vectors are not present, do it on raw vectors
-    fn score_quantized_points(
+    fn peek_top_iter(
         &self,
-        vector: &[VectorElementType],
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset>;
 
-    fn score_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset>;
-
-    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset>;
+    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
 }
 
 /// Trait for vector storage
@@ -125,7 +107,12 @@ pub trait VectorStorage {
         )
     }
 
-    fn scorer(&self) -> Box<dyn VectorScorer + Sync + Send + '_>;
+    /// Generate a `RawScorer` object which contains all required context for searching similar vector
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
+
+    // Generate RawScorer on quantized vectors if present
+    fn quantized_raw_scorer(&self, vector: &[VectorElementType])
+        -> Option<Box<dyn RawScorer + '_>>;
 }
 
 pub enum VectorStorageEnum {
@@ -251,10 +238,20 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn scorer(&self) -> Box<dyn VectorScorer + Sync + Send + '_> {
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         match self {
-            VectorStorageEnum::Simple(v) => v.scorer(),
-            VectorStorageEnum::Memmap(v) => v.scorer(),
+            VectorStorageEnum::Simple(v) => v.raw_scorer(vector),
+            VectorStorageEnum::Memmap(v) => v.raw_scorer(vector),
+        }
+    }
+
+    fn quantized_raw_scorer(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Box<dyn RawScorer + '_>> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.quantized_raw_scorer(vector),
+            VectorStorageEnum::Memmap(v) => v.quantized_raw_scorer(vector),
         }
     }
 }
