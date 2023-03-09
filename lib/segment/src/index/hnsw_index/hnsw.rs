@@ -29,13 +29,13 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
@@ -54,7 +54,7 @@ struct SearchesTelemetry {
 impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     pub fn open(
         path: &Path,
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
         hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {
@@ -134,6 +134,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
+        let vector_scorer = vector_storage.scorer();
 
         let points_to_index: Vec<_> = payload_index.query_points(&filter).collect();
 
@@ -157,11 +158,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
                     let vector = vector_storage.get_vector(block_point_id).unwrap();
                     let raw_scorer = if let Some(quantized_raw_scorer) =
-                        vector_storage.quantized_raw_scorer(&vector)
+                        vector_scorer.quantized_raw_scorer(&vector)
                     {
                         quantized_raw_scorer
                     } else {
-                        vector_storage.raw_scorer(vector.to_owned())
+                        vector_scorer.raw_scorer(vector.to_owned())
                     };
                     let block_condition_checker = BuildConditionChecker {
                         filter_list: block_filter_list,
@@ -191,13 +192,14 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let ef = max(req_ef, top);
 
         let vector_storage = self.vector_storage.borrow();
+        let vector_scorer = vector_storage.scorer();
         let ignore_quantization = params.map(|p| p.ignore_quantization).unwrap_or(false);
         let (raw_scorer, quantized) = if ignore_quantization {
-            (vector_storage.raw_scorer(vector.to_owned()), false)
-        } else if let Some(quantized_raw_scorer) = vector_storage.quantized_raw_scorer(vector) {
+            (vector_scorer.raw_scorer(vector.to_owned()), false)
+        } else if let Some(quantized_raw_scorer) = vector_scorer.quantized_raw_scorer(vector) {
             (quantized_raw_scorer, true)
         } else {
-            (vector_storage.raw_scorer(vector.to_owned()), false)
+            (vector_scorer.raw_scorer(vector.to_owned()), false)
         };
         let payload_index = self.payload_index.borrow();
 
@@ -208,7 +210,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         if let Some(graph) = &self.graph {
             let mut search_result = graph.search(top, ef, points_scorer);
             if quantized {
-                let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
+                let raw_scorer = vector_scorer.raw_scorer(vector.to_owned());
                 search_result.iter_mut().for_each(|scored_point| {
                     scored_point.score = raw_scorer.score_point(scored_point.idx);
                 });
@@ -248,13 +250,21 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         if ignore_quantization {
             vectors
                 .iter()
-                .map(|vector| vector_storage.score_points(vector, filtered_iter.as_mut(), top))
+                .map(|vector| {
+                    vector_storage
+                        .scorer()
+                        .score_points(vector, filtered_iter.as_mut(), top)
+                })
                 .collect()
         } else {
             vectors
                 .iter()
                 .map(|vector| {
-                    vector_storage.score_quantized_points(vector, filtered_iter.as_mut(), top)
+                    vector_storage.scorer().score_quantized_points(
+                        vector,
+                        filtered_iter.as_mut(),
+                        top,
+                    )
                 })
                 .collect()
         }
@@ -278,7 +288,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     let vector_storage = self.vector_storage.borrow();
                     vectors
                         .iter()
-                        .map(|vector| vector_storage.score_all(vector, top))
+                        .map(|vector| vector_storage.scorer().score_all(vector, top))
                         .collect()
                 } else {
                     let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered);
@@ -354,6 +364,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
         let vector_storage = self.vector_storage.borrow();
+        let vector_scorer = vector_storage.scorer();
         let mut rng = thread_rng();
 
         let total_points = vector_storage.total_vector_count();
@@ -387,11 +398,11 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     check_process_stopped(stopped)?;
                     let vector = vector_storage.get_vector(vector_id).unwrap();
                     let raw_scorer = if let Some(quantized_raw_scorer) =
-                        vector_storage.quantized_raw_scorer(&vector)
+                        vector_scorer.quantized_raw_scorer(&vector)
                     {
                         quantized_raw_scorer
                     } else {
-                        vector_storage.raw_scorer(vector)
+                        vector_scorer.raw_scorer(vector)
                     };
                     let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
