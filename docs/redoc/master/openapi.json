@@ -4460,8 +4460,31 @@
             "default": false,
             "type": "boolean"
           },
-          "ignore_quantization": {
-            "description": "If set to true, search will ignore quantized vector data",
+          "quantization": {
+            "description": "Quantization params",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationSearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "QuantizationSearchParams": {
+        "description": "Additional parameters of the search",
+        "type": "object",
+        "properties": {
+          "ignore": {
+            "description": "If true, quantized vectors are ignored. Default is false.",
+            "default": false,
+            "type": "boolean"
+          },
+          "rescore": {
+            "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. Default is false.",
             "default": false,
             "type": "boolean"
           }

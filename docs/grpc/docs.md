@@ -30,7 +30,9 @@
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
     - [PayloadIndexParams](#qdrant-PayloadIndexParams)
     - [PayloadSchemaInfo](#qdrant-PayloadSchemaInfo)
+    - [QuantizationConfig](#qdrant-QuantizationConfig)
     - [RenameAlias](#qdrant-RenameAlias)
+    - [ScalarQuantization](#qdrant-ScalarQuantization)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [VectorParams](#qdrant-VectorParams)
@@ -42,6 +44,7 @@
     - [CollectionStatus](#qdrant-CollectionStatus)
     - [Distance](#qdrant-Distance)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
+    - [QuantizationType](#qdrant-QuantizationType)
     - [TokenizerType](#qdrant-TokenizerType)
   
 - [collections_service.proto](#collections_service-proto)
@@ -87,6 +90,7 @@
     - [PointsIdsList](#qdrant-PointsIdsList)
     - [PointsOperationResponse](#qdrant-PointsOperationResponse)
     - [PointsSelector](#qdrant-PointsSelector)
+    - [QuantizationSearchParams](#qdrant-QuantizationSearchParams)
     - [Range](#qdrant-Range)
     - [ReadConsistency](#qdrant-ReadConsistency)
     - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
@@ -218,6 +222,7 @@
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) |  | Configuration of vector index |
 | optimizer_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) |  | Configuration of the optimizers |
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) |  | Configuration of the Write-Ahead-Log |
+| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of the vector quantization |
 
 
 
@@ -363,6 +368,7 @@
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain, default = 1 |
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
 | init_from_collection | [string](#string) | optional | Specify name of the other collection to copy data from |
+| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional |  |
 
 
 
@@ -594,6 +600,21 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
+<a name="qdrant-QuantizationConfig"></a>
+
+### QuantizationConfig
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| scalar | [ScalarQuantization](#qdrant-ScalarQuantization) |  |  |
+
+
+
+
+
+
 <a name="qdrant-RenameAlias"></a>
 
 ### RenameAlias
@@ -604,6 +625,23 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | old_alias_name | [string](#string) |  | Name of the alias to rename |
 | new_alias_name | [string](#string) |  | Name of the alias |
+
+
+
+
+
+
+<a name="qdrant-ScalarQuantization"></a>
+
+### ScalarQuantization
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| type | [QuantizationType](#qdrant-QuantizationType) |  | Type of quantization |
+| quantile | [float](#float) | optional | Number of bits to use for quantization |
+| always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
 
 
 
@@ -768,6 +806,18 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Float | 3 |  |
 | Geo | 4 |  |
 | Text | 5 |  |
+
+
+
+<a name="qdrant-QuantizationType"></a>
+
+### QuantizationType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| UnknownQuantization | 0 |  |
+| Int8 | 1 |  |
 
 
 
@@ -1460,6 +1510,22 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-QuantizationSearchParams"></a>
+
+### QuantizationSearchParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| ignore | [bool](#bool) | optional | If set to true, search will ignore quantized vector data |
+| rescore | [bool](#bool) | optional | If true, use original vectors to re-score top-k results. Default is true. |
+
+
+
+
+
+
 <a name="qdrant-Range"></a>
 
 ### Range
@@ -1749,6 +1815,7 @@ The JSON representation for `Value` is JSON value.
 | ----- | ---- | ----- | ----------- |
 | hnsw_ef | [uint64](#uint64) | optional | Params relevant to HNSW index. Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search. |
 | exact | [bool](#bool) | optional | Search without approximation. If set to true, search may run long but with exact results. |
+| quantization | [QuantizationSearchParams](#qdrant-QuantizationSearchParams) | optional | If set to true, search will ignore quantized vector data |
 
 
 

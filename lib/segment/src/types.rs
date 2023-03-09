@@ -256,6 +256,29 @@ pub struct SegmentInfo {
 /// Additional parameters of the search
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
+pub struct QuantizationSearchParams {
+    /// If true, quantized vectors are ignored. Default is false.
+    #[serde(default = "default_quantization_ignore_value")]
+    pub ignore: bool,
+
+    /// If true, use original vectors to re-score top-k results.
+    /// Might require more time in case if original vectors are stored on disk.
+    /// Default is false.
+    #[serde(default = "default_quantization_rescore_value")]
+    pub rescore: bool,
+}
+
+pub fn default_quantization_ignore_value() -> bool {
+    false
+}
+
+pub fn default_quantization_rescore_value() -> bool {
+    false
+}
+
+/// Additional parameters of the search
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
     /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
@@ -265,9 +288,9 @@ pub struct SearchParams {
     #[serde(default)]
     pub exact: bool,
 
-    /// If set to true, search will ignore quantized vector data
+    /// Quantization params
     #[serde(default)]
-    pub ignore_quantization: bool,
+    pub quantization: Option<QuantizationSearchParams>,
 }
 
 /// Vector index configuration of the segment
