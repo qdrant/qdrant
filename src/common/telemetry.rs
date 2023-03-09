@@ -27,10 +27,10 @@ pub struct TelemetryCollector {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct TelemetryData {
     id: String,
-    app: AppBuildTelemetry,
-    collections: CollectionsTelemetry,
+    pub(crate) app: AppBuildTelemetry,
+    pub(crate) collections: CollectionsTelemetry,
     cluster: ClusterTelemetry,
-    requests: RequestsTelemetry,
+    pub(crate) requests: RequestsTelemetry,
 }
 
 impl Anonymize for TelemetryData {

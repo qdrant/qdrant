@@ -24,8 +24,8 @@ pub struct RunningEnvironmentTelemetry {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct AppBuildTelemetry {
-    name: String,
-    version: String,
+    pub name: String,
+    pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub features: Option<AppFeaturesTelemetry>,
