@@ -164,6 +164,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
+    update_queue_size: usize,
     update_runtime: Handle,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
@@ -256,6 +257,7 @@ impl ShardReplicaSet {
         on_peer_failure: ChangePeerState,
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
+        update_queue_size: usize,
         channel_service: ChannelService,
         update_runtime: Handle,
     ) -> CollectionResult<Self> {
@@ -266,6 +268,7 @@ impl ShardReplicaSet {
                 collection_id.clone(),
                 &shard_path,
                 shared_config.clone(),
+                update_queue_size,
                 update_runtime.clone(),
             )
             .await?;
@@ -311,6 +314,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config: shared_config,
+            update_queue_size,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
         })
@@ -415,6 +419,7 @@ impl ShardReplicaSet {
                         self.collection_id.clone(),
                         &self.shard_path,
                         self.collection_config.clone(),
+                        self.update_queue_size,
                         self.update_runtime.clone(),
                     )
                     .await?,
@@ -443,6 +448,7 @@ impl ShardReplicaSet {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
+        update_queue_size: usize,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
@@ -480,6 +486,7 @@ impl ShardReplicaSet {
                 collection_id.clone(),
                 shard_path,
                 shared_config.clone(),
+                update_queue_size,
                 update_runtime.clone(),
             )
             .await
@@ -505,6 +512,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config: shared_config,
+            update_queue_size,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
         }
@@ -579,6 +587,7 @@ impl ShardReplicaSet {
                     self.collection_id.clone(),
                     &self.shard_path,
                     self.collection_config.clone(),
+                    self.update_queue_size,
                     self.update_runtime.clone(),
                 )
                 .await?;
@@ -948,6 +957,7 @@ impl ShardReplicaSet {
                 self.collection_id.clone(),
                 &self.shard_path,
                 self.collection_config.clone(),
+                self.update_queue_size,
                 self.update_runtime.clone(),
             )
             .await?;
@@ -1540,6 +1550,7 @@ mod tests {
             dummy_on_replica_failure(),
             collection_dir.path(),
             shared_config,
+            100,
             Default::default(),
             update_runtime,
         )

@@ -127,6 +127,7 @@ impl TableOfContent {
                 this_peer_id,
                 &collection_path,
                 &collection_snapshots_path,
+                storage_config.update_queue_size,
                 channel_service.clone(),
                 Self::change_peer_state_callback(
                     consensus_proposal_sender.clone(),
@@ -347,6 +348,7 @@ impl TableOfContent {
             &collection_path,
             &snapshots_path,
             &collection_config,
+            self.storage_config.update_queue_size,
             collection_shard_distribution,
             self.channel_service.clone(),
             Self::change_peer_state_callback(
@@ -1287,6 +1289,7 @@ impl TableOfContent {
                         &collection_path,
                         &snapshots_path,
                         &state.config,
+                        self.storage_config.update_queue_size,
                         shard_distribution,
                         self.channel_service.clone(),
                         Self::change_peer_state_callback(

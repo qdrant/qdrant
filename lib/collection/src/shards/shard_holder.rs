@@ -194,6 +194,7 @@ impl ShardHolder {
         collection_path: &Path,
         collection_id: &CollectionId,
         shared_collection_config: Arc<RwLock<CollectionConfig>>,
+        update_queue_size: usize,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
@@ -215,6 +216,7 @@ impl ShardHolder {
                     collection_id.clone(),
                     &path,
                     shared_collection_config.clone(),
+                    update_queue_size,
                     channel_service.clone(),
                     on_peer_failure.clone(),
                     this_peer_id,
@@ -230,6 +232,7 @@ impl ShardHolder {
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
+                            update_queue_size,
                             update_runtime.clone(),
                         )
                         .await
@@ -251,6 +254,7 @@ impl ShardHolder {
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
+                            update_queue_size,
                             update_runtime.clone(),
                         )
                         .await

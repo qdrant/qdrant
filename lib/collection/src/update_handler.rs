@@ -21,8 +21,6 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LockedWal;
 use crate::wal::WalError;
 
-pub const UPDATE_QUEUE_SIZE: usize = 100;
-
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
 /// Information, required to perform operation and notify regarding the result
@@ -80,6 +78,7 @@ pub struct UpdateHandler {
     wal: LockedWal,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
+    update_queue_size: usize,
 }
 
 impl UpdateHandler {
@@ -90,6 +89,7 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: usize,
+        update_queue_size: usize,
     ) -> UpdateHandler {
         UpdateHandler {
             optimizers,
@@ -103,11 +103,12 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
+            update_queue_size,
         }
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
-        let (tx, rx) = mpsc::channel(UPDATE_QUEUE_SIZE);
+        let (tx, rx) = mpsc::channel(self.update_queue_size);
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
             tx.clone(),

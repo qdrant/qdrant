@@ -52,6 +52,8 @@ pub struct StorageConfig {
     pub mmap_advice: madvise::Advice,
     #[serde(default)]
     pub node_type: NodeType,
+    #[serde(default = "default_update_queue_size")]
+    pub update_queue_size: usize,
 }
 
 fn default_snapshots_path() -> String {
@@ -64,6 +66,10 @@ fn default_on_disk_payload() -> bool {
 
 fn default_mmap_advice() -> madvise::Advice {
     madvise::Advice::Random
+}
+
+fn default_update_queue_size() -> usize {
+    100
 }
 
 /// Information of a peer in the cluster

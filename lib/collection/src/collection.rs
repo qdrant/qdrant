@@ -76,6 +76,7 @@ pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: Arc<LockedShardHolder>,
     pub(crate) config: Arc<RwLock<CollectionConfig>>,
+    update_queue_size: usize,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     this_peer_id: PeerId,
@@ -112,6 +113,7 @@ impl Collection {
         path: &Path,
         snapshots_path: &Path,
         config: &CollectionConfig,
+        update_queue_size: usize,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
         on_replica_failure: ChangePeerState,
@@ -136,6 +138,7 @@ impl Collection {
                 on_replica_failure.clone(),
                 path,
                 shared_config.clone(),
+                update_queue_size,
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
             )
@@ -162,6 +165,7 @@ impl Collection {
             id: name.clone(),
             shards_holder: locked_shard_holder,
             config: shared_config,
+            update_queue_size,
             before_drop_called: false,
             this_peer_id,
             path: path.to_owned(),
@@ -207,6 +211,7 @@ impl Collection {
         this_peer_id: PeerId,
         path: &Path,
         snapshots_path: &Path,
+        update_queue_size: usize,
         channel_service: ChannelService,
         on_replica_failure: replica_set::ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
@@ -256,6 +261,7 @@ impl Collection {
                 path,
                 &collection_id,
                 shared_config.clone(),
+                update_queue_size,
                 channel_service.clone(),
                 on_replica_failure.clone(),
                 this_peer_id,
@@ -269,6 +275,7 @@ impl Collection {
             id: collection_id.clone(),
             shards_holder: locked_shard_holder,
             config: shared_config,
+            update_queue_size,
             before_drop_called: false,
             this_peer_id,
             path: path.to_owned(),
@@ -669,6 +676,7 @@ impl Collection {
                 self.name(),
                 &replica_set.shard_path,
                 self.config.clone(),
+                self.update_queue_size,
                 self.update_runtime.clone(),
             )
             .await?;
