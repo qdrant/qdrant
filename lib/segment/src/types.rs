@@ -261,7 +261,9 @@ pub struct QuantizationSearchParams {
     #[serde(default = "default_quantization_ignore_value")]
     pub ignore: bool,
 
-    /// If true, use original vectors to re-score top-k results. Default is true.
+    /// If true, use original vectors to re-score top-k results.
+    /// Might require more time in case if original vectors are stored on disk.
+    /// Default is false.
     #[serde(default = "default_quantization_rescore_value")]
     pub rescore: bool,
 }
@@ -271,7 +273,7 @@ pub fn default_quantization_ignore_value() -> bool {
 }
 
 pub fn default_quantization_rescore_value() -> bool {
-    false // ToDo, decide which one is better
+    false
 }
 
 /// Additional parameters of the search
