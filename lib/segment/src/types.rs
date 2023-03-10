@@ -421,54 +421,39 @@ impl Default for Indexes {
 }
 
 /// Type of payload index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadIndexType {
     // Do not index anything, just keep of what should be indexed later
+    #[default]
     Plain,
     // Build payload index. Index is saved on disc, but index itself is in RAM
     Struct,
 }
 
-impl Default for PayloadIndexType {
-    fn default() -> Self {
-        PayloadIndexType::Plain
-    }
-}
-
 /// Type of vector storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum StorageType {
     // Store vectors in memory and use persistence storage only if vectors are changed
+    #[default]
     InMemory,
     // Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
     Mmap,
 }
 
-impl Default for StorageType {
-    fn default() -> Self {
-        StorageType::InMemory
-    }
-}
-
 /// Type of payload storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
+    #[default]
     InMemory,
     // Store payload on disk only, read each time it is requested
     OnDisk,
-}
-
-impl Default for PayloadStorageType {
-    fn default() -> Self {
-        PayloadStorageType::InMemory
-    }
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
