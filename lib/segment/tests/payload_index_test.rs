@@ -21,6 +21,7 @@ mod tests {
         IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig,
         StorageType, VectorDataConfig, WithPayload,
     };
+    use segment::vector_storage::VectorStorage;
     use tempfile::Builder;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {

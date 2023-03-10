@@ -12,6 +12,7 @@ use crate::index::PayloadIndex;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadFieldSchema, PayloadKeyType, SegmentConfig};
+use crate::vector_storage::VectorStorage;
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
@@ -99,7 +100,7 @@ impl SegmentBuilder {
                     }
                     let other_vector_storage = other_vector_storage.unwrap();
                     let new_internal_range =
-                        vector_storage.update_from(&**other_vector_storage, stopped)?;
+                        vector_storage.update_from(other_vector_storage, stopped)?;
                     internal_id_iter =
                         Some(new_internal_range.zip(other_vector_storage.iter_ids()));
                 }
