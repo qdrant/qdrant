@@ -6,7 +6,7 @@ use std::vec::Vec;
 
 use rand::seq::SliceRandom;
 use tokio::select;
-use tonic::transport::{Channel, Error as TonicError, Uri};
+use tonic::transport::{Channel, ClientTlsConfig, Error as TonicError, Uri};
 use tonic::{Code, Status};
 
 use crate::grpc::qdrant::qdrant_client::QdrantClient;
@@ -32,17 +32,26 @@ impl ChannelPool {
         pool_size: NonZeroUsize,
         grpc_timeout: Duration,
         connection_timeout: Duration,
+        tls_config: Option<ClientTlsConfig>,
     ) -> Result<Self, TonicError> {
         let mut channels = Vec::with_capacity(pool_size.into());
         for _ in 0..pool_size.into() {
-            let channel =
-                TransportChannelPool::make_channel(grpc_timeout, connection_timeout, uri.clone())
-                    .await?;
+            let channel = TransportChannelPool::make_channel(
+                grpc_timeout,
+                connection_timeout,
+                uri.clone(),
+                tls_config.clone(),
+            )
+            .await?;
             channels.push(channel);
         }
-        let fast_channel =
-            TransportChannelPool::make_channel(SMART_CONNECT_TIMEOUT, connection_timeout, uri)
-                .await?;
+        let fast_channel = TransportChannelPool::make_channel(
+            SMART_CONNECT_TIMEOUT,
+            connection_timeout,
+            uri,
+            tls_config,
+        )
+        .await?;
 
         Ok(Self {
             channels,
@@ -75,6 +84,7 @@ pub struct TransportChannelPool {
     pool_size: NonZeroUsize,
     grpc_timeout: Duration,
     connection_timeout: Duration,
+    tls_config: Option<ClientTlsConfig>,
 }
 
 impl Default for TransportChannelPool {
@@ -84,17 +94,24 @@ impl Default for TransportChannelPool {
             pool_size: NonZeroUsize::new(DEFAULT_POOL_SIZE).unwrap(),
             grpc_timeout: DEFAULT_GRPC_TIMEOUT,
             connection_timeout: DEFAULT_CONNECT_TIMEOUT,
+            tls_config: None,
         }
     }
 }
 
 impl TransportChannelPool {
-    pub fn new(p2p_grpc_timeout: Duration, connection_timeout: Duration, pool_size: usize) -> Self {
+    pub fn new(
+        p2p_grpc_timeout: Duration,
+        connection_timeout: Duration,
+        pool_size: usize,
+        tls_config: Option<ClientTlsConfig>,
+    ) -> Self {
         Self {
             uri_to_pool: Default::default(),
             grpc_timeout: p2p_grpc_timeout,
             connection_timeout,
             pool_size: NonZeroUsize::new(pool_size).unwrap(),
+            tls_config,
         }
     }
 
@@ -102,11 +119,15 @@ impl TransportChannelPool {
         grpc_timeout: Duration,
         connection_timeout: Duration,
         uri: Uri,
+        tls_config: Option<ClientTlsConfig>,
     ) -> Result<Channel, TonicError> {
-        let endpoint = Channel::builder(uri)
+        let mut endpoint = Channel::builder(uri)
             .timeout(grpc_timeout)
             .connect_timeout(connection_timeout)
             .keep_alive_while_idle(true);
+        if let Some(config) = tls_config {
+            endpoint = endpoint.tls_config(config)?;
+        }
         // `connect` is using the `Reconnect` network service internally to handle dropped connections
         endpoint.connect().await
     }
@@ -122,6 +143,7 @@ impl TransportChannelPool {
                     self.pool_size,
                     self.grpc_timeout,
                     self.connection_timeout,
+                    self.tls_config.clone(),
                 )
                 .await?;
                 let channel = channels.choose();
