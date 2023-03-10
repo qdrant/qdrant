@@ -29,7 +29,7 @@ pub struct TelemetryData {
     id: String,
     pub(crate) app: AppBuildTelemetry,
     pub(crate) collections: CollectionsTelemetry,
-    cluster: ClusterTelemetry,
+    pub(crate) cluster: ClusterTelemetry,
     pub(crate) requests: RequestsTelemetry,
 }
 

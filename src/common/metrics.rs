@@ -5,7 +5,10 @@ use prometheus::{
 
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::app_telemetry::AppBuildTelemetry;
-use crate::common::telemetry_ops::collections_telemetry::CollectionsTelemetry;
+use crate::common::telemetry_ops::cluster_telemetry::{ClusterStatusTelemetry, ClusterTelemetry};
+use crate::common::telemetry_ops::collections_telemetry::{
+    CollectionTelemetryEnum, CollectionsTelemetry,
+};
 use crate::common::telemetry_ops::requests_telemetry::{
     GrpcTelemetry, RequestsTelemetry, WebApiTelemetry,
 };
@@ -32,6 +35,7 @@ impl MetricsProvider for TelemetryData {
     fn register_metrics(&self, registry: &Registry) {
         self.app.register_metrics(registry);
         self.collections.register_metrics(registry);
+        self.cluster.register_metrics(registry);
         self.requests.register_metrics(registry);
     }
 }
@@ -57,6 +61,92 @@ impl MetricsProvider for CollectionsTelemetry {
         )
         .unwrap()
         .set(self.number_of_collections as i64);
+
+        // Count collection types
+        if let Some(ref collections) = self.collections {
+            let full_count = collections
+                .iter()
+                .filter(|p| matches!(p, CollectionTelemetryEnum::Full(_)))
+                .count();
+            let aggregated_count = collections
+                .iter()
+                .filter(|p| matches!(p, CollectionTelemetryEnum::Aggregated(_)))
+                .count();
+            int_gauge!(
+                Opts::new("collections_full_total", "number of full collections"),
+                registry
+            )
+            .unwrap()
+            .set(full_count as i64);
+            int_gauge!(
+                Opts::new(
+                    "collections_aggregated_total",
+                    "number of aggregated collections"
+                ),
+                registry
+            )
+            .unwrap()
+            .set(aggregated_count as i64);
+        }
+    }
+}
+
+impl MetricsProvider for ClusterTelemetry {
+    fn register_metrics(&self, registry: &Registry) {
+        int_gauge!(
+            Opts::new("cluster_enabled", "is cluster support enabled"),
+            registry
+        )
+        .unwrap()
+        .set(self.enabled as i64);
+
+        if let Some(ref status) = self.status {
+            status.register_metrics(registry);
+        }
+    }
+}
+
+impl MetricsProvider for ClusterStatusTelemetry {
+    fn register_metrics(&self, registry: &Registry) {
+        int_gauge!(
+            Opts::new("cluster_peers_total", "total number of cluster peers"),
+            registry
+        )
+        .unwrap()
+        .set(self.number_of_peers as i64);
+        int_counter!(Opts::new("cluster_term", "current cluster term"), registry)
+            .unwrap()
+            .inc_by(self.term);
+
+        if let Some(ref peer_id) = self.peer_id.map(|p| p.to_string()) {
+            int_counter!(
+                Opts::new(
+                    "cluster_commit",
+                    "index of last committed (finalized) operation cluster peer is aware of"
+                )
+                .const_label("peer_id", peer_id),
+                registry
+            )
+            .unwrap()
+            .inc_by(self.term);
+            int_gauge!(
+                Opts::new(
+                    "cluster_pending_operations_total",
+                    "total number of pending operations for cluster peer"
+                )
+                .const_label("peer_id", peer_id),
+                registry
+            )
+            .unwrap()
+            .set(self.pending_operations as i64);
+            int_gauge!(
+                Opts::new("cluster_voter", "is cluster peer a voter or learner")
+                    .const_label("peer_id", peer_id),
+                registry
+            )
+            .unwrap()
+            .set(self.is_voter as i64);
+        }
     }
 }
 
