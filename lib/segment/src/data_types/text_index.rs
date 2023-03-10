@@ -7,30 +7,20 @@ use serde::{Deserialize, Serialize};
 //     Text
 // }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenizerType {
     Prefix,
     Whitespace,
+    #[default]
     Word,
 }
 
-impl Default for TokenizerType {
-    fn default() -> Self {
-        TokenizerType::Word
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TextIndexType {
+    #[default]
     Text,
-}
-
-impl Default for TextIndexType {
-    fn default() -> Self {
-        TextIndexType::Text
-    }
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
