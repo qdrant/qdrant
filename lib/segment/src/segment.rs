@@ -783,8 +783,9 @@ impl SegmentEntry for Segment {
         if let Some(vector) = vector_opt {
             Ok(vector)
         } else {
+            let segment_path = self.current_path.display();
             Err(OperationError::service_error(format!(
-                "Vector {vector_name} not found at offset {internal_id}"
+                "Vector {vector_name} not found at offset {internal_id} for point {point_id}, segment {segment_path}",
             )))
         }
     }
