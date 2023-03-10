@@ -128,7 +128,7 @@ service:
   enable_cors: true
 
   # Use TLS for client communication
-  enable_tls: true
+  enable_tls: false
 
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
@@ -140,7 +140,7 @@ cluster:
     port: 6335
 
     # Use TLS for communication between peers
-    enable_tls: true
+    enable_tls: false
 
   # Configuration related to distributed consensus algorithm
   consensus:
