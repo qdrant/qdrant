@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 use crate::actix::helpers::process_response;
 use crate::common::helpers::LocksOption;
-use crate::common::metrics::gather_metrics;
+use crate::common::metrics::MetricsData;
 use crate::common::telemetry::TelemetryCollector;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -50,7 +50,9 @@ async fn metrics(
     } else {
         telemetry_data
     };
-    HttpResponse::Ok().body(gather_metrics(&telemetry_data))
+
+    let metrics_data = MetricsData::from(telemetry_data);
+    HttpResponse::Ok().body(metrics_data.format_metrics())
 }
 
 #[post("/locks")]

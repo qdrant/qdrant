@@ -13,17 +13,27 @@ use crate::common::telemetry_ops::requests_telemetry::{
     GrpcTelemetry, RequestsTelemetry, WebApiTelemetry,
 };
 
-/// Gather and return metrics in Prometheus format.
-pub fn gather_metrics(telemetry_data: &TelemetryData) -> Vec<u8> {
-    let registry = Registry::new();
-    telemetry_data.register_metrics(&registry);
+/// Encapsulates metrics data in Prometheus format.
+pub struct MetricsData {
+    registry: Registry,
+}
 
-    // Format metrics
-    let mut buffer = vec![];
-    TextEncoder::new()
-        .encode(&registry.gather(), &mut buffer)
-        .unwrap();
-    buffer
+impl MetricsData {
+    pub fn format_metrics(&self) -> Vec<u8> {
+        let mut buffer = vec![];
+        TextEncoder::new()
+            .encode(&self.registry.gather(), &mut buffer)
+            .unwrap();
+        buffer
+    }
+}
+
+impl From<TelemetryData> for MetricsData {
+    fn from(telemetry_data: TelemetryData) -> Self {
+        let registry = Registry::new();
+        telemetry_data.register_metrics(&registry);
+        Self { registry }
+    }
 }
 
 trait MetricsProvider {
