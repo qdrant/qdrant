@@ -1541,7 +1541,6 @@ impl Collection {
                 // Try to activate shard, as the collection clearly exists
                 log::warn!("Something went wrong during shard initialization. Trying to activate shard {}:{} on peer {}", self.name(), shard_id, this_peer_id);
 
-
                 // on_finish_init(*this_peer_id, shard_id);
                 // continue;
             }
