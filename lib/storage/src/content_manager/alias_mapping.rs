@@ -78,6 +78,13 @@ impl AliasPersistence {
         Ok(res)
     }
 
+    /// Removes all aliases for a given collection.
+    pub fn remove_collection(&mut self, collection_name: &str) -> Result<(), StorageError> {
+        self.alias_mapping.0.retain(|_, v| v != collection_name);
+        self.alias_mapping.save(&self.data_path)?;
+        Ok(())
+    }
+
     pub fn rename_alias(
         &mut self,
         old_alias_name: &str,
@@ -115,5 +122,9 @@ impl AliasPersistence {
         self.alias_mapping = alias_mapping;
         self.alias_mapping.save(&self.data_path)?;
         Ok(())
+    }
+
+    pub fn check_alias_exists(&self, alias: &str) -> bool {
+        self.alias_mapping.0.contains_key(alias)
     }
 }
