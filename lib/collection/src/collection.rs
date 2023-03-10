@@ -1490,7 +1490,7 @@ impl Collection {
         &self,
         on_transfer_failure: OnTransferFailure,
         on_transfer_success: OnTransferSuccess,
-        on_finish_init: ChangePeerState,
+        _on_finish_init: ChangePeerState,
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
@@ -1539,8 +1539,11 @@ impl Collection {
             if this_peer_state == Some(Initializing) {
                 // It is possible, that collection creation didn't report
                 // Try to activate shard, as the collection clearly exists
-                on_finish_init(*this_peer_id, shard_id);
-                continue;
+                log::warn!("Something went wrong during shard initialization. Trying to activate shard {}:{} on peer {}", self.name(), shard_id, this_peer_id);
+
+
+                // on_finish_init(*this_peer_id, shard_id);
+                // continue;
             }
 
             if this_peer_state != Some(Dead) {
