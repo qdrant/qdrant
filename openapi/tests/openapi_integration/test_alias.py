@@ -13,7 +13,7 @@ def setup():
     drop_collection(collection_name=collection_name)
 
 
-def test_aliases_corner_cases():
+def test_cant_create_alias_if_collection_exists():
     second_collection_name = f'{collection_name}_2'
 
     basic_collection_setup(collection_name=second_collection_name)
