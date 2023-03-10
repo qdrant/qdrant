@@ -24,11 +24,9 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
-use crate::common::helpers::load_tls_client_config;
-use crate::common::helpers::load_tls_server_config;
+use crate::common::helpers::{load_tls_client_config, load_tls_server_config};
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
-use crate::settings::ConsensusConfig;
-use crate::settings::Settings;
+use crate::settings::{ConsensusConfig, Settings};
 use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;

@@ -32,9 +32,9 @@ use storage::dispatcher::Dispatcher;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-use crate::common::helpers::load_tls_client_config;
 use crate::common::helpers::{
     create_general_purpose_runtime, create_search_runtime, create_update_runtime,
+    load_tls_client_config,
 };
 use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_reporting::TelemetryReporter;
