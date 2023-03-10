@@ -95,7 +95,7 @@ fn batch_search_bench(c: &mut Criterion) {
             "test_collection".to_string(),
             storage_dir.path(),
             shared_config,
-            100,
+            Default::default(),
             handle.clone(),
         ))
         .unwrap();

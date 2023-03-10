@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use collection::config::{WalConfig, GlobalConfig};
+use collection::config::{GlobalConfig, WalConfig};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use schemars::JsonSchema;

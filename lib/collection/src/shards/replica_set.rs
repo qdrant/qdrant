@@ -1550,7 +1550,7 @@ mod tests {
             dummy_on_replica_failure(),
             collection_dir.path(),
             shared_config,
-            100,
+            Default::default(),
             Default::default(),
             update_runtime,
         )

@@ -188,3 +188,11 @@ impl CollectionParams {
 pub struct GlobalConfig {
     pub update_queue_size: usize,
 }
+
+impl Default for GlobalConfig {
+    fn default() -> Self {
+        Self {
+            update_queue_size: 100,
+        }
+    }
+}

@@ -1,7 +1,5 @@
 #![allow(deprecated)]
 
-use storage::types::StorageConfig;
-
 #[cfg(all(test))]
 mod tests {
     use std::num::NonZeroU64;
@@ -54,7 +52,7 @@ mod tests {
             quantization: None,
             mmap_advice: madvise::Advice::Random,
             node_type: Default::default(),
-            storage_config: default_storage_config().into(),
+            update_queue_size: 100,
         };
 
         let search_runtime = Runtime::new().unwrap();
@@ -145,21 +143,5 @@ mod tests {
         let _ = handle
             .block_on(dispatcher.get_collection("test_alias3"))
             .unwrap();
-    }
-}
-
-fn default_storage_config() -> StorageConfig {
-    StorageConfig {
-        storage_path: todo!(),
-        snapshots_path: todo!(),
-        on_disk_payload: todo!(),
-        optimizers: todo!(),
-        wal: todo!(),
-        performance: todo!(),
-        hnsw_index: todo!(),
-        quantization: todo!(),
-        mmap_advice: todo!(),
-        node_type: todo!(),
-        storage_config: todo!(),
     }
 }
