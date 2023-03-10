@@ -1,6 +1,6 @@
 use prometheus::{
-    register_gauge_with_registry as gauge, register_int_gauge_with_registry as int_gauge, Encoder,
-    Opts, Registry, TextEncoder,
+    register_gauge_with_registry as gauge, register_int_counter_with_registry as int_counter,
+    register_int_gauge_with_registry as int_gauge, Encoder, Opts, Registry, TextEncoder,
 };
 
 use crate::common::telemetry::TelemetryData;
@@ -38,14 +38,14 @@ impl MetricsProvider for TelemetryData {
 
 impl MetricsProvider for AppBuildTelemetry {
     fn register_metrics(&self, registry: &Registry) {
-        int_gauge!(
+        int_counter!(
             Opts::new("app_info", "information about qdrant server")
                 .const_label("name", &self.name)
                 .const_label("version", &self.version),
             registry,
         )
         .unwrap()
-        .set(1);
+        .inc_by(1);
     }
 }
 
@@ -72,7 +72,7 @@ impl MetricsProvider for WebApiTelemetry {
         for (endpoint, responses) in &self.responses {
             let (method, endpoint) = endpoint.split_once(' ').unwrap();
             for (status, statistics) in responses {
-                int_gauge!(
+                int_counter!(
                     Opts::new("rest_responses_total", "total number of responses")
                         .const_label("method", method)
                         .const_label("endpoint", endpoint)
@@ -80,8 +80,8 @@ impl MetricsProvider for WebApiTelemetry {
                     registry,
                 )
                 .unwrap()
-                .set(statistics.count as i64);
-                int_gauge!(
+                .inc_by(statistics.count as u64);
+                int_counter!(
                     Opts::new(
                         "rest_responses_fail_total",
                         "total number of failed responses",
@@ -92,7 +92,7 @@ impl MetricsProvider for WebApiTelemetry {
                     registry,
                 )
                 .unwrap()
-                .set(statistics.fail_count as i64);
+                .inc_by(statistics.fail_count as u64);
                 gauge!(
                     Opts::new(
                         "rest_responses_avg_duration_seconds",
@@ -137,14 +137,14 @@ impl MetricsProvider for WebApiTelemetry {
 impl MetricsProvider for GrpcTelemetry {
     fn register_metrics(&self, registry: &Registry) {
         for (endpoint, statistics) in &self.responses {
-            int_gauge!(
+            int_counter!(
                 Opts::new("grpc_responses_total", "total number of responses")
                     .const_label("endpoint", endpoint),
                 registry,
             )
             .unwrap()
-            .set(statistics.count as i64);
-            int_gauge!(
+            .inc_by(statistics.count as u64);
+            int_counter!(
                 Opts::new(
                     "grpc_responses_fail_total",
                     "total number of failed responses",
@@ -153,7 +153,7 @@ impl MetricsProvider for GrpcTelemetry {
                 registry,
             )
             .unwrap()
-            .set(statistics.fail_count as i64);
+            .inc_by(statistics.fail_count as u64);
             gauge!(
                 Opts::new(
                     "grpc_responses_avg_duration_seconds",
