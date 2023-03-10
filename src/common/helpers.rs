@@ -125,7 +125,7 @@ pub fn load_tls_server_config(tls_config: TlsConfig) -> std::io::Result<ServerTl
     let cert = std::fs::read_to_string(tls_config.cert)?;
     let key = std::fs::read_to_string(tls_config.key)?;
 
-    let ident = Identity::from_pem(&cert, &key);
+    let ident = Identity::from_pem(cert, key);
 
     Ok(ServerTlsConfig::new().identity(ident))
 }
