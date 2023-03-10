@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use collection::config::WalConfig;
+use collection::config::{WalConfig, GlobalConfig};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use schemars::JsonSchema;
@@ -54,6 +54,14 @@ pub struct StorageConfig {
     pub node_type: NodeType,
     #[serde(default = "default_update_queue_size")]
     pub update_queue_size: usize,
+}
+
+impl StorageConfig {
+    pub fn to_collection_global_config(&self) -> GlobalConfig {
+        GlobalConfig {
+            update_queue_size: self.update_queue_size,
+        }
+    }
 }
 
 fn default_snapshots_path() -> String {

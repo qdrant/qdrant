@@ -7,7 +7,7 @@ use futures::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, GlobalConfig};
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
@@ -194,7 +194,7 @@ impl ShardHolder {
         collection_path: &Path,
         collection_id: &CollectionId,
         shared_collection_config: Arc<RwLock<CollectionConfig>>,
-        update_queue_size: usize,
+        global_config: Arc<GlobalConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
@@ -216,7 +216,7 @@ impl ShardHolder {
                     collection_id.clone(),
                     &path,
                     shared_collection_config.clone(),
-                    update_queue_size,
+                    global_config.clone(),
                     channel_service.clone(),
                     on_peer_failure.clone(),
                     this_peer_id,
@@ -232,7 +232,7 @@ impl ShardHolder {
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
-                            update_queue_size,
+                            global_config.clone(),
                             update_runtime.clone(),
                         )
                         .await
@@ -254,7 +254,7 @@ impl ShardHolder {
                             collection_id.clone(),
                             &path,
                             shared_collection_config.clone(),
-                            update_queue_size,
+                            global_config.clone(),
                             update_runtime.clone(),
                         )
                         .await

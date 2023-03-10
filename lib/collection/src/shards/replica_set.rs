@@ -25,7 +25,7 @@ use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
 use super::resolve::{Resolve, ResolveCondition};
 use super::{create_shard_dir, CollectionId};
-use crate::config::CollectionConfig;
+use crate::config::{CollectionConfig, GlobalConfig};
 use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
@@ -164,7 +164,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
-    update_queue_size: usize,
+    global_config: Arc<GlobalConfig>,
     update_runtime: Handle,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
@@ -257,7 +257,7 @@ impl ShardReplicaSet {
         on_peer_failure: ChangePeerState,
         collection_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
-        update_queue_size: usize,
+        global_config: Arc<GlobalConfig>,
         channel_service: ChannelService,
         update_runtime: Handle,
     ) -> CollectionResult<Self> {
@@ -268,7 +268,7 @@ impl ShardReplicaSet {
                 collection_id.clone(),
                 &shard_path,
                 shared_config.clone(),
-                update_queue_size,
+                global_config.clone(),
                 update_runtime.clone(),
             )
             .await?;
@@ -314,7 +314,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config: shared_config,
-            update_queue_size,
+            global_config,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
         })
@@ -419,7 +419,7 @@ impl ShardReplicaSet {
                         self.collection_id.clone(),
                         &self.shard_path,
                         self.collection_config.clone(),
-                        self.update_queue_size,
+                        self.global_config.clone(),
                         self.update_runtime.clone(),
                     )
                     .await?,
@@ -448,7 +448,7 @@ impl ShardReplicaSet {
         collection_id: CollectionId,
         shard_path: &Path,
         shared_config: Arc<RwLock<CollectionConfig>>,
-        update_queue_size: usize,
+        global_config: Arc<GlobalConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
@@ -486,7 +486,7 @@ impl ShardReplicaSet {
                 collection_id.clone(),
                 shard_path,
                 shared_config.clone(),
-                update_queue_size,
+                global_config.clone(),
                 update_runtime.clone(),
             )
             .await
@@ -512,7 +512,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config: shared_config,
-            update_queue_size,
+            global_config,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
         }
@@ -587,7 +587,7 @@ impl ShardReplicaSet {
                     self.collection_id.clone(),
                     &self.shard_path,
                     self.collection_config.clone(),
-                    self.update_queue_size,
+                    self.global_config.clone(),
                     self.update_runtime.clone(),
                 )
                 .await?;
@@ -957,7 +957,7 @@ impl ShardReplicaSet {
                 self.collection_id.clone(),
                 &self.shard_path,
                 self.collection_config.clone(),
-                self.update_queue_size,
+                self.global_config.clone(),
                 self.update_runtime.clone(),
             )
             .await?;

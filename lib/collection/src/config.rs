@@ -183,3 +183,8 @@ impl CollectionParams {
         Ok(vector_config)
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct GlobalConfig {
+    pub update_queue_size: usize,
+}

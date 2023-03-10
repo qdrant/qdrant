@@ -66,7 +66,7 @@ pub const DEFAULT_WRITE_LOCK_ERROR_MESSAGE: &str = "Write operations are forbidd
 /// the launch of the service.
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
-    storage_config: StorageConfig,
+    storage_config: Arc<StorageConfig>,
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
@@ -127,7 +127,7 @@ impl TableOfContent {
                 this_peer_id,
                 &collection_path,
                 &collection_snapshots_path,
-                storage_config.update_queue_size,
+                storage_config.to_collection_global_config().into(),
                 channel_service.clone(),
                 Self::change_peer_state_callback(
                     consensus_proposal_sender.clone(),
@@ -150,7 +150,7 @@ impl TableOfContent {
             AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
-            storage_config: storage_config.clone(),
+            storage_config: Arc::new(storage_config.clone()),
             search_runtime,
             update_runtime,
             general_runtime,
@@ -348,7 +348,7 @@ impl TableOfContent {
             &collection_path,
             &snapshots_path,
             &collection_config,
-            self.storage_config.update_queue_size,
+            self.storage_config.to_collection_global_config().into(),
             collection_shard_distribution,
             self.channel_service.clone(),
             Self::change_peer_state_callback(
@@ -1289,7 +1289,7 @@ impl TableOfContent {
                         &collection_path,
                         &snapshots_path,
                         &state.config,
-                        self.storage_config.update_queue_size,
+                        self.storage_config.to_collection_global_config().into(),
                         shard_distribution,
                         self.channel_service.clone(),
                         Self::change_peer_state_callback(
