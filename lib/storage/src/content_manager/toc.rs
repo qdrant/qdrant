@@ -698,7 +698,10 @@ impl TableOfContent {
         if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
             removed.before_drop().await;
 
-            self.alias_persistence.write().await.remove_collection(collection_name)?;
+            self.alias_persistence
+                .write()
+                .await
+                .remove_collection(collection_name)?;
 
             let path = self.get_collection_path(collection_name);
             drop(removed);
