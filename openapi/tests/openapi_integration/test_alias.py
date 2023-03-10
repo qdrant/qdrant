@@ -36,7 +36,7 @@ def test_aliases_corner_cases():
     assert response.status_code == 400
 
 
-def test_create_collection_after_alias():
+def test_cant_create_collection_if_alias_exists():
     second_collection_name = f'{collection_name}_3'
 
     response = request_with_validation(
