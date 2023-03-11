@@ -54,7 +54,7 @@ enum NullValue {
 
 // `ListValue` is a wrapper around a repeated field of values.
 //
-// The JSON representation for `ListValue` is JSON array.
+// The JSON representation for `ListValue` is a JSON array.
 message ListValue {
   // Repeated field of dynamically typed values.
   repeated Value values = 1;
