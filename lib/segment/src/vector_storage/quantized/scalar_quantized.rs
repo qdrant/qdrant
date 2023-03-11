@@ -17,9 +17,10 @@ pub struct ScalarQuantizedRawScorer<'a, TEncodedQuery, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
-    pub query: TEncodedQuery,
-    pub deleted: &'a BitVec,
-    pub quantized_data: &'a TEncodedVectors,
+    query: TEncodedQuery,
+    deleted: &'a BitVec,
+    // Total number of vectors including deleted ones
+    quantized_data: &'a TEncodedVectors,
 }
 
 impl<TEncodedQuery, TEncodedVectors> RawScorer

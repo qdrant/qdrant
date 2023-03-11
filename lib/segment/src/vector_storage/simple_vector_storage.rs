@@ -341,6 +341,7 @@ impl VectorStorage for SimpleVectorStorage {
         if let Some(quantized_data) = &self.quantized_vectors {
             let vector: Vec<_> = vector.to_vec();
             let preprocessed_vector = self.distance.preprocess_vector(&vector).unwrap_or(vector);
+            debug_assert_eq!(self.deleted.len(), self.vectors.len());
             Some(quantized_data.raw_scorer(&preprocessed_vector, &self.deleted))
         } else {
             None
