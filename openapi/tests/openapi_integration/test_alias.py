@@ -13,6 +13,78 @@ def setup():
     drop_collection(collection_name=collection_name)
 
 
+def test_cant_create_alias_if_collection_exists():
+    second_collection_name = f'{collection_name}_2'
+
+    basic_collection_setup(collection_name=second_collection_name)
+
+    response = request_with_validation(
+        api='/collections/aliases',
+        method="POST",
+        body={
+            "actions": [
+                {
+                    "create_alias": {
+                        "alias_name": second_collection_name,
+                        "collection_name": collection_name
+                    }
+                }
+            ]
+        }
+    )
+    assert not response.ok
+    assert response.status_code == 400
+
+
+def test_cant_create_collection_if_alias_exists():
+    second_collection_name = f'{collection_name}_3'
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': second_collection_name},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/aliases',
+        method="POST",
+        body={
+            "actions": [
+                {
+                    "create_alias": {
+                        "alias_name": second_collection_name,
+                        "collection_name": collection_name
+                    }
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/aliases',
+        method="GET"
+    )
+    assert response.ok
+    assert len(response.json()['result']['aliases']) == 1
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': second_collection_name},
+        body={
+            "vectors": {
+                "size": 4,
+                "distance": "Dot"
+            }
+        }
+    )
+
+    assert not response.ok
+    assert response.status_code == 400
+
+
 def test_alias_operations():
     response = request_with_validation(
         api='/collections/aliases',
