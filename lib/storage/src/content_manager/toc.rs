@@ -264,6 +264,17 @@ impl TableOfContent {
             .validate_collection_not_exists(collection_name)
             .await?;
 
+        if self
+            .alias_persistence
+            .read()
+            .await
+            .check_alias_exists(collection_name)
+        {
+            return Err(StorageError::bad_input(&format!(
+                "Can't create collection with name {collection_name}. Alias with the same name already exists",
+            )));
+        }
+
         if let Some(init_from_) = &init_from {
             self.check_collections_compatibility(&vectors, &init_from_.collection)
                 .await?;
@@ -686,6 +697,12 @@ impl TableOfContent {
     async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
         if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
             removed.before_drop().await;
+
+            self.alias_persistence
+                .write()
+                .await
+                .remove_collection(collection_name)?;
+
             let path = self.get_collection_path(collection_name);
             drop(removed);
 
