@@ -198,6 +198,13 @@ impl MmapVectors {
         Ok(())
     }
 
+    pub fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let num_vectors = self.num_vectors;
+        let iter =
+            (0..(num_vectors as PointOffsetType)).filter(move |id| !self.deleted(*id).unwrap());
+        Box::new(iter)
+    }
+
     pub fn flusher(&self) -> Flusher {
         let deleted_mmap = self.deleted_flags_mmap.clone();
         Box::new(move || {
