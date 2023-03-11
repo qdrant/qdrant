@@ -115,7 +115,7 @@ message OptimizersConfigDiff {
   Real amount of segments may vary depending on multiple parameters:
 
    - Amount of stored points.
-   - Current RPS.
+   - Current write RPS.
 
   It is recommended to select the default number of segments as a factor of the number of search threads,
   so that each segment would be handled evenly by one of the threads.
