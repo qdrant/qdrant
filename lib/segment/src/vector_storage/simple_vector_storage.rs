@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use super::{VectorScorer, VectorStorageEnum};
+use super::VectorStorageEnum;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -37,11 +37,6 @@ pub struct SimpleVectorStorage {
     deleted_count: usize,
     quantized_vectors: Option<QuantizedVectorsStorage>,
     db_wrapper: DatabaseColumnWrapper,
-}
-
-pub struct SimpleVectorScorerBuilder<'a, TMetric: Metric> {
-    vector_storage: &'a SimpleVectorStorage,
-    metric: PhantomData<TMetric>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -94,6 +89,37 @@ where
         let vector_a = self.vectors.get(point_a);
         let vector_b = self.vectors.get(point_b);
         TMetric::similarity(vector_a, vector_b)
+    }
+
+    fn peek_top_iter(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        let scores = points
+            .filter(|point_id| !self.deleted[*point_id as usize])
+            .map(|point_id| {
+                let other_vector = self.vectors.get(point_id);
+                ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&self.query, other_vector),
+                }
+            });
+        peek_top_largest_iterable(scores, top)
+    }
+
+    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+        let scores = (0..self.vectors.len())
+            .filter(|point_id| !self.deleted[*point_id])
+            .map(|point_id| {
+                let point_id = point_id as PointOffsetType;
+                let other_vector = &self.vectors.get(point_id);
+                ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&self.query, other_vector),
+                }
+            });
+        peek_top_largest_iterable(scores, top)
     }
 }
 
@@ -159,87 +185,6 @@ impl SimpleVectorStorage {
         )?;
 
         Ok(())
-    }
-}
-
-impl<'a, TMetric> VectorScorer for SimpleVectorScorerBuilder<'a, TMetric>
-where
-    TMetric: Metric,
-{
-    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        Box::new(SimpleRawScorer::<TMetric> {
-            query: TMetric::preprocess(&vector).unwrap_or(vector),
-            vectors: &self.vector_storage.vectors,
-            deleted: &self.vector_storage.deleted,
-            metric: PhantomData,
-        })
-    }
-
-    fn quantized_raw_scorer(
-        &self,
-        vector: &[VectorElementType],
-    ) -> Option<Box<dyn RawScorer + '_>> {
-        if let Some(quantized_data) = &self.vector_storage.quantized_vectors {
-            let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
-            Some(quantized_data.raw_scorer(&query, &self.vector_storage.deleted))
-        } else {
-            None
-        }
-    }
-
-    fn score_quantized_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset> {
-        match self.quantized_raw_scorer(vector) {
-            Some(scorer) => {
-                let scores = points
-                    .filter(|idx| !self.vector_storage.deleted[*idx as usize])
-                    .map(|idx| {
-                        let score = scorer.score_point(idx);
-                        ScoredPointOffset { idx, score }
-                    });
-                peek_top_largest_iterable(scores, top)
-            }
-            None => self.score_points(vector, points, top),
-        }
-    }
-
-    fn score_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
-        let scores = points
-            .filter(|point_id| !self.vector_storage.deleted[*point_id as usize])
-            .map(|point_id| {
-                let other_vector = self.vector_storage.vectors.get(point_id);
-                ScoredPointOffset {
-                    idx: point_id,
-                    score: TMetric::similarity(&preprocessed_vector, other_vector),
-                }
-            });
-        peek_top_largest_iterable(scores, top)
-    }
-
-    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
-
-        let scores = (0..self.vector_storage.vectors.len())
-            .filter(|point_id| !self.vector_storage.deleted[*point_id])
-            .map(|point_id| {
-                let point_id = point_id as PointOffsetType;
-                let other_vector = &self.vector_storage.vectors.get(point_id);
-                ScoredPointOffset {
-                    idx: point_id,
-                    score: TMetric::similarity(&preprocessed_vector, other_vector),
-                }
-            });
-        peek_top_largest_iterable(scores, top)
     }
 }
 
@@ -366,20 +311,40 @@ impl VectorStorage for SimpleVectorStorage {
         }
     }
 
-    fn scorer(&self) -> Box<dyn VectorScorer + Sync + Send + '_> {
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         match self.distance {
-            Distance::Cosine => Box::new(SimpleVectorScorerBuilder::<CosineMetric> {
-                vector_storage: self,
-                metric: Default::default(),
+            Distance::Cosine => Box::new(SimpleRawScorer::<CosineMetric> {
+                query: CosineMetric::preprocess(&vector).unwrap_or(vector),
+                vectors: &self.vectors,
+                deleted: &self.deleted,
+                metric: PhantomData,
             }),
-            Distance::Euclid => Box::new(SimpleVectorScorerBuilder::<EuclidMetric> {
-                vector_storage: self,
-                metric: Default::default(),
+            Distance::Euclid => Box::new(SimpleRawScorer::<EuclidMetric> {
+                query: EuclidMetric::preprocess(&vector).unwrap_or(vector),
+                vectors: &self.vectors,
+                deleted: &self.deleted,
+                metric: PhantomData,
             }),
-            Distance::Dot => Box::new(SimpleVectorScorerBuilder::<DotProductMetric> {
-                vector_storage: self,
-                metric: Default::default(),
+            Distance::Dot => Box::new(SimpleRawScorer::<DotProductMetric> {
+                query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
+                vectors: &self.vectors,
+                deleted: &self.deleted,
+                metric: PhantomData,
             }),
+        }
+    }
+
+    fn quantized_raw_scorer(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Box<dyn RawScorer + '_>> {
+        if let Some(quantized_data) = &self.quantized_vectors {
+            let vector: Vec<_> = vector.to_vec();
+            let preprocessed_vector = self.distance.preprocess_vector(&vector).unwrap_or(vector);
+            debug_assert_eq!(self.deleted.len(), self.vectors.len());
+            Some(quantized_data.raw_scorer(&preprocessed_vector, &self.deleted))
+        } else {
+            None
         }
     }
 }
@@ -416,12 +381,11 @@ mod tests {
         assert_eq!(id2, 1);
         assert_eq!(id5, 4);
 
-        let query = vec![0.0, 1.0, 1.1, 1.0];
+        let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
 
-        let closest =
-            borrowed_storage
-                .scorer()
-                .score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+        let closest = borrowed_storage
+            .raw_scorer(query.clone())
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         let top_idx = match closest.get(0) {
             Some(scored_point) => {
@@ -435,13 +399,9 @@ mod tests {
 
         borrowed_storage.delete(top_idx).unwrap();
 
-        let closest =
-            borrowed_storage
-                .scorer()
-                .score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+        let raw_scorer = borrowed_storage.raw_scorer(query);
+        let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
-        let vector_scorer = borrowed_storage.scorer();
-        let raw_scorer = vector_scorer.raw_scorer(query);
         let query_points = vec![0, 1, 2, 3, 4];
 
         let mut raw_res1 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
@@ -505,9 +465,8 @@ mod tests {
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
         {
-            let vector_scorer = borrowed_storage.scorer();
-            let scorer_quant = vector_scorer.quantized_raw_scorer(&query).unwrap();
-            let scorer_orig = vector_scorer.raw_scorer(query.clone());
+            let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+            let scorer_orig = borrowed_storage.raw_scorer(query.clone());
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
                 let orig = scorer_orig.score_point(i);
@@ -522,9 +481,8 @@ mod tests {
         // test save-load
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
-        let vector_scorer = borrowed_storage.scorer();
-        let scorer_quant = vector_scorer.quantized_raw_scorer(&query).unwrap();
-        let scorer_orig = vector_scorer.raw_scorer(query.clone());
+        let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+        let scorer_orig = borrowed_storage.raw_scorer(query.clone());
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
             let orig = scorer_orig.score_point(i);

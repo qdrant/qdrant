@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
-use super::{VectorScorer, VectorStorageEnum};
+use super::VectorStorageEnum;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
@@ -74,6 +74,35 @@ where
         let vector_b = self.mmap_store.raw_vector(point_b).unwrap();
         TMetric::similarity(vector_a, vector_b)
     }
+
+    fn peek_top_iter(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        let scores = points
+            .filter(|point| !self.mmap_store.deleted(*point).unwrap_or(true))
+            .map(|point| {
+                let other_vector = self.mmap_store.raw_vector(point).unwrap();
+                ScoredPointOffset {
+                    idx: point,
+                    score: TMetric::similarity(&self.query, other_vector),
+                }
+            });
+        peek_top_largest_iterable(scores, top)
+    }
+
+    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+        let scores = self.mmap_store.iter_ids().map(|point| {
+            let other_vector = self.mmap_store.raw_vector(point).unwrap();
+            ScoredPointOffset {
+                idx: point,
+                score: TMetric::similarity(&self.query, other_vector),
+            }
+        });
+
+        peek_top_largest_iterable(scores, top)
+    }
 }
 
 /// Stores all vectors in mem-mapped file
@@ -87,11 +116,6 @@ pub struct MemmapVectorStorage {
     deleted_path: PathBuf,
     mmap_store: Option<MmapVectors>,
     distance: Distance,
-}
-
-pub struct MemmapVectorScorerBuilder<'a, TMetric: Metric> {
-    vector_storage: &'a MemmapVectorStorage,
-    metric: PhantomData<TMetric>,
 }
 
 pub fn open_memmap_vector_storage(
@@ -114,122 +138,6 @@ pub fn open_memmap_vector_storage(
             distance,
         }),
     ))))
-}
-
-impl<'a, TMetric> VectorScorer for MemmapVectorScorerBuilder<'a, TMetric>
-where
-    TMetric: Metric,
-{
-    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        Box::new(MemmapRawScorer::<TMetric> {
-            query: TMetric::preprocess(&vector).unwrap_or(vector),
-            metric: PhantomData,
-            mmap_store: self.vector_storage.mmap_store.as_ref().unwrap(),
-        })
-    }
-
-    fn quantized_raw_scorer(
-        &self,
-        vector: &[VectorElementType],
-    ) -> Option<Box<dyn RawScorer + '_>> {
-        let mmap_store = self.vector_storage.mmap_store.as_ref().unwrap();
-        if let Some(quantized_data) = &mmap_store.quantized_vectors {
-            if let Some(deleted_ram) = &mmap_store.deleted_flags {
-                let query = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
-                Some(quantized_data.raw_scorer(&query, deleted_ram))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    fn score_quantized_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset> {
-        match self.quantized_raw_scorer(vector) {
-            Some(scorer) => {
-                let scores = points
-                    .filter(|idx| {
-                        !self
-                            .vector_storage
-                            .mmap_store
-                            .as_ref()
-                            .unwrap()
-                            .deleted(*idx)
-                            .unwrap_or(true)
-                    })
-                    .map(|idx| {
-                        let score = scorer.score_point(idx);
-                        ScoredPointOffset { idx, score }
-                    });
-                peek_top_largest_iterable(scores, top)
-            }
-            None => self.score_points(vector, points, top),
-        }
-    }
-
-    fn score_points(
-        &self,
-        vector: &[VectorElementType],
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector_opt = TMetric::preprocess(vector);
-        let preprocessed_vector = preprocessed_vector_opt
-            .as_ref()
-            .map_or(vector, |x| x as &[_]);
-        let scores = points
-            .filter(|point| {
-                !self
-                    .vector_storage
-                    .mmap_store
-                    .as_ref()
-                    .unwrap()
-                    .deleted(*point)
-                    .unwrap_or(true)
-            })
-            .map(|point| {
-                let other_vector = self
-                    .vector_storage
-                    .mmap_store
-                    .as_ref()
-                    .unwrap()
-                    .raw_vector(point)
-                    .unwrap();
-                ScoredPointOffset {
-                    idx: point,
-                    score: TMetric::similarity(preprocessed_vector, other_vector),
-                }
-            });
-        peek_top_largest_iterable(scores, top)
-    }
-
-    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector_opt = TMetric::preprocess(vector);
-        let preprocessed_vector = preprocessed_vector_opt
-            .as_ref()
-            .map_or(vector, |x| x as &[_]);
-        let scores = self.vector_storage.iter_ids().map(|point| {
-            let other_vector = self
-                .vector_storage
-                .mmap_store
-                .as_ref()
-                .unwrap()
-                .raw_vector(point)
-                .unwrap();
-            ScoredPointOffset {
-                idx: point,
-                score: TMetric::similarity(preprocessed_vector, other_vector),
-            }
-        });
-
-        peek_top_largest_iterable(scores, top)
-    }
 }
 
 impl VectorStorage for MemmapVectorStorage {
@@ -334,10 +242,7 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let num_vectors = self.mmap_store.as_ref().unwrap().num_vectors;
-        let iter = (0..(num_vectors as PointOffsetType))
-            .filter(move |id| !self.mmap_store.as_ref().unwrap().deleted(*id).unwrap());
-        Box::new(iter)
+        self.mmap_store.as_ref().unwrap().iter_ids()
     }
 
     fn flusher(&self) -> Flusher {
@@ -371,20 +276,42 @@ impl VectorStorage for MemmapVectorStorage {
         files
     }
 
-    fn scorer(&self) -> Box<dyn VectorScorer + Sync + Send + '_> {
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         match self.distance {
-            Distance::Cosine => Box::new(MemmapVectorScorerBuilder::<CosineMetric> {
-                vector_storage: self,
-                metric: Default::default(),
+            Distance::Cosine => Box::new(MemmapRawScorer::<CosineMetric> {
+                query: CosineMetric::preprocess(&vector).unwrap_or(vector),
+                metric: PhantomData,
+                mmap_store: self.mmap_store.as_ref().unwrap(),
             }),
-            Distance::Euclid => Box::new(MemmapVectorScorerBuilder::<EuclidMetric> {
-                vector_storage: self,
-                metric: Default::default(),
+            Distance::Euclid => Box::new(MemmapRawScorer::<EuclidMetric> {
+                query: EuclidMetric::preprocess(&vector).unwrap_or(vector),
+                metric: PhantomData,
+                mmap_store: self.mmap_store.as_ref().unwrap(),
             }),
-            Distance::Dot => Box::new(MemmapVectorScorerBuilder::<DotProductMetric> {
-                vector_storage: self,
-                metric: Default::default(),
+            Distance::Dot => Box::new(MemmapRawScorer::<DotProductMetric> {
+                query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
+                metric: PhantomData,
+                mmap_store: self.mmap_store.as_ref().unwrap(),
             }),
+        }
+    }
+
+    fn quantized_raw_scorer(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Box<dyn RawScorer + '_>> {
+        let mmap_store = self.mmap_store.as_ref().unwrap();
+        if let Some(quantized_data) = &mmap_store.quantized_vectors {
+            if let Some(deleted_ram) = &mmap_store.deleted_flags {
+                let vector: Vec<_> = vector.to_vec();
+                let preprocessed_vector =
+                    self.distance.preprocess_vector(&vector).unwrap_or(vector);
+                Some(quantized_data.raw_scorer(&preprocessed_vector, deleted_ram))
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 }
@@ -459,17 +386,14 @@ mod tests {
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 
-        let res = borrowed_storage.scorer().score_all(&vec3, 2);
+        let raw_scorer = borrowed_storage.raw_scorer(vec3);
+        let res = raw_scorer.peek_top_all(2);
 
         assert_eq!(res.len(), 2);
 
         assert_ne!(res[0].idx, 2);
 
-        let res = borrowed_storage.scorer().score_points(
-            &vec3,
-            &mut vec![0, 1, 2, 3, 4].iter().cloned(),
-            2,
-        );
+        let res = raw_scorer.peek_top_iter(&mut vec![0, 1, 2, 3, 4].iter().cloned(), 2);
 
         assert_eq!(res.len(), 2);
         assert_ne!(res[0].idx, 2);
@@ -508,8 +432,7 @@ mod tests {
         let query = vec![-1.0, -1.0, -1.0, -1.0];
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
-        let vector_scorer = borrowed_storage.scorer();
-        let scorer = vector_scorer.raw_scorer(query);
+        let scorer = borrowed_storage.raw_scorer(query);
 
         let mut res = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
         let res_count = scorer.score_points(&query_points, &mut res);
@@ -584,9 +507,8 @@ mod tests {
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
         {
-            let vector_scorer = borrowed_storage.scorer();
-            let scorer_quant = vector_scorer.quantized_raw_scorer(&query).unwrap();
-            let scorer_orig = vector_scorer.raw_scorer(query.clone());
+            let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+            let scorer_orig = borrowed_storage.raw_scorer(query.clone());
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
                 let orig = scorer_orig.score_point(i);
@@ -601,9 +523,8 @@ mod tests {
         // test save-load
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
-        let vector_scorer = borrowed_storage.scorer();
-        let scorer_quant = vector_scorer.quantized_raw_scorer(&query).unwrap();
-        let scorer_orig = vector_scorer.raw_scorer(query);
+        let scorer_quant = borrowed_storage.quantized_raw_scorer(&query).unwrap();
+        let scorer_orig = borrowed_storage.raw_scorer(query);
 
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
