@@ -23,7 +23,7 @@ use crate::entry::entry_point::{
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, VectorIndexSS};
+use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
@@ -81,7 +81,7 @@ pub struct Segment {
 }
 
 pub struct VectorData {
-    pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
+    pub vector_index: Arc<AtomicRefCell<VectorIndexEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
 }
 
