@@ -22,7 +22,7 @@ use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
-use crate::config::{CollectionConfig, GlobalConfig};
+use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
 use crate::operations::consistency_params::ReadConsistency;
@@ -30,12 +30,9 @@ use crate::operations::point_ops::WriteOrdering;
 use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
-use crate::operations::types::{
-    CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
-    CountResult, LocalShardInfo, PointRequest, Record, RemoteShardInfo, ScrollRequest,
-    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
-};
+use crate::operations::types::{CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult};
 use crate::operations::{CollectionUpdateOperations, Validate};
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -51,11 +48,11 @@ use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
     change_remote_shard_route, check_transfer_conflicts, finalize_partial_shard,
-    handle_transferred_shard_proxy, revert_proxy_shard_to_local, spawn_transfer_task,
-    ShardTransfer, ShardTransferKey,
+    handle_transferred_shard_proxy, revert_proxy_shard_to_local, ShardTransfer,
+    ShardTransferKey, spawn_transfer_task,
 };
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
+use crate::shards::{CollectionId, HASH_RING_SHARD_SCALE, replica_set};
 use crate::telemetry::CollectionTelemetry;
 
 pub type VectorLookupFuture<'a> = Box<dyn Future<Output = CollectionResult<Vec<Record>>> + 'a>;
@@ -76,7 +73,7 @@ pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: Arc<LockedShardHolder>,
     pub(crate) config: Arc<RwLock<CollectionConfig>>,
-    pub(crate) global_config: Arc<GlobalConfig>,
+    pub(crate) collection_config: Arc<SharedStorageConfig>,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     this_peer_id: PeerId,
@@ -113,7 +110,7 @@ impl Collection {
         path: &Path,
         snapshots_path: &Path,
         config: &CollectionConfig,
-        global_config: Arc<GlobalConfig>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
         on_replica_failure: ChangePeerState,
@@ -138,7 +135,7 @@ impl Collection {
                 on_replica_failure.clone(),
                 path,
                 shared_config.clone(),
-                global_config.clone(),
+                shared_storage_config.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
             )
@@ -165,7 +162,7 @@ impl Collection {
             id: name.clone(),
             shards_holder: locked_shard_holder,
             config: shared_config,
-            global_config,
+            collection_config: shared_storage_config,
             before_drop_called: false,
             this_peer_id,
             path: path.to_owned(),
@@ -211,7 +208,7 @@ impl Collection {
         this_peer_id: PeerId,
         path: &Path,
         snapshots_path: &Path,
-        global_config: Arc<GlobalConfig>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_replica_failure: replica_set::ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
@@ -261,7 +258,7 @@ impl Collection {
                 path,
                 &collection_id,
                 shared_config.clone(),
-                global_config.clone(),
+                shared_storage_config.clone(),
                 channel_service.clone(),
                 on_replica_failure.clone(),
                 this_peer_id,
@@ -275,7 +272,7 @@ impl Collection {
             id: collection_id.clone(),
             shards_holder: locked_shard_holder,
             config: shared_config,
-            global_config,
+            collection_config: shared_storage_config,
             before_drop_called: false,
             this_peer_id,
             path: path.to_owned(),
@@ -676,7 +673,7 @@ impl Collection {
                 self.name(),
                 &replica_set.shard_path,
                 self.config.clone(),
-                self.global_config.clone(),
+                self.collection_config.clone(),
                 self.update_runtime.clone(),
             )
             .await?;
@@ -1510,7 +1507,6 @@ impl Collection {
         on_finish_init: ChangePeerState,
         on_convert_to_listener: ChangePeerState,
         on_convert_from_listener: ChangePeerState,
-        is_listener_node: bool,
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
@@ -1565,7 +1561,7 @@ impl Collection {
                 continue;
             }
 
-            if is_listener_node {
+            if self.collection_config.node_type == NodeType::Listener {
                 if this_peer_state == Some(Active) && !is_last_active {
                     // Convert active node from active to listener
                     on_convert_to_listener(*this_peer_id, shard_id);

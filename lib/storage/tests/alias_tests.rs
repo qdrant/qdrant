@@ -50,7 +50,7 @@ fn test_alias_operation() {
         quantization: None,
         mmap_advice: madvise::Advice::Random,
         node_type: Default::default(),
-        update_queue_size: 100,
+        update_queue_size: Default::default(),
     };
 
     let search_runtime = Runtime::new().unwrap();

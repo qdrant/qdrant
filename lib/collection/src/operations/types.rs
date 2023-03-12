@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
 use segment::data_types::vectors::{
-    NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME, NamedVectorStruct, VectorStruct, VectorType,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
@@ -711,4 +711,15 @@ pub struct AliasDescription {
 #[serde(rename_all = "snake_case")]
 pub struct CollectionsAliasesResponse {
     pub aliases: Vec<AliasDescription>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default, Copy, PartialEq)]
+pub enum NodeType {
+    /// Regular node, participates in the cluster
+    #[default]
+    Normal,
+    /// Node that does only receive data, but is not used for search/read operations
+    /// This is useful for nodes that are only used for writing data
+    /// and backup purposes
+    Listener,
 }

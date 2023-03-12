@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use collection::config::{GlobalConfig, WalConfig};
+use collection::config::WalConfig;
+use collection::operations::shared_storage_config::SharedStorageConfig;
+use collection::operations::types::NodeType;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use schemars::JsonSchema;
@@ -24,17 +26,6 @@ fn default_max_optimization_threads() -> usize {
     1
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
-pub enum NodeType {
-    /// Regular node, participates in the cluster
-    #[default]
-    Normal,
-    /// Node that does only receive data, but is not used for search/read operations
-    /// This is useful for nodes that are only used for writing data
-    /// and backup purposes
-    Listener,
-}
-
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
 #[derive(Clone, Debug, Deserialize)]
 pub struct StorageConfig {
@@ -52,15 +43,13 @@ pub struct StorageConfig {
     pub mmap_advice: madvise::Advice,
     #[serde(default)]
     pub node_type: NodeType,
-    #[serde(default = "default_update_queue_size")]
-    pub update_queue_size: usize,
+    #[serde(default)]
+    pub update_queue_size: Option<usize>,
 }
 
 impl StorageConfig {
-    pub fn to_collection_global_config(&self) -> GlobalConfig {
-        GlobalConfig {
-            update_queue_size: self.update_queue_size,
-        }
+    pub fn to_shared_storage_config(&self) -> SharedStorageConfig {
+        SharedStorageConfig::new(self.update_queue_size, self.node_type)
     }
 }
 
@@ -74,10 +63,6 @@ fn default_on_disk_payload() -> bool {
 
 fn default_mmap_advice() -> madvise::Advice {
     madvise::Advice::Random
-}
-
-fn default_update_queue_size() -> usize {
-    100
 }
 
 /// Information of a peer in the cluster

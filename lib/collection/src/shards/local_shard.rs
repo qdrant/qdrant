@@ -24,14 +24,15 @@ use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
-use crate::config::{CollectionConfig, GlobalConfig};
+use crate::config::CollectionConfig;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::CollectionUpdateOperations;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::optimizers_builder::build_optimizers;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
+use crate::shards::shard_config::{SHARD_CONFIG_FILE, ShardConfig};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
@@ -46,8 +47,8 @@ pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
     pub(super) segments: Arc<RwLock<SegmentHolder>>,
-    pub(super) config: Arc<TokioRwLock<CollectionConfig>>,
-    pub(super) global_config: Arc<GlobalConfig>,
+    pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
+    pub(super) shred_storage_config: Arc<SharedStorageConfig>,
     pub(super) wal: LockedWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
@@ -95,19 +96,19 @@ impl LocalShard {
 
     pub async fn new(
         segment_holder: SegmentHolder,
-        shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        global_config: Arc<GlobalConfig>,
+        collection_config: Arc<TokioRwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         wal: SerdeWal<CollectionUpdateOperations>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         shard_path: &Path,
         update_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
-        let config = shared_config.read().await;
+        let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
 
         let mut update_handler = UpdateHandler::new(
-            global_config.clone(),
+            shared_storage_config.clone(),
             optimizers.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
@@ -116,15 +117,15 @@ impl LocalShard {
             config.optimizer_config.max_optimization_threads,
         );
 
-        let (update_sender, update_receiver) = mpsc::channel(global_config.update_queue_size);
+        let (update_sender, update_receiver) = mpsc::channel(shared_storage_config.update_queue_size);
         update_handler.run_workers(update_receiver);
 
         drop(config); // release `shared_config` from borrow checker
 
         Self {
             segments: segment_holder,
-            config: shared_config,
-            global_config,
+            collection_config,
+            shred_storage_config: shared_storage_config,
             wal: locked_wal,
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
@@ -143,11 +144,11 @@ impl LocalShard {
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
-        shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        global_config: Arc<GlobalConfig>,
+        collection_config: Arc<TokioRwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
-        let collection_config = shared_config.read().await;
+        let collection_config_read = collection_config.read().await;
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
@@ -155,7 +156,7 @@ impl LocalShard {
 
         let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
             wal_path.to_str().unwrap(),
-            &(&collection_config.wal_config).into(),
+            &(&collection_config_read.wal_config).into(),
         )
         .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
 
@@ -212,18 +213,18 @@ impl LocalShard {
 
         let optimizers = build_optimizers(
             shard_path,
-            &collection_config.params,
-            &collection_config.optimizer_config,
-            &collection_config.hnsw_config,
-            &collection_config.quantization_config,
+            &collection_config_read.params,
+            &collection_config_read.optimizer_config,
+            &collection_config_read.hnsw_config,
+            &collection_config_read.quantization_config,
         );
 
-        drop(collection_config); // release `shared_config` from borrow checker
+        drop(collection_config_read); // release `shared_config` from borrow checker
 
         let collection = LocalShard::new(
             segment_holder,
-            shared_config,
-            global_config,
+            collection_config,
+            shared_storage_config,
             wal,
             optimizers,
             shard_path,
@@ -252,8 +253,8 @@ impl LocalShard {
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
-        shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        global_config: Arc<GlobalConfig>,
+        collection_config: Arc<TokioRwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
@@ -262,8 +263,8 @@ impl LocalShard {
             id,
             collection_id,
             shard_path,
-            shared_config,
-            global_config,
+            collection_config,
+            shared_storage_config,
             update_runtime,
         )
         .await?;
@@ -276,11 +277,11 @@ impl LocalShard {
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
-        shared_config: Arc<TokioRwLock<CollectionConfig>>,
-        global_config: Arc<GlobalConfig>,
+        collection_config: Arc<TokioRwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
     ) -> CollectionResult<LocalShard> {
-        let config = shared_config.read().await;
+        let config = collection_config.read().await;
 
         let wal_path = shard_path.join("wal");
 
@@ -357,8 +358,8 @@ impl LocalShard {
 
         let collection = LocalShard::new(
             segment_holder,
-            shared_config,
-            global_config,
+            collection_config,
+            shared_storage_config,
             wal,
             optimizers,
             shard_path,
@@ -407,10 +408,10 @@ impl LocalShard {
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        let config = self.config.read().await;
+        let config = self.collection_config.read().await;
         let mut update_handler = self.update_handler.lock().await;
 
-        let (update_sender, update_receiver) = mpsc::channel(self.global_config.update_queue_size);
+        let (update_sender, update_receiver) = mpsc::channel(self.shred_storage_config.update_queue_size);
         // makes sure that the Stop signal is the last one in this channel
         let old_sender = self.update_sender.swap(Arc::new(update_sender));
         old_sender.send(UpdateSignal::Stop).await?;
@@ -599,7 +600,7 @@ impl LocalShard {
     }
 
     pub async fn local_shard_info(&self) -> CollectionInfo {
-        let collection_config = self.config.read().await.clone();
+        let collection_config = self.collection_config.read().await.clone();
         let segments = self.segments().read();
         let mut vectors_count = 0;
         let mut indexed_vectors_count = 0;

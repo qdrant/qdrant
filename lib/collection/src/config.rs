@@ -12,7 +12,6 @@ use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{HnswConfig, QuantizationConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
 use wal::WalOptions;
-
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
 use crate::optimizers_builder::OptimizersConfig;
 
@@ -181,18 +180,5 @@ impl CollectionParams {
                 .collect(),
         };
         Ok(vector_config)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct GlobalConfig {
-    pub update_queue_size: usize,
-}
-
-impl Default for GlobalConfig {
-    fn default() -> Self {
-        Self {
-            update_queue_size: 100,
-        }
     }
 }

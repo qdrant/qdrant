@@ -16,9 +16,9 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
-    RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    UpdateResult, VectorsConfig,
+    AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest,
+    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
+    SearchRequestBatch, UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -52,7 +52,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::data_transfer::{populate_collection, transfer_indexes};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::types::{NodeType, PeerAddressById, StorageConfig};
+use crate::types::{PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
@@ -127,7 +127,7 @@ impl TableOfContent {
                 this_peer_id,
                 &collection_path,
                 &collection_snapshots_path,
-                storage_config.to_collection_global_config().into(),
+                storage_config.to_shared_storage_config().into(),
                 channel_service.clone(),
                 Self::change_peer_state_callback(
                     consensus_proposal_sender.clone(),
@@ -348,7 +348,7 @@ impl TableOfContent {
             &collection_path,
             &snapshots_path,
             &collection_config,
-            self.storage_config.to_collection_global_config().into(),
+            self.storage_config.to_shared_storage_config().into(),
             collection_shard_distribution,
             self.channel_service.clone(),
             Self::change_peer_state_callback(
@@ -1289,7 +1289,7 @@ impl TableOfContent {
                         &collection_path,
                         &snapshots_path,
                         &state.config,
-                        self.storage_config.to_collection_global_config().into(),
+                        self.storage_config.to_shared_storage_config().into(),
                         shard_distribution,
                         self.channel_service.clone(),
                         Self::change_peer_state_callback(
@@ -1584,7 +1584,6 @@ impl CollectionContainer for TableOfContent {
                         finish_shard_initialize,
                         convert_to_listener_callback,
                         convert_from_listener_to_active_callback,
-                        matches!(self.storage_config.node_type, NodeType::Listener),
                     )
                     .await?;
             }
