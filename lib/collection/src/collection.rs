@@ -244,7 +244,7 @@ impl Collection {
             }
         }
 
-        let config = CollectionConfig::load(path).unwrap_or_else(|err| {
+        let collection_config = CollectionConfig::load(path).unwrap_or_else(|err| {
             panic!(
                 "Can't read collection config due to {}\nat {}",
                 err,
@@ -255,13 +255,13 @@ impl Collection {
         let ring = HashRing::fair(HASH_RING_SHARD_SCALE);
         let mut shard_holder = ShardHolder::new(path, ring).expect("Can not create shard holder");
 
-        let shared_config = Arc::new(RwLock::new(config.clone()));
+        let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
         shard_holder
             .load_shards(
                 path,
                 &collection_id,
-                shared_config.clone(),
+                shared_collection_config.clone(),
                 shared_storage_config.clone(),
                 channel_service.clone(),
                 on_replica_failure.clone(),
@@ -275,7 +275,7 @@ impl Collection {
         Self {
             id: collection_id.clone(),
             shards_holder: locked_shard_holder,
-            collection_config: shared_config,
+            collection_config: shared_collection_config,
             shared_storage_config,
             before_drop_called: false,
             this_peer_id,
