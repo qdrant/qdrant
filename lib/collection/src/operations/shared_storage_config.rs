@@ -22,10 +22,7 @@ impl Default for SharedStorageConfig {
 }
 
 impl SharedStorageConfig {
-    pub fn new(
-        update_queue_size: Option<usize>,
-        node_type: NodeType,
-    ) -> Self {
+    pub fn new(update_queue_size: Option<usize>, node_type: NodeType) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
             NodeType::Listener => DEFAULT_UPDATE_QUEUE_SIZE_LISTENER,

@@ -5,9 +5,9 @@ pub mod conversions;
 pub mod operation_effect;
 pub mod payload_ops;
 pub mod point_ops;
+pub mod shared_storage_config;
 pub mod snapshot_ops;
 pub mod types;
-pub mod shared_storage_config;
 
 use std::collections::HashMap;
 

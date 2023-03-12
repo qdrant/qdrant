@@ -12,6 +12,7 @@ use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{HnswConfig, QuantizationConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
 use wal::WalOptions;
+
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
 use crate::optimizers_builder::OptimizersConfig;
 

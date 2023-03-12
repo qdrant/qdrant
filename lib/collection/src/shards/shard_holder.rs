@@ -9,9 +9,9 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
-use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
@@ -201,12 +201,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         update_runtime: Handle,
     ) {
-        let shard_number = collection_config
-            .read()
-            .await
-            .params
-            .shard_number
-            .get();
+        let shard_number = collection_config.read().await.params.shard_number.get();
         // ToDo: remove after version 0.11.0
         for shard_id in 0..shard_number {
             for (path, _shard_version, shard_type) in

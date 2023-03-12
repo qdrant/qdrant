@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, NamedVectorStruct, VectorStruct, VectorType,
+    NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{

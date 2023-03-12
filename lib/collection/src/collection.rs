@@ -27,12 +27,16 @@ use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{CollectionParamsDiff, DiffConfig, OptimizersConfigDiff};
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
-use crate::operations::types::{CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult};
+use crate::operations::types::{
+    CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
+    CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest,
+    ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
+};
 use crate::operations::{CollectionUpdateOperations, Validate};
-use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -48,11 +52,11 @@ use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::shard_versioning::versioned_shard_path;
 use crate::shards::transfer::shard_transfer::{
     change_remote_shard_route, check_transfer_conflicts, finalize_partial_shard,
-    handle_transferred_shard_proxy, revert_proxy_shard_to_local, ShardTransfer,
-    ShardTransferKey, spawn_transfer_task,
+    handle_transferred_shard_proxy, revert_proxy_shard_to_local, spawn_transfer_task,
+    ShardTransfer, ShardTransferKey,
 };
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shards::{CollectionId, HASH_RING_SHARD_SCALE, replica_set};
+use crate::shards::{replica_set, CollectionId, HASH_RING_SHARD_SCALE};
 use crate::telemetry::CollectionTelemetry;
 
 pub type VectorLookupFuture<'a> = Box<dyn Future<Output = CollectionResult<Vec<Record>>> + 'a>;

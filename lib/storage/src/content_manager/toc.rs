@@ -16,9 +16,9 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
-    SearchRequestBatch, UpdateResult, VectorsConfig,
+    AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
+    RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
+    UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};

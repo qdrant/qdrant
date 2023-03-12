@@ -25,14 +25,14 @@ use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::config::CollectionConfig;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::optimizers_builder::build_optimizers;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_config::{SHARD_CONFIG_FILE, ShardConfig};
+use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
@@ -117,7 +117,8 @@ impl LocalShard {
             config.optimizer_config.max_optimization_threads,
         );
 
-        let (update_sender, update_receiver) = mpsc::channel(shared_storage_config.update_queue_size);
+        let (update_sender, update_receiver) =
+            mpsc::channel(shared_storage_config.update_queue_size);
         update_handler.run_workers(update_receiver);
 
         drop(config); // release `shared_config` from borrow checker
@@ -411,7 +412,8 @@ impl LocalShard {
         let config = self.collection_config.read().await;
         let mut update_handler = self.update_handler.lock().await;
 
-        let (update_sender, update_receiver) = mpsc::channel(self.shred_storage_config.update_queue_size);
+        let (update_sender, update_receiver) =
+            mpsc::channel(self.shred_storage_config.update_queue_size);
         // makes sure that the Stop signal is the last one in this channel
         let old_sender = self.update_sender.swap(Arc::new(update_sender));
         old_sender.send(UpdateSignal::Stop).await?;
