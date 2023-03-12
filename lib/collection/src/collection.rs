@@ -76,8 +76,8 @@ impl StorageVersion for CollectionVersion {
 pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: Arc<LockedShardHolder>,
-    pub(crate) config: Arc<RwLock<CollectionConfig>>,
-    pub(crate) collection_config: Arc<SharedStorageConfig>,
+    pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
+    pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     this_peer_id: PeerId,
@@ -113,7 +113,7 @@ impl Collection {
         this_peer_id: PeerId,
         path: &Path,
         snapshots_path: &Path,
-        config: &CollectionConfig,
+        collection_config: &CollectionConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
@@ -126,7 +126,7 @@ impl Collection {
 
         let mut shard_holder = ShardHolder::new(path, HashRing::fair(HASH_RING_SHARD_SCALE))?;
 
-        let shared_config = Arc::new(RwLock::new(config.clone()));
+        let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
             let is_local = peers.remove(&this_peer_id);
 
@@ -138,7 +138,7 @@ impl Collection {
                 peers,
                 on_replica_failure.clone(),
                 path,
-                shared_config.clone(),
+                shared_collection_config.clone(),
                 shared_storage_config.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
@@ -160,13 +160,13 @@ impl Collection {
 
         // Once the config is persisted - the collection is considered to be successfully created.
         CollectionVersion::save(path)?;
-        config.save(path)?;
+        collection_config.save(path)?;
 
         Ok(Self {
             id: name.clone(),
             shards_holder: locked_shard_holder,
-            config: shared_config,
-            collection_config: shared_storage_config,
+            collection_config: shared_collection_config,
+            shared_storage_config,
             before_drop_called: false,
             this_peer_id,
             path: path.to_owned(),
@@ -275,8 +275,8 @@ impl Collection {
         Self {
             id: collection_id.clone(),
             shards_holder: locked_shard_holder,
-            config: shared_config,
-            collection_config: shared_storage_config,
+            collection_config: shared_config,
+            shared_storage_config,
             before_drop_called: false,
             this_peer_id,
             path: path.to_owned(),
@@ -676,8 +676,8 @@ impl Collection {
                 shard_id,
                 self.name(),
                 &replica_set.shard_path,
-                self.config.clone(),
                 self.collection_config.clone(),
+                self.shared_storage_config.clone(),
                 self.update_runtime.clone(),
             )
             .await?;
@@ -888,7 +888,7 @@ impl Collection {
                 merged_results[index].append(shard_searches_result)
             }
         }
-        let collection_params = self.config.read().await.params.clone();
+        let collection_params = self.collection_config.read().await.params.clone();
         let top_results: Vec<_> = merged_results
             .into_iter()
             .zip(request.searches.iter())
@@ -1093,10 +1093,10 @@ impl Collection {
         params_diff: CollectionParamsDiff,
     ) -> CollectionResult<()> {
         {
-            let mut config = self.config.write().await;
+            let mut config = self.collection_config.write().await;
             config.params = params_diff.update(&config.params)?;
         }
-        self.config.read().await.save(&self.path)?;
+        self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
 
@@ -1160,7 +1160,7 @@ impl Collection {
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
         {
-            let mut config = self.config.write().await;
+            let mut config = self.collection_config.write().await;
             config.optimizer_config =
                 DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
         }
@@ -1170,7 +1170,7 @@ impl Collection {
                 replica_set.on_optimizer_config_update().await?;
             }
         }
-        self.config.read().await.save(&self.path)?;
+        self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
 
@@ -1183,7 +1183,7 @@ impl Collection {
         optimizer_config: OptimizersConfig,
     ) -> CollectionResult<()> {
         {
-            let mut config = self.config.write().await;
+            let mut config = self.collection_config.write().await;
             config.optimizer_config = optimizer_config;
         }
         {
@@ -1192,7 +1192,7 @@ impl Collection {
                 replica_set.on_optimizer_config_update().await?;
             }
         }
-        self.config.read().await.save(&self.path)?;
+        self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
 
@@ -1301,7 +1301,7 @@ impl Collection {
         let shards_holder = self.shards_holder.read().await;
         let transfers = shards_holder.shard_transfers.read().clone();
         State {
-            config: self.config.read().await.clone(),
+            config: self.collection_config.read().await.clone(),
             shards: shards_holder
                 .get_shards()
                 .map(|(shard_id, replicas)| {
@@ -1337,7 +1337,7 @@ impl Collection {
         CollectionTelemetry {
             id: self.name(),
             init_time_ms: self.init_time.as_millis() as u64,
-            config: self.config.read().await.clone(),
+            config: self.collection_config.read().await.clone(),
             shards: shards_telemetry,
             transfers,
         }
@@ -1393,7 +1393,7 @@ impl Collection {
         }
 
         CollectionVersion::save(&snapshot_path_with_tmp_extension)?;
-        self.config
+        self.collection_config
             .read()
             .await
             .save(&snapshot_path_with_tmp_extension)?;
@@ -1565,7 +1565,7 @@ impl Collection {
                 continue;
             }
 
-            if self.collection_config.node_type == NodeType::Listener {
+            if self.shared_storage_config.node_type == NodeType::Listener {
                 if this_peer_state == Some(Active) && !is_last_active {
                     // Convert active node from active to listener
                     on_convert_to_listener(*this_peer_id, shard_id);
