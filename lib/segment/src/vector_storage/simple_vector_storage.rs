@@ -258,11 +258,7 @@ mod tests {
             .drop(PointIdType::NumId(top_idx as u64))
             .unwrap();
 
-        let raw_scorer = new_raw_scorer(
-            query.clone(),
-            &borrowed_storage,
-            borrowed_id_tracker.deref(),
-        );
+        let raw_scorer = new_raw_scorer(query, &borrowed_storage, borrowed_id_tracker.deref());
         let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         let query_points = vec![0, 1, 2, 3, 4];
