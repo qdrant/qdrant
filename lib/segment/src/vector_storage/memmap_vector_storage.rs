@@ -73,7 +73,7 @@ impl VectorStorage for MemmapVectorStorage {
     fn insert_vector(
         &mut self,
         _key: PointOffsetType,
-        _vector: Vec<VectorElementType>,
+        _vector: &[VectorElementType],
     ) -> OperationResult<()> {
         panic!("Can't directly update vector in mmap storage")
     }
@@ -186,15 +186,9 @@ mod tests {
             let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
-                borrowed_storage2
-                    .insert_vector(0, points[0].clone())
-                    .unwrap();
-                borrowed_storage2
-                    .insert_vector(1, points[1].clone())
-                    .unwrap();
-                borrowed_storage2
-                    .insert_vector(2, points[2].clone())
-                    .unwrap();
+                borrowed_storage2.insert_vector(0, &points[0]).unwrap();
+                borrowed_storage2.insert_vector(1, &points[1]).unwrap();
+                borrowed_storage2.insert_vector(2, &points[2]).unwrap();
             }
             borrowed_storage
                 .update_from(&storage2.borrow(), &mut Box::new(0..3), &Default::default())
@@ -215,12 +209,8 @@ mod tests {
             let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
-                borrowed_storage2
-                    .insert_vector(3, points[3].clone())
-                    .unwrap();
-                borrowed_storage2
-                    .insert_vector(4, points[4].clone())
-                    .unwrap();
+                borrowed_storage2.insert_vector(3, &points[3]).unwrap();
+                borrowed_storage2.insert_vector(4, &points[4]).unwrap();
             }
             borrowed_storage
                 .update_from(&storage2.borrow(), &mut Box::new(0..2), &Default::default())
@@ -275,7 +265,7 @@ mod tests {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 for (i, vec) in points.iter().enumerate() {
                     borrowed_storage2
-                        .insert_vector(i as PointOffsetType, vec.to_vec())
+                        .insert_vector(i as PointOffsetType, vec)
                         .unwrap();
                 }
             }
@@ -349,7 +339,7 @@ mod tests {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 for (i, vec) in points.iter().enumerate() {
                     borrowed_storage2
-                        .insert_vector(i as PointOffsetType, vec.to_vec())
+                        .insert_vector(i as PointOffsetType, vec)
                         .unwrap();
                 }
             }

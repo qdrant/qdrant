@@ -50,7 +50,7 @@ pub trait VectorStorage {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
-        vector: Vec<VectorElementType>,
+        vector: &[VectorElementType],
     ) -> OperationResult<()>;
 
     fn update_from(
@@ -114,7 +114,7 @@ impl VectorStorage for VectorStorageEnum {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
-        vector: Vec<VectorElementType>,
+        vector: &[VectorElementType],
     ) -> OperationResult<()> {
         match self {
             VectorStorageEnum::Simple(v) => v.insert_vector(key, vector),

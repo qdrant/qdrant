@@ -29,8 +29,10 @@ pub struct SimpleVectorStorage {
     vectors: ChunkedVectors<VectorElementType>,
     quantized_vectors: Option<QuantizedVectorsStorage>,
     db_wrapper: DatabaseColumnWrapper,
+    update_buffer: Vec<VectorElementType>,
 }
 
+// TODO: remove this struct because deleted field is not used anymore
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct StoredRecord {
     pub deleted: bool,
@@ -49,9 +51,29 @@ pub fn open_simple_vector_storage(
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
-        let stored_record: StoredRecord = bincode::deserialize(&value)
-            .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
-        vectors.insert(point_id, &stored_record.vector);
+        let vector: Result<Vec<VectorElementType>, _> = bincode::deserialize(&value);
+
+        // storage compatibility
+        let vector = match vector {
+            Ok(vector) => {
+                if vector.len() != dim {
+                    let stored_record: StoredRecord =
+                        bincode::deserialize(&value).map_err(|_| {
+                            OperationError::service_error("cannot deserialize record from db")
+                        })?;
+                    stored_record.vector
+                } else {
+                    vector
+                }
+            }
+            Err(_) => {
+                let stored_record: StoredRecord = bincode::deserialize(&value).map_err(|_| {
+                    OperationError::service_error("cannot deserialize record from db")
+                })?;
+                stored_record.vector
+            }
+        };
+        vectors.insert(point_id, &vector);
     }
 
     debug!("Segment vectors: {}", vectors.len());
@@ -67,24 +89,22 @@ pub fn open_simple_vector_storage(
             vectors,
             quantized_vectors: None,
             db_wrapper,
+            update_buffer: vec![0.; dim],
         },
     ))))
 }
 
 impl SimpleVectorStorage {
-    fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
-        let v = self.vectors.get(point_id);
-
-        let record = StoredRecord {
-            deleted: false,     // Todo: remove
-            vector: v.to_vec(), // ToDo: try to reduce number of vector copies
-        };
-
+    fn update_stored(
+        &mut self,
+        point_id: PointOffsetType,
+        vector: &[VectorElementType],
+    ) -> OperationResult<()> {
+        self.update_buffer.copy_from_slice(vector);
         self.db_wrapper.put(
             bincode::serialize(&point_id).unwrap(),
-            bincode::serialize(&record).unwrap(),
+            bincode::serialize::<Vec<VectorElementType>>(&self.update_buffer).unwrap(),
         )?;
-
         Ok(())
     }
 }
@@ -109,10 +129,10 @@ impl VectorStorage for SimpleVectorStorage {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
-        vector: Vec<VectorElementType>,
+        vector: &[VectorElementType],
     ) -> OperationResult<()> {
-        self.vectors.insert(key, &vector);
-        self.update_stored(key)?;
+        self.vectors.insert(key, vector);
+        self.update_stored(key, vector)?;
         Ok(())
     }
 
@@ -128,7 +148,7 @@ impl VectorStorage for SimpleVectorStorage {
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = other.get_vector(point_id);
             let new_id = self.vectors.push(other_vector);
-            self.update_stored(new_id)?;
+            self.update_stored(new_id, other_vector)?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
         Ok(start_index..end_index)
@@ -211,7 +231,7 @@ mod tests {
 
         for (i, vec) in points.iter().enumerate() {
             borrowed_storage
-                .insert_vector(i as PointOffsetType, vec.to_vec())
+                .insert_vector(i as PointOffsetType, vec)
                 .unwrap();
         }
 
@@ -295,7 +315,7 @@ mod tests {
 
         for (i, vec) in points.iter().enumerate() {
             borrowed_storage
-                .insert_vector(i as PointOffsetType, vec.to_vec())
+                .insert_vector(i as PointOffsetType, vec)
                 .unwrap();
         }
 

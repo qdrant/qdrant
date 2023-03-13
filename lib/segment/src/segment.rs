@@ -97,10 +97,9 @@ impl Segment {
         check_vectors_set(&vectors, &self.segment_config)?;
         for (vector_name, vector) in vectors {
             let vector_name: &str = &vector_name;
-            let vector = vector.into_owned();
             let vector_data = &self.vector_data[vector_name];
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
-            vector_storage.insert_vector(internal_id, vector)?;
+            vector_storage.insert_vector(internal_id, &vector)?;
         }
         Ok(())
     }
@@ -668,11 +667,10 @@ impl SegmentEntry for Segment {
 
                 for (vector_name, processed_vector) in processed_vectors {
                     let vector_name: &str = &vector_name;
-                    let processed_vector = processed_vector.into_owned();
                     segment.vector_data[vector_name]
                         .vector_storage
                         .borrow_mut()
-                        .insert_vector(new_index, processed_vector)?;
+                        .insert_vector(new_index, &processed_vector)?;
                 }
                 segment
                     .id_tracker
