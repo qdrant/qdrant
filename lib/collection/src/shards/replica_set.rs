@@ -28,6 +28,7 @@ use super::{create_shard_dir, CollectionId};
 use crate::config::CollectionConfig;
 use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
 use crate::operations::point_ops::WriteOrdering;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult,
@@ -164,6 +165,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
+    shared_storage_config: Arc<SharedStorageConfig>,
     update_runtime: Handle,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
@@ -255,7 +257,8 @@ impl ShardReplicaSet {
         remotes: HashSet<PeerId>,
         on_peer_failure: ChangePeerState,
         collection_path: &Path,
-        shared_config: Arc<RwLock<CollectionConfig>>,
+        collection_config: Arc<RwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         update_runtime: Handle,
     ) -> CollectionResult<Self> {
@@ -265,7 +268,8 @@ impl ShardReplicaSet {
                 shard_id,
                 collection_id.clone(),
                 &shard_path,
-                shared_config.clone(),
+                collection_config.clone(),
+                shared_storage_config.clone(),
                 update_runtime.clone(),
             )
             .await?;
@@ -310,7 +314,8 @@ impl ShardReplicaSet {
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
-            collection_config: shared_config,
+            collection_config,
+            shared_storage_config,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
         })
@@ -415,6 +420,7 @@ impl ShardReplicaSet {
                         self.collection_id.clone(),
                         &self.shard_path,
                         self.collection_config.clone(),
+                        self.shared_storage_config.clone(),
                         self.update_runtime.clone(),
                     )
                     .await?,
@@ -442,7 +448,8 @@ impl ShardReplicaSet {
         shard_id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
-        shared_config: Arc<RwLock<CollectionConfig>>,
+        collection_config: Arc<RwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
@@ -479,7 +486,8 @@ impl ShardReplicaSet {
                 shard_id,
                 collection_id.clone(),
                 shard_path,
-                shared_config.clone(),
+                collection_config.clone(),
+                shared_storage_config.clone(),
                 update_runtime.clone(),
             )
             .await
@@ -504,7 +512,8 @@ impl ShardReplicaSet {
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
-            collection_config: shared_config,
+            collection_config,
+            shared_storage_config,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
         }
@@ -579,6 +588,7 @@ impl ShardReplicaSet {
                     self.collection_id.clone(),
                     &self.shard_path,
                     self.collection_config.clone(),
+                    self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
                 )
                 .await?;
@@ -948,6 +958,7 @@ impl ShardReplicaSet {
                 self.collection_id.clone(),
                 &self.shard_path,
                 self.collection_config.clone(),
+                self.shared_storage_config.clone(),
                 self.update_runtime.clone(),
             )
             .await?;
@@ -1540,6 +1551,7 @@ mod tests {
             dummy_on_replica_failure(),
             collection_dir.path(),
             shared_config,
+            Default::default(),
             Default::default(),
             update_runtime,
         )
