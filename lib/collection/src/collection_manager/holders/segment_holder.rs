@@ -197,19 +197,18 @@ impl<'s> SegmentHolder {
         self.segments.get(&id)
     }
 
-    pub fn appendable_ids(&self) -> Vec<SegmentId> {
-        self.segments
-            .iter()
-            .filter(|(_, x)| x.get().read().is_appendable())
-            .map(|(id, _)| id)
-            .cloned()
-            .collect()
-    }
-
     pub fn appendable_segments(&self) -> Vec<SegmentId> {
         self.segments
             .iter()
             .filter(|(_idx, seg)| seg.get().read().is_appendable())
+            .map(|(idx, _seg)| *idx)
+            .collect()
+    }
+
+    pub fn non_appendable_segments(&self) -> Vec<SegmentId> {
+        self.segments
+            .iter()
+            .filter(|(_idx, seg)| !seg.get().read().is_appendable())
             .map(|(idx, _seg)| *idx)
             .collect()
     }
@@ -392,6 +391,20 @@ impl<'s> SegmentHolder {
         Ok(read_points)
     }
 
+    /// Defines flush ordering for segments.
+    ///
+    /// Flush appendable segments first, then non-appendable.
+    /// This is done to ensure that all data, transferred from non-appendable segments to appendable segments
+    /// is persisted, before marking records in non-appendable segments as removed.
+    fn segment_flush_ordering(&self) -> impl Iterator<Item = SegmentId> {
+        let appendable_segments = self.appendable_segments();
+        let non_appendable_segments = self.non_appendable_segments();
+
+        appendable_segments
+            .into_iter()
+            .chain(non_appendable_segments.into_iter())
+    }
+
     /// Flushes all segments and returns maximum version to persist
     ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
@@ -400,7 +413,9 @@ impl<'s> SegmentHolder {
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
-        for segment in self.segments.values() {
+
+        for segment_id in self.segment_flush_ordering() {
+            let segment = self.segments.get(&segment_id).unwrap();
             let segment_lock = segment.get();
             let read_segment = segment_lock.read();
             let segment_version = read_segment.version();
