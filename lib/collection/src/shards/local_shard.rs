@@ -396,10 +396,14 @@ impl LocalShard {
         // ToDo: Start from minimal applied version
         for (op_num, update) in wal.read_all() {
             // Panic only in case of internal error. If wrong formatting - skip
-            if let Err(CollectionError::ServiceError { error, .. }) =
+            if let Err(CollectionError::ServiceError { error, backtrace }) =
                 CollectionUpdater::update(segments, op_num, update)
             {
-                panic!("Can't apply WAL operation: {error}")
+                if let Some(backtrace) = backtrace {
+                    log::error!("Backtrace: {}", backtrace);
+                }
+                let path = self.path.display();
+                panic!("Can't apply WAL operation: {error}, collection: {collection_id}, shard: {path}, op_num: {op_num}");
             }
             bar.inc(1);
         }
