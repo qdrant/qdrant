@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitVec;
 use serde::{Deserialize, Serialize};
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
+use crate::id_tracker::IdTrackerSS;
 use crate::types::{Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::scalar_quantized::ScalarQuantizedVectors;
@@ -40,7 +40,7 @@ pub trait QuantizedVectors: Send + Sync {
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitVec,
+        id_tracker: &'a IdTrackerSS,
     ) -> Box<dyn RawScorer + 'a>;
 
     fn save_to(&self, path: &Path) -> OperationResult<()>;
@@ -53,11 +53,13 @@ impl QuantizedVectors for QuantizedVectorsStorage {
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitVec,
+        id_tracker: &'a IdTrackerSS,
     ) -> Box<dyn RawScorer + 'a> {
         match &self.storage_impl {
-            QuantizedVectorStorageImpl::ScalarRam(storage) => storage.raw_scorer(query, deleted),
-            QuantizedVectorStorageImpl::ScalarMmap(storage) => storage.raw_scorer(query, deleted),
+            QuantizedVectorStorageImpl::ScalarRam(storage) => storage.raw_scorer(query, id_tracker),
+            QuantizedVectorStorageImpl::ScalarMmap(storage) => {
+                storage.raw_scorer(query, id_tracker)
+            }
         }
     }
 
@@ -127,6 +129,7 @@ impl QuantizedVectorsStorage {
                         vectors,
                         scalar_config,
                         &vector_parameters,
+                        distance,
                     )?;
                     QuantizedVectorStorageImpl::ScalarRam(storage)
                 } else {
@@ -135,6 +138,7 @@ impl QuantizedVectorsStorage {
                         scalar_config,
                         &vector_parameters,
                         path,
+                        distance,
                     )?;
                     QuantizedVectorStorageImpl::ScalarMmap(storage)
                 }
@@ -161,7 +165,11 @@ impl QuantizedVectorsStorage {
         path.join(QUANTIZED_CONFIG_PATH).exists()
     }
 
-    pub fn load(data_path: &Path, on_disk_vector_storage: bool) -> OperationResult<Self> {
+    pub fn load(
+        data_path: &Path,
+        on_disk_vector_storage: bool,
+        distance: Distance,
+    ) -> OperationResult<Self> {
         let config: QuantizedVectorsConfig = read_json(&data_path.join(QUANTIZED_CONFIG_PATH))?;
         let quantized_store = match &config.quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
@@ -172,12 +180,18 @@ impl QuantizedVectorsStorage {
                     on_disk_vector_storage,
                 );
                 if is_ram {
-                    let storage =
-                        load_scalar_quantized_vectors_ram(data_path, &config.vector_parameters)?;
+                    let storage = load_scalar_quantized_vectors_ram(
+                        data_path,
+                        &config.vector_parameters,
+                        distance,
+                    )?;
                     QuantizedVectorStorageImpl::ScalarRam(storage)
                 } else {
-                    let storage =
-                        load_scalar_quantized_vectors_mmap(data_path, &config.vector_parameters)?;
+                    let storage = load_scalar_quantized_vectors_mmap(
+                        data_path,
+                        &config.vector_parameters,
+                        distance,
+                    )?;
                     QuantizedVectorStorageImpl::ScalarMmap(storage)
                 }
             }

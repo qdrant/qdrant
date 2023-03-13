@@ -345,6 +345,18 @@ impl IdTracker for SimpleIdTracker {
     fn versions_flusher(&self) -> Flusher {
         self.versions_db_wrapper.flusher()
     }
+
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        let key = key as usize;
+        if key >= self.deleted.len() {
+            return true;
+        }
+        self.deleted[key]
+    }
+
+    fn deleted_bitvec(&self) -> &BitVec {
+        &self.deleted
+    }
 }
 
 #[cfg(test)]

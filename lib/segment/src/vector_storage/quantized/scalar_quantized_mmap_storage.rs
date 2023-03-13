@@ -5,7 +5,7 @@ use quantization::EncodedVectors;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::madvise;
-use crate::types::ScalarQuantizationConfig;
+use crate::types::{Distance, ScalarQuantizationConfig};
 use crate::vector_storage::quantized::scalar_quantized::{
     ScalarQuantizedVectors, QUANTIZED_DATA_PATH, QUANTIZED_META_PATH,
 };
@@ -98,6 +98,7 @@ pub fn create_scalar_quantized_vectors_mmap<'a>(
     config: &ScalarQuantizationConfig,
     vector_parameters: &quantization::VectorParameters,
     data_path: &Path,
+    distance: Distance,
 ) -> OperationResult<ScalarQuantizedVectors<QuantizedMmapStorage>> {
     let quantized_vector_size =
         quantization::EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
@@ -118,12 +119,13 @@ pub fn create_scalar_quantized_vectors_mmap<'a>(
     )
     .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
 
-    Ok(ScalarQuantizedVectors::new(quantized_vectors))
+    Ok(ScalarQuantizedVectors::new(quantized_vectors, distance))
 }
 
 pub fn load_scalar_quantized_vectors_mmap(
     path: &Path,
     vector_parameters: &quantization::VectorParameters,
+    distance: Distance,
 ) -> OperationResult<ScalarQuantizedVectors<QuantizedMmapStorage>> {
     let data_path = path.join(QUANTIZED_DATA_PATH);
     let meta_path = path.join(QUANTIZED_META_PATH);
@@ -134,5 +136,5 @@ pub fn load_scalar_quantized_vectors_mmap(
         vector_parameters,
     )?;
 
-    Ok(ScalarQuantizedVectors::new(storage))
+    Ok(ScalarQuantizedVectors::new(storage, distance))
 }

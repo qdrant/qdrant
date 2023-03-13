@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use memmap2::{Mmap, MmapMut, MmapOptions};
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 
 use crate::common::error_logging::LogError;
 use crate::common::Flusher;
@@ -123,10 +123,15 @@ impl MmapVectors {
         Ok(())
     }
 
-    pub fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
+    pub fn load_quantization(
+        &mut self,
+        data_path: &Path,
+        distance: Distance,
+    ) -> OperationResult<()> {
         if QuantizedVectorsStorage::check_exists(data_path) {
             self.init_deleted_flags();
-            self.quantized_vectors = Some(QuantizedVectorsStorage::load(data_path, true)?);
+            self.quantized_vectors =
+                Some(QuantizedVectorsStorage::load(data_path, true, distance)?);
         }
         Ok(())
     }
@@ -150,17 +155,8 @@ impl MmapVectors {
         &arr[0..self.dim]
     }
 
-    pub fn raw_vector(&self, key: PointOffsetType) -> Option<&[VectorElementType]> {
-        self.data_offset(key)
-            .map(|offset| self.raw_vector_offset(offset))
-    }
-
     pub fn check_deleted(mmap: &MmapMut, key: PointOffsetType) -> Option<bool> {
         mmap.get(HEADER_SIZE + (key as usize)).map(|x| *x > 0)
-    }
-
-    pub fn read_deleted_map(&self) -> RwLockReadGuard<MmapMut> {
-        self.deleted_flags_mmap.read()
     }
 
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
@@ -172,37 +168,9 @@ impl MmapVectors {
     }
 
     /// Creates returns owned vector (copy of internal vector)
-    pub fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
-        match self.deleted(key) {
-            None | Some(true) => None,
-            Some(false) => self
-                .data_offset(key)
-                .map(|offset| self.raw_vector_offset(offset).to_vec()),
-        }
-    }
-
-    pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        if key < (self.num_vectors as PointOffsetType) {
-            let mut deleted_mmap = self.deleted_flags_mmap.write();
-            let flag = deleted_mmap.get_mut((key as usize) + HEADER_SIZE).unwrap();
-
-            if let Some(deleted_ram) = &mut self.deleted_flags {
-                deleted_ram.set(key as usize, true);
-            }
-
-            if *flag == 0 {
-                *flag = 1;
-                self.deleted_count += 1;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let num_vectors = self.num_vectors;
-        let iter =
-            (0..(num_vectors as PointOffsetType)).filter(move |id| !self.deleted(*id).unwrap());
-        Box::new(iter)
+    pub fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
+        let offset = self.data_offset(key).unwrap();
+        self.raw_vector_offset(offset)
     }
 
     pub fn flusher(&self) -> Flusher {

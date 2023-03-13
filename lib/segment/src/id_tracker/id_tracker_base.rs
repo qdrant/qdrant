@@ -1,3 +1,6 @@
+use bitvec::vec::BitVec;
+use rand::Rng;
+
 use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
@@ -58,6 +61,26 @@ pub trait IdTracker {
 
     /// Flush points versions to disk
     fn versions_flusher(&self) -> Flusher;
+
+    fn deleted_bitvec(&self) -> &BitVec;
+
+    fn is_deleted(&self, internal_id: PointOffsetType) -> bool;
+
+    // Number of deleted points
+    fn deleted_count(&self) -> usize {
+        self.internal_size() - self.points_count()
+    }
+
+    /// Iterator over `n` random ids which are not deleted
+    fn sample_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let total = self.internal_size() as PointOffsetType;
+        let mut rng = rand::thread_rng();
+        Box::new(
+            (0..total)
+                .map(move |_| rng.gen_range(0..total))
+                .filter(move |x| !self.is_deleted(*x)),
+        )
+    }
 }
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;
