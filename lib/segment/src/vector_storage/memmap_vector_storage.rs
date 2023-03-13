@@ -30,7 +30,6 @@ fn vf_to_u8<T>(v: &[T]) -> &[u8] {
 /// Mem-mapped storage can only be constructed from another storage
 pub struct MemmapVectorStorage {
     vectors_path: PathBuf,
-    deleted_path: PathBuf,
     mmap_store: Option<MmapVectors>,
     distance: Distance,
 }
@@ -43,14 +42,11 @@ pub fn open_memmap_vector_storage(
     create_dir_all(path)?;
 
     let vectors_path = path.join("matrix.dat");
-    let deleted_path = path.join("deleted.dat");
-
-    let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
+    let mmap_store = MmapVectors::open(&vectors_path, dim)?;
 
     Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Memmap(
         Box::new(MemmapVectorStorage {
             vectors_path,
-            deleted_path,
             mmap_store: Some(mmap_store),
             distance,
         }),
@@ -113,34 +109,13 @@ impl VectorStorage for MemmapVectorStorage {
 
             file.flush()?;
         }
-        {
-            let mut file = OpenOptions::new()
-                .read(false)
-                .write(false)
-                .append(true)
-                .create(false)
-                .open(&self.deleted_path)?;
-
-            let flags: Vec<u8> = vec![0; (end_index - start_index) as usize];
-            let flag_bytes = vf_to_u8(&flags);
-            file.write_all(flag_bytes)?;
-            file.flush()?;
-        }
-
-        self.mmap_store = Some(MmapVectors::open(
-            &self.vectors_path,
-            &self.deleted_path,
-            dim,
-        )?);
+        self.mmap_store = Some(MmapVectors::open(&self.vectors_path, dim)?);
 
         Ok(start_index..end_index)
     }
 
     fn flusher(&self) -> Flusher {
-        match &self.mmap_store {
-            None => Box::new(|| Ok(())),
-            Some(x) => x.flusher(),
-        }
+        Box::new(|| Ok(()))
     }
 
     fn quantize(
@@ -163,7 +138,7 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![self.vectors_path.clone(), self.deleted_path.clone()];
+        let mut files = vec![self.vectors_path.clone()];
         if let Some(Some(quantized_vectors)) =
             &self.mmap_store.as_ref().map(|x| &x.quantized_vectors)
         {
