@@ -9,6 +9,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
@@ -193,18 +194,14 @@ impl ShardHolder {
         &mut self,
         collection_path: &Path,
         collection_id: &CollectionId,
-        shared_collection_config: Arc<RwLock<CollectionConfig>>,
+        collection_config: Arc<RwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
     ) {
-        let shard_number = shared_collection_config
-            .read()
-            .await
-            .params
-            .shard_number
-            .get();
+        let shard_number = collection_config.read().await.params.shard_number.get();
         // ToDo: remove after version 0.11.0
         for shard_id in 0..shard_number {
             for (path, _shard_version, shard_type) in
@@ -214,7 +211,8 @@ impl ShardHolder {
                     shard_id,
                     collection_id.clone(),
                     &path,
-                    shared_collection_config.clone(),
+                    collection_config.clone(),
+                    shared_storage_config.clone(),
                     channel_service.clone(),
                     on_peer_failure.clone(),
                     this_peer_id,
@@ -229,7 +227,8 @@ impl ShardHolder {
                             shard_id,
                             collection_id.clone(),
                             &path,
-                            shared_collection_config.clone(),
+                            collection_config.clone(),
+                            shared_storage_config.clone(),
                             update_runtime.clone(),
                         )
                         .await
@@ -250,7 +249,8 @@ impl ShardHolder {
                             shard_id,
                             collection_id.clone(),
                             &path,
-                            shared_collection_config.clone(),
+                            collection_config.clone(),
+                            shared_storage_config.clone(),
                             update_runtime.clone(),
                         )
                         .await

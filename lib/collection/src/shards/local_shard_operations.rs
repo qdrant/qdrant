@@ -104,7 +104,7 @@ impl ShardOperation for LocalShard {
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let collection_params = self.config.read().await.params.clone();
+        let collection_params = self.collection_config.read().await.params.clone();
         // check vector names existing
         for req in &request.searches {
             collection_params.get_vector_params(req.vector.get_name())?;
