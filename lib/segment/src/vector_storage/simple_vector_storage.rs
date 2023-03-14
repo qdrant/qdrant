@@ -29,10 +29,9 @@ pub struct SimpleVectorStorage {
     vectors: ChunkedVectors<VectorElementType>,
     quantized_vectors: Option<QuantizedVectorsStorage>,
     db_wrapper: DatabaseColumnWrapper,
-    update_buffer: Vec<VectorElementType>,
+    update_buffer: StoredRecord,
 }
 
-// TODO: remove this struct because deleted field is not used anymore
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct StoredRecord {
     pub deleted: bool,
@@ -51,29 +50,9 @@ pub fn open_simple_vector_storage(
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
-        let vector: Result<Vec<VectorElementType>, _> = bincode::deserialize(&value);
-
-        // storage compatibility
-        let vector = match vector {
-            Ok(vector) => {
-                if vector.len() != dim {
-                    let stored_record: StoredRecord =
-                        bincode::deserialize(&value).map_err(|_| {
-                            OperationError::service_error("cannot deserialize record from db")
-                        })?;
-                    stored_record.vector
-                } else {
-                    vector
-                }
-            }
-            Err(_) => {
-                let stored_record: StoredRecord = bincode::deserialize(&value).map_err(|_| {
-                    OperationError::service_error("cannot deserialize record from db")
-                })?;
-                stored_record.vector
-            }
-        };
-        vectors.insert(point_id, &vector);
+        let stored_record: StoredRecord = bincode::deserialize(&value)
+            .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
+        vectors.insert(point_id, &stored_record.vector);
     }
 
     debug!("Segment vectors: {}", vectors.len());
@@ -89,7 +68,10 @@ pub fn open_simple_vector_storage(
             vectors,
             quantized_vectors: None,
             db_wrapper,
-            update_buffer: vec![0.; dim],
+            update_buffer: StoredRecord {
+                deleted: false,
+                vector: vec![0.; dim],
+            },
         },
     ))))
 }
@@ -100,10 +82,10 @@ impl SimpleVectorStorage {
         point_id: PointOffsetType,
         vector: &[VectorElementType],
     ) -> OperationResult<()> {
-        self.update_buffer.copy_from_slice(vector);
+        self.update_buffer.vector.copy_from_slice(vector);
         self.db_wrapper.put(
             bincode::serialize(&point_id).unwrap(),
-            bincode::serialize::<Vec<VectorElementType>>(&self.update_buffer).unwrap(),
+            bincode::serialize(&self.update_buffer).unwrap(),
         )?;
         Ok(())
     }
