@@ -210,8 +210,10 @@ fn upsert_with_payload(
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
     let mut res = segment.upsert_vector(op_num, point_id, vectors)?;
-    if let Some(full_payload) = payload {
-        res &= segment.set_full_payload(op_num, point_id, full_payload)?;
+    if res {
+        if let Some(full_payload) = payload {
+            res &= segment.set_full_payload(op_num, point_id, full_payload)?;
+        }
     }
     Ok(res)
 }
@@ -319,6 +321,7 @@ where
                 point.payload.as_ref(),
             )
         })?;
+    log::error!("UPDATED POINTS {:#?}", updated_points);
 
     let mut res = updated_points.len();
     // Insert new points, which was not updated or existed
@@ -335,6 +338,7 @@ where
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
+            log::error!("ADD POINT ID {point_id}");
             let point = points_map[&point_id];
             res += upsert_with_payload(
                 &mut write_segment,
