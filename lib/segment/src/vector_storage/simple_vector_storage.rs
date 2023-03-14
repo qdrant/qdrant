@@ -199,14 +199,12 @@ impl VectorStorage for SimpleVectorStorage {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
-
     use tempfile::Builder;
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-    use crate::id_tracker::IdTrackerSS;
+    use crate::id_tracker::{IdTracker, IdTrackerSS};
     use crate::types::{PointIdType, ScalarQuantizationConfig};
     use crate::vector_storage::{new_raw_scorer, ScoredPointOffset};
 
@@ -240,7 +238,7 @@ mod tests {
         let closest = new_raw_scorer(
             query.clone(),
             &borrowed_storage,
-            borrowed_id_tracker.deref(),
+            borrowed_id_tracker.deleted_bitvec(),
         )
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
@@ -258,7 +256,11 @@ mod tests {
             .drop(PointIdType::NumId(top_idx as u64))
             .unwrap();
 
-        let raw_scorer = new_raw_scorer(query, &borrowed_storage, borrowed_id_tracker.deref());
+        let raw_scorer = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        );
         let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         let query_points = vec![0, 1, 2, 3, 4];
@@ -330,11 +332,11 @@ mod tests {
             let scorer_quant = borrowed_storage
                 .quantized_storage()
                 .unwrap()
-                .raw_scorer(&query, borrowed_id_tracker.deref());
+                .raw_scorer(&query, borrowed_id_tracker.deleted_bitvec());
             let scorer_orig = new_raw_scorer(
                 query.clone(),
                 &borrowed_storage,
-                borrowed_id_tracker.deref(),
+                borrowed_id_tracker.deleted_bitvec(),
             );
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
@@ -353,11 +355,11 @@ mod tests {
         let scorer_quant = borrowed_storage
             .quantized_storage()
             .unwrap()
-            .raw_scorer(&query, borrowed_id_tracker.deref());
+            .raw_scorer(&query, borrowed_id_tracker.deleted_bitvec());
         let scorer_orig = new_raw_scorer(
             query.clone(),
             &borrowed_storage,
-            borrowed_id_tracker.deref(),
+            borrowed_id_tracker.deleted_bitvec(),
         );
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);

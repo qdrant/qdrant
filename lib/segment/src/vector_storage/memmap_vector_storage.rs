@@ -151,7 +151,6 @@ impl VectorStorage for MemmapVectorStorage {
 #[cfg(test)]
 mod tests {
     use std::mem::transmute;
-    use std::ops::Deref;
 
     use tempfile::Builder;
 
@@ -226,7 +225,7 @@ mod tests {
         let raw_scorer = new_raw_scorer(
             points[2].clone(),
             &borrowed_storage,
-            borrowed_id_tracker.deref(),
+            borrowed_id_tracker.deleted_bitvec(),
         );
         let res = raw_scorer.peek_top_all(2);
 
@@ -281,7 +280,11 @@ mod tests {
         let query = vec![-1.0, -1.0, -1.0, -1.0];
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
-        let scorer = new_raw_scorer(query, &borrowed_storage, borrowed_id_tracker.deref());
+        let scorer = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        );
 
         let mut res = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
         let res_count = scorer.score_points(&query_points, &mut res);
@@ -367,11 +370,11 @@ mod tests {
             let scorer_quant = borrowed_storage
                 .quantized_storage()
                 .unwrap()
-                .raw_scorer(&query, borrowed_id_tracker.deref());
+                .raw_scorer(&query, borrowed_id_tracker.deleted_bitvec());
             let scorer_orig = new_raw_scorer(
                 query.clone(),
                 &borrowed_storage,
-                borrowed_id_tracker.deref(),
+                borrowed_id_tracker.deleted_bitvec(),
             );
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
@@ -390,8 +393,12 @@ mod tests {
         let scorer_quant = borrowed_storage
             .quantized_storage()
             .unwrap()
-            .raw_scorer(&query, borrowed_id_tracker.deref());
-        let scorer_orig = new_raw_scorer(query, &borrowed_storage, borrowed_id_tracker.deref());
+            .raw_scorer(&query, borrowed_id_tracker.deleted_bitvec());
+        let scorer_orig = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        );
 
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);

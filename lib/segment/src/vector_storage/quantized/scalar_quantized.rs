@@ -5,7 +5,6 @@ use quantization::EncodedVectors;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::IdTrackerSS;
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
@@ -102,7 +101,7 @@ where
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        id_tracker: &'a IdTrackerSS,
+        deleted: &'a BitVec,
     ) -> Box<dyn RawScorer + 'a> {
         let query = self
             .distance
@@ -111,7 +110,7 @@ where
         let query = self.storage.encode_query(&query);
         Box::new(ScalarQuantizedRawScorer {
             query,
-            deleted: id_tracker.deleted_bitvec(),
+            deleted,
             quantized_data: &self.storage,
         })
     }

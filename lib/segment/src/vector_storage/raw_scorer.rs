@@ -4,7 +4,6 @@ use bitvec::vec::BitVec;
 
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::VectorElementType;
-use crate::id_tracker::IdTrackerSS;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -45,14 +44,14 @@ pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
 pub fn new_raw_scorer<'a>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a VectorStorageEnum,
-    id_tracker: &'a IdTrackerSS,
+    deleted: &'a BitVec,
 ) -> Box<dyn RawScorer + 'a> {
     match vector_storage {
         VectorStorageEnum::Simple(vector_storage) => {
-            raw_scorer_impl(vector, vector_storage, id_tracker)
+            raw_scorer_impl(vector, vector_storage, deleted)
         }
         VectorStorageEnum::Memmap(vector_storage) => {
-            raw_scorer_impl(vector, vector_storage.as_ref(), id_tracker)
+            raw_scorer_impl(vector, vector_storage.as_ref(), deleted)
         }
     }
 }
@@ -60,7 +59,7 @@ pub fn new_raw_scorer<'a>(
 fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a TVectorStorage,
-    id_tracker: &'a IdTrackerSS,
+    deleted: &'a BitVec,
 ) -> Box<dyn RawScorer + 'a> {
     let points_count = vector_storage.total_vector_count() as PointOffsetType;
     match vector_storage.distance() {
@@ -68,21 +67,21 @@ fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             points_count,
             query: CosineMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
-            deleted: id_tracker.deleted_bitvec(),
+            deleted,
             metric: PhantomData,
         }),
         Distance::Euclid => Box::new(RawScorerImpl::<'a, EuclidMetric, TVectorStorage> {
             points_count,
             query: EuclidMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
-            deleted: id_tracker.deleted_bitvec(),
+            deleted,
             metric: PhantomData,
         }),
         Distance::Dot => Box::new(RawScorerImpl::<'a, DotProductMetric, TVectorStorage> {
             points_count,
             query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
-            deleted: id_tracker.deleted_bitvec(),
+            deleted,
             metric: PhantomData,
         }),
     }

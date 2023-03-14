@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -62,7 +61,12 @@ fn benchmark_naive(c: &mut Criterion) {
     group.bench_function("storage vector search", |b| {
         b.iter(|| {
             let vector = random_vector(DIM);
-            new_raw_scorer(vector, &borrowed_storage, borrowed_id_tracker.deref()).peek_top_all(10)
+            new_raw_scorer(
+                vector,
+                &borrowed_storage,
+                borrowed_id_tracker.deleted_bitvec(),
+            )
+            .peek_top_all(10)
         })
     });
 }
@@ -78,7 +82,11 @@ fn random_access_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("storage-score-random");
 
     let vector = random_vector(DIM);
-    let scorer = new_raw_scorer(vector, &borrowed_storage, borrowed_id_tracker.deref());
+    let scorer = new_raw_scorer(
+        vector,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_bitvec(),
+    );
 
     let mut total_score = 0.;
     group.bench_function("storage vector search", |b| {

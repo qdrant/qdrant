@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
+use bitvec::prelude::BitVec;
 use serde::{Deserialize, Serialize};
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::IdTrackerSS;
 use crate::types::{Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::scalar_quantized::ScalarQuantizedVectors;
@@ -40,7 +40,7 @@ pub trait QuantizedVectors: Send + Sync {
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        id_tracker: &'a IdTrackerSS,
+        deleted: &'a BitVec,
     ) -> Box<dyn RawScorer + 'a>;
 
     fn save_to(&self, path: &Path) -> OperationResult<()>;
@@ -53,13 +53,11 @@ impl QuantizedVectors for QuantizedVectorsStorage {
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        id_tracker: &'a IdTrackerSS,
+        deleted: &'a BitVec,
     ) -> Box<dyn RawScorer + 'a> {
         match &self.storage_impl {
-            QuantizedVectorStorageImpl::ScalarRam(storage) => storage.raw_scorer(query, id_tracker),
-            QuantizedVectorStorageImpl::ScalarMmap(storage) => {
-                storage.raw_scorer(query, id_tracker)
-            }
+            QuantizedVectorStorageImpl::ScalarRam(storage) => storage.raw_scorer(query, deleted),
+            QuantizedVectorStorageImpl::ScalarMmap(storage) => storage.raw_scorer(query, deleted),
         }
     }
 

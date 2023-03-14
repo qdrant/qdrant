@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fs::create_dir_all;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -236,8 +235,12 @@ impl VectorIndex for PlainIndex {
                 vectors
                     .iter()
                     .map(|vector| {
-                        new_raw_scorer(vector.to_vec(), &vector_storage, id_tracker.deref())
-                            .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
+                        new_raw_scorer(
+                            vector.to_vec(),
+                            &vector_storage,
+                            id_tracker.deleted_bitvec(),
+                        )
+                        .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
                     })
                     .collect()
             }
@@ -248,8 +251,12 @@ impl VectorIndex for PlainIndex {
                 vectors
                     .iter()
                     .map(|vector| {
-                        new_raw_scorer(vector.to_vec(), &vector_storage, id_tracker.deref())
-                            .peek_top_all(top)
+                        new_raw_scorer(
+                            vector.to_vec(),
+                            &vector_storage,
+                            id_tracker.deleted_bitvec(),
+                        )
+                        .peek_top_all(top)
                     })
                     .collect()
             }
