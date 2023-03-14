@@ -321,7 +321,6 @@ where
                 point.payload.as_ref(),
             )
         })?;
-    log::error!("UPDATED POINTS {:#?}", updated_points);
 
     let mut res = updated_points.len();
     // Insert new points, which was not updated or existed
@@ -338,7 +337,6 @@ where
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
-            log::error!("ADD POINT ID {point_id}");
             let point = points_map[&point_id];
             res += upsert_with_payload(
                 &mut write_segment,
