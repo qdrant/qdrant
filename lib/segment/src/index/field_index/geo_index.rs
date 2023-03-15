@@ -104,7 +104,6 @@ impl GeoMapIndex {
 
             self.point_to_values[idx as usize].push(geo_point);
             self.points_map.entry(geo_hash).or_default().insert(idx);
-            self.values_count += 1;
         }
         Ok(true)
     }
