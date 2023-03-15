@@ -16,12 +16,11 @@ use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::LockedWal;
 use crate::wal::WalError;
-
-pub const UPDATE_QUEUE_SIZE: usize = 100;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -62,6 +61,7 @@ pub enum OptimizerSignal {
 
 /// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
+    shared_storage_config: Arc<SharedStorageConfig>,
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// How frequent can we flush data
@@ -84,6 +84,7 @@ pub struct UpdateHandler {
 
 impl UpdateHandler {
     pub fn new(
+        shared_storage_config: Arc<SharedStorageConfig>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
@@ -92,6 +93,7 @@ impl UpdateHandler {
         max_optimization_threads: usize,
     ) -> UpdateHandler {
         UpdateHandler {
+            shared_storage_config,
             optimizers,
             segments,
             update_worker: None,
@@ -107,7 +109,7 @@ impl UpdateHandler {
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
-        let (tx, rx) = mpsc::channel(UPDATE_QUEUE_SIZE);
+        let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
             tx.clone(),

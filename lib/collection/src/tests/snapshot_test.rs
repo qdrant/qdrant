@@ -13,7 +13,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::ChangePeerState;
 
-const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
+pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
     default_segment_number: 2,
@@ -78,6 +78,7 @@ async fn test_snapshot_collection() {
         collection_dir.path(),
         snapshots_path.path(),
         &config,
+        Default::default(),
         CollectionShardDistribution { shards },
         ChannelService::default(),
         dummy_on_replica_failure(),
@@ -119,6 +120,7 @@ async fn test_snapshot_collection() {
         1,
         recover_dir.path(),
         snapshots_path.path(),
+        Default::default(),
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
