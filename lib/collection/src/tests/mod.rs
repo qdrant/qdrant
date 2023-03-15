@@ -1,4 +1,5 @@
 mod snapshot_test;
+mod wal_recovery_test;
 
 use std::sync::Arc;
 use std::time::Duration;
