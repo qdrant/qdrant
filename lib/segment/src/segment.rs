@@ -719,13 +719,18 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         full_payload: &Payload,
     ) -> OperationResult<bool> {
-        let internal_id = self.lookup_internal_id(point_id)?;
-        self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
-            segment
-                .payload_index
-                .borrow_mut()
-                .assign_all(internal_id, full_payload)?;
-            Ok((true, Some(internal_id)))
+        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
+            Some(internal_id) => {
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .assign_all(internal_id, full_payload)?;
+                Ok((true, Some(internal_id)))
+            }
+            None => Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            }),
         })
     }
 
@@ -735,13 +740,18 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         payload: &Payload,
     ) -> OperationResult<bool> {
-        let internal_id = self.lookup_internal_id(point_id)?;
-        self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
-            segment
-                .payload_index
-                .borrow_mut()
-                .assign(internal_id, payload)?;
-            Ok((true, Some(internal_id)))
+        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
+            Some(internal_id) => {
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .assign(internal_id, payload)?;
+                Ok((true, Some(internal_id)))
+            }
+            None => Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            }),
         })
     }
 
@@ -751,13 +761,18 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<bool> {
-        let internal_id = self.lookup_internal_id(point_id)?;
-        self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
-            segment
-                .payload_index
-                .borrow_mut()
-                .delete(internal_id, key)?;
-            Ok((true, Some(internal_id)))
+        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
+            Some(internal_id) => {
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .delete(internal_id, key)?;
+                Ok((true, Some(internal_id)))
+            }
+            None => Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            }),
         })
     }
 
@@ -766,10 +781,15 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
     ) -> OperationResult<bool> {
-        let internal_id = self.lookup_internal_id(point_id)?;
-        self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
-            segment.payload_index.borrow_mut().drop(internal_id)?;
-            Ok((true, Some(internal_id)))
+        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
+            Some(internal_id) => {
+                segment.payload_index.borrow_mut().drop(internal_id)?;
+                Ok((true, Some(internal_id)))
+            }
+            None => Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            }),
         })
     }
 
