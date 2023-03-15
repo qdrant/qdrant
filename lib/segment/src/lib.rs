@@ -3,7 +3,7 @@
 pub mod common;
 pub mod entry;
 pub mod fixtures;
-mod id_tracker;
+pub mod id_tracker;
 pub mod index;
 pub mod madvise;
 pub mod payload_storage;

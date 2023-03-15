@@ -97,10 +97,9 @@ impl Segment {
         check_vectors_set(&vectors, &self.segment_config)?;
         for (vector_name, vector) in vectors {
             let vector_name: &str = &vector_name;
-            let vector = vector.into_owned();
             let vector_data = &self.vector_data[vector_name];
             let mut vector_storage = vector_data.vector_storage.borrow_mut();
-            vector_storage.insert_vector(internal_id, vector)?;
+            vector_storage.insert_vector(internal_id, &vector)?;
         }
         Ok(())
     }
@@ -266,7 +265,17 @@ impl Segment {
     ) -> OperationResult<Option<Vec<VectorElementType>>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        Ok(vector_data.vector_storage.borrow().get_vector(point_offset))
+        if !self.id_tracker.borrow().is_deleted(point_offset) {
+            Ok(Some(
+                vector_data
+                    .vector_storage
+                    .borrow()
+                    .get_vector(point_offset)
+                    .to_vec(),
+            ))
+        } else {
+            Ok(None)
+        }
     }
 
     fn all_vectors_by_offset(
@@ -281,7 +290,7 @@ impl Segment {
                     .vector_storage
                     .borrow()
                     .get_vector(point_offset)
-                    .unwrap(),
+                    .to_vec(),
             );
         }
         Ok(vectors)
@@ -505,34 +514,18 @@ impl Segment {
     /// Check consistency of the segment's data and repair it if possible.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
         let mut internal_ids_to_delete = HashSet::new();
-        for (_vector_name, vector_storage) in self.vector_data.iter() {
-            let id_tracker = self.id_tracker.borrow();
-            let vector_storage = vector_storage.vector_storage.borrow();
-            for internal_id in vector_storage.iter_ids() {
-                if id_tracker.external_id(internal_id).is_none() {
-                    internal_ids_to_delete.insert(internal_id);
-                }
+        let id_tracker = self.id_tracker.borrow();
+        for internal_id in id_tracker.iter_ids() {
+            if id_tracker.external_id(internal_id).is_none() {
+                internal_ids_to_delete.insert(internal_id);
             }
         }
+
         if !internal_ids_to_delete.is_empty() {
             log::info!(
                 "Found {} points in vector storage without external id - those will be deleted",
                 internal_ids_to_delete.len(),
             );
-            for (vector_name, vector_storage) in self.vector_data.iter_mut() {
-                // cleanup orphans
-                let mut vector_storage_ref = vector_storage.vector_storage.borrow_mut();
-                for internal_id in &internal_ids_to_delete {
-                    log::debug!(
-                        "Deleting point {} {} without external id",
-                        vector_name,
-                        internal_id
-                    );
-                    // delete dangling vectors
-                    vector_storage_ref.delete(*internal_id)?;
-                }
-            }
-
             for internal_id in &internal_ids_to_delete {
                 self.payload_index.borrow_mut().drop(*internal_id)?;
             }
@@ -674,11 +667,10 @@ impl SegmentEntry for Segment {
 
                 for (vector_name, processed_vector) in processed_vectors {
                     let vector_name: &str = &vector_name;
-                    let processed_vector = processed_vector.into_owned();
                     segment.vector_data[vector_name]
                         .vector_storage
                         .borrow_mut()
-                        .insert_vector(new_index, processed_vector)?;
+                        .insert_vector(new_index, &processed_vector)?;
                 }
                 segment
                     .id_tracker
@@ -699,12 +691,6 @@ impl SegmentEntry for Segment {
             None => Ok(false), // Point already not exists
             Some(internal_id) => {
                 self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
-                    for vector_data in segment.vector_data.values() {
-                        vector_data
-                            .vector_storage
-                            .borrow_mut()
-                            .delete(internal_id)?;
-                    }
                     segment.payload_index.borrow_mut().drop(internal_id)?;
                     segment.id_tracker.borrow_mut().drop(point_id)?;
                     Ok((true, Some(internal_id)))
@@ -925,12 +911,7 @@ impl SegmentEntry for Segment {
     }
 
     fn deleted_count(&self) -> usize {
-        let vector_data = self.vector_data.values().next();
-        if let Some(vector_data) = vector_data {
-            vector_data.vector_storage.borrow().deleted_count()
-        } else {
-            0
-        }
+        self.id_tracker.borrow().deleted_count()
     }
 
     fn segment_type(&self) -> SegmentType {

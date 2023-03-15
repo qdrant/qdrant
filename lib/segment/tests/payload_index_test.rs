@@ -21,7 +21,6 @@ mod tests {
         IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig,
         StorageType, VectorDataConfig, WithPayload,
     };
-    use segment::vector_storage::VectorStorage;
     use tempfile::Builder;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
@@ -306,8 +305,8 @@ mod tests {
 
         let payload_index = struct_segment.payload_index.borrow();
         let filter_context = payload_index.filter_context(&filter);
-        let exact = struct_segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_storage
+        let exact = struct_segment
+            .id_tracker
             .borrow()
             .iter_ids()
             .filter(|x| filter_context.check(*x))
@@ -369,11 +368,7 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max
-                    <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
-                        .vector_storage
-                        .borrow()
-                        .vector_count(),
+                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
                 "{estimation:#?}"
             );
 
@@ -443,11 +438,7 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max
-                    <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
-                        .vector_storage
-                        .borrow()
-                        .vector_count(),
+                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
                 "{estimation:#?}"
             );
 
@@ -471,11 +462,7 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max
-                    <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
-                        .vector_storage
-                        .borrow()
-                        .vector_count(),
+                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
                 "{estimation:#?}"
             );
 
@@ -543,11 +530,7 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max
-                    <= struct_segment.vector_data[DEFAULT_VECTOR_NAME]
-                        .vector_storage
-                        .borrow()
-                        .vector_count(),
+                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
                 "{estimation:#?}"
             );
 

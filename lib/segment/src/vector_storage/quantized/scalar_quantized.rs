@@ -6,7 +6,7 @@ use quantization::EncodedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_largest_iterable;
-use crate::types::{PointOffsetType, ScoreType};
+use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
@@ -85,11 +85,12 @@ where
 
 pub struct ScalarQuantizedVectors<TStorage: quantization::EncodedStorage + Send + Sync> {
     storage: quantization::EncodedVectorsU8<TStorage>,
+    distance: Distance,
 }
 
 impl<TStorage: quantization::EncodedStorage + Send + Sync> ScalarQuantizedVectors<TStorage> {
-    pub fn new(storage: quantization::EncodedVectorsU8<TStorage>) -> Self {
-        Self { storage }
+    pub fn new(storage: quantization::EncodedVectorsU8<TStorage>, distance: Distance) -> Self {
+        Self { storage, distance }
     }
 }
 
@@ -102,7 +103,11 @@ where
         query: &[VectorElementType],
         deleted: &'a BitVec,
     ) -> Box<dyn RawScorer + 'a> {
-        let query = self.storage.encode_query(query);
+        let query = self
+            .distance
+            .preprocess_vector(query)
+            .unwrap_or_else(|| query.to_vec());
+        let query = self.storage.encode_query(&query);
         Box::new(ScalarQuantizedRawScorer {
             query,
             deleted,

@@ -445,7 +445,6 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
-    use crate::vector_storage::RawScorer;
 
     const M: usize = 8;
 
@@ -490,7 +489,8 @@ mod tests {
                     let fake_filter_context = FakeFilterContext {};
                     let added_vector = vector_holder.vectors.get(idx).to_vec();
                     let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-                    let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+                    let scorer =
+                        FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
                     graph_layers.link_new_point(idx, scorer);
                 });
         });
@@ -531,7 +531,7 @@ mod tests {
             let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors.get(idx).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers.link_new_point(idx, scorer);
         }
 
@@ -600,7 +600,7 @@ mod tests {
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query);
-        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer);
 
@@ -683,7 +683,7 @@ mod tests {
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query);
-        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer);
 
@@ -708,7 +708,7 @@ mod tests {
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let added_vector = vector_holder.vectors.get(idx).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
