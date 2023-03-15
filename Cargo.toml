@@ -58,11 +58,11 @@ openssl = { version = "0.10", features = ["vendored"] }
 prometheus = { version = "0.13.3", default-features = false }
 
 # Consensus related crates
-raft = { git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false }
+raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
 prost = "0.11.8"
-raft-proto = {  git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false}
+raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false}
 
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }

@@ -40,7 +40,7 @@ pub mod consensus_ops {
         },
         RemovePeer(PeerId),
         RequestSnapshot {
-            request_index: Option<u64>,
+            request_index: Option<u64>, // TODO: param is not used, kept for compatibility
         },
         ReportSnapshot {
             peer_id: PeerId,
