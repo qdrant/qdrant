@@ -9,6 +9,7 @@ use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, PointIdType};
+use segment::vector_storage::VectorStorage;
 use tempfile::Builder;
 
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};

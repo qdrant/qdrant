@@ -44,7 +44,7 @@ where
                 } => {
                     log::warn!("error processing request: {}", description);
                     if let Some(backtrace) = backtrace {
-                        log::warn!("backtrace: {}", backtrace);
+                        log::trace!("backtrace: {}", backtrace);
                     }
                     HttpResponse::InternalServerError()
                 }

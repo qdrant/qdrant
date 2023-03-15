@@ -133,3 +133,12 @@ impl Deref for Dispatcher {
         self.toc.deref()
     }
 }
+
+impl Clone for Dispatcher {
+    fn clone(&self) -> Self {
+        Self {
+            toc: self.toc.clone(),
+            consensus_state: self.consensus_state.clone(),
+        }
+    }
+}

@@ -221,7 +221,6 @@ mod tests {
 
                 let payload_type = payload
                     .get_value("key1")
-                    .into_iter()
                     .next()
                     .cloned()
                     .expect("No key key1");
@@ -231,7 +230,7 @@ mod tests {
                     _ => panic!("Wrong payload type"),
                 }
 
-                let payload_type_json = payload.get_value("key3").into_iter().next().cloned();
+                let payload_type_json = payload.get_value("key3").next().cloned();
 
                 assert!(matches!(payload_type_json, Some(Value::Object(_))))
             }

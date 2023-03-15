@@ -712,3 +712,14 @@ pub struct AliasDescription {
 pub struct CollectionsAliasesResponse {
     pub aliases: Vec<AliasDescription>,
 }
+
+#[derive(Clone, Debug, Deserialize, Default, Copy, PartialEq)]
+pub enum NodeType {
+    /// Regular node, participates in the cluster
+    #[default]
+    Normal,
+    /// Node that does only receive data, but is not used for search/read operations
+    /// This is useful for nodes that are only used for writing data
+    /// and backup purposes
+    Listener,
+}

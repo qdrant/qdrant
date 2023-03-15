@@ -28,14 +28,17 @@ use crate::index::visited_pool::VisitedList;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
-use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE};
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use crate::types::{
+    default_quantization_ignore_value, default_quantization_rescore_value, FieldCondition, Filter,
+    HnswConfig, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
+};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
@@ -54,7 +57,7 @@ struct SearchesTelemetry {
 impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     pub fn open(
         path: &Path,
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
         hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {
@@ -191,7 +194,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let ef = max(req_ef, top);
 
         let vector_storage = self.vector_storage.borrow();
-        let ignore_quantization = params.map(|p| p.ignore_quantization).unwrap_or(false);
+        let ignore_quantization = params
+            .and_then(|p| p.quantization)
+            .map(|q| q.ignore)
+            .unwrap_or(default_quantization_ignore_value());
+
         let (raw_scorer, quantized) = if ignore_quantization {
             (vector_storage.raw_scorer(vector.to_owned()), false)
         } else if let Some(quantized_raw_scorer) = vector_storage.quantized_raw_scorer(vector) {
@@ -207,7 +214,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         if let Some(graph) = &self.graph {
             let mut search_result = graph.search(top, ef, points_scorer);
-            if quantized {
+            let if_rescore = params
+                .and_then(|p| p.quantization)
+                .map(|q| q.rescore)
+                .unwrap_or(default_quantization_rescore_value());
+            if quantized && if_rescore {
                 let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
                 search_result.iter_mut().for_each(|scored_point| {
                     scored_point.score = raw_scorer.score_point(scored_point.idx);
@@ -244,17 +255,31 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
         let mut filtered_iter = payload_index.query_points(filter);
-        let ignore_quantization = params.map(|p| p.ignore_quantization).unwrap_or(false);
+        let ignore_quantization = params
+            .and_then(|p| p.quantization)
+            .map(|q| q.ignore)
+            .unwrap_or(default_quantization_ignore_value());
         if ignore_quantization {
             vectors
                 .iter()
-                .map(|vector| vector_storage.score_points(vector, filtered_iter.as_mut(), top))
+                .map(|vector| {
+                    vector_storage
+                        .raw_scorer(vector.to_vec())
+                        .peek_top_iter(filtered_iter.as_mut(), top)
+                })
                 .collect()
         } else {
             vectors
                 .iter()
                 .map(|vector| {
-                    vector_storage.score_quantized_points(vector, filtered_iter.as_mut(), top)
+                    if let Some(quantized_raw_scorer) = vector_storage.quantized_raw_scorer(vector)
+                    {
+                        quantized_raw_scorer.peek_top_iter(filtered_iter.as_mut(), top)
+                    } else {
+                        vector_storage
+                            .raw_scorer(vector.to_vec())
+                            .peek_top_iter(filtered_iter.as_mut(), top)
+                    }
                 })
                 .collect()
         }
@@ -278,7 +303,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     let vector_storage = self.vector_storage.borrow();
                     vectors
                         .iter()
-                        .map(|vector| vector_storage.score_all(vector, top))
+                        .map(|vector| vector_storage.raw_scorer(vector.to_vec()).peek_top_all(top))
                         .collect()
                 } else {
                     let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered);
@@ -294,7 +319,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 if exact {
                     let exact_params = params.map(|params| {
                         let mut params = *params;
-                        params.ignore_quantization = true; // disable quantization for exact search
+                        params.quantization = Some(QuantizationSearchParams {
+                            ignore: true,
+                            rescore: false,
+                        }); // disable quantization for exact search
                         params
                     });
                     let _timer =

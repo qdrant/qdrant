@@ -5,6 +5,7 @@ use quantization::EncodedVectors;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
+use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
@@ -16,9 +17,10 @@ pub struct ScalarQuantizedRawScorer<'a, TEncodedQuery, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
-    pub query: TEncodedQuery,
-    pub deleted: &'a BitVec,
-    pub quantized_data: &'a TEncodedVectors,
+    query: TEncodedQuery,
+    deleted: &'a BitVec,
+    // Total number of vectors including deleted ones
+    quantized_data: &'a TEncodedVectors,
 }
 
 impl<TEncodedQuery, TEncodedVectors> RawScorer
@@ -54,6 +56,30 @@ where
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.quantized_data.score_internal(point_a, point_b)
+    }
+
+    fn peek_top_iter(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
+    ) -> Vec<ScoredPointOffset> {
+        let scores = points
+            .filter(|idx| !self.deleted[*idx as usize])
+            .map(|idx| {
+                let score = self.score_point(idx);
+                ScoredPointOffset { idx, score }
+            });
+        peek_top_largest_iterable(scores, top)
+    }
+
+    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+        let scores = (0..self.deleted.len() as PointOffsetType)
+            .filter(|idx| !self.deleted[*idx as usize])
+            .map(|idx| {
+                let score = self.score_point(idx);
+                ScoredPointOffset { idx, score }
+            });
+        peek_top_largest_iterable(scores, top)
     }
 }
 

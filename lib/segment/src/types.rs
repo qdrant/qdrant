@@ -256,6 +256,29 @@ pub struct SegmentInfo {
 /// Additional parameters of the search
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
+pub struct QuantizationSearchParams {
+    /// If true, quantized vectors are ignored. Default is false.
+    #[serde(default = "default_quantization_ignore_value")]
+    pub ignore: bool,
+
+    /// If true, use original vectors to re-score top-k results.
+    /// Might require more time in case if original vectors are stored on disk.
+    /// Default is false.
+    #[serde(default = "default_quantization_rescore_value")]
+    pub rescore: bool,
+}
+
+pub fn default_quantization_ignore_value() -> bool {
+    false
+}
+
+pub fn default_quantization_rescore_value() -> bool {
+    false
+}
+
+/// Additional parameters of the search
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
     /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
@@ -265,9 +288,9 @@ pub struct SearchParams {
     #[serde(default)]
     pub exact: bool,
 
-    /// If set to true, search will ignore quantized vector data
+    /// Quantization params
     #[serde(default)]
-    pub ignore_quantization: bool,
+    pub quantization: Option<QuantizationSearchParams>,
 }
 
 /// Vector index configuration of the segment
@@ -398,54 +421,39 @@ impl Default for Indexes {
 }
 
 /// Type of payload index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadIndexType {
     // Do not index anything, just keep of what should be indexed later
+    #[default]
     Plain,
     // Build payload index. Index is saved on disc, but index itself is in RAM
     Struct,
 }
 
-impl Default for PayloadIndexType {
-    fn default() -> Self {
-        PayloadIndexType::Plain
-    }
-}
-
 /// Type of vector storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum StorageType {
     // Store vectors in memory and use persistence storage only if vectors are changed
+    #[default]
     InMemory,
     // Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
     Mmap,
 }
 
-impl Default for StorageType {
-    fn default() -> Self {
-        StorageType::InMemory
-    }
-}
-
 /// Type of payload storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
+    #[default]
     InMemory,
     // Store payload on disk only, read each time it is requested
     OnDisk,
-}
-
-impl Default for PayloadStorageType {
-    fn default() -> Self {
-        PayloadStorageType::InMemory
-    }
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
