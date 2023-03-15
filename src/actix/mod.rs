@@ -103,13 +103,12 @@ pub fn init(
 
         let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
 
-        let tls_settings = &settings.tls_config;
-
         server = if settings.service.enable_tls {
-            let mut acceptor = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
+            let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls())?;
 
-            acceptor.set_private_key_file(&tls_settings.key, SslFiletype::PEM)?;
-            acceptor.set_certificate_chain_file(&tls_settings.cert)?;
+            let tls_config = settings.tls_config.unwrap();
+            acceptor.set_private_key_file(&tls_config.key, SslFiletype::PEM)?;
+            acceptor.set_certificate_chain_file(&tls_config.cert)?;
             acceptor.check_private_key()?;
 
             server.bind_openssl(bind_addr, acceptor)

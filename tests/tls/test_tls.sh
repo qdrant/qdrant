@@ -9,7 +9,7 @@ CERT_DIR="$PWD/cert"
 
 function clear_after_tests()
 {
-    docker compose stop --timeout 20
+    docker compose down --timeout 20
 }
 
 function run_with_retry() 

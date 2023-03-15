@@ -164,10 +164,10 @@ telemetry_disabled: true
 tls_config:
 
   # Certificate chain file
-  cert: /tls_path/cert.pem
+  cert: ./tls/cert.pem
 
   # Private key file
-  key: /tls_path/key.pem
+  key: ./tls/key.pem
 
   # Client certificate
-  client_cert: /tls_path/cacert.pem
+  ca_cert: ./tls/cacert.pem

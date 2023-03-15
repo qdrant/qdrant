@@ -65,7 +65,7 @@ pub fn init(
             let mut server = Server::builder();
 
             if settings.service.enable_tls {
-                let config = load_tls_server_config(settings.tls_config).unwrap();
+                let config = load_tls_server_config(settings.tls_config.unwrap()).unwrap();
                 server = server.tls_config(config)?;
             };
 

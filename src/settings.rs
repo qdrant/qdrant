@@ -9,7 +9,7 @@ use storage::types::StorageConfig;
 pub struct TlsConfig {
     pub cert: String,
     pub key: String,
-    pub client_cert: String,
+    pub ca_cert: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -90,7 +90,7 @@ pub struct Settings {
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
-    pub tls_config: TlsConfig,
+    pub tls_config: Option<TlsConfig>,
 }
 
 fn default_telemetry_disabled() -> bool {

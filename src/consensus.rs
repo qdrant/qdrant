@@ -119,7 +119,7 @@ impl Consensus {
             })?;
 
         let server_tls = if settings.cluster.p2p.enable_tls {
-            Some(load_tls_server_config(settings.tls_config).unwrap())
+            Some(load_tls_server_config(settings.tls_config.unwrap())?)
         } else {
             None
         };

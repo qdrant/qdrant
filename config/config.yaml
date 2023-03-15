@@ -157,14 +157,16 @@ cluster:
 telemetry_disabled: false
 
 
-# TLS settings
+# TLS settings (mandatory if service.enable_tls or cluster.p2p.enable_tls is true).
 tls_config:
 
   # Server certificate chain file
-  cert: /tls_path/cert.pem
+  cert: ./tls/cert.pem
 
   # Server private key file
-  key: /tls_path/key.pem
+  key: ./tls/key.pem
 
-  # Client certificate file (required if cluster.p2p.enable_tls = true)
-  client_cert: /tls_path/cert.pem
+  # Client certificate file.
+  # It is used by the client to verify validity of the server certificate.
+  # (required if cluster.p2p.enable_tls is true).
+  ca_cert: ./tls/cacert.pem

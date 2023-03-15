@@ -111,7 +111,7 @@ mod tests {
 /// Load client TLS configuration.
 pub fn load_tls_client_config(settings: &Settings) -> std::io::Result<Option<ClientTlsConfig>> {
     if settings.cluster.p2p.enable_tls {
-        let pem = std::fs::read_to_string(&settings.tls_config.client_cert)?;
+        let pem = std::fs::read_to_string(&settings.tls_config.as_ref().unwrap().ca_cert)?;
         let cert: Certificate = Certificate::from_pem(pem);
         let tls_config = ClientTlsConfig::new().ca_certificate(cert);
         Ok(Some(tls_config))
