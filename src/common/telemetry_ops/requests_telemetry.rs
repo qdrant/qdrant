@@ -14,13 +14,13 @@ pub type HttpStatusCode = u16;
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    responses: HashMap<String, OperationDurationStatistics>,
+    pub responses: HashMap<String, OperationDurationStatistics>,
 }
 
 pub struct ActixTelemetryCollector {
@@ -149,8 +149,8 @@ impl WebApiTelemetry {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct RequestsTelemetry {
-    rest: WebApiTelemetry,
-    grpc: GrpcTelemetry,
+    pub rest: WebApiTelemetry,
+    pub grpc: GrpcTelemetry,
 }
 
 impl RequestsTelemetry {
