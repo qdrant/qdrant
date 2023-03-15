@@ -119,6 +119,7 @@ fn create_segment(
 
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match config.index {
             Indexes::Plain { .. } => sp(VectorIndexEnum::Plain(PlainIndex::new(
+                id_tracker.clone(),
                 vector_storage.clone(),
                 payload_index.clone(),
             ))),
@@ -127,6 +128,7 @@ fn create_segment(
                     sp(VectorIndexEnum::HnswMmap(
                         HNSWIndex::<GraphLinksMmap>::open(
                             &vector_index_path,
+                            id_tracker.clone(),
                             vector_storage.clone(),
                             payload_index.clone(),
                             hnsw_config,
@@ -135,6 +137,7 @@ fn create_segment(
                 } else {
                     sp(VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
                         &vector_index_path,
+                        id_tracker.clone(),
                         vector_storage.clone(),
                         payload_index.clone(),
                         hnsw_config,

@@ -7,9 +7,11 @@ use rand::distributions::Standard;
 use rand::Rng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::VectorElementType;
+use segment::fixtures::payload_context_fixture::FixtureIdTracker;
+use segment::id_tracker::IdTrackerSS;
 use segment::types::{Distance, PointOffsetType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use segment::vector_storage::{VectorStorage, VectorStorageEnum};
+use segment::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 100000;
@@ -26,33 +28,45 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> Arc<AtomicRefCell<VectorStorageEnum>> {
+) -> (
+    Arc<AtomicRefCell<VectorStorageEnum>>,
+    Arc<AtomicRefCell<IdTrackerSS>>,
+) {
     let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
+    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num)));
     let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, dist).unwrap();
     {
         let mut borrowed_storage = storage.borrow_mut();
-        for _i in 0..num {
+        for i in 0..num {
             let vector: Vec<VectorElementType> = random_vector(dim);
-            borrowed_storage.put_vector(vector).unwrap();
+            borrowed_storage
+                .insert_vector(i as PointOffsetType, &vector)
+                .unwrap();
         }
     }
 
-    storage
+    (storage, id_tracker)
 }
 
 fn benchmark_naive(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
     let dist = Distance::Dot;
-    let storage = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
     let borrowed_storage = storage.borrow();
+    let borrowed_id_tracker = id_tracker.borrow();
 
     let mut group = c.benchmark_group("storage-score-all");
 
     group.bench_function("storage vector search", |b| {
         b.iter(|| {
             let vector = random_vector(DIM);
-            borrowed_storage.raw_scorer(vector).peek_top_all(10)
+            new_raw_scorer(
+                vector,
+                &borrowed_storage,
+                borrowed_id_tracker.deleted_bitvec(),
+            )
+            .peek_top_all(10)
         })
     });
 }
@@ -61,13 +75,18 @@ fn random_access_benchmark(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
     let dist = Distance::Dot;
-    let storage = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
     let borrowed_storage = storage.borrow();
+    let borrowed_id_tracker = id_tracker.borrow();
 
     let mut group = c.benchmark_group("storage-score-random");
 
     let vector = random_vector(DIM);
-    let scorer = borrowed_storage.raw_scorer(vector);
+    let scorer = new_raw_scorer(
+        vector,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_bitvec(),
+    );
 
     let mut total_score = 0.;
     group.bench_function("storage vector search", |b| {

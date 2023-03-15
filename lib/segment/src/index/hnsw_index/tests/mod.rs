@@ -40,7 +40,7 @@ where
         let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder.vectors.get(idx).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);
         graph_layers_builder.link_new_point(idx, scorer);

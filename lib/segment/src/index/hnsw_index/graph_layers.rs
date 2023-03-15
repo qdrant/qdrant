@@ -306,7 +306,7 @@ mod tests {
     ) -> Vec<ScoredPointOffset> {
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
-        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         graph.search(top, ef, scorer)
     }
@@ -346,7 +346,7 @@ mod tests {
         let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder.vectors.get(linking_idx).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-        let mut scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+        let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
         let nearest_on_level = graph_layers.search_on_level(
             ScoredPointOffset {

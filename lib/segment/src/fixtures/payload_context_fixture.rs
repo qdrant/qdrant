@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use bitvec::vec::BitVec;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
@@ -24,12 +25,16 @@ use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberTyp
 /// This struct mimics the interface of `PointsIterator` and `IdTracker` only for basic cases
 pub struct FixtureIdTracker {
     ids: Vec<PointOffsetType>,
+    deleted: BitVec,
 }
 
 impl FixtureIdTracker {
     pub fn new(num_points: usize) -> Self {
+        let mut deleted = BitVec::with_capacity(num_points);
+        deleted.resize(num_points, false);
         Self {
             ids: (0..num_points).map(|x| x as PointOffsetType).collect(),
+            deleted,
         }
     }
 }
@@ -49,12 +54,16 @@ impl IdTracker for FixtureIdTracker {
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
         Some(match external_id {
-            PointIdType::NumId(id) => id as PointOffsetType,
+            PointIdType::NumId(id) => {
+                assert!(id < self.ids.len() as u64);
+                id as PointOffsetType
+            }
             PointIdType::Uuid(_) => unreachable!(),
         })
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+        assert!(internal_id < self.ids.len() as PointOffsetType);
         Some(PointIdType::NumId(internal_id as u64))
     }
 
@@ -66,7 +75,9 @@ impl IdTracker for FixtureIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, _external_id: PointIdType) -> OperationResult<()> {
+    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+        let internal_id = self.internal_id(external_id).unwrap() as usize;
+        self.deleted.set(internal_id, true);
         Ok(())
     }
 
@@ -109,7 +120,12 @@ impl IdTracker for FixtureIdTracker {
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.ids.iter().copied())
+        Box::new(
+            self.ids
+                .iter()
+                .copied()
+                .filter(|id| !self.deleted[*id as usize]),
+        )
     }
 
     fn internal_size(&self) -> usize {
@@ -122,6 +138,18 @@ impl IdTracker for FixtureIdTracker {
 
     fn versions_flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
+    }
+
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        let key = key as usize;
+        if key >= self.deleted.len() {
+            return true;
+        }
+        self.deleted[key]
+    }
+
+    fn deleted_bitvec(&self) -> &BitVec {
+        &self.deleted
     }
 }
 
