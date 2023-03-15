@@ -20,7 +20,7 @@ use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::VectorIndexSS;
+use crate::index::VectorIndexEnum;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
@@ -30,7 +30,7 @@ use crate::types::{
 };
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use crate::vector_storage::VectorStorageSS;
+use crate::vector_storage::VectorStorage;
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
 pub const VECTOR_STORAGE_PATH: &str = "vector_storage";
@@ -91,7 +91,7 @@ fn create_segment(
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
-        let vector_storage: Arc<AtomicRefCell<VectorStorageSS>> = match config.storage_type {
+        let vector_storage = match config.storage_type {
             StorageType::InMemory => {
                 let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
                 open_simple_vector_storage(
@@ -117,26 +117,28 @@ fn create_segment(
                 .load_quantization(&quantized_data_path)?;
         }
 
-        let vector_index: Arc<AtomicRefCell<VectorIndexSS>> = match config.index {
-            Indexes::Plain { .. } => sp(PlainIndex::new(
+        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match config.index {
+            Indexes::Plain { .. } => sp(VectorIndexEnum::Plain(PlainIndex::new(
                 vector_storage.clone(),
                 payload_index.clone(),
-            )),
+            ))),
             Indexes::Hnsw(hnsw_config) => {
                 if hnsw_config.on_disk.unwrap_or(false) {
-                    sp(HNSWIndex::<GraphLinksMmap>::open(
-                        &vector_index_path,
-                        vector_storage.clone(),
-                        payload_index.clone(),
-                        hnsw_config,
-                    )?)
+                    sp(VectorIndexEnum::HnswMmap(
+                        HNSWIndex::<GraphLinksMmap>::open(
+                            &vector_index_path,
+                            vector_storage.clone(),
+                            payload_index.clone(),
+                            hnsw_config,
+                        )?,
+                    ))
                 } else {
-                    sp(HNSWIndex::<GraphLinksRam>::open(
+                    sp(VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
                         &vector_index_path,
                         vector_storage.clone(),
                         payload_index.clone(),
                         hnsw_config,
-                    )?)
+                    )?))
                 }
             }
         };

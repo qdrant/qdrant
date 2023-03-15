@@ -26,7 +26,7 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
 };
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -194,7 +194,7 @@ impl PayloadIndex for PlainPayloadIndex {
 }
 
 pub struct PlainIndex {
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
@@ -202,7 +202,7 @@ pub struct PlainIndex {
 
 impl PlainIndex {
     pub fn new(
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     ) -> PlainIndex {
         PlainIndex {
@@ -231,11 +231,10 @@ impl VectorIndex for PlainIndex {
                 vectors
                     .iter()
                     .map(|vector| {
-                        self.vector_storage.borrow().score_points(
-                            vector,
-                            &mut filtered_ids_vec.iter().copied(),
-                            top,
-                        )
+                        self.vector_storage
+                            .borrow()
+                            .raw_scorer(vector.to_vec())
+                            .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
                     })
                     .collect()
             }
@@ -243,7 +242,12 @@ impl VectorIndex for PlainIndex {
                 let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
                 vectors
                     .iter()
-                    .map(|vector| self.vector_storage.borrow().score_all(vector, top))
+                    .map(|vector| {
+                        self.vector_storage
+                            .borrow()
+                            .raw_scorer(vector.to_vec())
+                            .peek_top_all(top)
+                    })
                     .collect()
             }
         }
