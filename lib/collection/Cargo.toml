@@ -51,7 +51,7 @@ schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono"
 num_cpus = "1.15.0"
 tar = "0.4.38"
 fs_extra = "1.3.0"
-semver = "1.0.16"
+semver = "1.0.17"
 
 [[bench]]
 name = "hash_ring_bench"
