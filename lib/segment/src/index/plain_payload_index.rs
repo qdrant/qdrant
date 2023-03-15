@@ -231,11 +231,10 @@ impl VectorIndex for PlainIndex {
                 vectors
                     .iter()
                     .map(|vector| {
-                        self.vector_storage.borrow().scorer().score_points(
-                            vector,
-                            &mut filtered_ids_vec.iter().copied(),
-                            top,
-                        )
+                        self.vector_storage
+                            .borrow()
+                            .raw_scorer(vector.to_vec())
+                            .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
                     })
                     .collect()
             }
@@ -243,7 +242,12 @@ impl VectorIndex for PlainIndex {
                 let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
                 vectors
                     .iter()
-                    .map(|vector| self.vector_storage.borrow().scorer().score_all(vector, top))
+                    .map(|vector| {
+                        self.vector_storage
+                            .borrow()
+                            .raw_scorer(vector.to_vec())
+                            .peek_top_all(top)
+                    })
                     .collect()
             }
         }

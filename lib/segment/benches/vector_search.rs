@@ -7,13 +7,13 @@ use rand::distributions::Standard;
 use rand::Rng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::VectorElementType;
-use segment::types::Distance;
+use segment::types::{Distance, PointOffsetType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::{VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
-const NUM_VECTORS: usize = 50000;
-const DIM: usize = 1000; // Larger dimensionality - greater the SIMD advantage
+const NUM_VECTORS: usize = 100000;
+const DIM: usize = 1024; // Larger dimensionality - greater the SIMD advantage
 
 fn random_vector(size: usize) -> Vec<VectorElementType> {
     let rng = rand::thread_rng();
@@ -46,18 +46,38 @@ fn benchmark_naive(c: &mut Criterion) {
     let dist = Distance::Dot;
     let storage = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
     let borrowed_storage = storage.borrow();
-    let vector_scorer = borrowed_storage.scorer();
 
     let mut group = c.benchmark_group("storage-score-all");
-    group.sample_size(1000);
 
     group.bench_function("storage vector search", |b| {
         b.iter(|| {
             let vector = random_vector(DIM);
-            vector_scorer.score_all(&vector, 10)
+            borrowed_storage.raw_scorer(vector).peek_top_all(10)
         })
     });
 }
 
-criterion_group!(benches, benchmark_naive);
+fn random_access_benchmark(c: &mut Criterion) {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+    let dist = Distance::Dot;
+    let storage = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let borrowed_storage = storage.borrow();
+
+    let mut group = c.benchmark_group("storage-score-random");
+
+    let vector = random_vector(DIM);
+    let scorer = borrowed_storage.raw_scorer(vector);
+
+    let mut total_score = 0.;
+    group.bench_function("storage vector search", |b| {
+        b.iter(|| {
+            let random_id = rand::thread_rng().gen_range(0..NUM_VECTORS) as PointOffsetType;
+            total_score += scorer.score_point(random_id);
+        })
+    });
+    eprintln!("total_score = {:?}", total_score);
+}
+
+criterion_group!(benches, benchmark_naive, random_access_benchmark);
 criterion_main!(benches);

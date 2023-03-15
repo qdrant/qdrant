@@ -23,7 +23,7 @@ use crate::entry::entry_point::{
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, VectorIndexSS};
+use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
@@ -81,7 +81,7 @@ pub struct Segment {
 }
 
 pub struct VectorData {
-    pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
+    pub vector_index: Arc<AtomicRefCell<VectorIndexEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
 }
 
@@ -783,8 +783,9 @@ impl SegmentEntry for Segment {
         if let Some(vector) = vector_opt {
             Ok(vector)
         } else {
+            let segment_path = self.current_path.display();
             Err(OperationError::service_error(format!(
-                "Vector {vector_name} not found at offset {internal_id}"
+                "Vector {vector_name} not found at offset {internal_id} for point {point_id}, segment {segment_path}",
             )))
         }
     }
