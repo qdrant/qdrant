@@ -1295,12 +1295,9 @@ dependencies = [
 
 [[package]]
 name = "float_next_after"
-version = "0.1.5"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fc612c5837986b7104a87a0df74a5460931f1c5274be12f8d0f40aa2f30d632"
-dependencies = [
- "num-traits",
-]
+checksum = "8bf7cc16383c4b8d58b9905a8509f02926ce3058053c056376248d958c9df1e8"
 
 [[package]]
 name = "fnv"
@@ -1470,9 +1467,9 @@ dependencies = [
 
 [[package]]
 name = "geo"
-version = "0.23.1"
+version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b39f57e9624b1a17ce621375464e9878c705d0aaadaf25cb44e4e0005a16de2f"
+checksum = "ce129b525496519c00321a00772d4532d2229071699c6dc6c9cefa5fa7d2b9ae"
 dependencies = [
  "float_next_after",
  "geo-types",
@@ -1485,20 +1482,21 @@ dependencies = [
 
 [[package]]
 name = "geo-types"
-version = "0.7.8"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e26879b63ac36ca5492918dc16f8c1e604b0f70f884fffbd3533f89953ab1991"
+checksum = "a5f0b3068e1537a4b861ec3734f4aa9c317d537cf0845bf6fb6221973499d26c"
 dependencies = [
  "approx",
  "num-traits",
  "rstar",
+ "serde",
 ]
 
 [[package]]
 name = "geographiclib-rs"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdbd3cdc1856ca7736763d2784671c2c9b0093f0ee47e2bed0059feed6afca89"
+checksum = "8ea804e7bd3c6a4ca6a01edfa35231557a8a81d4d3f3e1e2b650d028c42592be"
 dependencies = [
  "lazy_static",
 ]
@@ -3119,9 +3117,9 @@ dependencies = [
 
 [[package]]
 name = "rstar"
-version = "0.9.3"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b40f1bfe5acdab44bc63e6699c28b74f75ec43afb59f3eda01e145aff86a25fa"
+checksum = "1f39465655a1e3d8ae79c6d9e007f4953bfc5d55297602df9dc38f9ae9f1359a"
 dependencies = [
  "heapless",
  "num-traits",
