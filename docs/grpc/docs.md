@@ -447,9 +447,9 @@
 | ----- | ---- | ----- | ----------- |
 | m | [uint64](#uint64) | optional | Number of edges per node in the index graph. Larger the value - more accurate the search, more space required. |
 | ef_construct | [uint64](#uint64) | optional | Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index. |
-| full_scan_threshold | [uint64](#uint64) | optional | Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold` additional indexing won&#39;t be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256 |
+| full_scan_threshold | [uint64](#uint64) | optional | Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If the payload chunk is smaller than `full_scan_threshold` additional indexing won&#39;t be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1 Kb = 1 vector of size 256 |
 | max_indexing_threads | [uint64](#uint64) | optional | Number of parallel threads used for background index building. If 0 - auto selection. |
-| on_disk | [bool](#bool) | optional | Store HNSW index on disk. If set to false, index will be stored in RAM. |
+| on_disk | [bool](#bool) | optional | Store HNSW index on disk. If set to false, the index will be stored in RAM. |
 | payload_m | [uint64](#uint64) | optional | Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used. |
 
 
@@ -550,15 +550,15 @@
 | ----- | ---- | ----- | ----------- |
 | deleted_threshold | [double](#double) | optional | The minimal fraction of deleted vectors in a segment, required to perform segment optimization |
 | vacuum_min_vector_number | [uint64](#uint64) | optional | The minimal number of vectors in a segment, required to perform segment optimization |
-| default_segment_number | [uint64](#uint64) | optional | Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters:
+| default_segment_number | [uint64](#uint64) | optional | Target amount of segments the optimizer will try to keep. Real amount of segments may vary depending on multiple parameters:
 
 - Amount of stored points. - Current write RPS.
 
-It is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. |
+It is recommended to select the default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. |
 | max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.
 
-If indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 |
-| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 |
+If indexation speed has more priority for you - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 |
+| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as a read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 |
 | indexing_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256 |
 | flush_interval_sec | [uint64](#uint64) | optional | Interval between forced flushes. |
 | max_optimization_threads | [uint64](#uint64) | optional | Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used |
@@ -657,7 +657,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | tokenizer | [TokenizerType](#qdrant-TokenizerType) |  | Tokenizer type |
-| lowercase | [bool](#bool) | optional | If true - all tokens will be lowercased |
+| lowercase | [bool](#bool) | optional | If true - all tokens will be lowercase |
 | min_token_len | [uint64](#uint64) | optional | Minimal token length |
 | max_token_len | [uint64](#uint64) | optional | Maximal token length |
 
@@ -887,7 +887,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 ### ListValue
 `ListValue` is a wrapper around a repeated field of values.
 
-The JSON representation for `ListValue` is JSON array.
+The JSON representation for `ListValue` is a JSON array.
 
 
 | Field | Type | Label | Description |
@@ -909,7 +909,7 @@ scripting languages like JS a struct is represented as an
 object. The details of that representation are described together
 with the proto support for the language.
 
-The JSON representation for `Struct` is JSON object.
+The JSON representation for `Struct` is a JSON object.
 
 
 | Field | Type | Label | Description |
@@ -942,8 +942,8 @@ The JSON representation for `Struct` is JSON object.
 ### Value
 `Value` represents a dynamically typed value which can be either
 null, a number, a string, a boolean, a recursive struct value, or a
-list of values. A producer of value is expected to set one of that
-variants, absence of any variant indicates an error.
+list of values. A producer of value is expected to set one of those
+variants; absence of any variant indicates an error.
 
 The JSON representation for `Value` is JSON value.
 
@@ -1244,8 +1244,8 @@ The JSON representation for `Value` is JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| center | [GeoPoint](#qdrant-GeoPoint) |  | Center of the circle |
-| radius | [float](#float) |  | In meters |
+| center | [GeoPoint](#qdrant-GeoPoint) |  | Centre of the circle |
+| radius | [float](#float) |  | In metres |
 
 
 
@@ -2127,7 +2127,7 @@ The JSON representation for `Value` is JSON value.
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
-| Upsert | [UpsertPoints](#qdrant-UpsertPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Perform insert &#43; updates on points. If point with given ID already exists - it will be overwritten. |
+| Upsert | [UpsertPoints](#qdrant-UpsertPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Perform insert &#43; updates on points. If a point with a given ID already exists - it will be overwritten. |
 | Delete | [DeletePoints](#qdrant-DeletePoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete points |
 | Get | [GetPoints](#qdrant-GetPoints) | [GetResponse](#qdrant-GetResponse) | Retrieve points |
 | SetPayload | [SetPayloadPoints](#qdrant-SetPayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Set payload for points |
