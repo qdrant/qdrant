@@ -1171,7 +1171,7 @@ mod tests {
 
         // validate that 3 archives were created:
         // wrapped_segment1, wrapped_segment2 & shared write_segment
-        let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();
+        let archive_count = read_dir(&snapshot_dir).unwrap().count();
         assert_eq!(archive_count, 3);
 
         for archive in read_dir(&snapshot_dir).unwrap() {

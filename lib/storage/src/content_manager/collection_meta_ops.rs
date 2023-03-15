@@ -1,3 +1,4 @@
+use collection::config::CollectionConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
 };
@@ -283,4 +284,23 @@ pub enum CollectionMetaOperations {
     TransferShard(CollectionId, ShardTransferOperations),
     SetShardReplicaState(SetShardReplicaState),
     Nop { token: usize }, // Empty operation
+}
+
+/// Use config of the existing collection to generate a create collection operation
+/// for the new collection
+impl From<CollectionConfig> for CreateCollection {
+    fn from(value: CollectionConfig) -> Self {
+        Self {
+            vectors: value.params.vectors,
+            shard_number: Some(value.params.shard_number.get()),
+            replication_factor: Some(value.params.replication_factor.get()),
+            write_consistency_factor: Some(value.params.write_consistency_factor.get()),
+            on_disk_payload: Some(value.params.on_disk_payload),
+            hnsw_config: Some(value.hnsw_config.into()),
+            wal_config: Some(value.wal_config.into()),
+            optimizers_config: Some(value.optimizer_config.into()),
+            init_from: None,
+            quantization_config: value.quantization_config,
+        }
+    }
 }
