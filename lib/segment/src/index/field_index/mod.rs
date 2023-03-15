@@ -12,6 +12,9 @@ pub mod map_index;
 pub mod numeric_index;
 mod stat_tools;
 
+#[cfg(test)]
+mod tests;
+
 pub use field_index_base::*;
 
 #[derive(Debug, Clone, PartialEq)]

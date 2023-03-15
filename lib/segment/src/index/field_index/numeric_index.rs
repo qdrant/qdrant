@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 use std::collections::BTreeMap;
+use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ use serde_json::Value;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::index::field_index::histogram::{Histogram, Point};
+use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
@@ -27,80 +28,39 @@ use crate::types::{
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;
 
-pub trait KeyEncoder: Clone {
+pub trait Encodable: Copy {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
-}
-
-impl KeyEncoder for IntPayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_i64_key_ascending(*self, id)
-    }
-}
-
-impl KeyEncoder for FloatPayloadType {
-    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_f64_key_ascending(*self, id)
-    }
-}
-
-pub trait KeyDecoder {
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self);
 }
 
-impl KeyDecoder for IntPayloadType {
+impl Encodable for IntPayloadType {
+    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
+        encode_i64_key_ascending(*self, id)
+    }
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
         decode_i64_key_ascending(key)
     }
 }
 
-impl KeyDecoder for FloatPayloadType {
+impl Encodable for FloatPayloadType {
+    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
+        encode_f64_key_ascending(*self, id)
+    }
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
         decode_f64_key_ascending(key)
     }
 }
 
-pub trait FromRangeValue {
-    fn from_range(range_value: f64) -> Self;
-}
-
-impl FromRangeValue for FloatPayloadType {
-    fn from_range(range_value: f64) -> Self {
-        range_value
-    }
-}
-
-impl FromRangeValue for IntPayloadType {
-    fn from_range(range_value: f64) -> Self {
-        range_value as Self
-    }
-}
-
-pub trait ToRangeValue {
-    fn to_range(value: Self) -> f64;
-}
-
-impl ToRangeValue for FloatPayloadType {
-    fn to_range(value: Self) -> f64 {
-        value
-    }
-}
-
-impl ToRangeValue for IntPayloadType {
-    fn to_range(value: Self) -> f64 {
-        value as f64
-    }
-}
-
-pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
+pub struct NumericIndex<T: Encodable + Numericable> {
     map: BTreeMap<Vec<u8>, u32>,
     db_wrapper: DatabaseColumnWrapper,
-    histogram: Histogram,
+    histogram: Histogram<T>,
     points_count: usize,
     max_values_per_point: usize,
     point_to_values: Vec<Vec<T>>,
 }
 
-impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> NumericIndex<T> {
+impl<T: Encodable + Numericable> NumericIndex<T> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
         let store_cf_name = Self::storage_cf_name(field);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
@@ -139,7 +99,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         }
         let values: Vec<T> = values.into_iter().collect();
         for value in &values {
-            self.add_value(idx, value.clone())?;
+            self.add_value(idx, *value)?;
         }
         if !values.is_empty() {
             self.points_count += 1;
@@ -210,17 +170,17 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     #[allow(clippy::manual_clamp)] // false positive
     fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
         let lbound = if let Some(lte) = range.lte {
-            Included(lte)
+            Included(T::from_f64(lte))
         } else if let Some(lt) = range.lt {
-            Excluded(lt)
+            Excluded(T::from_f64(lt))
         } else {
             Unbounded
         };
 
         let gbound = if let Some(gte) = range.gte {
-            Included(gte)
+            Included(T::from_f64(gte))
         } else if let Some(gt) = range.gt {
-            Excluded(gt)
+            Excluded(T::from_f64(gt))
         } else {
             Unbounded
         };
@@ -265,7 +225,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
     fn add_to_map(
         map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
-        histogram: &mut Histogram,
+        histogram: &mut Histogram<T>,
         key: Vec<u8>,
         id: PointOffsetType,
     ) {
@@ -284,7 +244,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
     pub fn remove_from_map(
         map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
-        histogram: &mut Histogram,
+        histogram: &mut Histogram<T>,
         key: Vec<u8>,
     ) {
         let existed_val = map.remove(&key);
@@ -297,19 +257,19 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         }
     }
 
-    fn key_to_histogram_point(key: &[u8]) -> Point {
+    fn key_to_histogram_point(key: &[u8]) -> Point<T> {
         let (decoded_idx, decoded_val) = T::decode_key(key);
         Point {
-            val: T::to_range(decoded_val),
+            val: decoded_val,
             idx: decoded_idx as usize,
         }
     }
 
     fn get_histogram_left_neighbor(
         map: &BTreeMap<Vec<u8>, PointOffsetType>,
-        point: &Point,
-    ) -> Option<Point> {
-        let key = T::from_range(point.val).encode_key(point.idx as PointOffsetType);
+        point: &Point<T>,
+    ) -> Option<Point<T>> {
+        let key = point.val.encode_key(point.idx as PointOffsetType);
         map.range((Unbounded, Excluded(key)))
             .next_back()
             .map(|(key, _)| Self::key_to_histogram_point(key))
@@ -317,9 +277,9 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
     fn get_histogram_right_neighbor(
         map: &BTreeMap<Vec<u8>, PointOffsetType>,
-        point: &Point,
-    ) -> Option<Point> {
-        let key = T::from_range(point.val).encode_key(point.idx as PointOffsetType);
+        point: &Point<T>,
+    ) -> Option<Point<T>> {
+        let key = point.val.encode_key(point.idx as PointOffsetType);
         map.range((Excluded(key), Unbounded))
             .next()
             .map(|(key, _)| Self::key_to_histogram_point(key))
@@ -335,9 +295,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 }
 
-impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> PayloadFieldIndex
-    for NumericIndex<T>
-{
+impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
     fn indexed_points(&self) -> usize {
         self.points_count
     }
@@ -362,11 +320,11 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
 
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
-                let v: T = T::from_range(gt.to_owned());
+                let v: T = T::from_f64(*gt);
                 Excluded(v.encode_key(PointOffsetType::MAX))
             }
             Range { gte: Some(gte), .. } => {
-                let v: T = T::from_range(gte.to_owned());
+                let v: T = T::from_f64(*gte);
                 Included(v.encode_key(PointOffsetType::MIN))
             }
             _ => Unbounded,
@@ -374,11 +332,11 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
 
         let end_bound = match cond_range {
             Range { lt: Some(lt), .. } => {
-                let v: T = T::from_range(lt.to_owned());
+                let v: T = T::from_f64(*lt);
                 Excluded(v.encode_key(PointOffsetType::MIN))
             }
             Range { lte: Some(lte), .. } => {
-                let v: T = T::from_range(lte.to_owned());
+                let v: T = T::from_f64(*lte);
                 Included(v.encode_key(PointOffsetType::MAX))
             }
             _ => Unbounded,
@@ -419,7 +377,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         let mut lower_bound = Unbounded;
-        let mut pre_lower_bound = None;
+        let mut pre_lower_bound: Option<Bound<T>> = None;
         let mut payload_conditions = Vec::new();
 
         let value_per_point = self.map.len() as f64 / self.points_count as f64;
@@ -433,19 +391,19 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
             if let Some(pre_lower_bound) = pre_lower_bound {
                 let range = Range {
                     lt: match upper_bound {
-                        Excluded(val) => Some(val),
+                        Excluded(val) => Some(val.to_f64()),
                         _ => None,
                     },
                     gt: match pre_lower_bound {
-                        Excluded(val) => Some(val),
+                        Excluded(val) => Some(val.to_f64()),
                         _ => None,
                     },
                     gte: match pre_lower_bound {
-                        Included(val) => Some(val),
+                        Included(val) => Some(val.to_f64()),
                         _ => None,
                     },
                     lte: match upper_bound {
-                        Included(val) => Some(val),
+                        Included(val) => Some(val.to_f64()),
                         _ => None,
                     },
                 };
@@ -825,7 +783,7 @@ mod tests {
         );
     }
 
-    fn test_cond<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone>(
+    fn test_cond<T: Encodable + Numericable + PartialOrd + Clone>(
         index: &NumericIndex<T>,
         rng: Range,
         result: Vec<u32>,
