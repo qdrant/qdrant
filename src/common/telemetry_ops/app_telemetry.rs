@@ -24,7 +24,8 @@ pub struct RunningEnvironmentTelemetry {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct AppBuildTelemetry {
-    version: String,
+    pub name: String,
+    pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub features: Option<AppFeaturesTelemetry>,
@@ -36,6 +37,7 @@ pub struct AppBuildTelemetry {
 impl AppBuildTelemetry {
     pub fn collect(level: usize) -> Self {
         AppBuildTelemetry {
+            name: env!("CARGO_PKG_NAME").to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             features: if level > 0 {
                 Some(AppFeaturesTelemetry {
@@ -115,6 +117,7 @@ impl Anonymize for AppFeaturesTelemetry {
 impl Anonymize for AppBuildTelemetry {
     fn anonymize(&self) -> Self {
         AppBuildTelemetry {
+            name: self.name.clone(),
             version: self.version.clone(),
             features: self.features.anonymize(),
             system: self.system.anonymize(),
