@@ -1,9 +1,11 @@
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
+
 use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
+
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{PointOperations, PointStruct};
 use crate::operations::types::{VectorParams, VectorsConfig};
@@ -182,5 +184,4 @@ async fn test_delete_from_indexed_payload() {
 
     assert_eq!(number_of_indexed_points, 4);
     assert_eq!(number_of_indexed_points_after_load, 3);
-
 }
