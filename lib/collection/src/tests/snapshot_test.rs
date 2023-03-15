@@ -13,7 +13,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::ChangePeerState;
 
-const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
+pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
     default_segment_number: 2,
