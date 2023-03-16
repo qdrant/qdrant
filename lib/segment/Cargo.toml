@@ -11,7 +11,7 @@ tempfile = "3.4.0"
 criterion = "0.4"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
-walkdir = "2.3.2"
+walkdir = "2.3.3"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.11", features = ["flamegraph", "prost-codec"] }
