@@ -1816,6 +1816,7 @@ The JSON representation for `Value` is a JSON value.
 | hnsw_ef | [uint64](#uint64) | optional | Params relevant to HNSW index. Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search. |
 | exact | [bool](#bool) | optional | Search without approximation. If set to true, search may run long but with exact results. |
 | quantization | [QuantizationSearchParams](#qdrant-QuantizationSearchParams) | optional | If set to true, search will ignore quantized vector data |
+| ignore_quantization | [bool](#bool) | optional | If set to true, search will ignore quantized vector data |
 
 
 
