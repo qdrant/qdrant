@@ -19,6 +19,7 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots',
         method="GET",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 0
@@ -28,6 +29,7 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
     )
     assert response.ok
     snapshot_name = response.json()['result']['name']
@@ -37,6 +39,7 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots',
         method="GET",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 1
@@ -47,6 +50,7 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots/{snapshot_name}',
         method="DELETE",
         path_params={'collection_name': collection_name, 'snapshot_name': snapshot_name},
+        query_params={'wait': 'true'},
     )
     assert response.ok
 
@@ -55,6 +59,7 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots',
         method="GET",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 0
@@ -63,6 +68,7 @@ def test_snapshot_operations():
     response = request_with_validation(
         api='/snapshots',
         method="GET",
+        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 0
@@ -71,6 +77,7 @@ def test_snapshot_operations():
     response = request_with_validation(
         api='/snapshots',
         method="POST",
+        query_params={'wait': 'true'},
     )
     assert response.ok
     snapshot_name = response.json()['result']['name']
@@ -79,6 +86,7 @@ def test_snapshot_operations():
     response = request_with_validation(
         api='/snapshots',
         method="GET",
+        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 1
@@ -89,12 +97,14 @@ def test_snapshot_operations():
         api='/snapshots/{snapshot_name}',
         path_params={'snapshot_name': snapshot_name},
         method="DELETE",
+        query_params={'wait': 'true'},
     )
     assert response.ok
 
     response = request_with_validation(
         api='/snapshots',
         method="GET",
+        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 0
