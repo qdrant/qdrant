@@ -4,14 +4,14 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use ordered_float::OrderedFloat;
-use rand::Rng;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
+use super::quantized::quantized_vectors_base::QuantizedVectorsStorage;
 use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{PointOffsetType, QuantizationConfig, ScoreType};
+use crate::types::{Distance, PointOffsetType, QuantizationConfig, ScoreType};
 
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub struct ScoredPointOffset {
@@ -33,55 +33,33 @@ impl PartialOrd for ScoredPointOffset {
     }
 }
 
-/// Optimized scorer for multiple scoring requests comparing with a single query
-/// Holds current query and params, receives only subset of points to score
-pub trait RawScorer {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize;
-
-    /// Return true if point satisfies current search context (exists and not deleted)
-    fn check_point(&self, point: PointOffsetType) -> bool;
-    /// Score stored vector with vector under the given index
-    fn score_point(&self, point: PointOffsetType) -> ScoreType;
-
-    /// Return distance between stored points selected by ids
-    /// Panics if any id is out of range
-    fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
-
-    fn peek_top_iter(
-        &self,
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-        top: usize,
-    ) -> Vec<ScoredPointOffset>;
-
-    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
-}
-
 /// Trait for vector storage
 /// El - type of vector element, expected numerical type
 /// Storage operates with internal IDs (`PointOffsetType`), which always starts with zero and have no skips
 pub trait VectorStorage {
     fn vector_dim(&self) -> usize;
-    fn vector_count(&self) -> usize;
-    /// Number of searchable vectors (not deleted)
-    fn deleted_count(&self) -> usize;
+
+    fn distance(&self) -> Distance;
+
     /// Number of vectors, marked as deleted but still stored
     fn total_vector_count(&self) -> usize;
+
     /// Number of all stored vectors including deleted
-    fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
-    fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
+    fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType];
+
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
-        vector: Vec<VectorElementType>,
+        vector: &[VectorElementType],
     ) -> OperationResult<()>;
+
     fn update_from(
         &mut self,
         other: &VectorStorageEnum,
+        other_ids: &mut dyn Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
-    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
-    fn is_deleted(&self, key: PointOffsetType) -> bool;
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
+
     fn flusher(&self) -> Flusher;
 
     // Generate quantized vectors and store them on disk
@@ -94,25 +72,9 @@ pub trait VectorStorage {
     // Load quantized vectors from disk
     fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()>;
 
+    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage>;
+
     fn files(&self) -> Vec<PathBuf>;
-
-    /// Iterator over `n` random ids which are not deleted
-    fn sample_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let total = self.total_vector_count() as PointOffsetType;
-        let mut rng = rand::thread_rng();
-        Box::new(
-            (0..total)
-                .map(move |_| rng.gen_range(0..total))
-                .filter(move |x| !self.is_deleted(*x)),
-        )
-    }
-
-    /// Generate a `RawScorer` object which contains all required context for searching similar vector
-    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
-
-    // Generate RawScorer on quantized vectors if present
-    fn quantized_raw_scorer(&self, vector: &[VectorElementType])
-        -> Option<Box<dyn RawScorer + '_>>;
 }
 
 pub enum VectorStorageEnum {
@@ -128,17 +90,10 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn vector_count(&self) -> usize {
+    fn distance(&self) -> Distance {
         match self {
-            VectorStorageEnum::Simple(v) => v.vector_count(),
-            VectorStorageEnum::Memmap(v) => v.vector_count(),
-        }
-    }
-
-    fn deleted_count(&self) -> usize {
-        match self {
-            VectorStorageEnum::Simple(v) => v.deleted_count(),
-            VectorStorageEnum::Memmap(v) => v.deleted_count(),
+            VectorStorageEnum::Simple(v) => v.distance(),
+            VectorStorageEnum::Memmap(v) => v.distance(),
         }
     }
 
@@ -149,24 +104,17 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
+    fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
         match self {
             VectorStorageEnum::Simple(v) => v.get_vector(key),
             VectorStorageEnum::Memmap(v) => v.get_vector(key),
         }
     }
 
-    fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
-        match self {
-            VectorStorageEnum::Simple(v) => v.put_vector(vector),
-            VectorStorageEnum::Memmap(v) => v.put_vector(vector),
-        }
-    }
-
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
-        vector: Vec<VectorElementType>,
+        vector: &[VectorElementType],
     ) -> OperationResult<()> {
         match self {
             VectorStorageEnum::Simple(v) => v.insert_vector(key, vector),
@@ -177,32 +125,12 @@ impl VectorStorage for VectorStorageEnum {
     fn update_from(
         &mut self,
         other: &VectorStorageEnum,
+        other_ids: &mut dyn Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         match self {
-            VectorStorageEnum::Simple(v) => v.update_from(other, stopped),
-            VectorStorageEnum::Memmap(v) => v.update_from(other, stopped),
-        }
-    }
-
-    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::Simple(v) => v.delete(key),
-            VectorStorageEnum::Memmap(v) => v.delete(key),
-        }
-    }
-
-    fn is_deleted(&self, key: PointOffsetType) -> bool {
-        match self {
-            VectorStorageEnum::Simple(v) => v.is_deleted(key),
-            VectorStorageEnum::Memmap(v) => v.is_deleted(key),
-        }
-    }
-
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        match self {
-            VectorStorageEnum::Simple(v) => v.iter_ids(),
-            VectorStorageEnum::Memmap(v) => v.iter_ids(),
+            VectorStorageEnum::Simple(v) => v.update_from(other, other_ids, stopped),
+            VectorStorageEnum::Memmap(v) => v.update_from(other, other_ids, stopped),
         }
     }
 
@@ -231,27 +159,17 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
+    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.quantized_storage(),
+            VectorStorageEnum::Memmap(v) => v.quantized_storage(),
+        }
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         match self {
             VectorStorageEnum::Simple(v) => v.files(),
             VectorStorageEnum::Memmap(v) => v.files(),
-        }
-    }
-
-    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        match self {
-            VectorStorageEnum::Simple(v) => v.raw_scorer(vector),
-            VectorStorageEnum::Memmap(v) => v.raw_scorer(vector),
-        }
-    }
-
-    fn quantized_raw_scorer(
-        &self,
-        vector: &[VectorElementType],
-    ) -> Option<Box<dyn RawScorer + '_>> {
-        match self {
-            VectorStorageEnum::Simple(v) => v.quantized_raw_scorer(vector),
-            VectorStorageEnum::Memmap(v) => v.quantized_raw_scorer(vector),
         }
     }
 }

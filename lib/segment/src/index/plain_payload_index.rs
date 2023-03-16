@@ -26,7 +26,7 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
 };
-use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -194,6 +194,7 @@ impl PayloadIndex for PlainPayloadIndex {
 }
 
 pub struct PlainIndex {
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
@@ -202,10 +203,12 @@ pub struct PlainIndex {
 
 impl PlainIndex {
     pub fn new(
+        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     ) -> PlainIndex {
         PlainIndex {
+            id_tracker,
             vector_storage,
             payload_index,
             filtered_searches_telemetry: OperationDurationsAggregator::new(),
@@ -225,28 +228,35 @@ impl VectorIndex for PlainIndex {
         match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
-                let borrowed_payload_index = self.payload_index.borrow();
-                let filtered_ids_vec: Vec<_> =
-                    borrowed_payload_index.query_points(filter).collect();
+                let payload_index = self.payload_index.borrow();
+                let vector_storage = self.vector_storage.borrow();
+                let id_tracker = self.id_tracker.borrow();
+                let filtered_ids_vec: Vec<_> = payload_index.query_points(filter).collect();
                 vectors
                     .iter()
                     .map(|vector| {
-                        self.vector_storage
-                            .borrow()
-                            .raw_scorer(vector.to_vec())
-                            .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
+                        new_raw_scorer(
+                            vector.to_vec(),
+                            &vector_storage,
+                            id_tracker.deleted_bitvec(),
+                        )
+                        .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
                     })
                     .collect()
             }
             None => {
                 let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
+                let vector_storage = self.vector_storage.borrow();
+                let id_tracker = self.id_tracker.borrow();
                 vectors
                     .iter()
                     .map(|vector| {
-                        self.vector_storage
-                            .borrow()
-                            .raw_scorer(vector.to_vec())
-                            .peek_top_all(top)
+                        new_raw_scorer(
+                            vector.to_vec(),
+                            &vector_storage,
+                            id_tracker.deleted_bitvec(),
+                        )
+                        .peek_top_all(top)
                     })
                     .collect()
             }

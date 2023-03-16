@@ -127,6 +127,7 @@ impl QuantizedVectorsStorage {
                         vectors,
                         scalar_config,
                         &vector_parameters,
+                        distance,
                     )?;
                     QuantizedVectorStorageImpl::ScalarRam(storage)
                 } else {
@@ -135,6 +136,7 @@ impl QuantizedVectorsStorage {
                         scalar_config,
                         &vector_parameters,
                         path,
+                        distance,
                     )?;
                     QuantizedVectorStorageImpl::ScalarMmap(storage)
                 }
@@ -161,7 +163,11 @@ impl QuantizedVectorsStorage {
         path.join(QUANTIZED_CONFIG_PATH).exists()
     }
 
-    pub fn load(data_path: &Path, on_disk_vector_storage: bool) -> OperationResult<Self> {
+    pub fn load(
+        data_path: &Path,
+        on_disk_vector_storage: bool,
+        distance: Distance,
+    ) -> OperationResult<Self> {
         let config: QuantizedVectorsConfig = read_json(&data_path.join(QUANTIZED_CONFIG_PATH))?;
         let quantized_store = match &config.quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
@@ -172,12 +178,18 @@ impl QuantizedVectorsStorage {
                     on_disk_vector_storage,
                 );
                 if is_ram {
-                    let storage =
-                        load_scalar_quantized_vectors_ram(data_path, &config.vector_parameters)?;
+                    let storage = load_scalar_quantized_vectors_ram(
+                        data_path,
+                        &config.vector_parameters,
+                        distance,
+                    )?;
                     QuantizedVectorStorageImpl::ScalarRam(storage)
                 } else {
-                    let storage =
-                        load_scalar_quantized_vectors_mmap(data_path, &config.vector_parameters)?;
+                    let storage = load_scalar_quantized_vectors_mmap(
+                        data_path,
+                        &config.vector_parameters,
+                        distance,
+                    )?;
                     QuantizedVectorStorageImpl::ScalarMmap(storage)
                 }
             }

@@ -17,6 +17,40 @@ paths:
             type: boolean
       responses: #@ response(array(reference("TelemetryData")))
 
+  /metrics:
+    get:
+      summary: Collect Prometheus metrics data
+      description: Collect metrics data including app info, collections info, cluster info and statistics
+      operationId: metrics
+      tags:
+        - service
+      parameters:
+        - name: anonymize
+          in: query
+          description: "If true, anonymize result"
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Metrics data in Prometheus format
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP app_info information about qdrant server
+                  # TYPE app_info counter
+                  app_info{name="qdrant",version="0.11.1"} 1
+                  # HELP cluster_enabled is cluster support enabled
+                  # TYPE cluster_enabled gauge
+                  cluster_enabled 0
+                  # HELP collections_total number of collections
+                  # TYPE collections_total gauge
+                  collections_total 1
+        '4XX':
+          description: error
+
   /locks:
     post:
       summary: Set lock options

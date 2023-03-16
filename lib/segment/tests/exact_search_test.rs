@@ -84,6 +84,7 @@ mod tests {
 
         let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
             hnsw_dir.path(),
+            segment.id_tracker.clone(),
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_storage
                 .clone(),
