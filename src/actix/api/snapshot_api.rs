@@ -51,12 +51,26 @@ pub struct SnapshottingForm {
 }
 
 // Actix specific code
-pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> Result<NamedFile> {
-    let file_name = get_full_snapshot_path(toc, snapshot_name)
-        .await
-        .map_err(storage_into_actix_error)?;
+pub async fn do_get_full_snapshot(
+    dispatcher: &Dispatcher,
+    snapshot_name: &str,
+    wait: bool,
+) -> Result<NamedFile> {
+    let dispatcher = dispatcher.clone();
+    let snapshot_name = snapshot_name.to_string();
+    let task = tokio::spawn(async move {
+        get_full_snapshot_path(dispatcher.toc(), &snapshot_name)
+            .await
+            .map_err(storage_into_actix_error)
+            .unwrap()
+    });
 
-    Ok(NamedFile::open(file_name)?)
+    if wait {
+        let result = task.await.unwrap();
+        Ok(NamedFile::open(result)?)
+    } else {
+        Ok(NamedFile::open("not_found")?)
+    }
 }
 
 pub fn do_save_uploaded_snapshot(
@@ -85,40 +99,62 @@ pub fn do_save_uploaded_snapshot(
 
 // Actix specific code
 pub async fn do_get_snapshot(
-    toc: &TableOfContent,
+    dispatcher: &Dispatcher,
     collection_name: &str,
     snapshot_name: &str,
+    wait: bool,
 ) -> Result<NamedFile> {
-    let collection = toc
-        .get_collection(collection_name)
-        .await
-        .map_err(storage_into_actix_error)?;
+    let dispatcher = dispatcher.clone();
+    let collection_name = collection_name.to_string();
+    let snapshot_name = snapshot_name.to_string();
 
-    let file_name = collection
-        .get_snapshot_path(snapshot_name)
-        .await
-        .map_err(collection_into_actix_error)?;
+    let task = tokio::spawn(async move {
+        let collection = dispatcher
+            .get_collection(&collection_name)
+            .await
+            .map_err(storage_into_actix_error)
+            .unwrap();
 
-    Ok(NamedFile::open(file_name)?)
+        collection
+            .get_snapshot_path(&snapshot_name)
+            .await
+            .map_err(collection_into_actix_error)
+            .unwrap()
+    });
+
+    if wait {
+        let result = task.await.unwrap();
+        Ok(NamedFile::open(result)?)
+    } else {
+        Ok(NamedFile::open("not_found")?)
+    }
 }
 
 #[get("/collections/{name}/snapshots")]
 async fn list_snapshots(
-    toc: web::Data<TableOfContent>,
-    collection: Path<CollectionPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
+    let collection_name = path.into_inner();
     let timing = Instant::now();
-    let response = do_list_snapshots(toc.get_ref(), &collection.name).await;
+    let wait = params.wait.unwrap_or(true);
+
+    let response = do_list_snapshots(dispatcher.get_ref(), &collection_name, wait).await;
     process_response(response, timing)
 }
 
 #[post("/collections/{name}/snapshots")]
 async fn create_snapshot(
-    toc: web::Data<TableOfContent>,
-    collection: Path<CollectionPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
+    let collection_name = path.into_inner();
+    let wait = params.wait.unwrap_or(true);
+
     let timing = Instant::now();
-    let response = do_create_snapshot(toc.get_ref(), &collection.name).await;
+    let response = do_create_snapshot(dispatcher.get_ref(), &collection_name, wait).await;
     process_response(response, timing)
 }
 
@@ -177,54 +213,73 @@ async fn recover_from_snapshot(
 
 #[get("/collections/{name}/snapshots/{snapshot_name}")]
 async fn get_snapshot(
-    toc: web::Data<TableOfContent>,
-    collection: Path<CollectionPath>,
-    snapshot: Path<SnapshotPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, String)>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
-    do_get_snapshot(toc.get_ref(), &collection.name, &snapshot.name).await
+    let wait = params.wait.unwrap_or(true);
+    let (collection_name, snapshot_name) = path.into_inner();
+    do_get_snapshot(dispatcher.get_ref(), &collection_name, &snapshot_name, wait).await
 }
 
 #[get("/snapshots")]
-async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
+async fn list_full_snapshots(
+    dispatcher: web::Data<Dispatcher>,
+    params: Query<SnapshottingParam>,
+) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_full_snapshots(toc.get_ref()).await;
+    let wait = params.wait.unwrap_or(true);
+    let response = do_list_full_snapshots(dispatcher.get_ref(), wait).await;
     process_response(response, timing)
 }
 
 #[post("/snapshots")]
-async fn create_full_snapshot(toc: web::Data<TableOfContent>) -> impl Responder {
+async fn create_full_snapshot(
+    dispatcher: web::Data<Dispatcher>,
+    params: Query<SnapshottingParam>,
+) -> impl Responder {
     let timing = Instant::now();
-    let response = do_create_full_snapshot(toc.get_ref()).await;
+    let wait = params.wait.unwrap_or(true);
+    let response = do_create_full_snapshot(dispatcher.get_ref(), wait).await;
     process_response(response, timing)
 }
 
 #[get("/snapshots/{snapshot_name}")]
 async fn get_full_snapshot(
-    toc: web::Data<TableOfContent>,
-    snapshot: Path<SnapshotPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
-    do_get_full_snapshot(toc.get_ref(), &snapshot.name).await
+    let snapshot_name = path.into_inner();
+    let wait = params.wait.unwrap_or(true);
+    do_get_full_snapshot(dispatcher.get_ref(), &snapshot_name, wait).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
 async fn delete_full_snapshot(
-    toc: web::Data<TableOfContent>,
-    snapshot: Path<SnapshotPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
+    let snapshot_name = path.into_inner();
     let timing = Instant::now();
-    let response = do_delete_full_snapshot(toc.get_ref(), &snapshot.name).await;
+    let wait = params.wait.unwrap_or(true);
+    let response = do_delete_full_snapshot(dispatcher.get_ref(), &snapshot_name, wait).await;
     process_response(response, timing)
 }
 
 #[delete("/collections/{name}/snapshots/{snapshot_name}")]
 async fn delete_collection_snapshot(
-    toc: web::Data<TableOfContent>,
-    collection: Path<CollectionPath>,
-    snapshot: Path<SnapshotPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, String)>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
+    let (collection_name, snapshot_name) = path.into_inner();
     let timing = Instant::now();
+    let wait = params.wait.unwrap_or(true);
     let response =
-        do_delete_collection_snapshot(toc.get_ref(), &collection.name, &snapshot.name).await;
+        do_delete_collection_snapshot(dispatcher.get_ref(), &collection_name, &snapshot_name, wait)
+            .await;
     process_response(response, timing)
 }
 

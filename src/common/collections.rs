@@ -63,21 +63,42 @@ pub async fn do_list_aliases(
 }
 
 pub async fn do_list_snapshots(
-    toc: &TableOfContent,
+    dispatcher: &Dispatcher,
     collection_name: &str,
+    wait: bool,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    Ok(toc
-        .get_collection(collection_name)
-        .await?
-        .list_snapshots()
-        .await?)
+    let dispatcher = dispatcher.clone();
+    let collection_name = collection_name.to_string();
+
+    let toc = tokio::spawn(async move {
+        let collection = dispatcher.get_collection(&collection_name).await.unwrap();
+        collection.list_snapshots().await
+    });
+
+    if wait {
+        Ok(toc.await??)
+    } else {
+        Ok(vec![])
+    }
 }
 
-pub async fn do_create_snapshot(
-    toc: &TableOfContent,
+pub async fn do_create_snapshot<'a>(
+    dispatcher: &Dispatcher,
     collection_name: &str,
+    wait: bool,
 ) -> Result<SnapshotDescription, StorageError> {
-    toc.create_snapshot(collection_name).await
+    let collection = collection_name.to_string();
+    let dispatcher = dispatcher.clone();
+    let snapshot = tokio::spawn(async move { dispatcher.create_snapshot(&collection).await });
+    if wait {
+        Ok(snapshot.await??)
+    } else {
+        Ok(SnapshotDescription {
+            name: "".to_string(),
+            creation_time: None,
+            size: 0,
+        })
+    }
 }
 
 pub async fn do_get_collection_cluster(
