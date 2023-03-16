@@ -58,16 +58,16 @@ pub async fn do_get_full_snapshot(
 ) -> Result<NamedFile> {
     let dispatcher = dispatcher.clone();
     let snapshot_name = snapshot_name.to_string();
-    let task = tokio::spawn(async move {
-        get_full_snapshot_path(dispatcher.toc(), &snapshot_name)
-            .await
-            .map_err(storage_into_actix_error)
-            .unwrap()
-    });
+    let task =
+        tokio::spawn(async move { get_full_snapshot_path(dispatcher.toc(), &snapshot_name).await });
 
     if wait {
-        let result = task.await.unwrap();
-        Ok(NamedFile::open(result)?)
+        let filename = task.await;
+        if let Err(e) = filename {
+            return Err(ErrorInternalServerError(e.to_string()));
+        }
+        let filename = filename.unwrap().map_err(storage_into_actix_error)?;
+        Ok(NamedFile::open(filename)?)
     } else {
         Ok(NamedFile::open("not_found")?)
     }
