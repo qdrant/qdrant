@@ -198,6 +198,48 @@ Make sure to mount it as a volume, otherwise docker will drop it with the contai
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 
+
+### Local development
+#### Linux/Debian
+To run Qdrant on local development environment you need to install below:
+- Install Rust, follow: [install rust](https://www.rust-lang.org/tools/install)
+- Install `rustfmt` toolchain for Rust 
+    ```shell
+    rustup component add rustfmt
+    ```
+- Install dependencies:
+    ```shell
+    sudo apt-get update -y 
+    sudo apt-get upgrade -y
+    sudo apt-get install -y curl unzip gcc-multilib \
+        clang cmake jq \
+        g++-9-aarch64-linux-gnu \
+        gcc-9-aarch64-linux-gnu
+    ```
+- Install `protoc` from source
+    ```shell
+    PROTOC_VERSION=22.2
+
+    # curl `proto` source file 
+    curl -LO https://github.com/protocolbuffers/protobuf/releases//download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-linux-x86_64.zip
+
+    unzip protoc-$PROTOC_VERSION-linux-x86_64.zip -d $HOME/.local
+
+    export PATH="$PATH:$HOME/.local/bin"
+
+    # remove source file if not needed
+    rm protoc-protoc-$PROTOC_VERSION-linux-x86_64.zip
+    
+    # check insalled `protoc` version
+    protoc --version
+    ```
+- Build and run the app
+    ```shell
+    cargo build --release --bin qdrant
+
+    ./target/release/qdrant
+    ```
+
 ## Docs 📓
 
 * The best place to start is [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
