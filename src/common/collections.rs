@@ -69,17 +69,24 @@ pub async fn do_list_snapshots(
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     let dispatcher = dispatcher.clone();
     let collection_name = collection_name.to_string();
-
-    let toc = tokio::spawn(async move {
-        let collection = dispatcher.get_collection(&collection_name).await.unwrap();
-        collection.list_snapshots().await
-    });
+    let task = tokio::spawn(async move { _do_list_snapshots(&dispatcher, &collection_name).await });
 
     if wait {
-        Ok(toc.await??)
+        task.await?
     } else {
         Ok(vec![])
     }
+}
+
+async fn _do_list_snapshots(
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+) -> Result<Vec<SnapshotDescription>, StorageError> {
+    Ok(dispatcher
+        .get_collection(collection_name)
+        .await?
+        .list_snapshots()
+        .await?)
 }
 
 pub async fn do_create_snapshot<'a>(

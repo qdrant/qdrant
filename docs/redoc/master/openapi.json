@@ -1729,15 +1729,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "wait",
-            "in": "query",
-            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
           }
         ],
         "responses": {

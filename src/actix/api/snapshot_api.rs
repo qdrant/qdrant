@@ -99,35 +99,21 @@ pub fn do_save_uploaded_snapshot(
 
 // Actix specific code
 pub async fn do_get_snapshot(
-    dispatcher: &Dispatcher,
+    toc: &TableOfContent,
     collection_name: &str,
     snapshot_name: &str,
-    wait: bool,
 ) -> Result<NamedFile> {
-    let dispatcher = dispatcher.clone();
-    let collection_name = collection_name.to_string();
-    let snapshot_name = snapshot_name.to_string();
+    let collection = toc
+        .get_collection(collection_name)
+        .await
+        .map_err(storage_into_actix_error)?;
 
-    let task = tokio::spawn(async move {
-        let collection = dispatcher
-            .get_collection(&collection_name)
-            .await
-            .map_err(storage_into_actix_error)
-            .unwrap();
+    let file_name = collection
+        .get_snapshot_path(snapshot_name)
+        .await
+        .map_err(collection_into_actix_error)?;
 
-        collection
-            .get_snapshot_path(&snapshot_name)
-            .await
-            .map_err(collection_into_actix_error)
-            .unwrap()
-    });
-
-    if wait {
-        let result = task.await.unwrap();
-        Ok(NamedFile::open(result)?)
-    } else {
-        Ok(NamedFile::open("not_found")?)
-    }
+    Ok(NamedFile::open(file_name)?)
 }
 
 #[get("/collections/{name}/snapshots")]
@@ -215,11 +201,9 @@ async fn recover_from_snapshot(
 async fn get_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, String)>,
-    params: Query<SnapshottingParam>,
 ) -> impl Responder {
-    let wait = params.wait.unwrap_or(true);
     let (collection_name, snapshot_name) = path.into_inner();
-    do_get_snapshot(dispatcher.get_ref(), &collection_name, &snapshot_name, wait).await
+    do_get_snapshot(dispatcher.get_ref(), &collection_name, &snapshot_name).await
 }
 
 #[get("/snapshots")]

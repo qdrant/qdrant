@@ -50,7 +50,6 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots/{snapshot_name}',
         method="DELETE",
         path_params={'collection_name': collection_name, 'snapshot_name': snapshot_name},
-        query_params={'wait': 'true'},
     )
     assert response.ok
 

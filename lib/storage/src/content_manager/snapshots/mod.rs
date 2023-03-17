@@ -45,14 +45,22 @@ pub async fn do_delete_full_snapshot(
     let dispatcher = dispatcher.clone();
     let snapshot_name = snapshot_name.to_string();
     let task =
-        tokio::spawn(async move { get_full_snapshot_path(dispatcher.toc(), &snapshot_name).await });
+        tokio::spawn(async move { _do_delete_full_snapshot(&dispatcher, &snapshot_name).await });
 
     if wait {
-        let snapshot_dir = task.await??;
-        log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
-        tokio::fs::remove_file(snapshot_dir).await?;
+        task.await??;
     }
 
+    Ok(true)
+}
+
+async fn _do_delete_full_snapshot(
+    dispatcher: &Dispatcher,
+    snapshot_name: &str,
+) -> Result<bool, StorageError> {
+    let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
+    log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
+    tokio::fs::remove_file(snapshot_dir).await?;
     Ok(true)
 }
 
@@ -67,16 +75,25 @@ pub async fn do_delete_collection_snapshot(
     let snapshot_name = snapshot_name.to_string();
 
     let task = tokio::spawn(async move {
-        let collection = dispatcher.get_collection(&collection_name).await.unwrap();
-        collection.get_snapshot_path(&snapshot_name).await
+        _do_delete_collection_snapshot(&dispatcher, &collection_name, &snapshot_name).await
     });
 
     if wait {
-        let file_name = task.await??;
-        log::info!("Deleting collection snapshot {:?}", file_name);
-        tokio::fs::remove_file(file_name).await?;
+        task.await??;
     }
 
+    Ok(true)
+}
+
+async fn _do_delete_collection_snapshot(
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    snapshot_name: &str,
+) -> Result<bool, StorageError> {
+    let collection = dispatcher.get_collection(collection_name).await?;
+    let file_name = collection.get_snapshot_path(snapshot_name).await?;
+    log::info!("Deleting collection snapshot {:?}", file_name);
+    tokio::fs::remove_file(file_name).await?;
     Ok(true)
 }
 
@@ -101,6 +118,20 @@ pub async fn do_list_full_snapshots(
 pub async fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     wait: bool,
+) -> Result<SnapshotDescription, StorageError> {
+    if wait {
+        _do_create_full_snapshot(dispatcher).await
+    } else {
+        Ok(SnapshotDescription {
+            name: "in progress".to_string(),
+            creation_time: None,
+            size: 0,
+        })
+    }
+}
+
+async fn _do_create_full_snapshot(
+    dispatcher: &Dispatcher,
 ) -> Result<SnapshotDescription, StorageError> {
     let dispatcher = dispatcher.clone();
 
@@ -171,16 +202,8 @@ pub async fn do_create_full_snapshot(
         builder.finish()?;
         Ok::<(), StorageError>(())
     });
+    archiving.await??;
+    tokio::fs::remove_file(&config_path).await?;
 
-    if wait {
-        archiving.await??;
-        tokio::fs::remove_file(&config_path).await?;
-        Ok(get_snapshot_description(&full_snapshot_path).await?)
-    } else {
-        Ok(SnapshotDescription {
-            name: "in progress".to_string(),
-            creation_time: None,
-            size: 0,
-        })
-    }
+    Ok(get_snapshot_description(&full_snapshot_path).await?)
 }
