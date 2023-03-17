@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
+use actix_multipart::form::tempfile::TempFileConfig;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -85,6 +86,7 @@ pub fn init(
                         .limit(settings.service.max_request_size_mb * 1024 * 1024)
                         .error_handler(json_error_handler),
                 ))
+                .app_data(TempFileConfig::default().directory(dispatcher_data.snapshots_path()))
                 .service(index)
                 .configure(config_collections_api)
                 .configure(config_snapshots_api)

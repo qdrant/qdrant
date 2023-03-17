@@ -1,8 +1,11 @@
 use actix_files::NamedFile;
+use actix_multipart::form::tempfile::TempFile;
+use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use collection::operations::snapshot_ops::SnapshotRecover;
+use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
@@ -21,6 +24,11 @@ use crate::common::collections::*;
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct SnapshottingParam {
     pub wait: Option<bool>,
+}
+
+#[derive(MultipartForm)]
+pub struct SnapshottingForm {
+    snapshot: TempFile,
 }
 
 // Actix specific code
@@ -69,6 +77,39 @@ async fn create_snapshot(
 
     let timing = Instant::now();
     let response = do_create_snapshot(toc.get_ref(), &collection_name).await;
+    process_response(response, timing)
+}
+
+#[post("/collections/{name}/snapshots/upload")]
+async fn upload_snapshot(
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    MultipartForm(form): MultipartForm<SnapshottingForm>,
+    params: Query<SnapshottingParam>,
+) -> impl Responder {
+    let collection_name = path.into_inner();
+    let snapshot = form.snapshot;
+    let wait = params.wait.unwrap_or(true);
+    let timing = Instant::now();
+
+    let path = format!(
+        "{}/{}/{}",
+        dispatcher.snapshots_path(),
+        collection_name,
+        snapshot.file_name.unwrap()
+    );
+    println!("saving file at: {path}");
+    snapshot.file.persist(&path).unwrap();
+    println!("saved successfully, restoring");
+    let snapshot_location = Url::from_file_path(format!("file://{path}")).unwrap();
+    let snapshot_recover = SnapshotRecover::from_url(snapshot_location);
+    let response = do_recover_from_snapshot(
+        dispatcher.get_ref(),
+        &collection_name,
+        snapshot_recover,
+        wait,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -153,6 +194,7 @@ async fn delete_collection_snapshot(
 pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
     cfg.service(list_snapshots)
         .service(create_snapshot)
+        .service(upload_snapshot)
         .service(recover_from_snapshot)
         .service(get_snapshot)
         .service(list_full_snapshots)

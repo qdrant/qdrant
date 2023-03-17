@@ -34,6 +34,15 @@ pub struct SnapshotRecover {
     pub priority: Option<SnapshotPriority>,
 }
 
+impl SnapshotRecover {
+    pub fn from_url(location: Url) -> Self {
+        Self {
+            location,
+            priority: Some(SnapshotPriority::default()),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotDescription {
     pub name: String,
