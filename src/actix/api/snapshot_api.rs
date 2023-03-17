@@ -98,9 +98,7 @@ async fn upload_snapshot(
         collection_name,
         snapshot.file_name.unwrap()
     );
-    println!("saving file at: {path}");
     snapshot.file.persist(&path).unwrap();
-    println!("saved successfully, restoring");
     let snapshot_location = Url::from_file_path(format!("file://{path}")).unwrap();
     let snapshot_recover = SnapshotRecover::from_url(snapshot_location);
     let response = do_recover_from_snapshot(
