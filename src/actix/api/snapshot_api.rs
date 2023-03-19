@@ -15,6 +15,7 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use uuid::Uuid;
 
 use crate::actix::helpers::{
     collection_into_actix_error, process_response, storage_into_actix_error,
@@ -91,14 +92,17 @@ async fn upload_snapshot(
     let snapshot = form.snapshot;
     let wait = params.wait.unwrap_or(true);
     let timing = Instant::now();
+    let filename = snapshot.file_name.unwrap_or(Uuid::new_v4().to_string());
 
     let path = format!(
         "{}/{}/{}",
         dispatcher.snapshots_path(),
         collection_name,
-        snapshot.file_name.unwrap()
+        filename
     );
-    snapshot.file.persist(&path).unwrap();
+    if let Err(persist_error) = snapshot.file.persist(&path) {
+        return process_response(Err(persist_error.into()), timing);
+    }
     let snapshot_location = Url::from_file_path(format!("file://{path}")).unwrap();
     let snapshot_recover = SnapshotRecover::from_url(snapshot_location);
     let response = do_recover_from_snapshot(
