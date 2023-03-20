@@ -106,15 +106,18 @@ pub fn init(
         server = if settings.service.enable_tls {
             let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls())?;
 
-            let tls_config = settings.tls_config.unwrap();
+            let tls_config = settings
+                .tls
+                .ok_or_else(Settings::tls_config_is_undefined_error)?;
+
             acceptor.set_private_key_file(&tls_config.key, SslFiletype::PEM)?;
             acceptor.set_certificate_chain_file(&tls_config.cert)?;
             acceptor.check_private_key()?;
 
-            server.bind_openssl(bind_addr, acceptor)
+            server.bind_openssl(bind_addr, acceptor)?
         } else {
-            server.bind(bind_addr)
-        }?;
+            server.bind(bind_addr)?
+        };
 
         server.run().await
     })

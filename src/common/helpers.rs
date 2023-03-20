@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{fs, io};
 
 use schemars::JsonSchema;
 use segment::common::cpu::get_num_cpus;
@@ -16,7 +17,7 @@ pub struct LocksOption {
     pub write: bool,
 }
 
-pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runtime> {
+pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
     let mut search_threads = max_search_threads;
 
     if search_threads == 0 {
@@ -48,7 +49,7 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
         .build()
 }
 
-pub fn create_update_runtime(max_optimization_threads: usize) -> std::io::Result<Runtime> {
+pub fn create_update_runtime(max_optimization_threads: usize) -> io::Result<Runtime> {
     let mut update_runtime_builder = runtime::Builder::new_multi_thread();
 
     update_runtime_builder
@@ -66,7 +67,7 @@ pub fn create_update_runtime(max_optimization_threads: usize) -> std::io::Result
     update_runtime_builder.build()
 }
 
-pub fn create_general_purpose_runtime() -> std::io::Result<Runtime> {
+pub fn create_general_purpose_runtime() -> io::Result<Runtime> {
     runtime::Builder::new_multi_thread()
         .enable_time()
         .enable_io()
@@ -77,6 +78,32 @@ pub fn create_general_purpose_runtime() -> std::io::Result<Runtime> {
             format!("general-{general_id}")
         })
         .build()
+}
+
+/// Load client TLS configuration.
+pub fn load_tls_client_config(settings: &Settings) -> io::Result<Option<ClientTlsConfig>> {
+    if settings.cluster.p2p.enable_tls {
+        let pem = fs::read_to_string(&settings.tls()?.ca_cert)?;
+        let cert = Certificate::from_pem(pem);
+        let tls_config = ClientTlsConfig::new().ca_certificate(cert);
+        Ok(Some(tls_config))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Load server TLS configuration.
+pub fn load_tls_server_config(tls_config: &TlsConfig) -> io::Result<ServerTlsConfig> {
+    let cert = fs::read_to_string(&tls_config.cert)?;
+    let key = fs::read_to_string(&tls_config.key)?;
+
+    let ident = Identity::from_pem(cert, key);
+
+    Ok(ServerTlsConfig::new().identity(ident))
+}
+
+pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, err)
 }
 
 #[cfg(test)]
@@ -106,26 +133,4 @@ mod tests {
         sleep(Duration::from_millis(500));
         join.join().unwrap()
     }
-}
-
-/// Load client TLS configuration.
-pub fn load_tls_client_config(settings: &Settings) -> std::io::Result<Option<ClientTlsConfig>> {
-    if settings.cluster.p2p.enable_tls {
-        let pem = std::fs::read_to_string(&settings.tls_config.as_ref().unwrap().ca_cert)?;
-        let cert: Certificate = Certificate::from_pem(pem);
-        let tls_config = ClientTlsConfig::new().ca_certificate(cert);
-        Ok(Some(tls_config))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Load server TLS configuration.
-pub fn load_tls_server_config(tls_config: TlsConfig) -> std::io::Result<ServerTlsConfig> {
-    let cert = std::fs::read_to_string(tls_config.cert)?;
-    let key = std::fs::read_to_string(tls_config.key)?;
-
-    let ident = Identity::from_pem(cert, key);
-
-    Ok(ServerTlsConfig::new().identity(ident))
 }
