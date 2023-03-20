@@ -1,3 +1,6 @@
+debug: true
+log_level: INFO
+
 storage:
   # Where to store all the data
   storage_path: ./storage
@@ -128,19 +131,19 @@ service:
   enable_cors: true
 
   # Use TLS for client communication
-  enable_tls: false
+  enable_tls: true
 
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
-  enabled: false
+  enabled: true
 
   # Configuration of the inter-cluster communication
   p2p:
     # Port for internal communication between peers
     port: 6335
 
-    # Use TLS for communication between peers
-    enable_tls: false
+    # Use TLS for internal communication between peers
+    enable_tls: true
 
   # Configuration related to distributed consensus algorithm
   consensus:
@@ -154,19 +157,17 @@ cluster:
 
 # Set to true to prevent service from sending usage statistics to the developers.
 # Read more: https://qdrant.tech/documentation/telemetry
-telemetry_disabled: false
+telemetry_disabled: true
 
 
-# TLS settings (mandatory if service.enable_tls or cluster.p2p.enable_tls is true).
+# TLS settings
 tls_config:
 
-  # Server certificate chain file
+  # Certificate chain file
   cert: ./tls/cert.pem
 
-  # Server private key file
+  # Private key file
   key: ./tls/key.pem
 
-  # Client certificate file.
-  # It is used by the client to verify validity of the server certificate.
-  # (required if cluster.p2p.enable_tls is true).
+  # Client certificate
   ca_cert: ./tls/cacert.pem

@@ -11,6 +11,7 @@ use actix_cors::Cors;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use storage::dispatcher::Dispatcher;
 
 use crate::actix::api::cluster_api::config_cluster_api;
@@ -64,7 +65,7 @@ pub fn init(
             .actix_telemetry_collector
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
-        HttpServer::new(move || {
+        let mut server = HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
                 .allow_any_method()
@@ -98,13 +99,24 @@ pub fn init(
                 .service(scroll_points)
                 .service(count_points)
         })
-        .workers(max_web_workers(&settings))
-        .bind(format!(
-            "{}:{}",
-            settings.service.host, settings.service.http_port
-        ))?
-        .run()
-        .await
+        .workers(max_web_workers(&settings));
+
+        let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
+
+        server = if settings.service.enable_tls {
+            let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls())?;
+
+            let tls_config = settings.tls_config.unwrap();
+            acceptor.set_private_key_file(&tls_config.key, SslFiletype::PEM)?;
+            acceptor.set_certificate_chain_file(&tls_config.cert)?;
+            acceptor.check_private_key()?;
+
+            server.bind_openssl(bind_addr, acceptor)
+        } else {
+            server.bind(bind_addr)
+        }?;
+
+        server.run().await
     })
 }
 

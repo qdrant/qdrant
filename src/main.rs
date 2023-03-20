@@ -34,6 +34,7 @@ use tikv_jemallocator::Jemalloc;
 
 use crate::common::helpers::{
     create_general_purpose_runtime, create_search_runtime, create_update_runtime,
+    load_tls_client_config,
 };
 use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_reporting::TelemetryReporter;
@@ -179,10 +180,14 @@ fn main() -> anyhow::Result<()> {
         // So we initialize it with real values here
         let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
         let connection_timeout = Duration::from_millis(settings.cluster.connection_timeout_ms);
+
+        let tls_config = load_tls_client_config(&settings)?;
+
         channel_service.channel_pool = Arc::new(TransportChannelPool::new(
             p2p_grpc_timeout,
             connection_timeout,
             settings.cluster.p2p.connection_pool_size,
+            tls_config,
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
     }
@@ -241,16 +246,12 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
-
         let handle = Consensus::run(
             &slog_logger,
             consensus_state.clone(),
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
-            settings.service.host.clone(),
-            p2p_port,
-            settings.cluster.consensus.clone(),
+            settings.clone(),
             channel_service,
             propose_receiver,
             tonic_telemetry_collector,
@@ -350,7 +351,7 @@ fn main() -> anyhow::Result<()> {
                 tonic::init(
                     dispatcher_arc,
                     tonic_telemetry_collector,
-                    settings.service.host,
+                    settings,
                     grpc_port,
                     runtime_handle,
                 )
