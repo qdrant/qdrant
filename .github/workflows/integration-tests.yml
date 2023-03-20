@@ -78,3 +78,13 @@ jobs:
       - name: Run integration tests - multiple peers - compose
         run: ./test_restart.sh
         working-directory: ./tests/consensus_tests
+      
+  test-tls-compose:
+    
+    runs-on: ubuntu-latest
+  
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run integration tests
+        run: ./test_tls.sh
+        working-directory: ./tests/tls

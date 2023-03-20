@@ -18,10 +18,12 @@ use storage::dispatcher::Dispatcher;
 use tokio::runtime::Handle;
 use tokio::signal;
 use tonic::codec::CompressionEncoding;
-use tonic::transport::Server;
+use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 
+use crate::common::helpers::load_tls_server_config;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
+use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
@@ -44,13 +46,14 @@ impl Qdrant for QdrantService {
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
-    host: String,
+    settings: Settings,
     grpc_port: u16,
     runtime: Handle,
 ) -> std::io::Result<()> {
     runtime
         .block_on(async {
-            let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
+            let socket =
+                SocketAddr::from((settings.service.host.parse::<IpAddr>().unwrap(), grpc_port));
 
             let qdrant_service = QdrantService::default();
             let collections_service = CollectionsService::new(dispatcher.clone());
@@ -59,7 +62,14 @@ pub fn init(
 
             log::info!("Qdrant gRPC listening on {}", grpc_port);
 
-            Server::builder()
+            let mut server = Server::builder();
+
+            if settings.service.enable_tls {
+                let config = load_tls_server_config(settings.tls_config.unwrap()).unwrap();
+                server = server.tls_config(config)?;
+            };
+
+            server
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
@@ -93,12 +103,14 @@ pub fn init(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn init_internal(
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     internal_grpc_port: u16,
+    tls_config: Option<ServerTlsConfig>,
     to_consensus: tokio::sync::mpsc::Sender<crate::consensus::Message>,
     runtime: Handle,
 ) -> std::io::Result<()> {
@@ -117,7 +129,13 @@ pub fn init_internal(
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
-            Server::builder()
+            let mut server = Server::builder();
+
+            if let Some(config) = tls_config {
+                server = server.tls_config(config)?;
+            };
+
+            server
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))

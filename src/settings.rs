@@ -6,6 +6,13 @@ use serde::Deserialize;
 use storage::types::StorageConfig;
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct TlsConfig {
+    pub cert: String,
+    pub key: String,
+    pub ca_cert: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct ServiceConfig {
     pub host: String,
     pub http_port: u16,
@@ -14,6 +21,8 @@ pub struct ServiceConfig {
     pub max_workers: Option<usize>,
     #[serde(default = "default_cors")]
     pub enable_cors: bool,
+    #[serde(default)]
+    pub enable_tls: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -35,6 +44,8 @@ pub struct P2pConfig {
     pub port: Option<u16>,
     #[serde(default = "default_connection_pool_size")]
     pub connection_pool_size: usize,
+    #[serde(default)]
+    pub enable_tls: bool,
 }
 
 impl Default for P2pConfig {
@@ -42,6 +53,7 @@ impl Default for P2pConfig {
         P2pConfig {
             port: None,
             connection_pool_size: default_connection_pool_size(),
+            enable_tls: false,
         }
     }
 }
@@ -78,6 +90,7 @@ pub struct Settings {
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
+    pub tls_config: Option<TlsConfig>,
 }
 
 fn default_telemetry_disabled() -> bool {
