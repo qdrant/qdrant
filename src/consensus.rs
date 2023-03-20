@@ -24,7 +24,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
-use crate::common::helpers::{load_tls_client_config, load_tls_server_config};
+use crate::common::helpers;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::{ConsensusConfig, Settings};
 use crate::tonic::init_internal;
@@ -71,7 +71,7 @@ impl Consensus {
         toc: Arc<TableOfContent>,
         runtime: Handle,
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
-        let tls_config = load_tls_client_config(&settings)?;
+        let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
         let p2p_host = settings.service.host;
         let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
@@ -84,7 +84,7 @@ impl Consensus {
             uri,
             p2p_port,
             config,
-            tls_config,
+            tls_client_config,
             channel_service,
             runtime.clone(),
         )?;
@@ -119,7 +119,11 @@ impl Consensus {
             })?;
 
         let server_tls = if settings.cluster.p2p.enable_tls {
-            Some(load_tls_server_config(settings.tls_config.unwrap())?)
+            let tls_config = settings
+                .tls
+                .ok_or_else(Settings::tls_config_is_undefined_error)?;
+
+            Some(helpers::load_tls_server_config(&tls_config)?)
         } else {
             None
         };

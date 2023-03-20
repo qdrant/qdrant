@@ -1,6 +1,7 @@
 mod api;
 mod tonic_telemetry;
 
+use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ use tonic::codec::CompressionEncoding;
 use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 
-use crate::common::helpers::load_tls_server_config;
+use crate::common::helpers;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
@@ -49,57 +50,61 @@ pub fn init(
     settings: Settings,
     grpc_port: u16,
     runtime: Handle,
-) -> std::io::Result<()> {
-    runtime
-        .block_on(async {
-            let socket =
-                SocketAddr::from((settings.service.host.parse::<IpAddr>().unwrap(), grpc_port));
+) -> io::Result<()> {
+    runtime.block_on(async {
+        let socket =
+            SocketAddr::from((settings.service.host.parse::<IpAddr>().unwrap(), grpc_port));
 
-            let qdrant_service = QdrantService::default();
-            let collections_service = CollectionsService::new(dispatcher.clone());
-            let points_service = PointsService::new(dispatcher.toc().clone());
-            let snapshot_service = SnapshotsService::new(dispatcher.toc().clone());
+        let qdrant_service = QdrantService::default();
+        let collections_service = CollectionsService::new(dispatcher.clone());
+        let points_service = PointsService::new(dispatcher.toc().clone());
+        let snapshot_service = SnapshotsService::new(dispatcher.toc().clone());
 
-            log::info!("Qdrant gRPC listening on {}", grpc_port);
+        log::info!("Qdrant gRPC listening on {}", grpc_port);
 
-            let mut server = Server::builder();
+        let mut server = Server::builder();
 
-            if settings.service.enable_tls {
-                let config = load_tls_server_config(settings.tls_config.unwrap()).unwrap();
-                server = server.tls_config(config)?;
-            };
+        if settings.service.enable_tls {
+            let tls_config = settings.tls()?;
+            let tls_server_config = helpers::load_tls_server_config(tls_config)?;
 
-            server
-                .layer(tonic_telemetry::TonicTelemetryLayer::new(
-                    telemetry_collector,
-                ))
-                .add_service(
-                    QdrantServer::new(qdrant_service)
-                        .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip),
-                )
-                .add_service(
-                    CollectionsServer::new(collections_service)
-                        .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip),
-                )
-                .add_service(
-                    PointsServer::new(points_service)
-                        .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip),
-                )
-                .add_service(
-                    SnapshotsServer::new(snapshot_service)
-                        .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip),
-                )
-                .serve_with_shutdown(socket, async {
-                    signal::ctrl_c().await.unwrap();
-                    log::debug!("Stopping gRPC");
-                })
-                .await
-        })
-        .unwrap();
+            server = server
+                .tls_config(tls_server_config)
+                .map_err(helpers::tonic_error_to_io_error)?;
+        };
+
+        server
+            .layer(tonic_telemetry::TonicTelemetryLayer::new(
+                telemetry_collector,
+            ))
+            .add_service(
+                QdrantServer::new(qdrant_service)
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip),
+            )
+            .add_service(
+                CollectionsServer::new(collections_service)
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip),
+            )
+            .add_service(
+                PointsServer::new(points_service)
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip),
+            )
+            .add_service(
+                SnapshotsServer::new(snapshot_service)
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip),
+            )
+            .serve_with_shutdown(socket, async {
+                signal::ctrl_c().await.unwrap();
+                log::debug!("Stopping gRPC");
+            })
+            .await
+            .map_err(helpers::tonic_error_to_io_error)
+    })?;
+
     Ok(())
 }
 
