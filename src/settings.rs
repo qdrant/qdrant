@@ -1,16 +1,9 @@
-use std::env;
+use std::{env, io};
 
 use config::{Config, ConfigError, Environment, File};
 use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct TlsConfig {
-    pub cert: String,
-    pub key: String,
-    pub ca_cert: String,
-}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServiceConfig {
@@ -79,6 +72,13 @@ impl Default for ConsensusConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct TlsConfig {
+    pub cert: String,
+    pub key: String,
+    pub ca_cert: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     #[serde(default = "default_debug")]
     pub debug: bool,
@@ -90,7 +90,22 @@ pub struct Settings {
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
-    pub tls_config: Option<TlsConfig>,
+    pub tls: Option<TlsConfig>,
+}
+
+impl Settings {
+    pub fn tls(&self) -> io::Result<&TlsConfig> {
+        self.tls
+            .as_ref()
+            .ok_or_else(Self::tls_config_is_undefined_error)
+    }
+
+    pub fn tls_config_is_undefined_error() -> io::Error {
+        io::Error::new(
+            io::ErrorKind::Other,
+            "TLS config is not defined in the Qdrant config file",
+        )
+    }
 }
 
 fn default_telemetry_disabled() -> bool {
