@@ -8,6 +8,7 @@ use collection::operations::snapshot_ops::SnapshotRecover;
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
@@ -94,16 +95,29 @@ async fn upload_snapshot(
     let timing = Instant::now();
     let filename = snapshot.file_name.unwrap_or(Uuid::new_v4().to_string());
 
-    let path = format!(
-        "{}/{}/{}",
-        dispatcher.snapshots_path(),
-        collection_name,
-        filename
-    );
+    let mut path = match std::env::current_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            return process_response(Err(error.into()), timing);
+        }
+    };
+    path.push(dispatcher.snapshots_path());
+    path.push(&collection_name);
+    path.push(&filename);
     if let Err(persist_error) = snapshot.file.persist(&path) {
         return process_response(Err(persist_error.into()), timing);
     }
-    let snapshot_location = Url::from_file_path(format!("file://{path}")).unwrap();
+    let snapshot_location = match Url::from_file_path(path) {
+        Ok(loc) => loc,
+        Err(_) => {
+            return process_response(
+                Err(StorageError::service_error(
+                    "Could not construct snapshot path",
+                )),
+                timing,
+            );
+        }
+    };
     let snapshot_recover = SnapshotRecover::from_url(snapshot_location);
     let response = do_recover_from_snapshot(
         dispatcher.get_ref(),
