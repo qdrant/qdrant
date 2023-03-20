@@ -235,7 +235,7 @@ impl From<tokio::task::JoinError> for StorageError {
 impl From<PersistError> for StorageError {
     fn from(err: PersistError) -> Self {
         StorageError::ServiceError {
-            description: err.to_string(),
+            description: format!("Persist error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }

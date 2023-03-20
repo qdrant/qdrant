@@ -12,7 +12,7 @@ use crate::operations::types::CollectionResult;
 /// Defines source of truth for snapshot recovery
 /// `Snapshot` means - prefer snapshot data over the current state
 /// `Replica` means - prefer existing data over the snapshot
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotPriority {
     Snapshot,
@@ -32,15 +32,6 @@ pub struct SnapshotRecover {
     /// If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.
     #[serde(default)]
     pub priority: Option<SnapshotPriority>,
-}
-
-impl SnapshotRecover {
-    pub fn from_url(location: Url) -> Self {
-        Self {
-            location,
-            priority: Some(SnapshotPriority::default()),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

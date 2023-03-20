@@ -1,10 +1,12 @@
+use std::path::Path;
+
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, get, post, put, web, Responder, Result};
-use collection::operations::snapshot_ops::SnapshotRecover;
+use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -24,6 +26,12 @@ use crate::actix::helpers::{
 use crate::common::collections::*;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
+pub struct SnapshotUploadingParam {
+    pub wait: Option<bool>,
+    pub priority: Option<SnapshotPriority>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
 pub struct SnapshottingParam {
     pub wait: Option<bool>,
 }
@@ -40,6 +48,30 @@ pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> 
         .map_err(storage_into_actix_error)?;
 
     Ok(NamedFile::open(file_name)?)
+}
+
+pub fn do_save_uploaded_snapshot(
+    toc: &TableOfContent,
+    collection_name: &str,
+    snapshot: TempFile,
+) -> std::result::Result<Url, StorageError> {
+    let filename = snapshot.file_name.unwrap_or(Uuid::new_v4().to_string());
+    let path = Path::new(toc.snapshots_path())
+        .join(collection_name)
+        .join(filename);
+
+    snapshot.file.persist(&path)?;
+
+    let absolute_path = path.canonicalize()?;
+
+    let snapshot_location = Url::from_file_path(&absolute_path).map_err(|_| {
+        StorageError::service_error(format!(
+            "Failed to convert path to URL: {}",
+            absolute_path.display()
+        ))
+    })?;
+
+    Ok(snapshot_location)
 }
 
 // Actix specific code
@@ -87,38 +119,24 @@ async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
-    params: Query<SnapshottingParam>,
+    params: Query<SnapshotUploadingParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let snapshot = form.snapshot;
     let wait = params.wait.unwrap_or(true);
     let timing = Instant::now();
-    let filename = snapshot.file_name.unwrap_or(Uuid::new_v4().to_string());
 
-    let mut path = match std::env::current_dir() {
-        Ok(path) => path,
-        Err(error) => {
-            return process_response(Err(error.into()), timing);
-        }
+    let snapshot_location =
+        match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection_name, snapshot) {
+            Ok(location) => location,
+            Err(err) => return process_response(Err(err), timing),
+        };
+
+    let snapshot_recover = SnapshotRecover {
+        location: snapshot_location,
+        priority: params.priority,
     };
-    path.push(dispatcher.snapshots_path());
-    path.push(&collection_name);
-    path.push(&filename);
-    if let Err(persist_error) = snapshot.file.persist(&path) {
-        return process_response(Err(persist_error.into()), timing);
-    }
-    let snapshot_location = match Url::from_file_path(path) {
-        Ok(loc) => loc,
-        Err(_) => {
-            return process_response(
-                Err(StorageError::service_error(
-                    "Could not construct snapshot path",
-                )),
-                timing,
-            );
-        }
-    };
-    let snapshot_recover = SnapshotRecover::from_url(snapshot_location);
+
     let response = do_recover_from_snapshot(
         dispatcher.get_ref(),
         &collection_name,
