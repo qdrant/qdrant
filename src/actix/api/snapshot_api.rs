@@ -1,10 +1,16 @@
+use std::path::Path;
+
 use actix_files::NamedFile;
+use actix_multipart::form::tempfile::TempFile;
+use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, get, post, put, web, Responder, Result};
-use collection::operations::snapshot_ops::SnapshotRecover;
+use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
+use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
@@ -12,6 +18,7 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use uuid::Uuid;
 
 use crate::actix::helpers::{
     collection_into_actix_error, process_response, storage_into_actix_error,
@@ -19,8 +26,19 @@ use crate::actix::helpers::{
 use crate::common::collections::*;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
+pub struct SnapshotUploadingParam {
+    pub wait: Option<bool>,
+    pub priority: Option<SnapshotPriority>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
 pub struct SnapshottingParam {
     pub wait: Option<bool>,
+}
+
+#[derive(MultipartForm)]
+pub struct SnapshottingForm {
+    snapshot: TempFile,
 }
 
 // Actix specific code
@@ -30,6 +48,30 @@ pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> 
         .map_err(storage_into_actix_error)?;
 
     Ok(NamedFile::open(file_name)?)
+}
+
+pub fn do_save_uploaded_snapshot(
+    toc: &TableOfContent,
+    collection_name: &str,
+    snapshot: TempFile,
+) -> std::result::Result<Url, StorageError> {
+    let filename = snapshot.file_name.unwrap_or(Uuid::new_v4().to_string());
+    let path = Path::new(toc.snapshots_path())
+        .join(collection_name)
+        .join(filename);
+
+    snapshot.file.persist(&path)?;
+
+    let absolute_path = path.canonicalize()?;
+
+    let snapshot_location = Url::from_file_path(&absolute_path).map_err(|_| {
+        StorageError::service_error(format!(
+            "Failed to convert path to URL: {}",
+            absolute_path.display()
+        ))
+    })?;
+
+    Ok(snapshot_location)
 }
 
 // Actix specific code
@@ -69,6 +111,39 @@ async fn create_snapshot(
 
     let timing = Instant::now();
     let response = do_create_snapshot(toc.get_ref(), &collection_name).await;
+    process_response(response, timing)
+}
+
+#[post("/collections/{name}/snapshots/upload")]
+async fn upload_snapshot(
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    MultipartForm(form): MultipartForm<SnapshottingForm>,
+    params: Query<SnapshotUploadingParam>,
+) -> impl Responder {
+    let collection_name = path.into_inner();
+    let snapshot = form.snapshot;
+    let wait = params.wait.unwrap_or(true);
+    let timing = Instant::now();
+
+    let snapshot_location =
+        match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection_name, snapshot) {
+            Ok(location) => location,
+            Err(err) => return process_response(Err(err), timing),
+        };
+
+    let snapshot_recover = SnapshotRecover {
+        location: snapshot_location,
+        priority: params.priority,
+    };
+
+    let response = do_recover_from_snapshot(
+        dispatcher.get_ref(),
+        &collection_name,
+        snapshot_recover,
+        wait,
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -153,6 +228,7 @@ async fn delete_collection_snapshot(
 pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
     cfg.service(list_snapshots)
         .service(create_snapshot)
+        .service(upload_snapshot)
         .service(recover_from_snapshot)
         .service(get_snapshot)
         .service(list_full_snapshots)
