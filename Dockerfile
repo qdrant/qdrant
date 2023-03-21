@@ -1,7 +1,7 @@
 # Leveraging the pre-built Docker images with
 # cargo-chef and the Rust toolchain
 # https://www.lpalmieri.com/posts/fast-rust-docker-builds/
-FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.67.0 AS chef
+FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.67.1 AS chef
 WORKDIR /qdrant
 
 FROM chef AS planner
@@ -21,7 +21,10 @@ RUN echo "Building for $TARGETARCH, arch: $(bash target_arch.sh)"
 
 COPY --from=planner /qdrant/recipe.json recipe.json
 
-RUN apt-get update && apt-get install -y gcc-multilib && apt-get install -y clang cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu protobuf-compiler && rustup component add rustfmt
+RUN apt-get update \
+    && ( apt-get install -y gcc-multilib || echo "Warning: not installing gcc-multilib" ) \
+    && apt-get install -y clang cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu protobuf-compiler \
+    && rustup component add rustfmt
 
 
 RUN rustup target add $(bash target_arch.sh)

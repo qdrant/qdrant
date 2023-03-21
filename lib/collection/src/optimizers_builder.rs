@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use schemars::JsonSchema;
 use segment::common::cpu::get_num_cpus;
-use segment::types::HnswConfig;
+use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -101,6 +101,7 @@ pub fn build_optimizers(
     collection_params: &CollectionParams,
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
+    quantization_config: &Option<QuantizationConfig>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let segments_path = shard_path.join("segments");
     let temp_segments_path = shard_path.join("temp_segments");
@@ -119,6 +120,7 @@ pub fn build_optimizers(
             temp_segments_path.clone(),
             collection_params.clone(),
             *hnsw_config,
+            quantization_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
             threshold_config.clone(),
@@ -126,6 +128,7 @@ pub fn build_optimizers(
             temp_segments_path.clone(),
             collection_params.clone(),
             *hnsw_config,
+            quantization_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
@@ -135,6 +138,7 @@ pub fn build_optimizers(
             temp_segments_path,
             collection_params.clone(),
             *hnsw_config,
+            quantization_config.clone(),
         )),
     ])
 }

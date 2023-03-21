@@ -171,6 +171,34 @@ pub struct OptimizersConfigDiff {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScalarQuantization {
+    /// Type of quantization
+    #[prost(enumeration = "QuantizationType", tag = "1")]
+    pub r#type: i32,
+    /// Number of bits to use for quantization
+    #[prost(float, optional, tag = "2")]
+    pub quantile: ::core::option::Option<f32>,
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "3")]
+    pub always_ram: ::core::option::Option<bool>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuantizationConfig {
+    #[prost(oneof = "quantization_config::Quantization", tags = "1")]
+    pub quantization: ::core::option::Option<quantization_config::Quantization>,
+}
+/// Nested message and enum types in `QuantizationConfig`.
+pub mod quantization_config {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Quantization {
+        #[prost(message, tag = "1")]
+        Scalar(super::ScalarQuantization),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
@@ -205,6 +233,8 @@ pub struct CreateCollection {
     /// Specify name of the other collection to copy data from
     #[prost(string, optional, tag = "13")]
     pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "14")]
+    pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -286,6 +316,9 @@ pub struct CollectionConfig {
     /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "4")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
+    /// Configuration of the vector quantization
+    #[prost(message, optional, tag = "5")]
+    pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -518,6 +551,24 @@ impl PayloadSchemaType {
             PayloadSchemaType::Float => "Float",
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum QuantizationType {
+    UnknownQuantization = 0,
+    Int8 = 1,
+}
+impl QuantizationType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            QuantizationType::UnknownQuantization => "UnknownQuantization",
+            QuantizationType::Int8 => "Int8",
         }
     }
 }
@@ -1937,6 +1988,18 @@ pub mod with_vectors_selector {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuantizationSearchParams {
+    ///
+    /// If set to true, search will ignore quantized vector data
+    #[prost(bool, optional, tag = "1")]
+    pub ignore: ::core::option::Option<bool>,
+    ///
+    /// If true, use original vectors to re-score top-k results. Default is true.
+    #[prost(bool, optional, tag = "2")]
+    pub rescore: ::core::option::Option<bool>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
     ///
     /// Params relevant to HNSW index. Size of the beam in a beam-search.
@@ -1947,6 +2010,10 @@ pub struct SearchParams {
     /// Search without approximation. If set to true, search may run long but with exact results.
     #[prost(bool, optional, tag = "2")]
     pub exact: ::core::option::Option<bool>,
+    ///
+    /// If set to true, search will ignore quantized vector data
+    #[prost(message, optional, tag = "3")]
+    pub quantization: ::core::option::Option<QuantizationSearchParams>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2294,7 +2361,7 @@ pub struct FieldCondition {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -2314,7 +2381,25 @@ pub mod r#match {
         /// Match text
         #[prost(string, tag = "4")]
         Text(::prost::alloc::string::String),
+        /// Match multiple keywords
+        #[prost(message, tag = "5")]
+        Keywords(super::RepeatedStrings),
+        /// Match multiple integers
+        #[prost(message, tag = "6")]
+        Integers(super::RepeatedIntegers),
     }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RepeatedStrings {
+    #[prost(string, repeated, tag = "1")]
+    pub strings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RepeatedIntegers {
+    #[prost(int64, repeated, tag = "1")]
+    pub integers: ::prost::alloc::vec::Vec<i64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

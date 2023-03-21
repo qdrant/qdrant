@@ -49,7 +49,7 @@ mod tests {
             )]),
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
-            payload_storage_type: Default::default(),
+            ..Default::default()
         };
 
         let int_key = "int";
@@ -84,6 +84,7 @@ mod tests {
 
         let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
             hnsw_dir.path(),
+            segment.id_tracker.clone(),
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_storage
                 .clone(),
@@ -146,6 +147,7 @@ mod tests {
                 Some(&SearchParams {
                     hnsw_ef: Some(ef),
                     exact: true,
+                    ..Default::default()
                 }),
             );
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -153,8 +155,8 @@ mod tests {
                 .borrow()
                 .search(&[&query], None, top, None);
 
-            assert!(
-                index_result == plain_result,
+            assert_eq!(
+                index_result, plain_result,
                 "Exact search is not equal to plain search"
             );
 
@@ -180,6 +182,7 @@ mod tests {
                 Some(&SearchParams {
                     hnsw_ef: Some(ef),
                     exact: true,
+                    ..Default::default()
                 }),
             );
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -187,8 +190,8 @@ mod tests {
                 .borrow()
                 .search(&[&query], filter_query, top, None);
 
-            assert!(
-                index_result == plain_result,
+            assert_eq!(
+                index_result, plain_result,
                 "Exact search is not equal to plain search"
             );
         }

@@ -56,6 +56,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,
         hnsw_config: Default::default(),
+        quantization_config: Default::default(),
     };
 
     let snapshot_path = collection_path.join("snapshots");
@@ -93,6 +94,7 @@ pub async fn new_local_collection(
         path,
         snapshots_path,
         config,
+        Default::default(),
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
         ChannelService::default(),
         dummy_on_replica_failure(),
@@ -125,6 +127,7 @@ pub async fn load_local_collection(
         0,
         path,
         snapshots_path,
+        Default::default(),
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),

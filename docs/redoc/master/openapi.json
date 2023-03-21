@@ -72,6 +72,43 @@
         }
       }
     },
+    "/metrics": {
+      "get": {
+        "summary": "Collect Prometheus metrics data",
+        "description": "Collect metrics data including app info, collections info, cluster info and statistics",
+        "operationId": "metrics",
+        "tags": [
+          "service"
+        ],
+        "parameters": [
+          {
+            "name": "anonymize",
+            "in": "query",
+            "description": "If true, anonymize result",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metrics data in Prometheus format",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "# HELP app_info information about qdrant server\n# TYPE app_info counter\napp_info{name=\"qdrant\",version=\"0.11.1\"} 1\n# HELP cluster_enabled is cluster support enabled\n# TYPE cluster_enabled gauge\ncluster_enabled 0\n# HELP collections_total number of collections\n# TYPE collections_total gauge\ncollections_total 1\n"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error"
+          }
+        }
+      }
+    },
     "/locks": {
       "post": {
         "summary": "Set lock options",
@@ -245,6 +282,63 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/ClusterStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cluster/recover": {
+      "post": {
+        "tags": [
+          "cluster"
+        ],
+        "summary": "Tries to recover current peer Raft state.",
+        "operationId": "recover_current_peer",
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
                     }
                   }
                 }
@@ -1263,7 +1357,7 @@
           "collections"
         ],
         "summary": "Recover from a snapshot",
-        "description": "Recover local collection data from a snapshot. This will overwrite any data, stored on this node, for the collection.",
+        "description": "Recover local collection data from a snapshot. This will overwrite any data, stored on this node, for the collection. If collection does not exist - it will be created.",
         "operationId": "recover_from_snapshot",
         "parameters": [
           {
@@ -1273,6 +1367,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -3366,6 +3469,17 @@
           },
           "wal_config": {
             "$ref": "#/components/schemas/WalConfig"
+          },
+          "quantization_config": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -3580,6 +3694,52 @@
             "minimum": 0
           }
         }
+      },
+      "QuantizationConfig": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ScalarQuantization"
+          }
+        ]
+      },
+      "ScalarQuantization": {
+        "type": "object",
+        "required": [
+          "scalar"
+        ],
+        "properties": {
+          "scalar": {
+            "$ref": "#/components/schemas/ScalarQuantizationConfig"
+          }
+        }
+      },
+      "ScalarQuantizationConfig": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ScalarType"
+          },
+          "quantile": {
+            "description": "Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values",
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "always_ram": {
+            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "ScalarType": {
+        "type": "string",
+        "enum": [
+          "int8"
+        ]
       },
       "PayloadIndexInfo": {
         "description": "Display payload field type & index information",
@@ -4091,6 +4251,9 @@
           },
           {
             "$ref": "#/components/schemas/MatchText"
+          },
+          {
+            "$ref": "#/components/schemas/MatchAny"
           }
         ]
       },
@@ -4131,6 +4294,35 @@
             "type": "string"
           }
         }
+      },
+      "MatchAny": {
+        "description": "Exact match on any of the given values",
+        "type": "object",
+        "required": [
+          "any"
+        ],
+        "properties": {
+          "any": {
+            "$ref": "#/components/schemas/AnyVariants"
+          }
+        }
+      },
+      "AnyVariants": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
       },
       "Range": {
         "description": "Range filter request",
@@ -4302,6 +4494,34 @@
           },
           "exact": {
             "description": "Search without approximation. If set to true, search may run long but with exact results.",
+            "default": false,
+            "type": "boolean"
+          },
+          "quantization": {
+            "description": "Quantization params",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationSearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "QuantizationSearchParams": {
+        "description": "Additional parameters of the search",
+        "type": "object",
+        "properties": {
+          "ignore": {
+            "description": "If true, quantized vectors are ignored. Default is false.",
+            "default": false,
+            "type": "boolean"
+          },
+          "rescore": {
+            "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. Default is false.",
             "default": false,
             "type": "boolean"
           }
@@ -4674,6 +4894,18 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/InitFrom"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quantization_config": {
+            "description": "Quantization parameters. If none - quantization is disabled.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
               },
               {
                 "nullable": true
@@ -5574,7 +5806,8 @@
           "Active",
           "Dead",
           "Partial",
-          "Initializing"
+          "Initializing",
+          "Listener"
         ]
       },
       "RemoteShardInfo": {
@@ -5662,9 +5895,13 @@
       "AppBuildTelemetry": {
         "type": "object",
         "required": [
+          "name",
           "version"
         ],
         "properties": {
+          "name": {
+            "type": "string"
+          },
           "version": {
             "type": "string"
           },
@@ -5987,6 +6224,18 @@
           },
           "payload_storage_type": {
             "$ref": "#/components/schemas/PayloadStorageType"
+          },
+          "quantization_config": {
+            "description": "Quantization parameters. If none - quantization is disabled.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -6632,7 +6881,16 @@
             "format": "uri"
           },
           "priority": {
-            "$ref": "#/components/schemas/SnapshotPriority"
+            "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotPriority"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

@@ -28,6 +28,7 @@ use super::{create_shard_dir, CollectionId};
 use crate::config::CollectionConfig;
 use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
 use crate::operations::point_ops::WriteOrdering;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequestBatch, UpdateResult,
@@ -52,41 +53,41 @@ const READ_REMOTE_REPLICAS: u32 = 2;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
-// Shard replication state machine:
-//
-//    │
 //    │    Collection Created
 //    │
 //    ▼
-//  ┌─────────────┐
-//  │             │
-//  │Initializing │
-//  │             │
-//  └─────┬─-─────┘
-//        │  Report created     ┌───────────┐
-//        └────────────────────►│           │
+//  ┌──────────────┐
+//  │              │
+//  │ Initializing │
+//  │              │
+//  └──────┬───────┘
+//         │  Report created    ┌───────────┐
+//         └────────────────────►           │
 //             Activate         │ Consensus │
-//        ┌─────────────────────│           │
+//        ┌─────────────────────┤           │
 //        │                     └───────────┘
-//  ┌─────▼───────┐
-//  │             │
-//  │ Active      ◄───────────┐
-//  │             │           │Transfer
-//  └──┬──────────┘           │Finished
-//     │                      │
-//     │               ┌──────┴────────┐
-//     │Update         │               │
-//     │Failure        │ Partial       ├───┐
-//     │               │               │   │
-//     │               └───────▲───────┘   │
-//     │                       │           │Transfer
-//  ┌──▼──────────┐            │           │Failed/Cancelled
-//  │             │ Transfer   │           │
-//  │ Dead        ├────────────┘           │
-//  │             │ Started                │
-//  └──▲──────────┘                        │
-//     │                                   │
-//     └───────────────────────────────────┘
+//  ┌─────▼───────┐   User Promote           ┌──────────┐
+//  │             ◄──────────────────────────►          │
+//  │ Active      │                          │ Listener │
+//  │             ◄───────────┐              │          │
+//  └──┬──────────┘           │Transfer      └──┬───────┘
+//     │                      │Finished         │
+//     │               ┌──────┴────────┐        │Update
+//     │Update         │               │        │Failure
+//     │Failure        │ Partial       ├───┐    │
+//     │               │               │   │    │
+//     │               └───────▲───────┘   │    │
+//     │                       │           │    │
+//  ┌──▼──────────┐ Transfer   │           │    │
+//  │             │ Started    │           │    │
+//  │ Dead        ├────────────┘           │    │
+//  │             │                        │    │
+//  └─▲───────▲───┘        Transfer        │    │
+//    │       │            Failed/Cancelled│    │
+//    │       └────────────────────────────┘    │
+//    │                                         │
+//    └─────────────────────────────────────────┘
+//
 
 /// State of the single shard within a replica set.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
@@ -100,6 +101,9 @@ pub enum ReplicaState {
     Partial,
     // Collection is being created
     Initializing,
+    // A shard which receives data, but is not used for search
+    // Useful for backup shards
+    Listener,
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
@@ -161,6 +165,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
+    shared_storage_config: Arc<SharedStorageConfig>,
     update_runtime: Handle,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
@@ -252,7 +257,8 @@ impl ShardReplicaSet {
         remotes: HashSet<PeerId>,
         on_peer_failure: ChangePeerState,
         collection_path: &Path,
-        shared_config: Arc<RwLock<CollectionConfig>>,
+        collection_config: Arc<RwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         update_runtime: Handle,
     ) -> CollectionResult<Self> {
@@ -262,7 +268,8 @@ impl ShardReplicaSet {
                 shard_id,
                 collection_id.clone(),
                 &shard_path,
-                shared_config.clone(),
+                collection_config.clone(),
+                shared_storage_config.clone(),
                 update_runtime.clone(),
             )
             .await?;
@@ -307,7 +314,8 @@ impl ShardReplicaSet {
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
-            collection_config: shared_config,
+            collection_config,
+            shared_storage_config,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
         })
@@ -412,6 +420,7 @@ impl ShardReplicaSet {
                         self.collection_id.clone(),
                         &self.shard_path,
                         self.collection_config.clone(),
+                        self.shared_storage_config.clone(),
                         self.update_runtime.clone(),
                     )
                     .await?,
@@ -439,7 +448,8 @@ impl ShardReplicaSet {
         shard_id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
-        shared_config: Arc<RwLock<CollectionConfig>>,
+        collection_config: Arc<RwLock<CollectionConfig>>,
+        shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
@@ -476,7 +486,8 @@ impl ShardReplicaSet {
                 shard_id,
                 collection_id.clone(),
                 shard_path,
-                shared_config.clone(),
+                collection_config.clone(),
+                shared_storage_config.clone(),
                 update_runtime.clone(),
             )
             .await
@@ -501,7 +512,8 @@ impl ShardReplicaSet {
             notify_peer_failure_cb: on_peer_failure,
             channel_service,
             collection_id,
-            collection_config: shared_config,
+            collection_config,
+            shared_storage_config,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
         }
@@ -576,6 +588,7 @@ impl ShardReplicaSet {
                     self.collection_id.clone(),
                     &self.shard_path,
                     self.collection_config.clone(),
+                    self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
                 )
                 .await?;
@@ -598,6 +611,12 @@ impl ShardReplicaSet {
                     ReplicaState::Initializing => {
                         self.set_local(local_shard, Some(ReplicaState::Initializing))
                             .await?;
+                    }
+                    ReplicaState::Listener => {
+                        // Same as `Active`, we report a failure to consensus
+                        self.set_local(local_shard, Some(ReplicaState::Listener))
+                            .await?;
+                        self.notify_peer_failure(peer_id);
                     }
                 }
                 continue;
@@ -632,6 +651,7 @@ impl ShardReplicaSet {
             Some(ReplicaState::Partial) => true,
             Some(ReplicaState::Initializing) => true,
             Some(ReplicaState::Dead) => false,
+            Some(ReplicaState::Listener) => true,
             None => false,
         };
         res && !self.is_locally_disabled(peer_id)
@@ -928,6 +948,7 @@ impl ShardReplicaSet {
 
             if let Some(mut removing_local) = removed_local {
                 removing_local.before_drop().await;
+                drop(removing_local); // release file handlers
                 LocalShard::clear(&self.shard_path).await?;
             }
             LocalShard::move_data(replica_path, &self.shard_path).await?;
@@ -937,6 +958,7 @@ impl ShardReplicaSet {
                 self.collection_id.clone(),
                 &self.shard_path,
                 self.collection_config.clone(),
+                self.shared_storage_config.clone(),
                 self.update_runtime.clone(),
             )
             .await?;
@@ -948,9 +970,38 @@ impl ShardReplicaSet {
         }
     }
 
-    pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
+    pub fn restore_snapshot(
+        snapshot_path: &Path,
+        this_peer_id: PeerId,
+        is_distributed: bool,
+    ) -> CollectionResult<()> {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(snapshot_path.join(REPLICA_STATE_FILE))?;
+
+        // If this shard have local data
+        let is_snapshot_local = replica_state.read().is_local;
+
+        if !is_distributed && !is_snapshot_local {
+            return Err(CollectionError::service_error(format!(
+                "Can't restore snapshot is local mode with missing data at shard: {}",
+                snapshot_path.display()
+            )));
+        }
+
+        replica_state.write(|state| {
+            state.this_peer_id = this_peer_id;
+            if is_distributed {
+                state
+                    .peers
+                    .remove(&this_peer_id)
+                    .and_then(|replica_state| state.peers.insert(this_peer_id, replica_state));
+            } else {
+                // In local mode we don't want any remote peers
+                state.peers.clear();
+                state.peers.insert(this_peer_id, ReplicaState::Active);
+            }
+        })?;
+
         if replica_state.read().is_local {
             LocalShard::restore_snapshot(snapshot_path)?;
         }
@@ -1063,6 +1114,9 @@ impl ShardReplicaSet {
                 }
                 Some(ReplicaState::Initializing) => {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
+                Some(ReplicaState::Listener) => {
+                    Ok(Some(local_shard.get().update(operation, false).await?))
                 }
                 Some(ReplicaState::Dead) | None => Ok(None),
             }
@@ -1483,6 +1537,7 @@ mod tests {
             optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
             wal_config,
             hnsw_config: Default::default(),
+            quantization_config: None,
         };
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
@@ -1496,6 +1551,7 @@ mod tests {
             dummy_on_replica_failure(),
             collection_dir.path(),
             shared_config,
+            Default::default(),
             Default::default(),
             update_runtime,
         )

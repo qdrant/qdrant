@@ -1,3 +1,4 @@
+use collection::config::CollectionConfig;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
 };
@@ -7,6 +8,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::shard_transfer::{ShardTransfer, ShardTransferKey};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
+use segment::types::QuantizationConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -126,10 +128,15 @@ pub struct CreateCollection {
     /// Custom params for WAL. If none - values from service configuration file are used.
     pub wal_config: Option<WalConfigDiff>,
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
+    #[serde(alias = "optimizer_config")]
     pub optimizers_config: Option<OptimizersConfigDiff>,
     /// Specify other collection to copy data from.
     #[serde(default)]
     pub init_from: Option<InitFrom>,
+    /// Quantization parameters. If none - quantization is disabled.
+    #[serde(default)]
+    #[serde(alias = "quantization")]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -169,6 +176,7 @@ impl CreateCollectionOperation {
 pub struct UpdateCollection {
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
     /// This operation is blocking, it will only proceed ones all current optimizations are complete
+    #[serde(alias = "optimizer_config")]
     pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
     /// Collection base params.  If none - values from service configuration file are used.
     pub params: Option<CollectionParamsDiff>,
@@ -276,4 +284,23 @@ pub enum CollectionMetaOperations {
     TransferShard(CollectionId, ShardTransferOperations),
     SetShardReplicaState(SetShardReplicaState),
     Nop { token: usize }, // Empty operation
+}
+
+/// Use config of the existing collection to generate a create collection operation
+/// for the new collection
+impl From<CollectionConfig> for CreateCollection {
+    fn from(value: CollectionConfig) -> Self {
+        Self {
+            vectors: value.params.vectors,
+            shard_number: Some(value.params.shard_number.get()),
+            replication_factor: Some(value.params.replication_factor.get()),
+            write_consistency_factor: Some(value.params.write_consistency_factor.get()),
+            on_disk_payload: Some(value.params.on_disk_payload),
+            hnsw_config: Some(value.hnsw_config.into()),
+            wal_config: Some(value.wal_config.into()),
+            optimizers_config: Some(value.optimizer_config.into()),
+            init_from: None,
+            quantization_config: value.quantization_config,
+        }
+    }
 }

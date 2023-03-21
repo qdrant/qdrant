@@ -13,7 +13,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::ChangePeerState;
 
-const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
+pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
     default_segment_number: 2,
@@ -55,6 +55,7 @@ async fn test_snapshot_collection() {
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,
         hnsw_config: Default::default(),
+        quantization_config: Default::default(),
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
@@ -77,6 +78,7 @@ async fn test_snapshot_collection() {
         collection_dir.path(),
         snapshots_path.path(),
         &config,
+        Default::default(),
         CollectionShardDistribution { shards },
         ChannelService::default(),
         dummy_on_replica_failure(),
@@ -94,17 +96,31 @@ async fn test_snapshot_collection() {
         .await
         .unwrap();
 
-    Collection::restore_snapshot(
+    // Do not recover in local mode if some shards are remote
+    assert!(Collection::restore_snapshot(
+        &snapshots_path.path().join(&snapshot_description.name),
+        recover_dir.path(),
+        0,
+        false,
+    )
+    .is_err());
+
+    if let Err(err) = Collection::restore_snapshot(
         &snapshots_path.path().join(snapshot_description.name),
         recover_dir.path(),
-    )
-    .unwrap();
+        0,
+        true,
+    ) {
+        collection.before_drop().await;
+        panic!("Failed to restore snapshot: {err}")
+    }
 
     let mut recovered_collection = Collection::load(
         collection_name_rec,
         1,
         recover_dir.path(),
         snapshots_path.path(),
+        Default::default(),
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),

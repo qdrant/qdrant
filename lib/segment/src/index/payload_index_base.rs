@@ -1,39 +1,16 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 use serde_json::Value;
 
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
-use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType, SearchParams,
+    PointOffsetType,
 };
-use crate::vector_storage::ScoredPointOffset;
-
-/// Trait for vector searching
-pub trait VectorIndex {
-    /// Return list of Ids with fitting
-    fn search(
-        &self,
-        vectors: &[&[VectorElementType]],
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
-    ) -> Vec<Vec<ScoredPointOffset>>;
-
-    /// Force internal index rebuild.
-    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
-
-    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry;
-
-    fn files(&self) -> Vec<PathBuf>;
-}
 
 pub trait PayloadIndex {
     /// Get indexed fields
@@ -89,7 +66,7 @@ pub trait PayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<Value>>;
+    ) -> OperationResult<Vec<Value>>;
 
     /// Drop all payload of the point
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
@@ -110,5 +87,3 @@ pub trait PayloadIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 }
-
-pub type VectorIndexSS = dyn VectorIndex + Sync + Send;

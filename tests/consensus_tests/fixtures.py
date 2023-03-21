@@ -48,7 +48,7 @@ def drop_collection(peer_url, collection="test_collection", timeout=10):
     assert_http_ok(r_batch)
 
 
-def search(peer_url, vector, city):
+def search(peer_url, vector, city, collection="test_collection"):
     q = {
         "vector": vector,
         "top": 10,
@@ -63,6 +63,6 @@ def search(peer_url, vector, city):
             ]
         }
     }
-    r_search = requests.post(f"{peer_url}/collections/test_collection/points/search", json=q)
+    r_search = requests.post(f"{peer_url}/collections/{collection}/points/search", json=q)
     assert_http_ok(r_search)
     return r_search.json()["result"]

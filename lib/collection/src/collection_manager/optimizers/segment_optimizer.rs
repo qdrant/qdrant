@@ -14,7 +14,7 @@ use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
-    SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
+    QuantizationConfig, SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -54,6 +54,9 @@ pub trait SegmentOptimizer {
     /// Get HNSW config
     fn hnsw_config(&self) -> HnswConfig;
 
+    /// Get quantization config
+    fn quantization_config(&self) -> Option<QuantizationConfig>;
+
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
 
@@ -79,6 +82,7 @@ pub trait SegmentOptimizer {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,
             },
+            quantization_config: None,
         };
         Ok(LockedSegment::new(build_segment(
             self.collection_path(),
@@ -131,6 +135,12 @@ pub trait SegmentOptimizer {
             payload_storage_type: match collection_params.on_disk_payload {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,
+            },
+            quantization_config: if is_indexed {
+                // TODO: separate config for applying quantization
+                self.quantization_config()
+            } else {
+                Default::default()
             },
         };
 

@@ -239,6 +239,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
                     wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                 }),
+                quantization_config: config.quantization_config.map(|x| x.into()),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -381,6 +382,13 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
             wal_config: match config.wal_config {
                 None => return Err(Status::invalid_argument("Malformed WalConfig type")),
                 Some(wal_config) => wal_config.into(),
+            },
+            quantization_config: {
+                if let Some(config) = config.quantization_config {
+                    Some(config.try_into()?)
+                } else {
+                    None
+                }
             },
         })
     }

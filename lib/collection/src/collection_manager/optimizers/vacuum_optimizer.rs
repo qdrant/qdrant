@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
-use segment::types::{HnswConfig, SegmentType};
+use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -27,6 +27,7 @@ pub struct VacuumOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
@@ -40,6 +41,7 @@ impl VacuumOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
+        quantization_config: Option<QuantizationConfig>,
     ) -> Self {
         VacuumOptimizer {
             deleted_threshold,
@@ -49,6 +51,7 @@ impl VacuumOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
+            quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
@@ -102,6 +105,10 @@ impl SegmentOptimizer for VacuumOptimizer {
 
     fn hnsw_config(&self) -> HnswConfig {
         self.hnsw_config
+    }
+
+    fn quantization_config(&self) -> Option<QuantizationConfig> {
+        self.quantization_config.clone()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -226,6 +233,7 @@ mod tests {
                 write_consistency_factor: NonZeroU32::new(1).unwrap(),
             },
             Default::default(),
+            Default::default(),
         );
 
         let suggested_to_optimize =
@@ -264,14 +272,10 @@ mod tests {
         // Check payload is preserved in optimized segment
         for &point_id in &segment_points_to_assign1 {
             assert!(segment_guard.has_point(point_id));
-            let payload = segment_guard
-                .payload(point_id)
-                .unwrap()
-                .get_value("color")
-                .unwrap()
-                .clone();
+            let payload = segment_guard.payload(point_id).unwrap();
+            let payload_color = &(*payload.get_value("color").next().unwrap()).clone();
 
-            match payload {
+            match payload_color {
                 Value::String(x) => assert_eq!(x, "red"),
                 _ => panic!(),
             }

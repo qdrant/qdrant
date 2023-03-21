@@ -29,8 +29,7 @@ pub fn build_simple_segment(
                 },
             )]),
             index: Indexes::Plain {},
-            storage_type: Default::default(),
-            payload_storage_type: Default::default(),
+            ..Default::default()
         },
     )
 }
@@ -62,8 +61,7 @@ pub fn build_multivec_segment(
         &SegmentConfig {
             vector_data: vectors_config,
             index: Indexes::Plain {},
-            storage_type: Default::default(),
-            payload_storage_type: Default::default(),
+            ..Default::default()
         },
     )
 }

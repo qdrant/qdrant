@@ -19,6 +19,12 @@ storage:
     # Number of WAL segments to create ahead of actual data requirement
     wal_segments_ahead: 0
 
+  # Normal node - receives all updates and answers all queries
+  node_type: "Normal"
+
+  # Listener node - receives all updates, but does not answer search/read queries
+  # Useful for setting up a dedicated backup node
+  # node_type: "Listener"
 
   performance:
     # Number of parallel threads used for search operations. If 0 - auto selection.

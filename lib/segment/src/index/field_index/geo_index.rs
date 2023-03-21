@@ -81,10 +81,93 @@ impl GeoMapIndex {
         self.db_wrapper.recreate_column_family()
     }
 
+    fn increment_hash_value_counts(&mut self, geo_hash: &GeoHash) {
+        for i in 0..=geo_hash.len() {
+            let sub_geo_hash = &geo_hash[0..i];
+            match self.values_per_hash.get_mut(sub_geo_hash) {
+                None => {
+                    self.values_per_hash.insert(sub_geo_hash.to_string(), 1);
+                }
+                Some(count) => {
+                    *count += 1;
+                }
+            };
+        }
+    }
+
+    fn decrement_hash_value_counts(&mut self, geo_hash: &GeoHash) {
+        for i in 0..=geo_hash.len() {
+            let sub_geo_hash = &geo_hash[0..i];
+            match self.values_per_hash.get_mut(sub_geo_hash) {
+                None => {
+                    debug_assert!(
+                        false,
+                        "Hash value count is not found for hash: {}",
+                        sub_geo_hash
+                    );
+                    self.values_per_hash.insert(sub_geo_hash.to_string(), 0);
+                }
+                Some(count) => {
+                    *count -= 1;
+                }
+            };
+        }
+    }
+
+    fn increment_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
+        let mut seen_hashes: HashSet<&str> = Default::default();
+
+        for geo_hash in geo_hashes {
+            for i in 0..=geo_hash.len() {
+                let sub_geo_hash = &geo_hash[0..i];
+                if seen_hashes.contains(sub_geo_hash) {
+                    continue;
+                }
+                seen_hashes.insert(sub_geo_hash);
+                match self.points_per_hash.get_mut(sub_geo_hash) {
+                    None => {
+                        self.points_per_hash.insert(sub_geo_hash.to_string(), 1);
+                    }
+                    Some(count) => {
+                        *count += 1;
+                    }
+                };
+            }
+        }
+    }
+
+    fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
+        let mut seen_hashes: HashSet<&str> = Default::default();
+        for geo_hash in geo_hashes {
+            for i in 0..=geo_hash.len() {
+                let sub_geo_hash = &geo_hash[0..i];
+                if seen_hashes.contains(sub_geo_hash) {
+                    continue;
+                }
+                seen_hashes.insert(sub_geo_hash);
+                match self.points_per_hash.get_mut(sub_geo_hash) {
+                    None => {
+                        debug_assert!(
+                            false,
+                            "Hash point count is not found for hash: {}",
+                            sub_geo_hash
+                        );
+                        self.points_per_hash.insert(sub_geo_hash.to_string(), 0);
+                    }
+                    Some(count) => {
+                        *count -= 1;
+                    }
+                };
+            }
+        }
+    }
+
     fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         };
+
+        let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
 
         for (key, value) in self.db_wrapper.lock_db().iter()? {
             let key_str = std::str::from_utf8(&key).map_err(|_| {
@@ -102,8 +185,26 @@ impl GeoMapIndex {
                 self.points_count += 1;
             }
 
+            points_to_hashes
+                .entry(idx)
+                .or_default()
+                .push(geo_hash.clone());
+
             self.point_to_values[idx as usize].push(geo_point);
-            self.points_map.entry(geo_hash).or_default().insert(idx);
+            self.points_map
+                .entry(geo_hash.clone())
+                .or_default()
+                .insert(idx);
+
+            self.values_count += 1;
+        }
+
+        for (_idx, geo_hashes) in points_to_hashes.into_iter() {
+            self.max_values_per_point = max(self.max_values_per_point, geo_hashes.len());
+            self.increment_hash_point_counts(&geo_hashes);
+            for geo_hash in geo_hashes {
+                self.increment_hash_value_counts(&geo_hash);
+            }
         }
         Ok(true)
     }
@@ -224,59 +325,43 @@ impl GeoMapIndex {
             return Ok(()); // Already removed or never actually existed
         }
 
-        let removed_points = std::mem::take(&mut self.point_to_values[idx as usize]);
+        let removed_geo_points = std::mem::take(&mut self.point_to_values[idx as usize]);
 
-        if removed_points.is_empty() {
+        if removed_geo_points.is_empty() {
             return Ok(());
         }
 
         self.points_count -= 1;
-        self.values_count -= removed_points.len();
+        self.values_count -= removed_geo_points.len();
+        let mut removed_geo_hashes = Vec::with_capacity(removed_geo_points.len());
 
-        let mut seen_hashes: HashSet<&str> = Default::default();
-        let mut geo_hashes = vec![];
-
-        for removed_point in removed_points {
+        for removed_geo_point in removed_geo_points {
             let removed_geo_hash: GeoHash =
-                encode_max_precision(removed_point.lon, removed_point.lat).unwrap();
-            geo_hashes.push(removed_geo_hash);
-        }
+                encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).unwrap();
+            removed_geo_hashes.push(removed_geo_hash.clone());
 
-        for removed_geo_hash in &geo_hashes {
-            let hash_points = self.points_map.get_mut(removed_geo_hash);
+            let key = Self::encode_db_key(&removed_geo_hash, idx);
+            self.db_wrapper.remove(key)?;
 
-            if let Some(ref offsets) = hash_points {
-                for point_offset in offsets.iter() {
-                    let key = Self::encode_db_key(removed_geo_hash, *point_offset);
-                    self.db_wrapper.remove(key)?;
-                }
-            }
-
-            let is_last = match hash_points {
-                None => false,
-                Some(points_set) => {
-                    points_set.remove(&idx);
-                    points_set.is_empty()
-                }
+            let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
+                hash_ids.remove(&idx);
+                hash_ids.is_empty()
+            } else {
+                log::warn!(
+                    "Geo index error: no points for hash {} was found",
+                    removed_geo_hash
+                );
+                false
             };
+
             if is_last {
-                self.points_map.remove(removed_geo_hash);
+                self.points_map.remove(&removed_geo_hash);
             }
 
-            for i in 0..=removed_geo_hash.len() {
-                let sub_geo_hash = &removed_geo_hash[0..i];
-                if let Some(count) = self.values_per_hash.get_mut(sub_geo_hash) {
-                    *count -= 1;
-                }
-                if !seen_hashes.contains(sub_geo_hash) {
-                    if let Some(count) = self.points_per_hash.get_mut(sub_geo_hash) {
-                        *count -= 1;
-                    }
-                    seen_hashes.insert(sub_geo_hash);
-                }
-            }
+            self.decrement_hash_value_counts(&removed_geo_hash);
         }
 
+        self.decrement_hash_point_counts(&removed_geo_hashes);
         Ok(())
     }
 
@@ -296,7 +381,6 @@ impl GeoMapIndex {
 
         self.point_to_values[idx as usize] = values.to_vec();
 
-        let mut seen_hashes: HashSet<&str> = Default::default();
         let mut geo_hashes = vec![];
 
         for added_point in values {
@@ -317,29 +401,10 @@ impl GeoMapIndex {
                 .or_insert_with(HashSet::new)
                 .insert(idx);
 
-            for i in 0..=geo_hash.len() {
-                let sub_geo_hash = &geo_hash[0..i];
-                match self.values_per_hash.get_mut(sub_geo_hash) {
-                    None => {
-                        self.values_per_hash.insert(sub_geo_hash.to_string(), 1);
-                    }
-                    Some(count) => {
-                        *count += 1;
-                    }
-                };
-                if !seen_hashes.contains(sub_geo_hash) {
-                    match self.points_per_hash.get_mut(sub_geo_hash) {
-                        None => {
-                            self.points_per_hash.insert(sub_geo_hash.to_string(), 1);
-                        }
-                        Some(count) => {
-                            *count += 1;
-                        }
-                    }
-                    seen_hashes.insert(sub_geo_hash);
-                }
-            }
+            self.increment_hash_value_counts(geo_hash);
         }
+
+        self.increment_hash_point_counts(&geo_hashes);
 
         self.values_count += values.len();
         self.points_count += 1;
@@ -533,6 +598,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
+    use crate::common::utils::MultiValue;
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::types::GeoRadius;
 
@@ -573,9 +639,9 @@ mod tests {
 
         for idx in 0..num_points {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
-            index
-                .add_point(idx as PointOffsetType, &Value::Array(geo_points))
-                .unwrap();
+            let array_payload = Value::Array(geo_points);
+            let payload = MultiValue::one(&array_payload);
+            index.add_point(idx as PointOffsetType, &payload).unwrap();
         }
         assert_eq!(index.points_count, num_points);
         assert_eq!(index.values_count, num_points * num_geo_values);
@@ -689,8 +755,8 @@ mod tests {
                 "lat": NYC.lat
             }
         ]);
-
-        index.add_point(1, &geo_values).unwrap();
+        let payload = MultiValue::one(&geo_values);
+        index.add_point(1, &payload).unwrap();
 
         // around NYC
         let nyc_geo_radius = GeoRadius {
@@ -749,7 +815,8 @@ mod tests {
                 "lat": POTSDAM.lat
             }
         ]);
-        index.add_point(1, &geo_values).unwrap();
+        let payload = MultiValue::one(&geo_values);
+        index.add_point(1, &payload).unwrap();
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
@@ -784,7 +851,8 @@ mod tests {
                     "lat": POTSDAM.lat
                 }
             ]);
-            index.add_point(1, &geo_values).unwrap();
+            let payload = MultiValue::one(&geo_values);
+            index.add_point(1, &payload).unwrap();
             index.flusher()().unwrap();
             drop(index);
         }
@@ -801,5 +869,41 @@ mod tests {
         let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
         let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
         assert_eq!(point_offsets, vec![1]);
+    }
+
+    #[test]
+    fn same_geo_index_between_points_test() {
+        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        {
+            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+            let mut index = GeoMapIndex::new(db, FIELD_NAME);
+            index.recreate().unwrap();
+
+            let geo_values = json!([
+                {
+                    "lon": BERLIN.lon,
+                    "lat": BERLIN.lat
+                },
+                {
+                    "lon": POTSDAM.lon,
+                    "lat": POTSDAM.lat
+                }
+            ]);
+            let payload = MultiValue::one(&geo_values);
+            index.add_point(1, &payload).unwrap();
+            index.add_point(2, &payload).unwrap();
+            index.remove_point(1).unwrap();
+            index.flusher()().unwrap();
+
+            assert_eq!(index.points_count, 1);
+            assert_eq!(index.values_count, 2);
+            drop(index);
+        }
+
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
+        new_index.load().unwrap();
+        assert_eq!(new_index.points_count, 1);
+        assert_eq!(new_index.values_count, 2);
     }
 }
