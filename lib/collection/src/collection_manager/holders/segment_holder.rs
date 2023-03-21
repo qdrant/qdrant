@@ -19,7 +19,7 @@ use crate::operations::types::CollectionError;
 pub type SegmentId = usize;
 
 const DROP_SPIN_TIMEOUT: Duration = Duration::from_millis(10);
-const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(10);
+const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Object, which unifies the access to different types of segments, but still allows to
 /// access the original type of the segment if it is required for more efficient operations.
