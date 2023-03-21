@@ -576,7 +576,7 @@ impl TableOfContent {
         })
     }
 
-    pub fn request_snapshot(&self, request_index: Option<u64>) -> Result<(), StorageError> {
+    pub fn request_snapshot(&self) -> Result<(), StorageError> {
         let sender = match &self.consensus_proposal_sender {
             Some(sender) => sender,
             None => {
@@ -586,7 +586,7 @@ impl TableOfContent {
             }
         };
 
-        sender.send(ConsensusOperations::request_snapshot(request_index))?;
+        sender.send(ConsensusOperations::request_snapshot())?;
 
         Ok(())
     }

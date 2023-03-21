@@ -479,9 +479,7 @@ impl Consensus {
                         log::debug!("Proposing network configuration change: {:?}", change);
                         self.node.propose_conf_change(uri.into_bytes(), change)
                     }
-                    ConsensusOperations::RequestSnapshot { request_index: _ } => {
-                        self.node.request_snapshot()
-                    }
+                    ConsensusOperations::RequestSnapshot => self.node.request_snapshot(),
                     ConsensusOperations::ReportSnapshot { peer_id, status } => {
                         self.node.report_snapshot(peer_id, status.into());
                         Ok(())

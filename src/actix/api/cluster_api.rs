@@ -26,7 +26,7 @@ async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
 #[post("/cluster/recover")]
 async fn recover_current_peer(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
-    process_response(toc.request_snapshot(None).map(|_| true), timing)
+    process_response(toc.request_snapshot().map(|_| true), timing)
 }
 
 #[delete("/cluster/peer/{peer_id}")]
