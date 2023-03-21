@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = [ "web", "parking_lot" ]
+default = ["web", "parking_lot"]
 web = ["actix-web"]
 service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
 
@@ -68,6 +68,7 @@ segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
+actix-multipart = "0.6.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5"

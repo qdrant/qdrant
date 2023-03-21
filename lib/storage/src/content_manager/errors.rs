@@ -3,6 +3,7 @@ use std::io::Error as IoError;
 
 use collection::operations::types::CollectionError;
 use segment::common::file_operations::FileStorageError;
+use tempfile::PersistError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
@@ -226,6 +227,15 @@ impl From<tokio::task::JoinError> for StorageError {
     fn from(err: tokio::task::JoinError) -> Self {
         StorageError::ServiceError {
             description: format!("Tokio task join error: {err}"),
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
+impl From<PersistError> for StorageError {
+    fn from(err: PersistError) -> Self {
+        StorageError::ServiceError {
+            description: format!("Persist error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
