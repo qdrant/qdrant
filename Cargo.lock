@@ -142,7 +142,7 @@ dependencies = [
  "parse-size",
  "proc-macro2",
  "quote",
- "syn",
+ "syn 1.0.107",
 ]
 
 [[package]]
@@ -900,7 +900,7 @@ dependencies = [
  "log",
  "merge",
  "num_cpus",
- "ordered-float 3.5.0",
+ "ordered-float 3.6.0",
  "parking_lot",
  "pprof",
  "rand 0.8.5",
@@ -1208,7 +1208,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "strsim",
- "syn",
+ "syn 1.0.107",
 ]
 
 [[package]]
@@ -1219,7 +1219,7 @@ checksum = "a4aab4dbc9f7611d8b55048a3a16d2d010c2c8334e46304b40ac1cc14bf3b48e"
 dependencies = [
  "darling_core",
  "quote",
- "syn",
+ "syn 1.0.107",
 ]
 
 [[package]]
@@ -2451,9 +2451,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "3.5.0"
+version = "3.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32001dae366458bb4bb34b299acd2284e6a167438553973c74e118ca8a7018ad"
+checksum = "13a384337e997e6860ffbaa83708b2ef329fd8c54cb67a5f64d421e0f943254f"
 dependencies = [
  "num-traits",
 ]
@@ -3458,7 +3458,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_cpus",
- "ordered-float 3.5.0",
+ "ordered-float 3.6.0",
  "parking_lot",
  "pprof",
  "quantization",
