@@ -39,9 +39,7 @@ pub mod consensus_ops {
             uri: String,
         },
         RemovePeer(PeerId),
-        RequestSnapshot {
-            request_index: Option<u64>,
-        },
+        RequestSnapshot,
         ReportSnapshot {
             peer_id: PeerId,
             status: SnapshotStatus,
@@ -147,8 +145,8 @@ pub mod consensus_ops {
             )))
         }
 
-        pub fn request_snapshot(request_index: Option<u64>) -> Self {
-            Self::RequestSnapshot { request_index }
+        pub fn request_snapshot() -> Self {
+            Self::RequestSnapshot
         }
 
         pub fn report_snapshot(peer_id: PeerId, status: impl Into<SnapshotStatus>) -> Self {
