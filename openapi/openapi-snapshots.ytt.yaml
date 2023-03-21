@@ -22,6 +22,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: priority
+          in: query
+          description: "Defines source of truth for snapshot recovery"
+          required: false
+          schema:
+            $ref: "#/components/schemas/SnapshotPriority"
       requestBody:
         description: Snapshot to recover from
         content:
