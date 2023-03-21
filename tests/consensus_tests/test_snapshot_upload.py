@@ -36,15 +36,6 @@ def get_remote_shards(peer_api_uri):
     return r.json()["result"]["remote_shards"]
 
 
-def recover_snapshot(peer_api_uri, snapshot_url):
-    r = requests.put(
-        f"{peer_api_uri}/collections/{COLLECTION_NAME}/snapshots/recover",
-        json={"location": snapshot_url},
-    )
-    assert_http_ok(r)
-    return r.json()["result"]
-
-
 def upload_snapshot(peer_api_uri, snapshot_path):
     with open(snapshot_path, "rb") as f:
         print(f"uploading {snapshot_path} to {peer_api_uri}")
