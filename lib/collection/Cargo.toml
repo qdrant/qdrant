@@ -34,7 +34,7 @@ atomicwrites = "0.4.0"
 log = "0.4"
 env_logger = "0.10.0"
 merge = "0.1.0"
-async-trait = "0.1.66"
+async-trait = "0.1.67"
 arc-swap = "1.6.0"
 tonic = { version = "0.8.3", features = ["gzip"] }
 tower = "0.4.13"
