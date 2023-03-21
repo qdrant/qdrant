@@ -33,7 +33,7 @@ serde_json = "~1.0"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono"] }
 itertools = "0.10"
-anyhow = "1.0.69"
+anyhow = "1.0.70"
 futures = "0.3.27"
 futures-util = "0.3.27"
 clap = { version = "4.1.11", features = ["derive"] }
