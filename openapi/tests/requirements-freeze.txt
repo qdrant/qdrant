@@ -6,6 +6,7 @@ click==8.1.0
 colorama==0.4.4
 curlify==2.2.1
 graphql-core==3.2.0
+httpx==0.23.0
 hypothesis==6.39.6
 hypothesis-graphql==0.5.1
 hypothesis-jsonschema==0.22.0
@@ -27,7 +28,7 @@ schemathesis==3.14.0
 six==1.16.0
 sniffio==1.2.0
 sortedcontainers==2.4.0
-starlette==0.19.0
+starlette==0.25.0
 toml==0.10.2
 typing_extensions==4.1.1
 urllib3==1.26.9
