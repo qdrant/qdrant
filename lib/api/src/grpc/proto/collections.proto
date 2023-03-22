@@ -77,14 +77,14 @@ message HnswConfigDiff {
    */
   optional uint64 m = 1;
   /*
-  Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+  Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
   */
   optional uint64 ef_construct = 2;
   /*
   Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
-  If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+  If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
   in this case full-scan search should be preferred by query planner and additional indexing is not required.
-  Note: 1Kb = 1 vector of size 256
+  Note: 1 Kb = 1 vector of size 256
   */
   optional uint64 full_scan_threshold = 3;
   /*
@@ -92,7 +92,7 @@ message HnswConfigDiff {
    */
   optional uint64 max_indexing_threads = 4;
   /*
-  Store HNSW index on disk. If set to false, index will be stored in RAM.
+  Store HNSW index on disk. If set to false, the index will be stored in RAM.
    */
   optional bool on_disk = 5;
   /*
@@ -116,13 +116,13 @@ message OptimizersConfigDiff {
    */
   optional uint64 vacuum_min_vector_number = 2;
   /*
-  Target amount of segments optimizer will try to keep.
+  Target amount of segments the optimizer will try to keep.
   Real amount of segments may vary depending on multiple parameters:
 
    - Amount of stored points.
    - Current write RPS.
 
-  It is recommended to select default number of segments as a factor of the number of search threads,
+  It is recommended to select the default number of segments as a factor of the number of search threads,
   so that each segment would be handled evenly by one of the threads.
   */
   optional uint64 default_segment_number = 3;
@@ -131,14 +131,14 @@ message OptimizersConfigDiff {
   Large segments might require disproportionately long indexation times,
   therefore it makes sense to limit the size of segments.
 
-  If indexation speed have more priority for your - make this parameter lower.
+  If indexation speed has more priority for you - make this parameter lower.
   If search speed is more important - make this parameter higher.
   Note: 1Kb = 1 vector of size 256
   */
   optional uint64 max_segment_size = 4;
   /*
   Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-  Segments larger than this threshold will be stored as read-only memmaped file.
+  Segments larger than this threshold will be stored as a read-only memmaped file.
   To enable memmap storage, lower the threshold
   Note: 1Kb = 1 vector of size 256
   */
@@ -237,7 +237,7 @@ enum TokenizerType {
 
 message TextIndexParams {
   TokenizerType tokenizer = 1; // Tokenizer type
-  optional bool lowercase = 2; // If true - all tokens will be lowercased
+  optional bool lowercase = 2; // If true - all tokens will be lowercase
   optional uint64 min_token_len = 3; // Minimal token length
   optional uint64 max_token_len = 4; // Maximal token length
 }

@@ -1,6 +1,6 @@
 # Roadmap 2022
 
-This document describes what features and milestones was planned and achieved in 2022.
+This document describes what features and milestones were planned and achieved in 2022.
 
 The main goals for the 2022 year were:
 

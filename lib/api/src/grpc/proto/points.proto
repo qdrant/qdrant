@@ -365,7 +365,7 @@ message FieldCondition {
   string key = 1;
   Match match = 2; // Check if point has field with a given value
   Range range = 3; // Check if points value lies in a given range
-  GeoBoundingBox geo_bounding_box = 4; // Check if points geo location lies in a given area
+  GeoBoundingBox geo_bounding_box = 4; // Check if points geolocation lies in a given area
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
   ValuesCount values_count = 6; // Check number of values for a specific field
 }

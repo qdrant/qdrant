@@ -122,7 +122,7 @@ To run benchmarks with profiler to generate FlameGraph - use the following comma
 cargo bench --bench name_of_banchmark -- --profile-time=60
 ```
 
-This command will run each benchmark iterator for `60` seconds and generate FlameGraph svg along with profiling records file.
+This command will run each benchmark iterator for `60` seconds and generate FlameGraph svg along with profiling records files.
 These records could later be used to generate visualisation of the call-graph.
 
 ![FlameGraph example](./imgs/flamegraph-profile.png)
