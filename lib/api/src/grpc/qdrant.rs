@@ -82,14 +82,14 @@ pub struct HnswConfigDiff {
     #[prost(uint64, optional, tag = "1")]
     pub m: ::core::option::Option<u64>,
     ///
-    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
     #[prost(uint64, optional, tag = "2")]
     pub ef_construct: ::core::option::Option<u64>,
     ///
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
-    /// If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+    /// If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
-    /// Note: 1Kb = 1 vector of size 256
+    /// Note: 1 Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
     ///
@@ -97,7 +97,7 @@ pub struct HnswConfigDiff {
     #[prost(uint64, optional, tag = "4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
     ///
-    /// Store HNSW index on disk. If set to false, index will be stored in RAM.
+    /// Store HNSW index on disk. If set to false, the index will be stored in RAM.
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
     ///
@@ -127,13 +127,13 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "2")]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
     ///
-    /// Target amount of segments optimizer will try to keep.
+    /// Target amount of segments the optimizer will try to keep.
     /// Real amount of segments may vary depending on multiple parameters:
     ///
     /// - Amount of stored points.
     /// - Current write RPS.
     ///
-    /// It is recommended to select default number of segments as a factor of the number of search threads,
+    /// It is recommended to select the default number of segments as a factor of the number of search threads,
     /// so that each segment would be handled evenly by one of the threads.
     #[prost(uint64, optional, tag = "3")]
     pub default_segment_number: ::core::option::Option<u64>,
@@ -142,14 +142,14 @@ pub struct OptimizersConfigDiff {
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
-    /// If indexation speed have more priority for your - make this parameter lower.
+    /// If indexation speed has more priority for you - make this parameter lower.
     /// If search speed is more important - make this parameter higher.
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "4")]
     pub max_segment_size: ::core::option::Option<u64>,
     ///
     /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-    /// Segments larger than this threshold will be stored as read-only memmaped file.
+    /// Segments larger than this threshold will be stored as a read-only memmaped file.
     /// To enable memmap storage, lower the threshold
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "5")]
@@ -326,7 +326,7 @@ pub struct TextIndexParams {
     /// Tokenizer type
     #[prost(enumeration = "TokenizerType", tag = "1")]
     pub tokenizer: i32,
-    /// If true - all tokens will be lowercased
+    /// If true - all tokens will be lowercase
     #[prost(bool, optional, tag = "2")]
     pub lowercase: ::core::option::Option<bool>,
     /// Minimal token length
@@ -1629,7 +1629,7 @@ pub mod collections_internal_server {
 /// object. The details of that representation are described together
 /// with the proto support for the language.
 ///
-/// The JSON representation for `Struct` is JSON object.
+/// The JSON representation for `Struct` is a JSON object.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Struct {
@@ -1639,10 +1639,10 @@ pub struct Struct {
 }
 /// `Value` represents a dynamically typed value which can be either
 /// null, a number, a string, a boolean, a recursive struct value, or a
-/// list of values. A producer of value is expected to set one of that
+/// list of values. A producer of value is expected to set one of those
 /// variants, absence of any variant indicates an error.
 ///
-/// The JSON representation for `Value` is JSON value.
+/// The JSON representation for `Value` is a JSON value.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Value {
@@ -1681,7 +1681,7 @@ pub mod value {
 }
 /// `ListValue` is a wrapper around a repeated field of values.
 ///
-/// The JSON representation for `ListValue` is JSON array.
+/// The JSON representation for `ListValue` is a JSON array.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListValue {
@@ -2348,7 +2348,7 @@ pub struct FieldCondition {
     /// Check if points value lies in a given range
     #[prost(message, optional, tag = "3")]
     pub range: ::core::option::Option<Range>,
-    /// Check if points geo location lies in a given area
+    /// Check if points geolocation lies in a given area
     #[prost(message, optional, tag = "4")]
     pub geo_bounding_box: ::core::option::Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
@@ -2650,7 +2650,7 @@ pub mod points_client {
             self
         }
         ///
-        /// Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
+        /// Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
         pub async fn upsert(
             &mut self,
             request: impl tonic::IntoRequest<super::UpsertPoints>,
@@ -2958,7 +2958,7 @@ pub mod points_server {
     #[async_trait]
     pub trait Points: Send + Sync + 'static {
         ///
-        /// Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
+        /// Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
         async fn upsert(
             &self,
             request: tonic::Request<super::UpsertPoints>,

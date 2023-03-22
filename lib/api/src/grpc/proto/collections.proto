@@ -92,7 +92,7 @@ message HnswConfigDiff {
    */
   optional uint64 max_indexing_threads = 4;
   /*
-  Store HNSW index on disk. If set to false, index will be stored in RAM.
+  Store HNSW index on disk. If set to false, the index will be stored in RAM.
    */
   optional bool on_disk = 5;
   /*

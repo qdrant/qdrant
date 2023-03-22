@@ -40,7 +40,7 @@ pub trait DiffConfig<T: DeserializeOwned + Serialize> {
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     pub m: Option<usize>,
-    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
     pub ef_construct: Option<usize>,
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
@@ -51,7 +51,7 @@ pub struct HnswConfigDiff {
     /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[serde(default)]
     pub max_indexing_threads: Option<usize>,
-    /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
+    /// Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false
     #[serde(default)]
     pub on_disk: Option<bool>,
     /// Custom M param for additional payload-aware HNSW links. If not set, default M will be used.

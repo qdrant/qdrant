@@ -402,8 +402,8 @@ message GeoBoundingBox {
 }
 
 message GeoRadius {
-  GeoPoint center = 1; // Centre of the circle
-  float radius = 2; // In metres
+  GeoPoint center = 1; // Center of the circle
+  float radius = 2; // In meters
 }
 
 message ValuesCount {
