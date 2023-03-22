@@ -23,7 +23,7 @@ pytest==6.2.5
 pytest-subtests==0.6.0
 PyYAML==6.0
 requests==2.27.1
-schemathesis==3.13.3
+schemathesis==3.14.0
 six==1.16.0
 sniffio==1.2.0
 sortedcontainers==2.4.0
@@ -31,5 +31,5 @@ starlette==0.19.0
 toml==0.10.2
 typing_extensions==4.1.1
 urllib3==1.26.9
-Werkzeug==2.0.3
+Werkzeug==2.2.3
 yarl==1.7.2
