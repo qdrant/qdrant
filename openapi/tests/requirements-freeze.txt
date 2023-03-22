@@ -6,6 +6,7 @@ click==8.1.0
 colorama==0.4.4
 curlify==2.2.1
 graphql-core==3.2.0
+httpx==0.23.0
 hypothesis==6.39.6
 hypothesis-graphql==0.5.1
 hypothesis-jsonschema==0.22.0
