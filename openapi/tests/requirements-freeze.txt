@@ -23,7 +23,7 @@ pytest==6.2.5
 pytest-subtests==0.6.0
 PyYAML==6.0
 requests==2.27.1
-schemathesis==3.13.3
+schemathesis==3.14.0
 six==1.16.0
 sniffio==1.2.0
 sortedcontainers==2.4.0
