@@ -43,7 +43,7 @@ So why not let people choose their next lunch by its appearance, even if they do
 ### Extreme classification - E-commerce Product Categorization 📺
 
 Extreme classification is a rapidly growing research area within machine learning focusing on multi-class and multi-label problems involving an extremely large number of labels.
-Sometimes it is millions and tens of millions classes.
+Sometimes it is millions and tens of millions of classes.
 The most promising way to solve this problem is to use similarity learning models.
 We put together a demo example of how you could approach the problem with a pre-trained transformer model and Qdrant.
 So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
@@ -108,7 +108,7 @@ So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
 ### REST
 
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
-OpenAPI makes it easy to generate a client for virtually any framework or programing language.
+OpenAPI makes it easy to generate a client for virtually any framework or programming language.
 
 You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant/blob/master/docs/redoc/master/openapi.json).
 
