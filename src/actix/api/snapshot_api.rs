@@ -23,7 +23,7 @@ use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::helpers::{
-    collection_into_actix_error, process_response, storage_into_actix_error,
+    accepted_response, collection_into_actix_error, process_response, storage_into_actix_error,
 };
 use crate::common::collections::*;
 
@@ -141,7 +141,11 @@ async fn create_snapshot(
 
     let timing = Instant::now();
     let response = do_create_snapshot(dispatcher.get_ref(), &collection_name, wait).await;
-    process_response(response, timing)
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[post("/collections/{name}/snapshots/upload")]
