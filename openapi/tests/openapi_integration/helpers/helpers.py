@@ -1,5 +1,6 @@
 import jsonschema
 import requests
+import uuid
 from schemathesis.models import APIOperation
 from schemathesis.specs.openapi.references import ConvertingResolver
 from schemathesis.specs.openapi.schemas import OpenApi30
@@ -81,3 +82,11 @@ def request_with_validation(
     operation.validate_response(response)
 
     return response
+
+
+def is_valid_uuid(val):
+    try:
+        uuid.UUID(str(val))
+        return True
+    except ValueError:
+        return False
