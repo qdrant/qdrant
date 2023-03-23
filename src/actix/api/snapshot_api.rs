@@ -51,26 +51,12 @@ pub struct SnapshottingForm {
 }
 
 // Actix specific code
-pub async fn do_get_full_snapshot(
-    dispatcher: &Dispatcher,
-    snapshot_name: &str,
-    wait: bool,
-) -> Result<NamedFile> {
-    let dispatcher = dispatcher.clone();
-    let snapshot_name = snapshot_name.to_string();
-    let task =
-        tokio::spawn(async move { get_full_snapshot_path(dispatcher.toc(), &snapshot_name).await });
+pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> Result<NamedFile> {
+    let file_name = get_full_snapshot_path(toc, snapshot_name)
+        .await
+        .map_err(storage_into_actix_error)?;
 
-    if wait {
-        let filename = task.await;
-        if let Err(e) = filename {
-            return Err(ErrorInternalServerError(e.to_string()));
-        }
-        let filename = filename.unwrap().map_err(storage_into_actix_error)?;
-        Ok(NamedFile::open(filename)?)
-    } else {
-        Ok(NamedFile::open("not_found")?)
-    }
+    Ok(NamedFile::open(file_name)?)
 }
 
 pub fn do_save_uploaded_snapshot(
@@ -162,7 +148,7 @@ async fn upload_snapshot(
     let snapshot_location =
         match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection.name, snapshot) {
             Ok(location) => location,
-            Err(err) => return process_response(Err(err), timing),
+            Err(err) => return process_response::<()>(Err(err), timing),
         };
 
     let snapshot_recover = SnapshotRecover {
@@ -229,18 +215,20 @@ async fn create_full_snapshot(
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
     let response = do_create_full_snapshot(dispatcher.get_ref(), wait).await;
-    process_response(response, timing)
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[get("/snapshots/{snapshot_name}")]
 async fn get_full_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
-    params: Query<SnapshottingParam>,
 ) -> impl Responder {
     let snapshot_name = path.into_inner();
-    let wait = params.wait.unwrap_or(true);
-    do_get_full_snapshot(dispatcher.get_ref(), &snapshot_name, wait).await
+    do_get_full_snapshot(dispatcher.get_ref(), &snapshot_name).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]

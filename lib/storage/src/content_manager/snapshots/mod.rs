@@ -123,7 +123,7 @@ pub async fn do_create_full_snapshot(
         _do_create_full_snapshot(dispatcher).await
     } else {
         Ok(SnapshotDescription {
-            name: "in progress".to_string(),
+            name: "".to_string(),
             creation_time: None,
             size: 0,
         })
