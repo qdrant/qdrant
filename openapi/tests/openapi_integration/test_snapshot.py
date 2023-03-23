@@ -19,7 +19,6 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots',
         method="GET",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 0
@@ -96,7 +95,6 @@ def test_snapshot_operations():
         api='/snapshots/{snapshot_name}',
         path_params={'snapshot_name': snapshot_name},
         method="DELETE",
-        query_params={'wait': 'true'},
     )
     assert response.ok
 
