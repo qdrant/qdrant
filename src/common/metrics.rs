@@ -110,6 +110,17 @@ impl MetricsProvider for CollectionsTelemetry {
                 .iter()
                 .filter(|p| matches!(p, CollectionTelemetryEnum::Aggregated(_)))
                 .count();
+            let aggregated_vector_count = collections
+                .iter()
+                .filter_map({
+                    |p| match p {
+                        CollectionTelemetryEnum::Aggregated(telemetry_data) => {
+                            Some(telemetry_data.vectors)
+                        }
+                        _ => None,
+                    }
+                })
+                .sum::<usize>();
             metrics.push(metric_family(
                 "collections_full_total",
                 "number of full collections",
@@ -121,6 +132,12 @@ impl MetricsProvider for CollectionsTelemetry {
                 "number of aggregated collections",
                 MetricType::GAUGE,
                 vec![gauge(aggregated_count as f64, &[])],
+            ));
+            metrics.push(metric_family(
+                "collections_aggregated_vector_total",
+                "total number of vectors in all collections",
+                MetricType::GAUGE,
+                vec![gauge(aggregated_vector_count as f64, &[])],
             ));
         }
     }
