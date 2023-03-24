@@ -195,15 +195,10 @@ async fn get_snapshot(
     let (collection_name, snapshot_name) = path.into_inner();
     do_get_snapshot(dispatcher.get_ref(), &collection_name, &snapshot_name).await
 }
-
 #[get("/snapshots")]
-async fn list_full_snapshots(
-    dispatcher: web::Data<Dispatcher>,
-    params: Query<SnapshottingParam>,
-) -> impl Responder {
+async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
-    let wait = params.wait.unwrap_or(true);
-    let response = do_list_full_snapshots(dispatcher.get_ref(), wait).await;
+    let response = do_list_full_snapshots(toc.get_ref()).await;
     process_response(response, timing)
 }
 

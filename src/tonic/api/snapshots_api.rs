@@ -102,8 +102,7 @@ impl Snapshots for SnapshotsService {
         _request: Request<ListFullSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         let timing = Instant::now();
-        let dispatcher = Dispatcher::new(self.toc.clone());
-        let snapshots = do_list_full_snapshots(&dispatcher, true)
+        let snapshots = do_list_full_snapshots(&self.toc)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {

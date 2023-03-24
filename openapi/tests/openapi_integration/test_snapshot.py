@@ -1,3 +1,4 @@
+from time import sleep
 import pytest
 
 from .helpers.helpers import request_with_validation
@@ -38,7 +39,6 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots',
         method="GET",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 1
@@ -48,7 +48,9 @@ def test_snapshot_operations():
     response = request_with_validation(
         api='/collections/{collection_name}/snapshots/{snapshot_name}',
         method="DELETE",
-        path_params={'collection_name': collection_name, 'snapshot_name': snapshot_name},
+        path_params={'collection_name': collection_name,
+                     'snapshot_name': snapshot_name},
+        query_params={'wait': 'true'},
     )
     assert response.ok
 
@@ -57,7 +59,6 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots',
         method="GET",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 0
@@ -66,7 +67,6 @@ def test_snapshot_operations():
     response = request_with_validation(
         api='/snapshots',
         method="GET",
-        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 0
@@ -75,7 +75,6 @@ def test_snapshot_operations():
     response = request_with_validation(
         api='/snapshots',
         method="POST",
-        query_params={'wait': 'true'},
     )
     assert response.ok
     snapshot_name = response.json()['result']['name']
@@ -84,7 +83,6 @@ def test_snapshot_operations():
     response = request_with_validation(
         api='/snapshots',
         method="GET",
-        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 1
@@ -95,15 +93,113 @@ def test_snapshot_operations():
         api='/snapshots/{snapshot_name}',
         path_params={'snapshot_name': snapshot_name},
         method="DELETE",
+        query_params={'wait': 'true'},
     )
     assert response.ok
 
     response = request_with_validation(
         api='/snapshots',
         method="GET",
-        query_params={'wait': 'true'},
     )
     assert response.ok
     assert len(response.json()['result']) == 0
 
 
+def test_test_snapshot_operations_non_wait():
+    # there no snapshot on collection
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 0
+
+    # create snapshot on collection
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'false'},
+    )
+    assert response.status_code == 202
+
+    # wait for snapshot to be created
+    sleep(1)
+
+    # validate it exists
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 1
+    snapshot_name = response.json()['result'][0]['name']
+
+    # delete it
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/{snapshot_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name,
+                     'snapshot_name': snapshot_name},
+        query_params={'wait': 'false'},
+    )
+    assert response.ok
+    # wait for snapshot to be deleted
+    sleep(5)
+
+    # validate it is gone
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 0
+
+    # no full snapshot
+    response = request_with_validation(
+        api='/snapshots',
+        method="GET",
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 0
+
+    # create full snapshot
+    response = request_with_validation(
+        api='/snapshots',
+        method="POST",
+        query_params={'wait': 'false'},
+    )
+    assert response.status_code == 202
+    # wait for snapshot to be created
+    sleep(5)
+
+    # validate it exists
+    response = request_with_validation(
+        api='/snapshots',
+        method="GET",
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 1
+    snapshot_name = response.json()['result'][0]['name']
+
+    # delete it
+    response = request_with_validation(
+        api='/snapshots/{snapshot_name}',
+        path_params={'snapshot_name': snapshot_name},
+        method="DELETE",
+        query_params={'wait': 'false'},
+    )
+    assert response.ok
+
+    # wait for snapshot to be deleted
+    sleep(1)
+
+    response = request_with_validation(
+        api='/snapshots',
+        method="GET",
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 0

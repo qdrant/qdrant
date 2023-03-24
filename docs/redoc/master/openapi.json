@@ -1698,6 +1698,39 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "operation in prohress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "anyOf": [
+                        {
+                          "nullable": true
+                        },
+                        {
+                          "$ref": "#/components/schemas/SnapshotDescription"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1728,6 +1761,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -1851,17 +1893,6 @@
         "summary": "List of storage snapshots",
         "description": "Get list of snapshots of the whole storage",
         "operationId": "list_full_snapshots",
-        "parameters": [
-          {
-            "name": "wait",
-            "in": "query",
-            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
         "responses": {
           "default": {
             "description": "error",
@@ -1973,6 +2004,39 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/SnapshotDescription"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation in prohress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "anyOf": [
+                        {
+                          "nullable": true
+                        },
+                        {
+                          "$ref": "#/components/schemas/SnapshotDescription"
+                        }
+                      ]
                     }
                   }
                 }

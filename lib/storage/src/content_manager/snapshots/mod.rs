@@ -98,29 +98,20 @@ async fn _do_delete_collection_snapshot(
 }
 
 pub async fn do_list_full_snapshots(
-    dispatcher: &Dispatcher,
-    wait: bool,
+    toc: &TableOfContent,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    let dispatcher = dispatcher.clone();
-
-    let task = tokio::spawn(async move {
-        let snapshots_path = Path::new(dispatcher.toc().snapshots_path());
-        list_snapshots_in_directory(snapshots_path).await
-    });
-
-    if wait {
-        Ok(task.await??)
-    } else {
-        Ok(vec![])
-    }
+    let snapshots_path = Path::new(toc.snapshots_path());
+    Ok(list_snapshots_in_directory(snapshots_path).await?)
 }
 
 pub async fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     wait: bool,
 ) -> Result<SnapshotDescription, StorageError> {
+    let dispatcher = dispatcher.clone();
+    let task = tokio::spawn(async move { _do_create_full_snapshot(&dispatcher).await });
     if wait {
-        _do_create_full_snapshot(dispatcher).await
+        task.await?
     } else {
         Ok(SnapshotDescription {
             name: "".to_string(),
