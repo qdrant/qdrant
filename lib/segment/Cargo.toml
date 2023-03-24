@@ -37,7 +37,7 @@ atomicwrites = "0.4.0"
 memmap2 = "0.5.10"
 schemars = { version = "0.8.12", features = ["uuid1", "preserve_order"] }
 log = "0.4"
-geo = "0.24.0"
+geo = "0.24.1"
 geohash = "0.13.0"
 num-traits = "0.2.15"
 num-derive = "0.3.3"
