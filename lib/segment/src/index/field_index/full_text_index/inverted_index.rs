@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use radix_trie::{Trie, TrieCommon};
 use serde::{Deserialize, Serialize};
 
 use crate::index::field_index::full_text_index::postings_iterator::intersect_btree_iterator;
@@ -33,7 +34,9 @@ impl ParsedQuery {
 }
 
 pub struct InvertedIndex {
-    postings: BTreeMap<String, PostingList>,
+    // store strings and map them to a posting list
+    trie: Trie<String, u32>,
+    postings: Vec<PostingList>,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
@@ -41,19 +44,27 @@ pub struct InvertedIndex {
 impl InvertedIndex {
     pub fn new() -> InvertedIndex {
         InvertedIndex {
-            postings: BTreeMap::new(),
+            trie: Trie::<String, u32>::new(),
+            postings: Vec::new(),
             point_to_docs: Vec::new(),
             points_count: 0,
         }
     }
 
+    /// Insert a document into the inverted index
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
         for token in &document.tokens {
-            let posting = self
-                .postings
-                .entry(token.to_owned())
-                .or_insert_with(BTreeSet::new);
-            posting.insert(idx);
+            // check if the token is already in the inverted index
+            // if not, add it
+            let index = self.trie.get(token);
+            if index.is_none() {
+                self.trie.insert(token.clone(), self.postings.len() as u32);
+                self.postings.push(BTreeSet::new());
+                self.postings.last_mut().unwrap().insert(idx);
+            } else {
+                let index = index.unwrap();
+                self.postings[*index as usize].insert(idx);
+            }
         }
         self.points_count += 1;
         if self.point_to_docs.len() <= idx as usize {
@@ -64,6 +75,7 @@ impl InvertedIndex {
         self.point_to_docs[idx as usize] = Some(document);
     }
 
+    /// Remove a document from the inverted index
     pub fn remove_document(&mut self, idx: PointOffsetType) -> Option<Document> {
         if self.point_to_docs.len() <= idx as usize {
             return None; // Already removed or never actually existed
@@ -77,22 +89,35 @@ impl InvertedIndex {
         self.points_count -= 1;
 
         for removed_token in &removed_doc.tokens {
-            let posting = self.postings.get_mut(removed_token);
+            let index = self.trie.remove(removed_token);
+            if index.is_none() {
+                continue;
+            }
+            let index = index.unwrap();
+            let posting = self.postings.get_mut(index as usize);
             if let Some(posting) = posting {
                 posting.remove(&idx);
                 if posting.is_empty() {
-                    self.postings.remove(removed_token);
+                    self.postings.remove(index as usize);
                 }
             }
         }
         Some(removed_doc)
     }
 
+    /// Query the inverted index
     pub fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| self.postings.get(token))
+            .map(|token| {
+                let index = self.trie.get(token);
+                if index.is_none() {
+                    return None;
+                }
+                let index = index.unwrap();
+                self.postings.get(*index as usize)
+            })
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -106,6 +131,7 @@ impl InvertedIndex {
         intersect_btree_iterator(postings)
     }
 
+    /// Estimate the cardinality of a query
     pub fn estimate_cardinality(
         &self,
         query: &ParsedQuery,
@@ -114,7 +140,10 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| self.postings.get(token))
+            .map(|token| {
+                let index = self.trie.get(token).unwrap();
+                self.postings.get(*index as usize)
+            })
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -168,10 +197,10 @@ impl InvertedIndex {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
         Box::new(
-            self.postings
+            self.trie
                 .iter()
-                .filter(move |(_token, posting)| posting.len() >= threshold)
-                .map(move |(token, posting)| PayloadBlockCondition {
+                .filter(move |(_token, _index)| self.postings[**_index as usize].len() >= threshold)
+                .map(move |(token, _index)| PayloadBlockCondition {
                     condition: FieldCondition {
                         key: key.clone(),
                         r#match: Some(Match::Text(MatchText {
@@ -182,8 +211,22 @@ impl InvertedIndex {
                         geo_radius: None,
                         values_count: None,
                     },
-                    cardinality: posting.len(),
+                    cardinality: self.postings[*_index as usize].len(),
                 }),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use radix_trie::TrieCommon;
+
+    #[test]
+    fn test_trie() {
+        let mut trie = radix_trie::Trie::<String, u32>::new();
+        trie.insert("a".to_owned(), 1);
+        trie.insert("b".to_owned(), 2);
+        trie.insert("aced".to_owned(), 3);
+        trie.iter();
     }
 }
