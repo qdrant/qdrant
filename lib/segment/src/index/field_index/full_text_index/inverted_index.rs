@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use itertools::Itertools;
 use radix_trie::{Trie, TrieCommon};
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::index::field_index::full_text_index::postings_iterator::intersect_btree_iterator;
@@ -10,15 +10,45 @@ use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffset
 
 type PostingList = BTreeSet<PointOffsetType>;
 
-#[derive(Default, Serialize, Deserialize, Clone)]
+#[derive(Default, Clone)]
 pub struct Document {
     // TODO: use a radix trie to store tokens
-    pub tokens: Vec<String>,
+    pub tokens: Trie<String, bool>,
 }
 
 impl Document {
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
+    }
+}
+
+impl Serialize for Document {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_map(Some(self.tokens.len()))?;
+        for (key, _) in self.tokens.iter() {
+            state.serialize_entry(key, &true)?;
+        }
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Document {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let map = <std::collections::HashMap<String, bool>>::deserialize(deserializer)?;
+        let mut trie = Trie::<String, bool>::new();
+        for (key, _) in map.iter() {
+            trie.insert(key.to_string(), true);
+        }
+        Ok(Document { tokens: trie })
     }
 }
 
@@ -31,7 +61,7 @@ impl ParsedQuery {
         // Check that all tokens are in document
         self.tokens
             .iter()
-            .all(|query_token| document.tokens.contains(query_token))
+            .all(|query_token| document.tokens.get(query_token).is_some())
     }
 }
 
@@ -53,21 +83,17 @@ impl InvertedIndex {
     }
 
     /// Insert a document into the inverted index
-    pub fn index_document(&mut self, idx: PointOffsetType, mut document: Document) {
-        // remove duplicates and sort tokens
-        document.tokens = document.tokens.into_iter().unique().collect::<Vec<_>>();
-        document.tokens.sort();
-
-        for token in &document.tokens {
+    pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
+        for token in document.tokens.keys() {
             // check if the token is already in the inverted index
             // if not, add it
             let posting = self.postings.get_mut(token);
-            if posting.is_none() {
+            if let Some(posting) = posting {
+                posting.insert(idx);
+            } else {
                 let mut new_posting = PostingList::new();
                 new_posting.insert(idx);
                 self.postings.insert(token.to_string(), new_posting);
-            } else {
-                posting.unwrap().insert(idx);
             }
         }
         self.points_count += 1;
@@ -92,7 +118,7 @@ impl InvertedIndex {
 
         self.points_count -= 1;
 
-        for removed_token in &removed_doc.tokens {
+        for removed_token in removed_doc.tokens.keys() {
             let posting = self.postings.remove(removed_token);
             if posting.is_none() {
                 continue;
@@ -110,7 +136,7 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| self.postings.get(token).map(|posting| posting))
+            .map(|token| self.postings.get(token))
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -133,7 +159,7 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| self.postings.get(token).map(|posting| posting.clone()))
+            .map(|token| self.postings.get(token))
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches

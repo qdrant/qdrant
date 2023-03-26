@@ -105,10 +105,10 @@ impl ValueIndexer<String> for FullTextIndex {
             });
         }
 
-        let document = Document {
-            tokens: tokens.into_iter().collect(),
-        };
-
+        let mut document = Document::new();
+        for token in tokens.iter() {
+            document.tokens.insert(token.to_owned(), true);
+        }
         self.inverted_index.index_document(idx, document);
 
         let db_idx = Self::store_key(&idx);
