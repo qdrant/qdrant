@@ -1,5 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
+use itertools::Itertools;
 use radix_trie::{Trie, TrieCommon};
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +12,8 @@ type PostingList = BTreeSet<PointOffsetType>;
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Document {
-    pub tokens: BTreeSet<String>,
+    // TODO: use a radix trie to store tokens
+    pub tokens: Vec<String>,
 }
 
 impl Document {
@@ -34,6 +36,7 @@ impl ParsedQuery {
 }
 
 pub struct InvertedIndex {
+    // TODO: maybe use a adaptive radix tree
     // store strings and map them to a posting list
     trie: Trie<String, u32>,
     postings: Vec<PostingList>,
@@ -54,7 +57,11 @@ impl InvertedIndex {
     }
 
     /// Insert a document into the inverted index
-    pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
+    pub fn index_document(&mut self, idx: PointOffsetType, mut document: Document) {
+        // remove duplicates and sort tokens
+        document.tokens = document.tokens.into_iter().unique().collect::<Vec<_>>();
+        document.tokens.sort();
+
         for token in &document.tokens {
             // check if the token is already in the inverted index
             // if not, add it
