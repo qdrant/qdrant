@@ -37,6 +37,7 @@ pub struct InvertedIndex {
     // store strings and map them to a posting list
     trie: Trie<String, u32>,
     postings: Vec<PostingList>,
+    empty_posting_list: Vec<u32>,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
@@ -48,6 +49,7 @@ impl InvertedIndex {
             postings: Vec::new(),
             point_to_docs: Vec::new(),
             points_count: 0,
+            empty_posting_list: Vec::new(),
         }
     }
 
@@ -58,7 +60,13 @@ impl InvertedIndex {
             // if not, add it
             let index = self.trie.get(token);
             if index.is_none() {
-                self.trie.insert(token.clone(), self.postings.len() as u32);
+                // check if we can reuse an empty posting list
+                let mut index = self.postings.len();
+                if !self.empty_posting_list.is_empty() {
+                    index = self.empty_posting_list.pop().unwrap() as usize;
+                }
+
+                self.trie.insert(token.clone(), index as u32);
                 self.postings.push(BTreeSet::new());
                 self.postings.last_mut().unwrap().insert(idx);
             } else {
@@ -98,7 +106,7 @@ impl InvertedIndex {
             if let Some(posting) = posting {
                 posting.remove(&idx);
                 if posting.is_empty() {
-                    self.postings.remove(index as usize);
+                    self.empty_posting_list.push(index);
                 }
             }
         }
