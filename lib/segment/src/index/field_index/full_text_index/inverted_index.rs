@@ -38,9 +38,7 @@ impl ParsedQuery {
 pub struct InvertedIndex {
     // TODO: maybe use a adaptive radix tree
     // store strings and map them to a posting list
-    trie: Trie<String, u32>,
-    postings: Vec<PostingList>,
-    empty_posting_list: Vec<u32>,
+    postings: Trie<String, PostingList>,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
@@ -48,11 +46,9 @@ pub struct InvertedIndex {
 impl InvertedIndex {
     pub fn new() -> InvertedIndex {
         InvertedIndex {
-            trie: Trie::<String, u32>::new(),
-            postings: Vec::new(),
+            postings: Trie::<String, PostingList>::new(),
             point_to_docs: Vec::new(),
             points_count: 0,
-            empty_posting_list: Vec::new(),
         }
     }
 
@@ -65,20 +61,13 @@ impl InvertedIndex {
         for token in &document.tokens {
             // check if the token is already in the inverted index
             // if not, add it
-            let index = self.trie.get(token);
-            if index.is_none() {
-                // check if we can reuse an empty posting list
-                let mut index = self.postings.len();
-                if !self.empty_posting_list.is_empty() {
-                    index = self.empty_posting_list.pop().unwrap() as usize;
-                }
-
-                self.trie.insert(token.clone(), index as u32);
-                self.postings.push(BTreeSet::new());
-                self.postings.last_mut().unwrap().insert(idx);
+            let posting = self.postings.get_mut(token);
+            if posting.is_none() {
+                let mut new_posting = PostingList::new();
+                new_posting.insert(idx);
+                self.postings.insert(token.to_string(), new_posting);
             } else {
-                let index = index.unwrap();
-                self.postings[*index as usize].insert(idx);
+                posting.unwrap().insert(idx);
             }
         }
         self.points_count += 1;
@@ -104,17 +93,13 @@ impl InvertedIndex {
         self.points_count -= 1;
 
         for removed_token in &removed_doc.tokens {
-            let index = self.trie.remove(removed_token);
-            if index.is_none() {
+            let posting = self.postings.remove(removed_token);
+            if posting.is_none() {
                 continue;
             }
-            let index = index.unwrap();
-            let posting = self.postings.get_mut(index as usize);
-            if let Some(posting) = posting {
-                posting.remove(&idx);
-                if posting.is_empty() {
-                    self.empty_posting_list.push(index);
-                }
+            posting.clone().unwrap().remove(&idx);
+            if posting.unwrap().is_empty() {
+                self.postings.remove(removed_token);
             }
         }
         Some(removed_doc)
@@ -125,14 +110,7 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| {
-                let index = self.trie.get(token);
-                if index.is_none() {
-                    return None;
-                }
-                let index = index.unwrap();
-                self.postings.get(*index as usize)
-            })
+            .map(|token| self.postings.get(token).map(|posting| posting))
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -155,10 +133,7 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| {
-                let index = self.trie.get(token).unwrap();
-                self.postings.get(*index as usize)
-            })
+            .map(|token| self.postings.get(token).map(|posting| posting.clone()))
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -212,10 +187,10 @@ impl InvertedIndex {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
         Box::new(
-            self.trie
+            self.postings
                 .iter()
-                .filter(move |(_token, _index)| self.postings[**_index as usize].len() >= threshold)
-                .map(move |(token, _index)| PayloadBlockCondition {
+                .filter(move |(_token, _posting)| _posting.len() >= threshold)
+                .map(move |(token, posting)| PayloadBlockCondition {
                     condition: FieldCondition {
                         key: key.clone(),
                         r#match: Some(Match::Text(MatchText {
@@ -226,7 +201,7 @@ impl InvertedIndex {
                         geo_radius: None,
                         values_count: None,
                     },
-                    cardinality: self.postings[*_index as usize].len(),
+                    cardinality: posting.len(),
                 }),
         )
     }
