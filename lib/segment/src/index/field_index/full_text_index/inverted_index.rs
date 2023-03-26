@@ -206,17 +206,3 @@ impl InvertedIndex {
         )
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use radix_trie::TrieCommon;
-
-    #[test]
-    fn test_trie() {
-        let mut trie = radix_trie::Trie::<String, u32>::new();
-        trie.insert("a".to_owned(), 1);
-        trie.insert("b".to_owned(), 2);
-        trie.insert("aced".to_owned(), 3);
-        trie.iter();
-    }
-}
