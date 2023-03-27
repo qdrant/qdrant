@@ -1,3 +1,5 @@
+mod utils;
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -22,6 +24,8 @@ mod tests {
         StorageType, VectorDataConfig, WithPayload,
     };
     use tempfile::Builder;
+
+    use crate::utils::scored_point_ties::ScoredPointTies;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
         let mut rnd = StdRng::seed_from_u64(42);
@@ -372,10 +376,19 @@ mod tests {
                 "{estimation:#?}"
             );
 
-            // warning: report flakiness at https://github.com/qdrant/qdrant/issues/534
-            plain_result
-                .iter()
-                .zip(struct_result.iter())
+            // Perform additional sort to break ties by score
+            let mut plain_result_sorted_ties: Vec<ScoredPointTies> =
+                plain_result.iter().map(|x| x.clone().into()).collect_vec();
+            plain_result_sorted_ties.sort();
+
+            let mut struct_result_sorted_ties: Vec<ScoredPointTies> =
+                struct_result.iter().map(|x| x.clone().into()).collect_vec();
+            struct_result_sorted_ties.sort();
+
+            plain_result_sorted_ties
+                .into_iter()
+                .zip(struct_result_sorted_ties.into_iter())
+                .map(|(r1, r2)| (r1.scored_point, r2.scored_point))
                 .for_each(|(r1, r2)| {
                     assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
                     assert!((r1.score - r2.score) < 0.0001)
