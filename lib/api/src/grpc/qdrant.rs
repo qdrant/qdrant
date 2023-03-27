@@ -184,8 +184,18 @@ pub struct ScalarQuantization {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Pq {
+    /// Type of quantization
+    #[prost(uint64, tag = "1")]
+    pub bucket_size: u64,
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "2")]
+    pub always_ram: ::core::option::Option<bool>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
-    #[prost(oneof = "quantization_config::Quantization", tags = "1")]
+    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2")]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
 /// Nested message and enum types in `QuantizationConfig`.
@@ -195,6 +205,8 @@ pub mod quantization_config {
     pub enum Quantization {
         #[prost(message, tag = "1")]
         Scalar(super::ScalarQuantization),
+        #[prost(message, tag = "2")]
+        Pq(super::Pq),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -68,6 +68,14 @@ impl quantization::EncodedStorageBuilder<QuantizedMmapStorage> for QuantizedMmap
         self.mmap[self.cursor_pos..self.cursor_pos + other.len()].copy_from_slice(other);
         self.cursor_pos += other.len();
     }
+
+    fn set(&mut self, index: usize, value: u8) {
+        self.mmap[index] = value;
+    }
+
+    fn get(&self, index: usize) -> u8 {
+        self.mmap[index]
+    }
 }
 
 impl QuantizedMmapStorageBuilder {

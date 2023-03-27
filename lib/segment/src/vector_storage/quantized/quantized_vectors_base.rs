@@ -3,10 +3,13 @@ use std::path::{Path, PathBuf};
 use bitvec::prelude::BitVec;
 use serde::{Deserialize, Serialize};
 
+use super::pq::PQVectors;
+use super::pq_mmap_storage::{create_pq_vectors_mmap, load_pq_vectors_mmap};
+use super::pq_ram_storage::{create_pq_vectors_ram, load_pq_vectors_ram};
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig};
+use crate::types::{Distance, PQQuantization, QuantizationConfig, ScalarQuantization};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::scalar_quantized::ScalarQuantizedVectors;
 use crate::vector_storage::quantized::scalar_quantized_mmap_storage::{
@@ -28,6 +31,8 @@ pub struct QuantizedVectorsConfig {
 pub enum QuantizedVectorStorageImpl {
     ScalarRam(ScalarQuantizedVectors<ChunkedVectors<u8>>),
     ScalarMmap(ScalarQuantizedVectors<QuantizedMmapStorage>),
+    PQRam(PQVectors<ChunkedVectors<u8>>),
+    PQMmap(PQVectors<QuantizedMmapStorage>),
 }
 
 pub struct QuantizedVectorsStorage {
@@ -58,6 +63,8 @@ impl QuantizedVectors for QuantizedVectorsStorage {
         match &self.storage_impl {
             QuantizedVectorStorageImpl::ScalarRam(storage) => storage.raw_scorer(query, deleted),
             QuantizedVectorStorageImpl::ScalarMmap(storage) => storage.raw_scorer(query, deleted),
+            QuantizedVectorStorageImpl::PQRam(storage) => storage.raw_scorer(query, deleted),
+            QuantizedVectorStorageImpl::PQMmap(storage) => storage.raw_scorer(query, deleted),
         }
     }
 
@@ -65,6 +72,8 @@ impl QuantizedVectors for QuantizedVectorsStorage {
         match &self.storage_impl {
             QuantizedVectorStorageImpl::ScalarRam(storage) => storage.save_to(path),
             QuantizedVectorStorageImpl::ScalarMmap(storage) => storage.save_to(path),
+            QuantizedVectorStorageImpl::PQRam(storage) => storage.save_to(path),
+            QuantizedVectorStorageImpl::PQMmap(storage) => storage.save_to(path),
         }
     }
 
@@ -73,6 +82,8 @@ impl QuantizedVectors for QuantizedVectorsStorage {
         let storage_files = match &self.storage_impl {
             QuantizedVectorStorageImpl::ScalarRam(storage) => storage.files(),
             QuantizedVectorStorageImpl::ScalarMmap(storage) => storage.files(),
+            QuantizedVectorStorageImpl::PQRam(storage) => storage.files(),
+            QuantizedVectorStorageImpl::PQMmap(storage) => storage.files(),
         };
 
         result.extend(storage_files.into_iter().map(|file| self.path.join(file)));
@@ -82,10 +93,10 @@ impl QuantizedVectors for QuantizedVectorsStorage {
 
 impl QuantizedVectorsStorage {
     fn check_use_ram_quantization_storage(
-        config: &ScalarQuantizationConfig,
+        always_ram: Option<bool>,
         on_disk_vector_storage: bool,
     ) -> bool {
-        !on_disk_vector_storage || config.always_ram == Some(true)
+        !on_disk_vector_storage || always_ram == Some(true)
     }
 
     fn construct_vector_parameters(
@@ -120,8 +131,10 @@ impl QuantizedVectorsStorage {
             QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: scalar_config,
             }) => {
-                let in_ram =
-                    Self::check_use_ram_quantization_storage(scalar_config, on_disk_vector_storage);
+                let in_ram = Self::check_use_ram_quantization_storage(
+                    scalar_config.always_ram,
+                    on_disk_vector_storage,
+                );
                 if in_ram {
                     let storage = create_scalar_quantized_vectors_ram(
                         vectors,
@@ -139,6 +152,26 @@ impl QuantizedVectorsStorage {
                         distance,
                     )?;
                     QuantizedVectorStorageImpl::ScalarMmap(storage)
+                }
+            }
+            QuantizationConfig::PQ(PQQuantization { pq: pq_config }) => {
+                let in_ram = Self::check_use_ram_quantization_storage(
+                    pq_config.always_ram,
+                    on_disk_vector_storage,
+                );
+                if in_ram {
+                    let storage =
+                        create_pq_vectors_ram(vectors, pq_config, &vector_parameters, distance)?;
+                    QuantizedVectorStorageImpl::PQRam(storage)
+                } else {
+                    let storage = create_pq_vectors_mmap(
+                        vectors,
+                        pq_config,
+                        &vector_parameters,
+                        path,
+                        distance,
+                    )?;
+                    QuantizedVectorStorageImpl::PQMmap(storage)
                 }
             }
         };
@@ -174,7 +207,7 @@ impl QuantizedVectorsStorage {
                 scalar: scalar_u8_config,
             }) => {
                 let is_ram = Self::check_use_ram_quantization_storage(
-                    scalar_u8_config,
+                    scalar_u8_config.always_ram,
                     on_disk_vector_storage,
                 );
                 if is_ram {
@@ -191,6 +224,19 @@ impl QuantizedVectorsStorage {
                         distance,
                     )?;
                     QuantizedVectorStorageImpl::ScalarMmap(storage)
+                }
+            }
+            QuantizationConfig::PQ(PQQuantization { pq }) => {
+                let is_ram =
+                    Self::check_use_ram_quantization_storage(pq.always_ram, on_disk_vector_storage);
+                if is_ram {
+                    let storage =
+                        load_pq_vectors_ram(data_path, &config.vector_parameters, distance)?;
+                    QuantizedVectorStorageImpl::PQRam(storage)
+                } else {
+                    let storage =
+                        load_pq_vectors_mmap(data_path, &config.vector_parameters, distance)?;
+                    QuantizedVectorStorageImpl::PQMmap(storage)
                 }
             }
         };

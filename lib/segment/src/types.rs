@@ -371,6 +371,20 @@ impl PartialEq for ScalarQuantizationConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct PQQuantizationConfig {
+    pub bucket_size: usize,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+pub struct PQQuantization {
+    pub pq: PQQuantizationConfig,
+}
+
 impl std::hash::Hash for ScalarQuantizationConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.always_ram.hash(state);
@@ -385,6 +399,7 @@ impl Eq for ScalarQuantizationConfig {}
 #[serde(untagged)]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
+    PQ(PQQuantization),
 }
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {
