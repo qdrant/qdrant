@@ -120,7 +120,7 @@ curl -L -X POST 'http://localhost:6333/collections/test_collection/points/search
 Expected response:
 
 ```json
-    {
+{
   "result": [
     { "id": 4, "score": 1.362, "payload": null, "version": 0 },
     { "id": 1, "score": 1.273, "payload": null, "version": 0 },
