@@ -587,10 +587,13 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<bool, StorageError> {
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
 
-        if !self
-            .is_leader_established
-            .await_ready_for_timeout(wait_timeout)
-        {
+        let is_leader_established = self.is_leader_established.clone();
+
+        let await_ready_for_timeout_future = tokio::task::spawn_blocking(move || {
+            is_leader_established.await_ready_for_timeout(wait_timeout)
+        });
+
+        if !await_ready_for_timeout_future.await.unwrap() {
             return Err(StorageError::service_error(format!(
                 "Failed to propose operation: leader is not established within {} secs",
                 wait_timeout.as_secs()
