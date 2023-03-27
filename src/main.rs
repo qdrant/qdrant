@@ -187,11 +187,12 @@ fn main() -> anyhow::Result<()> {
         let tls_config = load_tls_client_config(&settings)?;
 
         channel_service.channel_pool = Arc::new(TransportChannelPool::new(
+            settings.cluster.p2p.connection_pool_size,
             p2p_grpc_timeout,
             connection_timeout,
-            settings.cluster.p2p.connection_pool_size,
             tls_config,
         ));
+
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
     }
 

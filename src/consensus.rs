@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Context};
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
-use api::grpc::transport_channel_pool::TransportChannelPool;
+use api::grpc::transport_channel_pool::{self, TransportChannelPool};
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
 use raft::eraftpb::Message as RaftMessage;
@@ -281,14 +281,16 @@ impl Consensus {
         tls_config: Option<ClientTlsConfig>,
     ) -> anyhow::Result<AllPeers> {
         // Use dedicated transport channel for bootstrapping because of specific timeout
-        let channel = TransportChannelPool::make_channel(
-            Duration::from_secs(config.bootstrap_timeout_sec),
-            Duration::from_secs(config.bootstrap_timeout_sec),
+        let channel = transport_channel_pool::channel_builder(
             cluster_uri,
+            Duration::from_secs(config.bootstrap_timeout_sec),
+            Duration::from_secs(config.bootstrap_timeout_sec),
             tls_config,
-        )
+        )?
+        .connect()
         .await
         .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
+
         let mut client = RaftClient::new(channel);
         let all_peers = client
             .add_peer_to_known(tonic::Request::new(
@@ -828,16 +830,20 @@ async fn who_is(
     log::debug!("Resolving who is {peer_id}");
     let bootstrap_uri =
         bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
+
     let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
+
     // Use dedicated transport channel for who_is because of specific timeout
-    let channel = TransportChannelPool::make_channel(
-        bootstrap_timeout,
-        bootstrap_timeout,
+    let channel = transport_channel_pool::channel_builder(
         bootstrap_uri,
+        bootstrap_timeout,
+        bootstrap_timeout,
         tls_config,
-    )
+    )?
+    .connect()
     .await
     .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
+
     let mut client = RaftClient::new(channel);
     Ok(client
         .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
@@ -864,16 +870,12 @@ async fn send_message(
     let message = &GrpcRaftMessage { message: bytes };
 
     let result = transport_channel_pool
-        .with_channel_timeout(
-            &address,
-            |channel| async move {
-                let mut client = RaftClient::new(channel);
-                let mut request = tonic::Request::new(message.clone());
-                request.set_timeout(timeout);
-                client.send(request).await
-            },
-            Some(timeout),
-        )
+        .with_channel(&address, |channel| async move {
+            let mut client = RaftClient::new(channel);
+            let mut request = tonic::Request::new(message.clone());
+            request.set_timeout(timeout);
+            client.send(request).await
+        })
         .await;
 
     if is_snapshot {
