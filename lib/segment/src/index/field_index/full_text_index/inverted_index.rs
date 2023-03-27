@@ -1,19 +1,17 @@
-use std::collections::BTreeSet;
-
-use radix_trie::{Trie, TrieCommon};
-use serde::ser::SerializeMap;
+use patricia_tree::{PatriciaMap, PatriciaSet};
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
 use crate::index::field_index::full_text_index::postings_iterator::intersect_btree_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
-type PostingList = BTreeSet<PointOffsetType>;
+type PostingList = Vec<PointOffsetType>;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct Document {
     // TODO: use a radix trie to store tokens
-    pub tokens: Trie<String, bool>,
+    pub tokens: PatriciaSet,
 }
 
 impl Document {
@@ -30,9 +28,9 @@ impl Serialize for Document {
     where
         S: serde::Serializer,
     {
-        let mut state = serializer.serialize_map(Some(self.tokens.len()))?;
-        for (key, _) in self.tokens.iter() {
-            state.serialize_entry(key, &true)?;
+        let mut state = serializer.serialize_seq(Some(self.tokens.len()))?;
+        for token in self.tokens.iter() {
+            state.serialize_element(&token)?;
         }
         state.end()
     }
@@ -43,17 +41,17 @@ impl<'de> Deserialize<'de> for Document {
     where
         D: serde::Deserializer<'de>,
     {
-        let map = <std::collections::HashMap<String, bool>>::deserialize(deserializer)?;
-        let mut trie = Trie::<String, bool>::new();
-        for (key, _) in map.iter() {
-            trie.insert(key.to_string(), true);
+        let tokens = Vec::<Vec<u8>>::deserialize(deserializer)?;
+        let mut doc = Document::new();
+        for token in tokens {
+            doc.tokens.insert(token);
         }
-        Ok(Document { tokens: trie })
+        Ok(doc)
     }
 }
 
 pub struct ParsedQuery {
-    pub tokens: BTreeSet<String>,
+    pub tokens: PatriciaSet,
 }
 
 impl ParsedQuery {
@@ -61,14 +59,14 @@ impl ParsedQuery {
         // Check that all tokens are in document
         self.tokens
             .iter()
-            .all(|query_token| document.tokens.get(query_token).is_some())
+            .all(|query_token| document.tokens.contains(query_token))
     }
 }
 
 pub struct InvertedIndex {
     // TODO: maybe use a adaptive radix tree
     // store strings and map them to a posting list
-    postings: Trie<String, PostingList>,
+    postings: PatriciaMap<PostingList>,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
@@ -76,7 +74,7 @@ pub struct InvertedIndex {
 impl InvertedIndex {
     pub fn new() -> InvertedIndex {
         InvertedIndex {
-            postings: Trie::<String, PostingList>::new(),
+            postings: PatriciaMap::new(),
             point_to_docs: Vec::new(),
             points_count: 0,
         }
@@ -84,22 +82,25 @@ impl InvertedIndex {
 
     /// Insert a document into the inverted index
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
-        for token in document.tokens.keys() {
+        for token in document.tokens.iter() {
             // check if the token is already in the inverted index
             // if not, add it
-            let posting = self.postings.get_mut(token);
+            let posting = self.postings.get_mut(&token);
             if let Some(posting) = posting {
-                posting.insert(idx);
+                // check if the posting list already contains the current document
+                // if not, add it and keep the posting list sorted
+                match posting.binary_search(&idx) {
+                    Ok(_) => {} // element already in vector @ `pos`
+                    Err(pos) => posting.insert(pos, idx),
+                }
             } else {
-                let mut new_posting = PostingList::new();
-                new_posting.insert(idx);
-                self.postings.insert(token.to_string(), new_posting);
+                let new_posting = vec![idx];
+                self.postings.insert(token, new_posting);
             }
         }
         self.points_count += 1;
         if self.point_to_docs.len() <= idx as usize {
-            self.point_to_docs
-                .resize(idx as usize + 1, Default::default());
+            self.point_to_docs.resize(idx as usize + 1, None);
         }
 
         self.point_to_docs[idx as usize] = Some(document);
@@ -118,14 +119,20 @@ impl InvertedIndex {
 
         self.points_count -= 1;
 
-        for removed_token in removed_doc.tokens.keys() {
-            let posting = self.postings.remove(removed_token);
-            if posting.is_none() {
+        for removed_token in removed_doc.tokens.iter() {
+            let posting = self.postings.remove(&removed_token);
+            if let Some(mut posting) = posting {
+                if let Ok(pos) = posting.binary_search(&idx) {
+                    posting.remove(pos); // element already in vector @ `pos`
+                } else {
+                    continue;
+                }
+
+                if posting.is_empty() {
+                    self.postings.remove(removed_token);
+                }
+            } else {
                 continue;
-            }
-            posting.clone().unwrap().remove(&idx);
-            if posting.unwrap().is_empty() {
-                self.postings.remove(removed_token);
             }
         }
         Some(removed_doc)
@@ -147,6 +154,7 @@ impl InvertedIndex {
             // Empty request -> no matches
             return Box::new(vec![].into_iter());
         }
+
         intersect_btree_iterator(postings)
     }
 
@@ -220,7 +228,7 @@ impl InvertedIndex {
                     condition: FieldCondition {
                         key: key.clone(),
                         r#match: Some(Match::Text(MatchText {
-                            text: token.to_owned(),
+                            text: format!("{:?}", &token),
                         })),
                         range: None,
                         geo_bounding_box: None,

@@ -1,7 +1,5 @@
-use std::collections::BTreeSet;
-
 pub fn intersect_btree_iterator<'a, T: Ord + Copy>(
-    mut postings: Vec<&'a BTreeSet<T>>,
+    mut postings: Vec<&'a Vec<T>>,
 ) -> Box<dyn Iterator<Item = T> + 'a> {
     let smallest_posting_idx = postings
         .iter()
@@ -25,9 +23,9 @@ mod tests {
 
     #[test]
     fn test_postings_iterator() {
-        let v1: BTreeSet<_> = vec![1, 2, 3, 4, 5].into_iter().collect();
-        let v2: BTreeSet<_> = vec![2, 4, 5, 5].into_iter().collect();
-        let v3: BTreeSet<_> = vec![1, 2, 5, 6, 7].into_iter().collect();
+        let v1: Vec<_> = vec![1, 2, 3, 4, 5];
+        let v2: Vec<_> = vec![2, 4, 5, 6, 7];
+        let v3: Vec<_> = vec![1, 2, 5, 6, 7];
 
         let postings = vec![&v1, &v2, &v3];
         let merged = intersect_btree_iterator(postings);

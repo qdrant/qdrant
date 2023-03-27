@@ -107,7 +107,7 @@ impl ValueIndexer<String> for FullTextIndex {
 
         let mut document = Document::new();
         for token in tokens.iter() {
-            document.tokens.insert(token.to_owned(), true);
+            document.tokens.insert(token);
         }
         self.inverted_index.index_document(idx, document);
 
