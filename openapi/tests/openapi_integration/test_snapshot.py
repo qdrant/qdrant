@@ -147,7 +147,7 @@ def test_test_snapshot_operations_non_wait():
     )
     assert response.ok
     # wait for snapshot to be deleted
-    sleep(5)
+    sleep(2)
 
     # validate it is gone
     response = request_with_validation(
@@ -174,7 +174,7 @@ def test_test_snapshot_operations_non_wait():
     )
     assert response.status_code == 202
     # wait for snapshot to be created
-    sleep(5)
+    sleep(2)
 
     # validate it exists
     response = request_with_validation(

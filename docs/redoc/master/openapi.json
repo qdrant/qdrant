@@ -1561,15 +1561,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "wait",
-            "in": "query",
-            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
           }
         ],
         "responses": {
@@ -1700,7 +1691,7 @@
             }
           },
           "202": {
-            "description": "operation in prohress",
+            "description": "operation in progress",
             "content": {
               "application/json": {
                 "schema": {
@@ -2011,7 +2002,7 @@
             }
           },
           "202": {
-            "description": "operation in prohress",
+            "description": "operation in progress",
             "content": {
               "application/json": {
                 "schema": {

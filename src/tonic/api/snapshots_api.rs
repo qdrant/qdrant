@@ -53,8 +53,7 @@ impl Snapshots for SnapshotsService {
         let collection_name = request.into_inner().collection_name;
 
         let timing = Instant::now();
-        let dispatcher = Dispatcher::new(self.toc.clone());
-        let snapshots = do_list_snapshots(&dispatcher, &collection_name, true)
+        let snapshots = do_list_snapshots(&self.toc, &collection_name)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {
