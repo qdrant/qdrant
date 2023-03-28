@@ -51,8 +51,7 @@ async fn metrics(
         telemetry_data
     };
 
-    let metrics_data = MetricsData::from(telemetry_data);
-    HttpResponse::Ok().body(metrics_data.format_metrics())
+    HttpResponse::Ok().body(MetricsData::from(telemetry_data).format_metrics())
 }
 
 #[post("/locks")]
