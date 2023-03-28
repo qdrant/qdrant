@@ -1082,6 +1082,12 @@ pub struct IsEmptyCondition {
     pub is_empty: PayloadField,
 }
 
+/// Select points with empty payload for a specified field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+pub struct IsNullCondition {
+    pub is_null: PayloadField,
+}
+
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
@@ -1100,8 +1106,10 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 pub enum Condition {
     /// Check if field satisfies provided condition
     Field(FieldCondition),
-    /// Check if payload field is empty: equals to `NULL`, empty array, or does not exists
+    /// Check if payload field is empty: equals to empty array, or does not exists
     IsEmpty(IsEmptyCondition),
+    /// Check if payload field equals `NULL`
+    IsNull(IsNullCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
     /// Nested filter

@@ -632,6 +632,7 @@ impl From<segment::types::Condition> for Condition {
             segment::types::Condition::IsEmpty(is_empty) => {
                 ConditionOneOf::IsEmpty(is_empty.into())
             }
+            segment::types::Condition::IsNull(_) => todo!(),
             segment::types::Condition::HasId(has_id) => ConditionOneOf::HasId(has_id.into()),
             segment::types::Condition::Filter(filter) => ConditionOneOf::Filter(filter.into()),
         };

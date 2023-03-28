@@ -4,12 +4,14 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
+use crate::common::utils::MultiValue;
 use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, OwnedPayloadRef, Payload, PointOffsetType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
+    PointOffsetType,
 };
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
@@ -78,6 +80,7 @@ where
             check_field_condition(field_condition, get_payload().deref())
         }
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
+        Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
         Condition::HasId(has_id) => {
             let external_id = match id_tracker.external_id(point_id) {
                 None => return false,
@@ -93,6 +96,14 @@ where
 
 pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) -> bool {
     payload.get_value(&is_empty.is_empty.key).is_empty()
+}
+
+pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &Payload) -> bool {
+    // TODO: move this check inside MultiValue (if possible)
+    if let MultiValue::Single(Some(val)) = payload.get_value(&is_null.is_null.key) {
+        return val.is_null();
+    }
+    false
 }
 
 pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
