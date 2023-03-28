@@ -36,15 +36,19 @@ async fn telemetry(
     process_response(Ok(telemetry_data), timing)
 }
 
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct MetricsParam {
+    pub anonymize: Option<bool>,
+}
+
 #[get("/metrics")]
 async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
-    params: Query<TelemetryParam>,
+    params: Query<MetricsParam>,
 ) -> impl Responder {
     let anonymize = params.anonymize.unwrap_or(false);
-    let details_level = params.details_level.unwrap_or(0);
     let telemetry_collector = telemetry_collector.lock().await;
-    let telemetry_data = telemetry_collector.prepare_data(details_level).await;
+    let telemetry_data = telemetry_collector.prepare_data(0).await;
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()
     } else {
