@@ -11,6 +11,32 @@ use crate::common::telemetry_ops::requests_telemetry::{
     GrpcTelemetry, RequestsTelemetry, WebApiTelemetry,
 };
 
+/// Whitelist for REST endpoints in metrics output.
+///
+/// Contains selection of search, recommend and upsert endpoints.
+const REST_ENDPOINT_WHITELIST: &[&str] = &[
+    "/collections/{name}/index",
+    "/collections/{name}/points",
+    "/collections/{name}/points/payload",
+    "/collections/{name}/points/recommend",
+    "/collections/{name}/points/recommend/batch",
+    "/collections/{name}/points/search",
+    "/collections/{name}/points/search/batch",
+];
+
+/// Whitelist for GRPC endpoints in metrics output.
+///
+/// Contains selection of search, recommend and upsert endpoints.
+const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
+    "/qdrant.Points/OverwritePayload",
+    "/qdrant.Points/Recommend",
+    "/qdrant.Points/RecommendBatch",
+    "/qdrant.Points/Search",
+    "/qdrant.Points/SearchBatch",
+    "/qdrant.Points/SetPayload",
+    "/qdrant.Points/Upsert",
+];
+
 /// For REST requests, only report timings when having this HTTP response status.
 const REST_TIMINGS_FOR_STATUS: u16 = 200;
 
@@ -158,15 +184,16 @@ impl MetricsProvider for RequestsTelemetry {
 
 impl MetricsProvider for WebApiTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        // Skip if there are no request stats
-        if self.responses.is_empty() || self.responses.iter().all(|r| r.1.is_empty()) {
-            return;
-        }
-
         let (mut total, mut fail_total, mut avg_secs, mut min_secs, mut max_secs) =
             (vec![], vec![], vec![], vec![], vec![]);
         for (endpoint, responses) in &self.responses {
             let (method, endpoint) = endpoint.split_once(' ').unwrap();
+
+            // Endpoint must be whitelisted
+            if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                continue;
+            }
+
             for (status, stats) in responses {
                 let labels = [
                     ("method", method),
@@ -193,18 +220,22 @@ impl MetricsProvider for WebApiTelemetry {
             }
         }
 
-        metrics.push(metric_family(
-            "rest_responses_total",
-            "total number of responses",
-            MetricType::COUNTER,
-            total,
-        ));
-        metrics.push(metric_family(
-            "rest_responses_fail_total",
-            "total number of failed responses",
-            MetricType::COUNTER,
-            fail_total,
-        ));
+        if !total.is_empty() {
+            metrics.push(metric_family(
+                "rest_responses_total",
+                "total number of responses",
+                MetricType::COUNTER,
+                total,
+            ));
+        }
+        if !fail_total.is_empty() {
+            metrics.push(metric_family(
+                "rest_responses_fail_total",
+                "total number of failed responses",
+                MetricType::COUNTER,
+                fail_total,
+            ));
+        }
         if !avg_secs.is_empty() {
             metrics.push(metric_family(
                 "rest_responses_avg_duration_seconds",
@@ -234,14 +265,17 @@ impl MetricsProvider for WebApiTelemetry {
 
 impl MetricsProvider for GrpcTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        // Skip if there are no request stats
-        if self.responses.is_empty() {
-            return;
-        }
-
         let (mut total, mut fail_total, mut avg_secs, mut min_secs, mut max_secs) =
             (vec![], vec![], vec![], vec![], vec![]);
         for (endpoint, stats) in &self.responses {
+            // Endpoint must be whitelisted
+            if GRPC_ENDPOINT_WHITELIST
+                .binary_search(&endpoint.as_str())
+                .is_err()
+            {
+                continue;
+            }
+
             let labels = [("endpoint", endpoint.as_str())];
             total.push(counter(stats.count as f64, &labels));
             fail_total.push(counter(stats.fail_count as f64, &labels));
@@ -259,36 +293,46 @@ impl MetricsProvider for GrpcTelemetry {
             ));
         }
 
-        metrics.push(metric_family(
-            "grpc_responses_total",
-            "total number of responses",
-            MetricType::COUNTER,
-            total,
-        ));
-        metrics.push(metric_family(
-            "grpc_responses_fail_total",
-            "total number of failed responses",
-            MetricType::COUNTER,
-            fail_total,
-        ));
-        metrics.push(metric_family(
-            "grpc_responses_avg_duration_seconds",
-            "average response duration",
-            MetricType::GAUGE,
-            avg_secs,
-        ));
-        metrics.push(metric_family(
-            "grpc_responses_min_duration_seconds",
-            "minimum response duration",
-            MetricType::GAUGE,
-            min_secs,
-        ));
-        metrics.push(metric_family(
-            "grpc_responses_max_duration_seconds",
-            "maximum response duration",
-            MetricType::GAUGE,
-            max_secs,
-        ));
+        if !total.is_empty() {
+            metrics.push(metric_family(
+                "grpc_responses_total",
+                "total number of responses",
+                MetricType::COUNTER,
+                total,
+            ));
+        }
+        if !fail_total.is_empty() {
+            metrics.push(metric_family(
+                "grpc_responses_fail_total",
+                "total number of failed responses",
+                MetricType::COUNTER,
+                fail_total,
+            ));
+        }
+        if !avg_secs.is_empty() {
+            metrics.push(metric_family(
+                "grpc_responses_avg_duration_seconds",
+                "average response duration",
+                MetricType::GAUGE,
+                avg_secs,
+            ));
+        }
+        if !min_secs.is_empty() {
+            metrics.push(metric_family(
+                "grpc_responses_min_duration_seconds",
+                "minimum response duration",
+                MetricType::GAUGE,
+                min_secs,
+            ));
+        }
+        if !max_secs.is_empty() {
+            metrics.push(metric_family(
+                "grpc_responses_max_duration_seconds",
+                "maximum response duration",
+                MetricType::GAUGE,
+                max_secs,
+            ));
+        }
     }
 }
 
@@ -328,4 +372,21 @@ fn label_pair(name: &str, value: &str) -> LabelPair {
     label.set_name(name.into());
     label.set_value(value.into());
     label
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_endpoint_whitelists_sorted() {
+        use super::{GRPC_ENDPOINT_WHITELIST, REST_ENDPOINT_WHITELIST};
+
+        assert!(
+            REST_ENDPOINT_WHITELIST.windows(2).all(|n| n[0] <= n[1]),
+            "REST_ENDPOINT_WHITELIST must be sorted in code to allow binary search"
+        );
+        assert!(
+            GRPC_ENDPOINT_WHITELIST.windows(2).all(|n| n[0] <= n[1]),
+            "GRPC_ENDPOINT_WHITELIST must be sorted in code to allow binary search"
+        );
+    }
 }
