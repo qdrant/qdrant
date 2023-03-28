@@ -145,7 +145,7 @@ def test_test_snapshot_operations_non_wait():
                      'snapshot_name': snapshot_name},
         query_params={'wait': 'false'},
     )
-    assert response.ok
+    assert response.status_code == 202
     # wait for snapshot to be deleted
     sleep(2)
 
@@ -192,7 +192,7 @@ def test_test_snapshot_operations_non_wait():
         method="DELETE",
         query_params={'wait': 'false'},
     )
-    assert response.ok
+    assert response.status_code == 202
 
     # wait for snapshot to be deleted
     sleep(1)

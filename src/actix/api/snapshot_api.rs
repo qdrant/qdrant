@@ -231,7 +231,11 @@ async fn delete_full_snapshot(
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
     let response = do_delete_full_snapshot(dispatcher.get_ref(), &snapshot_name, wait).await;
-    process_response(response, timing)
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[delete("/collections/{name}/snapshots/{snapshot_name}")]
@@ -246,7 +250,11 @@ async fn delete_collection_snapshot(
     let response =
         do_delete_collection_snapshot(dispatcher.get_ref(), &collection_name, &snapshot_name, wait)
             .await;
-    process_response(response, timing)
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 // Configure services

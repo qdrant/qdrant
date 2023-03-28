@@ -73,7 +73,7 @@ pub async fn do_list_snapshots(
         .await?)
 }
 
-pub async fn do_create_snapshot<'a>(
+pub async fn do_create_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
     wait: bool,
