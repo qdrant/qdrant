@@ -11,6 +11,9 @@ use crate::common::telemetry_ops::requests_telemetry::{
     GrpcTelemetry, RequestsTelemetry, WebApiTelemetry,
 };
 
+/// For REST requests, only report timings when having this HTTP response status.
+const REST_TIMINGS_FOR_STATUS: u16 = 200;
+
 /// Encapsulates metrics data in Prometheus format.
 pub struct MetricsData {
     metrics: Vec<MetricFamily>,
@@ -172,18 +175,21 @@ impl MetricsProvider for WebApiTelemetry {
                 ];
                 total.push(counter(stats.count as f64, &labels));
                 fail_total.push(counter(stats.fail_count as f64, &labels));
-                avg_secs.push(gauge(
-                    stats.avg_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                    &labels,
-                ));
-                min_secs.push(gauge(
-                    stats.min_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                    &labels,
-                ));
-                max_secs.push(gauge(
-                    stats.max_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                    &labels,
-                ));
+
+                if *status == REST_TIMINGS_FOR_STATUS {
+                    avg_secs.push(gauge(
+                        stats.avg_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+                        &labels,
+                    ));
+                    min_secs.push(gauge(
+                        stats.min_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+                        &labels,
+                    ));
+                    max_secs.push(gauge(
+                        stats.max_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+                        &labels,
+                    ));
+                }
             }
         }
 
@@ -199,24 +205,30 @@ impl MetricsProvider for WebApiTelemetry {
             MetricType::COUNTER,
             fail_total,
         ));
-        metrics.push(metric_family(
-            "rest_responses_avg_duration_seconds",
-            "average response duration",
-            MetricType::GAUGE,
-            avg_secs,
-        ));
-        metrics.push(metric_family(
-            "rest_responses_min_duration_seconds",
-            "minimum response duration",
-            MetricType::GAUGE,
-            min_secs,
-        ));
-        metrics.push(metric_family(
-            "rest_responses_max_duration_seconds",
-            "maximum response duration",
-            MetricType::GAUGE,
-            max_secs,
-        ));
+        if !avg_secs.is_empty() {
+            metrics.push(metric_family(
+                "rest_responses_avg_duration_seconds",
+                "average response duration",
+                MetricType::GAUGE,
+                avg_secs,
+            ));
+        }
+        if !min_secs.is_empty() {
+            metrics.push(metric_family(
+                "rest_responses_min_duration_seconds",
+                "minimum response duration",
+                MetricType::GAUGE,
+                min_secs,
+            ));
+        }
+        if !max_secs.is_empty() {
+            metrics.push(metric_family(
+                "rest_responses_max_duration_seconds",
+                "maximum response duration",
+                MetricType::GAUGE,
+                max_secs,
+            ));
+        }
     }
 }
 
