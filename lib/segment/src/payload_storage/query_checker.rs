@@ -245,6 +245,8 @@ mod tests {
             "rating": vec![3, 7, 9, 9],
             "color": "red",
             "has_delivery": true,
+            "parts": [],
+            "packaging": null
         })
         .into();
 
@@ -275,8 +277,44 @@ mod tests {
             },
         }));
 
+        let is_empty_condition_3 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: "packaging".to_string(),
+            },
+        }));
+
         assert!(!payload_checker.check(0, &is_empty_condition_1));
         assert!(payload_checker.check(0, &is_empty_condition_2));
+        assert!(payload_checker.check(0, &is_empty_condition_3));
+
+        let is_null_condition_1 = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "amount".to_string(),
+            },
+        }));
+
+        let is_null_condition_2 = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "parts".to_string(),
+            },
+        }));
+
+        let is_null_condition_3 = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "something_else".to_string(),
+            },
+        }));
+
+        let is_null_condition_4 = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "packaging".to_string(),
+            },
+        }));
+
+        assert!(!payload_checker.check(0, &is_null_condition_1));
+        assert!(!payload_checker.check(0, &is_null_condition_2));
+        assert!(!payload_checker.check(0, &is_null_condition_3));
+        assert!(payload_checker.check(0, &is_null_condition_4));
 
         let match_red = Condition::Field(FieldCondition::new_match(
             "color".to_string(),

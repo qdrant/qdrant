@@ -1534,6 +1534,60 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_empty_query() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "is_empty" : {
+                        "key" : "Jason"
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        println!("{filter:?}");
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::IsEmpty(c)) => c,
+            _ => panic!("Condition::IsEmpty expected"),
+        };
+
+        assert_eq!(c.is_empty.key.as_str(), "Jason");
+    }
+
+    #[test]
+    fn test_parse_null_query() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "is_null" : {
+                        "key" : "Jason"
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        println!("{filter:?}");
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::IsNull(c)) => c,
+            _ => panic!("Condition::IsNull expected"),
+        };
+
+        assert_eq!(c.is_null.key.as_str(), "Jason");
+    }
+
+    #[test]
     fn test_payload_query_parse() {
         let query1 = r#"
         {

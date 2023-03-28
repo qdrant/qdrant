@@ -232,6 +232,12 @@ mod tests {
                 exp: TOTAL / 2,
                 max: TOTAL,
             },
+            Condition::IsNull(condition) => CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::IsNull(condition.to_owned())],
+                min: 0,
+                exp: TOTAL / 2,
+                max: TOTAL,
+            },
         }
     }
 
@@ -259,8 +265,7 @@ mod tests {
         assert_eq!(estimation.primary_clauses.len(), 1);
         match &estimation.primary_clauses[0] {
             PrimaryCondition::Condition(field) => assert_eq!(&field.key, "size"),
-            PrimaryCondition::Ids(_) => panic!(),
-            PrimaryCondition::IsEmpty(_) => panic!(),
+            _ => panic!(),
         }
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
@@ -372,13 +377,13 @@ mod tests {
             PrimaryCondition::Condition(field) => {
                 assert!(vec!["price".to_owned(), "size".to_owned(),].contains(&field.key))
             }
-            PrimaryCondition::Ids(_) => panic!("Should not go here"),
-            PrimaryCondition::IsEmpty(_) => panic!("Should not go here"),
+            _ => panic!("Should not go here"),
         });
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
         assert!(estimation.min <= estimation.exp);
     }
+
     #[test]
     fn test_combine_must_estimations() {
         let estimations = vec![CardinalityEstimation {
