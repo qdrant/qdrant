@@ -2323,11 +2323,19 @@ pub mod condition {
         HasId(super::HasIdCondition),
         #[prost(message, tag = "4")]
         Filter(super::Filter),
+        #[prost(message, tag = "5")]
+        IsNull(super::IsNullCondition),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IsEmptyCondition {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IsNullCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }
