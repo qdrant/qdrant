@@ -138,7 +138,7 @@ impl MetricsProvider for ClusterStatusTelemetry {
                 registry
             )
             .unwrap()
-            .inc_by(self.term);
+            .inc_by(self.commit);
             int_gauge!(
                 Opts::new(
                     "cluster_pending_operations_total",
