@@ -1,3 +1,4 @@
+use actix_web::http::header::ContentType;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{get, post, web, HttpResponse, Responder};
@@ -55,7 +56,9 @@ async fn metrics(
         telemetry_data
     };
 
-    HttpResponse::Ok().body(MetricsData::from(telemetry_data).format_metrics())
+    HttpResponse::Ok()
+        .content_type(ContentType::plaintext())
+        .body(MetricsData::from(telemetry_data).format_metrics())
 }
 
 #[post("/locks")]
