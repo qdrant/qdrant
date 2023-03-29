@@ -121,6 +121,7 @@ async fn _do_recover_from_snapshot(
     restoring.await??;
 
     let snapshot_config = CollectionConfig::load(&tmp_collection_dir)?;
+    snapshot_config.validate_and_warn();
 
     let collection = match toc.get_collection(collection_name).await.ok() {
         Some(collection) => collection,

@@ -15,6 +15,7 @@ use validator::Validate;
 use wal::WalOptions;
 
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
+use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
@@ -136,6 +137,12 @@ impl CollectionConfig {
     pub fn check(path: &Path) -> bool {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         config_path.exists()
+    }
+
+    pub fn validate_and_warn(&self) {
+        if let Err(ref errs) = self.validate() {
+            validation::warn_validation_errors("Collection configuration file", errs);
+        }
     }
 }
 

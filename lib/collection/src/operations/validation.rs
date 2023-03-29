@@ -1,7 +1,9 @@
 use validator::{ValidationError, ValidationErrors, ValidationErrorsKind};
 
-/// Pretty print validation errors to the log as warning.
-pub fn log_validation_errors(description: &str, errs: &ValidationErrors) {
+/// Warn about validation errors in the log.
+///
+/// Validation errors are pretty printed field-by-field.
+pub fn warn_validation_errors(description: &str, errs: &ValidationErrors) {
     log::warn!("{description} has validation errors:");
     describe_errors(None, errs)
         .into_iter()

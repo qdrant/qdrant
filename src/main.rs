@@ -120,8 +120,8 @@ fn main() -> anyhow::Result<()> {
 
     welcome();
 
-    // Validate settings as soon as possible, but after log init so we can print
-    settings.validate_and_log();
+    // Validate as soon as possible, but we must initialize logging first
+    settings.validate_and_warn();
 
     // Saved state of the consensus.
     let persistent_consensus_state =

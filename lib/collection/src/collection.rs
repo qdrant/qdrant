@@ -249,9 +249,10 @@ impl Collection {
             panic!(
                 "Can't read collection config due to {}\nat {}",
                 err,
-                path.to_str().unwrap()
+                path.to_str().unwrap(),
             )
         });
+        collection_config.validate_and_warn();
 
         let ring = HashRing::fair(HASH_RING_SHARD_SCALE);
         let mut shard_holder = ShardHolder::new(path, ring).expect("Can not create shard holder");
@@ -1465,6 +1466,7 @@ impl Collection {
         ar.unpack(target_dir)?;
 
         let config = CollectionConfig::load(target_dir)?;
+        config.validate_and_warn();
         let configured_shards = config.params.shard_number.get();
 
         for shard_id in 0..configured_shards {

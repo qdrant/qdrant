@@ -121,9 +121,9 @@ impl Settings {
     }
 
     #[allow(dead_code)]
-    pub fn validate_and_log(&self) {
+    pub fn validate_and_warn(&self) {
         if let Err(ref errs) = self.validate() {
-            validation::log_validation_errors("Settings configuration file", errs);
+            validation::warn_validation_errors("Settings configuration file", errs);
         }
     }
 }
