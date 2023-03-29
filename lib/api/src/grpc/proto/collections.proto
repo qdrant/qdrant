@@ -166,7 +166,7 @@ message ScalarQuantization {
 }
 
 message ProductQuantization {
-  uint64 bucket_size = 1; // Type of quantization
+  uint64 bucket_size = 1; // maximum centroid dimension
   optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
