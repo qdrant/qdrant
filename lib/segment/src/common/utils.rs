@@ -66,7 +66,17 @@ impl<T> MultiValue<T> {
 }
 
 impl MultiValue<&Value> {
-    pub(crate) fn is_null(&self) -> bool {
+    pub(crate) fn check_is_empty(&self) -> bool {
+        match self {
+            Self::Multiple(vec) => vec.is_empty(),
+            Self::Single(val) => match val {
+                None => true,
+                Some(Value::Array(vec)) => vec.is_empty(),
+                _ => false,
+            },
+        }
+    }
+    pub(crate) fn check_is_null(&self) -> bool {
         if let Self::Single(Some(val)) = self {
             return val.is_null();
         }

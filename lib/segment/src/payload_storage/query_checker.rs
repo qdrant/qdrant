@@ -94,11 +94,11 @@ where
 }
 
 pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) -> bool {
-    payload.get_value(&is_empty.is_empty.key).is_empty()
+    payload.get_value(&is_empty.is_empty.key).check_is_empty()
 }
 
 pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &Payload) -> bool {
-    payload.get_value(&is_null.is_null.key).is_null()
+    payload.get_value(&is_null.is_null.key).check_is_null()
 }
 
 pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
