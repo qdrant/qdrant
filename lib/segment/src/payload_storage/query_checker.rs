@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
-use crate::common::utils::MultiValue;
 use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -99,11 +98,7 @@ pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) 
 }
 
 pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &Payload) -> bool {
-    // TODO: move this check inside MultiValue (if possible)
-    if let MultiValue::Single(Some(val)) = payload.get_value(&is_null.is_null.key) {
-        return val.is_null();
-    }
-    false
+    payload.get_value(&is_null.is_null.key).is_null()
 }
 
 pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {

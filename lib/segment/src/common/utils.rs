@@ -65,6 +65,15 @@ impl<T> MultiValue<T> {
     }
 }
 
+impl MultiValue<&Value> {
+    pub(crate) fn is_null(&self) -> bool {
+        if let Self::Single(Some(val)) = self {
+            return val.is_null();
+        }
+        false
+    }
+}
+
 impl<T> Iterator for MultiValue<T> {
     type Item = T;
 
