@@ -279,7 +279,7 @@ mod tests {
 
         let is_empty_condition_3 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
-                key: "packaging".to_string(),
+                key: "parts".to_string(),
             },
         }));
 

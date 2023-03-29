@@ -49,7 +49,7 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
                 {
                     "id": 1,
                     "vector": [0.05, 0.61, 0.76, 0.74],
-                    "payload": {"city": "Berlin"}
+                    "payload": {"city": None}
                 },
                 {
                     "id": 2,
@@ -59,7 +59,7 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
                 {
                     "id": 3,
                     "vector": [0.36, 0.55, 0.47, 0.94],
-                    "payload": {"city": ["Berlin", "Moscow"]}
+                    "payload": {"city": []}
                 },
                 {
                     "id": 4,

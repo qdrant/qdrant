@@ -62,11 +62,10 @@ def test_filter_values_count():
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 3
+    assert len(json['result']) == 2
 
     ids = [x['id'] for x in json['result']]
     assert 2 in ids
-    assert 3 in ids
     assert 4 in ids
 
     response = request_with_validation(
@@ -91,5 +90,5 @@ def test_filter_values_count():
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 1
+    assert len(json['result']) == 2
     assert json['result'][0]['id'] == 1
