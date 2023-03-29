@@ -1,12 +1,11 @@
 use std::{env, io};
 
+use collection::operations::validation;
 use config::{Config, ConfigError, Environment, File};
 use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
 use validator::Validate;
-
-use crate::common::validation;
 
 #[derive(Debug, Deserialize, Validate, Clone)]
 pub struct ServiceConfig {

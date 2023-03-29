@@ -8,6 +8,8 @@ pub mod point_ops;
 pub mod shared_storage_config;
 pub mod snapshot_ops;
 pub mod types;
+pub mod validation;
+
 use std::collections::HashMap;
 
 use segment::types::{ExtendedPointId, PayloadFieldSchema};
