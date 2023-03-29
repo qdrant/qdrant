@@ -120,22 +120,4 @@ impl quantization::EncodedStorageBuilder<ChunkedVectors<u8>> for ChunkedVectors<
     fn push_vector_data(&mut self, other: &[u8]) {
         self.push(other);
     }
-
-    fn set(&mut self, index: usize, value: u8) {
-        let key = index / self.dim;
-        let vector_element_index = index % self.dim;
-        let chunk_data = &mut self.chunks[key / self.chunk_capacity];
-        let idx = (key % self.chunk_capacity) * self.dim;
-        let data = &mut chunk_data[idx..idx + self.dim];
-        data[vector_element_index] = value;
-    }
-
-    fn get(&self, index: usize) -> u8 {
-        let key = index / self.dim;
-        let vector_element_index = index % self.dim;
-        let chunk_data = &self.chunks[key / self.chunk_capacity];
-        let idx = (key % self.chunk_capacity) * self.dim;
-        let data = &chunk_data[idx..idx + self.dim];
-        data[vector_element_index]
-    }
 }
