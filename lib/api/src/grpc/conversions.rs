@@ -514,11 +514,11 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
                     },
                 )),
             },
-            segment::types::QuantizationConfig::PQ(segment::types::PQQuantization {
-                pq: config,
+            segment::types::QuantizationConfig::PQ(segment::types::ProductQuantization {
+                product: config,
             }) => Self {
-                quantization: Some(super::qdrant::quantization_config::Quantization::Pq(
-                    super::qdrant::Pq {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Product(
+                    super::qdrant::ProductQuantization {
                         bucket_size: config.bucket_size as u64,
                         always_ram: config.always_ram,
                     },
@@ -558,9 +558,9 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
                 }
                 .into())
             }
-            super::qdrant::quantization_config::Quantization::Pq(config) => Ok(
-                segment::types::QuantizationConfig::PQ(segment::types::PQQuantization {
-                    pq: segment::types::PQQuantizationConfig {
+            super::qdrant::quantization_config::Quantization::Product(config) => Ok(
+                segment::types::QuantizationConfig::PQ(segment::types::ProductQuantization {
+                    product: segment::types::ProductQuantizationConfig {
                         bucket_size: config.bucket_size as usize,
                         always_ram: config.always_ram,
                     },

@@ -184,7 +184,7 @@ pub struct ScalarQuantization {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Pq {
+pub struct ProductQuantization {
     /// Type of quantization
     #[prost(uint64, tag = "1")]
     pub bucket_size: u64,
@@ -206,7 +206,7 @@ pub mod quantization_config {
         #[prost(message, tag = "1")]
         Scalar(super::ScalarQuantization),
         #[prost(message, tag = "2")]
-        Pq(super::Pq),
+        Product(super::ProductQuantization),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

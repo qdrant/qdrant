@@ -8,7 +8,7 @@ use super::quantized_raw_scorer::QuantizedRawScorer;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, PQQuantization, QuantizationConfig, ScalarQuantization};
+use crate::types::{Distance, ProductQuantization, QuantizationConfig, ScalarQuantization};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
@@ -125,7 +125,7 @@ impl QuantizedVectors {
                 path,
                 on_disk_vector_storage,
             )?,
-            QuantizationConfig::PQ(PQQuantization { pq: pq_config }) => Self::crate_pq(
+            QuantizationConfig::PQ(ProductQuantization { product: pq_config }) => Self::crate_pq(
                 vectors,
                 &vector_parameters,
                 pq_config,
@@ -181,7 +181,7 @@ impl QuantizedVectors {
                     )
                 }
             }
-            QuantizationConfig::PQ(PQQuantization { pq }) => {
+            QuantizationConfig::PQ(ProductQuantization { product: pq }) => {
                 if Self::is_ram(pq.always_ram, on_disk_vector_storage) {
                     QuantizedVectorStorage::PQRam(EncodedVectorsPQ::<ChunkedVectors<u8>>::load(
                         &data_path,
@@ -245,7 +245,7 @@ impl QuantizedVectors {
     fn crate_pq<'a>(
         vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
         vector_parameters: &quantization::VectorParameters,
-        pq_config: &crate::types::PQQuantizationConfig,
+        pq_config: &crate::types::ProductQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
     ) -> OperationResult<QuantizedVectorStorage> {
