@@ -135,11 +135,7 @@ impl ChannelPool {
         connect_timeout: Duration,
         tls_config: Option<ClientTlsConfig>,
     ) -> Result<Self, TonicError> {
-        // TODO: Enable HTTP/2 keep-alive for *all* channels (e.g., move into `channel_builder`)?
-        let endpoint = channel_builder(uri, timeout, connect_timeout, tls_config)?
-            .http2_keep_alive_interval(Duration::from_millis(500))
-            .keep_alive_timeout(Duration::from_millis(500))
-            .keep_alive_while_idle(true);
+        let endpoint = channel_builder(uri, timeout, connect_timeout, tls_config)?;
 
         let (channel, service_discovery_sender) = Channel::balance_channel(16);
 
@@ -174,10 +170,12 @@ pub fn channel_builder(
     connect_timeout: Duration,
     tls_config: Option<ClientTlsConfig>,
 ) -> Result<Endpoint, TonicError> {
-    // TODO: Enable HTTP/2 keep-alive for *all* channels?
     let mut endpoint = Channel::builder(uri)
         .timeout(timeout)
-        .connect_timeout(connect_timeout);
+        .connect_timeout(connect_timeout)
+        .http2_keep_alive_interval(Duration::from_millis(500))
+        .keep_alive_timeout(Duration::from_millis(500))
+        .keep_alive_while_idle(true);
 
     if let Some(tls_config) = tls_config {
         endpoint = endpoint.tls_config(tls_config)?;
