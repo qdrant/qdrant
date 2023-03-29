@@ -260,56 +260,54 @@ mod tests {
             Arc::new(AtomicRefCell::new(id_tracker)),
         );
 
-        let is_empty_condition_1 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
                 key: "price".to_string(),
             },
         }));
+        assert!(!payload_checker.check(0, &is_empty_condition));
 
-        let is_empty_condition_2 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
                 key: "something_new".to_string(),
             },
         }));
+        assert!(payload_checker.check(0, &is_empty_condition));
 
-        let is_empty_condition_3 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
                 key: "parts".to_string(),
             },
         }));
+        assert!(payload_checker.check(0, &is_empty_condition));
 
-        assert!(!payload_checker.check(0, &is_empty_condition_1));
-        assert!(payload_checker.check(0, &is_empty_condition_2));
-        assert!(payload_checker.check(0, &is_empty_condition_3));
-
-        let is_null_condition_1 = Filter::new_must(Condition::IsNull(IsNullCondition {
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "amount".to_string(),
             },
         }));
+        assert!(!payload_checker.check(0, &is_null_condition));
 
-        let is_null_condition_2 = Filter::new_must(Condition::IsNull(IsNullCondition {
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "parts".to_string(),
             },
         }));
+        assert!(!payload_checker.check(0, &is_null_condition));
 
-        let is_null_condition_3 = Filter::new_must(Condition::IsNull(IsNullCondition {
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "something_else".to_string(),
             },
         }));
+        assert!(!payload_checker.check(0, &is_null_condition));
 
-        let is_null_condition_4 = Filter::new_must(Condition::IsNull(IsNullCondition {
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "packaging".to_string(),
             },
         }));
-
-        assert!(!payload_checker.check(0, &is_null_condition_1));
-        assert!(!payload_checker.check(0, &is_null_condition_2));
-        assert!(!payload_checker.check(0, &is_null_condition_3));
-        assert!(payload_checker.check(0, &is_null_condition_4));
+        assert!(payload_checker.check(0, &is_null_condition));
 
         let match_red = Condition::Field(FieldCondition::new_match(
             "color".to_string(),
@@ -334,6 +332,7 @@ mod tests {
                     lte: None,
                 },
             )));
+        assert!(!payload_checker.check(0, &many_value_count_condition));
 
         let few_value_count_condition =
             Filter::new_must(Condition::Field(FieldCondition::new_values_count(
@@ -345,8 +344,6 @@ mod tests {
                     lte: None,
                 },
             )));
-
-        assert!(!payload_checker.check(0, &many_value_count_condition));
         assert!(payload_checker.check(0, &few_value_count_condition));
 
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
