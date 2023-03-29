@@ -14,6 +14,8 @@ use crate::common::telemetry_ops::requests_telemetry::{
 /// Whitelist for REST endpoints in metrics output.
 ///
 /// Contains selection of search, recommend and upsert endpoints.
+///
+/// This array *must* be sorted.
 const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{name}/index",
     "/collections/{name}/points",
@@ -27,6 +29,8 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 /// Whitelist for GRPC endpoints in metrics output.
 ///
 /// Contains selection of search, recommend and upsert endpoints.
+///
+/// This array *must* be sorted.
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
     "/qdrant.Points/OverwritePayload",
     "/qdrant.Points/Recommend",
