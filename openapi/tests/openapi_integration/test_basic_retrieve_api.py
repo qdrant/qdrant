@@ -147,8 +147,47 @@ def is_empty_condition():
         }
     )
 
-    assert len(response.json()['result']) == 3
     assert response.ok
+    
+    json = response.json()
+    assert len(json['result']) == 3
+    
+    ids = [x['id'] for x in json['result']]
+    assert 3 in ids
+    assert 5 in ids
+    assert 6 in ids
+
+def test_is_null_condition():
+    is_null_condition()
+
+
+def is_null_condition():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 5,
+            "filter": {
+                "should": [
+                    {
+                        "is_null": {
+                            "key": "city"
+                        }
+                    }
+                ]
+            },
+            "with_payload": True
+        }
+    )
+    assert response.ok
+    
+    json = response.json()
+    assert len(json['result']) == 1
+    
+    ids = [x['id'] for x in json['result']]
+    assert 1 in ids
 
 
 def test_recommendation():
