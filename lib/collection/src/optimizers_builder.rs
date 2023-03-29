@@ -19,8 +19,10 @@ const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 200_000;
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: f64,
     /// The minimal number of vectors in a segment, required to perform segment optimization
+    #[validate(range(min = 100))]
     pub vacuum_min_vector_number: usize,
     /// Target amount of segments optimizer will try to keep.
     /// Real amount of segments may vary depending on multiple parameters:
@@ -28,8 +30,8 @@ pub struct OptimizersConfig {
     ///  - Current write RPS
     ///
     /// It is recommended to select default number of segments as a factor of the number of search threads,
-    /// so that each segment would be handled evenly by one of the threads
-    /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs
+    /// so that each segment would be handled evenly by one of the threads.
+    /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs.
     pub default_segment_number: usize,
     /// Do not create segments larger this size (in KiloBytes).
     /// Large segments might require disproportionately long indexation times,

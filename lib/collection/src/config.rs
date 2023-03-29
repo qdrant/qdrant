@@ -22,6 +22,7 @@ pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 pub struct WalConfig {
     /// Size of a single WAL segment in MB
+    #[validate(range(min = 1))]
     pub wal_capacity_mb: usize,
     /// Number of WAL segments to create ahead of actually used ones
     pub wal_segments_ahead: usize,

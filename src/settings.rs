@@ -8,8 +8,9 @@ use validator::Validate;
 
 use crate::common::validation;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Validate, Clone)]
 pub struct ServiceConfig {
+    #[validate(length(min = 1))]
     pub host: String,
     pub http_port: u16,
     pub grpc_port: Option<u16>, // None means that gRPC is disabled
@@ -21,24 +22,29 @@ pub struct ServiceConfig {
     pub enable_tls: bool,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Validate)]
 pub struct ClusterConfig {
     pub enabled: bool, // disabled by default
     #[serde(default = "default_timeout_ms")]
+    #[validate(range(min = 1))]
     pub grpc_timeout_ms: u64,
     #[serde(default = "default_connection_timeout_ms")]
+    #[validate(range(min = 1))]
     pub connection_timeout_ms: u64,
     #[serde(default)]
+    #[validate]
     pub p2p: P2pConfig,
     #[serde(default)]
+    #[validate]
     pub consensus: ConsensusConfig,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Validate)]
 pub struct P2pConfig {
     #[serde(default)]
     pub port: Option<u16>,
     #[serde(default = "default_connection_pool_size")]
+    #[validate(range(min = 1))]
     pub connection_pool_size: usize,
     #[serde(default)]
     pub enable_tls: bool,
@@ -54,13 +60,15 @@ impl Default for P2pConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Validate)]
 pub struct ConsensusConfig {
     #[serde(default = "default_max_message_queue_size")]
     pub max_message_queue_size: usize, // controls the back-pressure at the Raft level
     #[serde(default = "default_tick_period_ms")]
+    #[validate(range(min = 1))]
     pub tick_period_ms: u64,
     #[serde(default = "default_bootstrap_timeout_sec")]
+    #[validate(range(min = 1))]
     pub bootstrap_timeout_sec: u64,
 }
 
@@ -89,8 +97,10 @@ pub struct Settings {
     pub log_level: String,
     #[validate]
     pub storage: StorageConfig,
+    #[validate]
     pub service: ServiceConfig,
     #[serde(default)]
+    #[validate]
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
