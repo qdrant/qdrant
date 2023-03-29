@@ -125,13 +125,15 @@ impl QuantizedVectors {
                 path,
                 on_disk_vector_storage,
             )?,
-            QuantizationConfig::PQ(ProductQuantization { product: pq_config }) => Self::crate_pq(
-                vectors,
-                &vector_parameters,
-                pq_config,
-                path,
-                on_disk_vector_storage,
-            )?,
+            QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
+                Self::crate_pq(
+                    vectors,
+                    &vector_parameters,
+                    pq_config,
+                    path,
+                    on_disk_vector_storage,
+                )?
+            }
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -181,7 +183,7 @@ impl QuantizedVectors {
                     )
                 }
             }
-            QuantizationConfig::PQ(ProductQuantization { product: pq }) => {
+            QuantizationConfig::Product(ProductQuantization { product: pq }) => {
                 if Self::is_ram(pq.always_ram, on_disk_vector_storage) {
                     QuantizedVectorStorage::PQRam(EncodedVectorsPQ::<ChunkedVectors<u8>>::load(
                         &data_path,

@@ -514,7 +514,7 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
                     },
                 )),
             },
-            segment::types::QuantizationConfig::PQ(segment::types::ProductQuantization {
+            segment::types::QuantizationConfig::Product(segment::types::ProductQuantization {
                 product: config,
             }) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Product(
@@ -559,7 +559,7 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
                 .into())
             }
             super::qdrant::quantization_config::Quantization::Product(config) => Ok(
-                segment::types::QuantizationConfig::PQ(segment::types::ProductQuantization {
+                segment::types::QuantizationConfig::Product(segment::types::ProductQuantization {
                     product: segment::types::ProductQuantizationConfig {
                         bucket_size: config.bucket_size as usize,
                         always_ram: config.always_ram,

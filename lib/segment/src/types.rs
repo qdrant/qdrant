@@ -399,7 +399,7 @@ impl Eq for ScalarQuantizationConfig {}
 #[serde(untagged)]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
-    PQ(ProductQuantization),
+    Product(ProductQuantization),
 }
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {
