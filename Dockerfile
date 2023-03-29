@@ -25,12 +25,15 @@ RUN xx-apt-get install -y gcc g++ libc6-dev
 ARG PROFILE=release
 ARG FEATURES
 ARG RUSTFLAGS
+ARG LINKER=lld
 
 COPY --from=planner /qdrant/recipe.json recipe.json
-RUN xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --recipe-path recipe.json
+RUN RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
+    xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --recipe-path recipe.json
 
 COPY . .
-RUN xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --bin qdrant \
+RUN RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
+    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --bin qdrant \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
