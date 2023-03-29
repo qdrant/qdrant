@@ -120,6 +120,9 @@ fn main() -> anyhow::Result<()> {
 
     welcome();
 
+    // Validate settings as soon as possible, but after log init so we can print
+    settings.validate_and_log();
+
     // Saved state of the consensus.
     let persistent_consensus_state =
         Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;

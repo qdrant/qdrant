@@ -245,7 +245,7 @@ impl Validate for PointOperations {
 impl Validate for PointInsertOperations {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         let bad_input_description = |ids_len: usize, vectors_len: usize| -> String {
-            format!("Amount of ids ({ids_len}) and vectors ({vectors_len}) does not match",)
+            format!("Amount of ids ({ids_len}) and vectors ({vectors_len}) does not match")
         };
 
         let create_error = |message: String| -> validator::ValidationErrors {
@@ -284,7 +284,7 @@ impl Validate for PointInsertOperations {
                         return Err(create_error(format!(
                             "Amount of ids ({}) and payloads ({}) does not match",
                             batch.ids.len(),
-                            payload_vector.len()
+                            payload_vector.len(),
                         )));
                     }
                 }

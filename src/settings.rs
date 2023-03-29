@@ -4,6 +4,9 @@ use config::{Config, ConfigError, Environment, File};
 use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
+use validator::Validate;
+
+use crate::common::validation;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServiceConfig {
@@ -78,12 +81,13 @@ pub struct TlsConfig {
     pub ca_cert: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Validate)]
 pub struct Settings {
     #[serde(default = "default_debug")]
     pub debug: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[validate]
     pub storage: StorageConfig,
     pub service: ServiceConfig,
     #[serde(default)]
@@ -105,6 +109,13 @@ impl Settings {
             io::ErrorKind::Other,
             "TLS config is not defined in the Qdrant config file",
         )
+    }
+
+    #[allow(dead_code)]
+    pub fn validate_and_log(&self) {
+        if let Err(ref errs) = self.validate() {
+            validation::log_validation_errors("Settings configuration file", errs);
+        }
     }
 }
 
@@ -195,9 +206,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_read_default_config() {
+    fn test_default_config() {
         let key = "RUN_MODE";
         env::set_var(key, "TEST");
-        Settings::new(None).unwrap();
+
+        // Read config
+        let config = Settings::new(None).unwrap();
+
+        // Validate
+        config.validate().unwrap();
     }
 }
