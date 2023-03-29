@@ -38,13 +38,13 @@ pub fn describe_errors(key: Option<&str>, errs: &ValidationErrors) -> Vec<(Strin
 }
 
 /// Describe a specific validation error.
-fn describe_error(err: &ValidationError) -> String {
-    let ValidationError {
+fn describe_error(
+    err @ ValidationError {
         code,
         message,
         params,
-    } = err;
-
+    }: &ValidationError,
+) -> String {
     // Prefer to return message if set
     if let Some(message) = message {
         return message.to_string();
@@ -61,7 +61,7 @@ fn describe_error(err: &ValidationError) -> String {
                 _ => err.to_string(),
             };
             match params.get("value") {
-                Some(value) => format!("value {value} {msg}"),
+                Some(value) => format!("value {value} invalid, {msg}"),
                 None => msg,
             }
         }
@@ -77,7 +77,7 @@ fn describe_error(err: &ValidationError) -> String {
                 _ => err.to_string(),
             };
             match params.get("value") {
-                Some(value) => format!("value {value} {msg}"),
+                Some(value) => format!("value {value} invalid, {msg}"),
                 None => msg,
             }
         }

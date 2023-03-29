@@ -53,9 +53,11 @@ pub fn init(
                 .allow_any_origin()
                 .allow_any_method()
                 .allow_any_header();
-            let json_config = actix_web_validator::JsonConfig::default()
+            let validate_query_config = actix_web_validator::QueryConfig::default()
+                .error_handler(|err, rec| validation_error_handler("query parameters", err, rec));
+            let validate_json_config = actix_web_validator::JsonConfig::default()
                 .limit(settings.service.max_request_size_mb * 1024 * 1024)
-                .error_handler(json_error_handler);
+                .error_handler(|err, rec| validation_error_handler("JSON body", err, rec));
 
             App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
@@ -67,7 +69,8 @@ pub fn init(
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
-                .app_data(json_config)
+                .app_data(validate_query_config)
+                .app_data(validate_json_config)
                 .app_data(TempFileConfig::default().directory(dispatcher_data.snapshots_path()))
                 .app_data(MultipartFormConfig::default().total_limit(usize::MAX))
                 .service(index)
@@ -107,12 +110,27 @@ pub fn init(
     })
 }
 
-fn json_error_handler(err: actix_web_validator::Error, _req: &HttpRequest) -> error::Error {
-    // Nicely describe JSON errors
+fn validation_error_handler(
+    name: &str,
+    err: actix_web_validator::Error,
+    _req: &HttpRequest,
+) -> error::Error {
+    use actix_web_validator::error::DeserializeErrors;
+
+    // Nicely describe deserialization and validation errors
     let msg = match &err {
+        actix_web_validator::Error::Deserialize(err) => {
+            format!("Deserialize error in {name}: {}", {
+                match err {
+                    DeserializeErrors::DeserializeQuery(err) => err.to_string(),
+                    DeserializeErrors::DeserializeJson(err) => err.to_string(),
+                    DeserializeErrors::DeserializePath(err) => err.to_string(),
+                }
+            })
+        }
         actix_web_validator::Error::Validate(errs) => {
             format!(
-                "Errors in JSON body: [{}]",
+                "Validation error in {name}: [{}]",
                 validation::describe_errors(None, errs)
                     .into_iter()
                     .map(|(field, err)| format!("{field}: {err}"))
@@ -125,9 +143,7 @@ fn json_error_handler(err: actix_web_validator::Error, _req: &HttpRequest) -> er
 
     // Build fitting response
     let response = match &err {
-        actix_web_validator::Error::Validate(_) | actix_web_validator::Error::Deserialize(_) => {
-            HttpResponse::UnprocessableEntity()
-        }
+        actix_web_validator::Error::Validate(_) => HttpResponse::UnprocessableEntity(),
         _ => HttpResponse::BadRequest(),
     }
     .json(ApiResponse::<()> {
