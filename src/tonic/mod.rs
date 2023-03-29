@@ -4,6 +4,7 @@ mod tonic_telemetry;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
@@ -62,7 +63,9 @@ pub fn init(
 
         log::info!("Qdrant gRPC listening on {}", grpc_port);
 
-        let mut server = Server::builder();
+        let mut server = Server::builder()
+            .http2_keepalive_interval(Some(Duration::from_millis(500)))
+            .http2_keepalive_timeout(Some(Duration::from_millis(500)));
 
         if settings.service.enable_tls {
             let tls_config = settings.tls()?;
@@ -133,7 +136,9 @@ pub fn init_internal(
 
         log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
-        let mut server = Server::builder();
+        let mut server = Server::builder()
+            .http2_keepalive_interval(Some(Duration::from_millis(500)))
+            .http2_keepalive_timeout(Some(Duration::from_millis(500)));
 
         if let Some(config) = tls_config {
             server = server
