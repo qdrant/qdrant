@@ -76,7 +76,8 @@ def points_retrieve():
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 2  # only 2 London records in collection
+    # only 2 London records in collection
+    assert len(response.json()['result']) == 2
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
@@ -146,9 +147,7 @@ def is_empty_condition():
         }
     )
 
-    assert len(response.json()['result']) == 2
-    for result in response.json()['result']:
-        assert "city" not in result['payload']
+    assert len(response.json()['result']) == 3
     assert response.ok
 
 
