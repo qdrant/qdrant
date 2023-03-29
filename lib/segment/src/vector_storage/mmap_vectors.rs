@@ -10,7 +10,7 @@ use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::madvise;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; 4] = b"data";
@@ -20,7 +20,7 @@ pub struct MmapVectors {
     pub dim: usize,
     pub num_vectors: usize,
     mmap: Mmap,
-    pub quantized_vectors: Option<QuantizedVectorsStorage>,
+    pub quantized_vectors: Option<QuantizedVectors>,
 }
 
 fn open_read(path: &Path) -> OperationResult<Mmap> {
@@ -70,7 +70,7 @@ impl MmapVectors {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
             self.raw_vector_offset(offset)
         });
-        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
+        self.quantized_vectors = Some(QuantizedVectors::create(
             vector_data_iterator,
             quantization_config,
             distance,
@@ -87,9 +87,8 @@ impl MmapVectors {
         data_path: &Path,
         distance: Distance,
     ) -> OperationResult<()> {
-        if QuantizedVectorsStorage::check_exists(data_path) {
-            self.quantized_vectors =
-                Some(QuantizedVectorsStorage::load(data_path, true, distance)?);
+        if QuantizedVectors::check_exists(data_path) {
+            self.quantized_vectors = Some(QuantizedVectors::load(data_path, true, distance)?);
         }
         Ok(())
     }

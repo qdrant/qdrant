@@ -1,19 +1,10 @@
-use std::path::{Path, PathBuf};
-
 use bitvec::prelude::BitVec;
-use quantization::EncodedVectors;
 
-use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_largest_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType};
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
+use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
-pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
-pub const QUANTIZED_META_PATH: &str = "quantized.meta.json";
-
-pub struct ScalarQuantizedRawScorer<'a, TEncodedQuery, TEncodedVectors>
+pub struct QuantizedRawScorer<'a, TEncodedQuery, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
@@ -24,7 +15,7 @@ where
 }
 
 impl<TEncodedQuery, TEncodedVectors> RawScorer
-    for ScalarQuantizedRawScorer<'_, TEncodedQuery, TEncodedVectors>
+    for QuantizedRawScorer<'_, TEncodedQuery, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
@@ -80,49 +71,5 @@ where
                 ScoredPointOffset { idx, score }
             });
         peek_top_largest_iterable(scores, top)
-    }
-}
-
-pub struct ScalarQuantizedVectors<TStorage: quantization::EncodedStorage + Send + Sync> {
-    storage: quantization::EncodedVectorsU8<TStorage>,
-    distance: Distance,
-}
-
-impl<TStorage: quantization::EncodedStorage + Send + Sync> ScalarQuantizedVectors<TStorage> {
-    pub fn new(storage: quantization::EncodedVectorsU8<TStorage>, distance: Distance) -> Self {
-        Self { storage, distance }
-    }
-}
-
-impl<TStorage> QuantizedVectors for ScalarQuantizedVectors<TStorage>
-where
-    TStorage: quantization::EncodedStorage + Send + Sync,
-{
-    fn raw_scorer<'a>(
-        &'a self,
-        query: &[VectorElementType],
-        deleted: &'a BitVec,
-    ) -> Box<dyn RawScorer + 'a> {
-        let query = self
-            .distance
-            .preprocess_vector(query)
-            .unwrap_or_else(|| query.to_vec());
-        let query = self.storage.encode_query(&query);
-        Box::new(ScalarQuantizedRawScorer {
-            query,
-            deleted,
-            quantized_data: &self.storage,
-        })
-    }
-
-    fn save_to(&self, path: &Path) -> OperationResult<()> {
-        let data_path = path.join(QUANTIZED_DATA_PATH);
-        let meta_path = path.join(QUANTIZED_META_PATH);
-        self.storage.save(&data_path, &meta_path)?;
-        Ok(())
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        vec![QUANTIZED_DATA_PATH.into(), QUANTIZED_META_PATH.into()]
     }
 }

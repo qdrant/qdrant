@@ -147,6 +147,12 @@ impl From<fs_extra::error::Error> for OperationError {
     }
 }
 
+impl From<quantization::EncodingError> for OperationError {
+    fn from(err: quantization::EncodingError) -> Self {
+        OperationError::service_error(format!("Quantization encoding error: {err}"))
+    }
+}
+
 pub type OperationResult<T> = result::Result<T, OperationError>;
 
 pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {

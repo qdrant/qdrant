@@ -8,14 +8,13 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
-use super::quantized::quantized_vectors_base::QuantizedVectorsStorage;
+use super::quantized::quantized_vectors::QuantizedVectors;
 use super::VectorStorageEnum;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::VectorStorage;
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
@@ -132,7 +131,7 @@ impl VectorStorage for MemmapVectorStorage {
         mmap_store.load_quantization(data_path, self.distance)
     }
 
-    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage> {
+    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
         let mmap_store = self.mmap_store.as_ref().unwrap();
         mmap_store.quantized_vectors.as_ref()
     }

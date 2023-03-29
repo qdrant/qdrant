@@ -33,7 +33,6 @@ use crate::types::{
     default_quantization_ignore_value, default_quantization_rescore_value, FieldCondition, Filter,
     HnswConfig, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 const HNSW_USE_HEURISTIC: bool = true;

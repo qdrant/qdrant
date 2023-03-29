@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use ordered_float::OrderedFloat;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
-use super::quantized::quantized_vectors_base::QuantizedVectorsStorage;
+use super::quantized::quantized_vectors::QuantizedVectors;
 use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -72,7 +72,7 @@ pub trait VectorStorage {
     // Load quantized vectors from disk
     fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()>;
 
-    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage>;
+    fn quantized_storage(&self) -> Option<&QuantizedVectors>;
 
     fn files(&self) -> Vec<PathBuf>;
 }
@@ -159,7 +159,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage> {
+    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
         match self {
             VectorStorageEnum::Simple(v) => v.quantized_storage(),
             VectorStorageEnum::Memmap(v) => v.quantized_storage(),
