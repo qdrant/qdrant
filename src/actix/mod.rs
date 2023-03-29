@@ -12,6 +12,7 @@ use actix_multipart::form::tempfile::TempFileConfig;
 use actix_multipart::form::MultipartFormConfig;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use collection::operations::validation;
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use storage::dispatcher::Dispatcher;
 
@@ -26,23 +27,6 @@ use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
-
-fn json_error_handler(err: actix_web_validator::Error, _req: &HttpRequest) -> error::Error {
-    HttpResponse::UnsupportedMediaType();
-    let detail = err.to_string();
-    let mut resp_b = match &err {
-        // TODO: fix error types
-        // actix_web_validator::Error::ContentType => HttpResponse::UnsupportedMediaType(),
-        actix_web_validator::Error::Deserialize(_) => HttpResponse::UnprocessableEntity(),
-        _ => HttpResponse::BadRequest(),
-    };
-    let response = resp_b.json(ApiResponse::<()> {
-        result: None,
-        status: ApiStatus::Error(detail),
-        time: 0.0,
-    });
-    error::InternalError::from_response(err, response).into()
-}
 
 #[get("/")]
 pub async fn index() -> impl Responder {
@@ -121,6 +105,37 @@ pub fn init(
 
         server.run().await
     })
+}
+
+fn json_error_handler(err: actix_web_validator::Error, _req: &HttpRequest) -> error::Error {
+    // Nicely describe JSON errors
+    let msg = match &err {
+        actix_web_validator::Error::Validate(errs) => {
+            format!(
+                "Errors in JSON body: [{}]",
+                validation::describe_errors(None, errs)
+                    .into_iter()
+                    .map(|(field, err)| format!("{field}: {err}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        }
+        err => err.to_string(),
+    };
+
+    // Build fitting response
+    let response = match &err {
+        actix_web_validator::Error::Validate(_) | actix_web_validator::Error::Deserialize(_) => {
+            HttpResponse::UnprocessableEntity()
+        }
+        _ => HttpResponse::BadRequest(),
+    }
+    .json(ApiResponse::<()> {
+        result: None,
+        status: ApiStatus::Error(msg),
+        time: 0.0,
+    });
+    error::InternalError::from_response(err, response).into()
 }
 
 #[cfg(test)]
