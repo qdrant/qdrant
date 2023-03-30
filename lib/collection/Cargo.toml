@@ -29,7 +29,7 @@ hashring = "0.3.0"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 
 tokio = {version = "~1.27", features = ["full"]}
-futures = "0.3.27"
+futures = "0.3.28"
 atomicwrites = "0.4.0"
 log = "0.4"
 env_logger = "0.10.0"
