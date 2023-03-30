@@ -9,7 +9,7 @@ use crate::actix::helpers::process_response;
 use crate::common::points::{do_search_batch_points, do_search_points};
 
 #[post("/collections/{name}/points/search")]
-pub async fn search_points(
+async fn search_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: Json<SearchRequest>,
@@ -31,7 +31,7 @@ pub async fn search_points(
 }
 
 #[post("/collections/{name}/points/search/batch")]
-pub async fn batch_search_points(
+async fn batch_search_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: Json<SearchRequestBatch>,

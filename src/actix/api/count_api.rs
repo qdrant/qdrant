@@ -8,7 +8,7 @@ use crate::actix::helpers::process_response;
 use crate::common::points::do_count_points;
 
 #[post("/collections/{name}/points/count")]
-pub async fn count_points(
+async fn count_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: Json<CountRequest>,

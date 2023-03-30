@@ -21,7 +21,7 @@ async fn do_recommend_points(
 }
 
 #[post("/collections/{name}/points/recommend")]
-pub async fn recommend_points(
+async fn recommend_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: Json<RecommendRequest>,
@@ -52,7 +52,7 @@ async fn do_recommend_batch_points(
 }
 
 #[post("/collections/{name}/points/recommend/batch")]
-pub async fn recommend_batch_points(
+async fn recommend_batch_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: Json<RecommendRequestBatch>,

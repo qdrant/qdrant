@@ -21,7 +21,7 @@ pub struct UpdateParam {
 }
 
 #[put("/collections/{name}/points")]
-pub async fn upsert_points(
+async fn upsert_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     operation: Json<PointInsertOperations>,
@@ -46,7 +46,7 @@ pub async fn upsert_points(
 }
 
 #[post("/collections/{name}/points/delete")]
-pub async fn delete_points(
+async fn delete_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     operation: Json<PointsSelector>,
@@ -71,7 +71,7 @@ pub async fn delete_points(
 }
 
 #[post("/collections/{name}/points/payload")]
-pub async fn set_payload(
+async fn set_payload(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     operation: Json<SetPayload>,
@@ -96,7 +96,7 @@ pub async fn set_payload(
 }
 
 #[put("/collections/{name}/points/payload")]
-pub async fn overwrite_payload(
+async fn overwrite_payload(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     operation: Json<SetPayload>,
@@ -121,7 +121,7 @@ pub async fn overwrite_payload(
 }
 
 #[post("/collections/{name}/points/payload/delete")]
-pub async fn delete_payload(
+async fn delete_payload(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     operation: Json<DeletePayload>,
@@ -146,7 +146,7 @@ pub async fn delete_payload(
 }
 
 #[post("/collections/{name}/points/payload/clear")]
-pub async fn clear_payload(
+async fn clear_payload(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     operation: Json<PointsSelector>,
@@ -171,7 +171,7 @@ pub async fn clear_payload(
 }
 
 #[put("/collections/{name}/index")]
-pub async fn create_field_index(
+async fn create_field_index(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     operation: Json<CreateFieldIndex>,
@@ -196,7 +196,7 @@ pub async fn create_field_index(
 }
 
 #[delete("/collections/{name}/index/{field_name}")]
-pub async fn delete_field_index(
+async fn delete_field_index(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, String)>,
     params: Query<UpdateParam>,

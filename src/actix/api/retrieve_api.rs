@@ -39,7 +39,7 @@ async fn scroll_get_points(
 }
 
 #[get("/collections/{name}/points/{id}")]
-pub async fn get_point(
+async fn get_point(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, String)>,
     params: web::Query<ReadParams>,
@@ -81,7 +81,7 @@ pub async fn get_point(
 }
 
 #[post("/collections/{name}/points")]
-pub async fn get_points(
+async fn get_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: Json<PointRequest>,
@@ -102,7 +102,7 @@ pub async fn get_points(
 }
 
 #[post("/collections/{name}/points/scroll")]
-pub async fn scroll_points(
+async fn scroll_points(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: Json<ScrollRequest>,
