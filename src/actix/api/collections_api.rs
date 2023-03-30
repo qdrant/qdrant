@@ -11,12 +11,14 @@ use storage::content_manager::collection_meta_ops::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use validator::Validate;
 
 use crate::actix::helpers::process_response;
 use crate::common::collections::*;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 struct WaitTimeout {
+    #[validate(range(min = 1))]
     timeout: Option<u64>,
 }
 

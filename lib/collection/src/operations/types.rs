@@ -174,6 +174,7 @@ pub struct ScrollRequest {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
     /// Page size. Default: 10
+    #[validate(range(min = 1))]
     pub limit: Option<usize>,
     /// Look only for points which satisfies this conditions. If not provided - all points.
     pub filter: Option<Filter>,
