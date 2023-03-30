@@ -241,7 +241,8 @@ mod tests {
             "color": "red",
             "has_delivery": true,
             "parts": [],
-            "packaging": null
+            "packaging": null,
+            "not_null": [null]
         })
         .into();
 
@@ -281,6 +282,13 @@ mod tests {
         }));
         assert!(payload_checker.check(0, &is_empty_condition));
 
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: "not_null".to_string(),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_empty_condition));
+
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "amount".to_string(),
@@ -308,6 +316,13 @@ mod tests {
             },
         }));
         assert!(payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "not_null".to_string(),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_null_condition));
 
         let match_red = Condition::Field(FieldCondition::new_match(
             "color".to_string(),
