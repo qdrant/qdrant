@@ -122,6 +122,16 @@ fn validation_error_handler(
 
     // Nicely describe deserialization and validation errors
     let msg = match &err {
+        actix_web_validator::Error::Validate(errs) => {
+            format!(
+                "Validation error in {name}: [{}]",
+                validation::describe_errors(errs)
+                    .into_iter()
+                    .map(|(field, err)| format!("{field}: {err}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        }
         actix_web_validator::Error::Deserialize(err) => {
             format!(
                 "Deserialize error in {name}: {}",
@@ -132,15 +142,10 @@ fn validation_error_handler(
                 }
             )
         }
-        actix_web_validator::Error::Validate(errs) => {
-            format!(
-                "Validation error in {name}: [{}]",
-                validation::describe_errors(errs)
-                    .into_iter()
-                    .map(|(field, err)| format!("{field}: {err}"))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )
+        actix_web_validator::Error::JsonPayloadError(
+            actix_web::error::JsonPayloadError::Deserialize(err),
+        ) => {
+            format!("Format error in {name}: {}", err,)
         }
         err => err.to_string(),
     };
