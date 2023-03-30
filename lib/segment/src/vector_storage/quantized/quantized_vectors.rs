@@ -88,12 +88,13 @@ impl QuantizedVectors {
     pub fn save_to(&self, path: &Path) -> OperationResult<()> {
         let data_path = path.join(QUANTIZED_DATA_PATH);
         let meta_path = path.join(QUANTIZED_META_PATH);
-        Ok(match &self.storage_impl {
+        match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => storage.save(&data_path, &meta_path)?,
             QuantizedVectorStorage::ScalarMmap(storage) => storage.save(&data_path, &meta_path)?,
             QuantizedVectorStorage::PQRam(storage) => storage.save(&data_path, &meta_path)?,
             QuantizedVectorStorage::PQMmap(storage) => storage.save(&data_path, &meta_path)?,
-        })
+        };
+        Ok(())
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -204,7 +205,7 @@ impl QuantizedVectors {
         Ok(QuantizedVectors {
             storage_impl: quantized_store,
             config,
-            path: data_path.to_path_buf(),
+            path: data_path,
             distance,
         })
     }
@@ -217,14 +218,14 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let quantized_vector_size =
-            EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(&vector_parameters);
+            EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::encode(
                 vectors,
                 storage_builder,
-                &vector_parameters,
+                vector_parameters,
                 scalar_config.quantile,
             )?))
         } else {
@@ -238,7 +239,7 @@ impl QuantizedVectors {
                 EncodedVectorsU8::encode(
                     vectors,
                     storage_builder,
-                    &vector_parameters,
+                    vector_parameters,
                     scalar_config.quantile,
                 )?,
             ))
@@ -254,7 +255,7 @@ impl QuantizedVectors {
     ) -> OperationResult<QuantizedVectorStorage> {
         let quantized_vector_size =
             EncodedVectorsPQ::<QuantizedMmapStorage>::get_quantized_vector_size(
-                &vector_parameters,
+                vector_parameters,
                 pq_config.bucket_size,
             );
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
@@ -263,7 +264,7 @@ impl QuantizedVectors {
             Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
-                &vector_parameters,
+                vector_parameters,
                 pq_config.bucket_size,
             )?))
         } else {
@@ -276,7 +277,7 @@ impl QuantizedVectors {
             Ok(QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
-                &vector_parameters,
+                vector_parameters,
                 pq_config.bucket_size,
             )?))
         }
