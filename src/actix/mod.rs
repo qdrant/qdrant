@@ -53,6 +53,8 @@ pub fn init(
                 .allow_any_origin()
                 .allow_any_method()
                 .allow_any_header();
+            let validate_path_config = actix_web_validator::PathConfig::default()
+                .error_handler(|err, rec| validation_error_handler("path parameters", err, rec));
             let validate_query_config = actix_web_validator::QueryConfig::default()
                 .error_handler(|err, rec| validation_error_handler("query parameters", err, rec));
             let validate_json_config = actix_web_validator::JsonConfig::default()
@@ -69,6 +71,7 @@ pub fn init(
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
+                .app_data(validate_path_config)
                 .app_data(validate_query_config)
                 .app_data(validate_json_config)
                 .app_data(TempFileConfig::default().directory(dispatcher_data.snapshots_path()))
@@ -120,13 +123,14 @@ fn validation_error_handler(
     // Nicely describe deserialization and validation errors
     let msg = match &err {
         actix_web_validator::Error::Deserialize(err) => {
-            format!("Deserialize error in {name}: {}", {
+            format!(
+                "Deserialize error in {name}: {}",
                 match err {
                     DeserializeErrors::DeserializeQuery(err) => err.to_string(),
                     DeserializeErrors::DeserializeJson(err) => err.to_string(),
                     DeserializeErrors::DeserializePath(err) => err.to_string(),
                 }
-            })
+            )
         }
         actix_web_validator::Error::Validate(errs) => {
             format!(
