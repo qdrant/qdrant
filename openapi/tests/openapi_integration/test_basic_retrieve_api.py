@@ -42,7 +42,7 @@ def points_retrieve():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['vectors_count'] == 6
+    assert response.json()['result']['vectors_count'] == 8
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
@@ -148,14 +148,15 @@ def is_empty_condition():
     )
 
     assert response.ok
-    
+
     json = response.json()
     assert len(json['result']) == 3
-    
+
     ids = [x['id'] for x in json['result']]
-    assert 3 in ids
     assert 5 in ids
     assert 6 in ids
+    assert 8 in ids
+
 
 def test_is_null_condition():
     is_null_condition()
@@ -182,12 +183,12 @@ def is_null_condition():
         }
     )
     assert response.ok
-    
+
     json = response.json()
     assert len(json['result']) == 1
-    
+
     ids = [x['id'] for x in json['result']]
-    assert 1 in ids
+    assert 7 in ids
 
 
 def test_recommendation():
