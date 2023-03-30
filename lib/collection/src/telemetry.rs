@@ -19,14 +19,10 @@ impl CollectionTelemetry {
     pub fn count_vectors(&self) -> usize {
         self.shards
             .iter()
-            // TODO: improve this?
-            .filter_map(|shard| {
-                shard
-                    .local
-                    .as_ref()
-                    .map(|x| x.segments.iter().map(|s| s.info.num_vectors).sum::<usize>())
-            })
-            .sum::<usize>()
+            .flat_map(|shard| shard.local.as_ref())
+            .flat_map(|x| x.segments.iter())
+            .map(|s| s.info.num_vectors)
+            .sum()
     }
 }
 
