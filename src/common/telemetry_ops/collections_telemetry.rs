@@ -29,17 +29,6 @@ pub struct CollectionsTelemetry {
 
 impl From<CollectionTelemetry> for CollectionsAggregatedTelemetry {
     fn from(telemetry: CollectionTelemetry) -> Self {
-        let number_of_vectors = telemetry
-            .shards
-            .iter()
-            .filter_map(|shard| {
-                shard
-                    .local
-                    .as_ref()
-                    .map(|x| x.segments.iter().map(|s| s.info.num_vectors).sum::<usize>())
-            })
-            .sum::<usize>();
-
         let optimizers_status = telemetry
             .shards
             .iter()
@@ -48,7 +37,7 @@ impl From<CollectionTelemetry> for CollectionsAggregatedTelemetry {
             .unwrap_or(OptimizersStatus::Ok);
 
         CollectionsAggregatedTelemetry {
-            vectors: number_of_vectors,
+            vectors: telemetry.count_vectors(),
             optimizers_status,
             params: telemetry.config.params,
         }

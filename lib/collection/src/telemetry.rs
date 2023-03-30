@@ -15,6 +15,21 @@ pub struct CollectionTelemetry {
     pub transfers: Vec<ShardTransferInfo>,
 }
 
+impl CollectionTelemetry {
+    pub fn count_vectors(&self) -> usize {
+        self.shards
+            .iter()
+            // TODO: improve this?
+            .filter_map(|shard| {
+                shard
+                    .local
+                    .as_ref()
+                    .map(|x| x.segments.iter().map(|s| s.info.num_vectors).sum::<usize>())
+            })
+            .sum::<usize>()
+    }
+}
+
 impl Anonymize for CollectionTelemetry {
     fn anonymize(&self) -> Self {
         Self {
