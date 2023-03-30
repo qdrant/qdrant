@@ -120,7 +120,7 @@ For faster production-tier searches, Qdrant also provides a gRPC interface. You 
 
 Qdrant offers the following client libraries to help you integrate it into your application stack with ease:
 
-- [Python client](https://github.com/qdrant/qdrant_client)
+- [Python client](https://github.com/qdrant/qdrant-client)
 - [Go client](https://github.com/qdrant/go-client)
 - [Rust client](https://github.com/qdrant/rust-client)
 
