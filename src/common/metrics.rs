@@ -93,13 +93,13 @@ impl MetricsProvider for AppBuildTelemetry {
 
 impl MetricsProvider for CollectionsTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        let aggregated_vector_count = self
+        let vector_count = self
             .collections
             .iter()
             .flatten()
             .map(|p| match p {
                 CollectionTelemetryEnum::Aggregated(a) => a.vectors,
-                CollectionTelemetryEnum::Full(_) => 0,
+                CollectionTelemetryEnum::Full(c) => c.count_vectors(),
             })
             .sum::<usize>();
         metrics.push(metric_family(
@@ -109,10 +109,10 @@ impl MetricsProvider for CollectionsTelemetry {
             vec![gauge(self.number_of_collections as f64, &[])],
         ));
         metrics.push(metric_family(
-            "collections_aggregated_vector_total",
+            "collections_vector_total",
             "total number of vectors in all collections",
             MetricType::GAUGE,
-            vec![gauge(aggregated_vector_count as f64, &[])],
+            vec![gauge(vector_count as f64, &[])],
         ));
 
         // Count collection types
