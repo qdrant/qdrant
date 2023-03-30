@@ -262,10 +262,9 @@ impl StructPayloadIndex {
                         primary_clauses: vec![PrimaryCondition::IsNull(IsNullCondition {
                             is_null: field.to_owned(),
                         })],
-                        // TODO: check if correct
                         min: 0,
-                        exp: indexed_points,
-                        max: indexed_points,
+                        exp: total_points.saturating_sub(indexed_points),
+                        max: total_points.saturating_sub(indexed_points),
                     }
                 } else {
                     CardinalityEstimation {
