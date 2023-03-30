@@ -1,6 +1,6 @@
 use actix_web::rt::time::Instant;
 use actix_web::{delete, post, put, web, Responder};
-use actix_web_validator::{Json, Path};
+use actix_web_validator::{Json, Path, Query};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use schemars::JsonSchema;
@@ -22,7 +22,7 @@ struct FieldPath {
     name: String,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpdateParam {
     pub wait: Option<bool>,
     pub ordering: Option<WriteOrdering>,
@@ -33,7 +33,7 @@ async fn upsert_points(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     operation: Json<PointInsertOperations>,
-    params: web::Query<UpdateParam>,
+    params: Query<UpdateParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -57,7 +57,7 @@ async fn delete_points(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
-    params: web::Query<UpdateParam>,
+    params: Query<UpdateParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -81,7 +81,7 @@ async fn set_payload(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
-    params: web::Query<UpdateParam>,
+    params: Query<UpdateParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -105,7 +105,7 @@ async fn overwrite_payload(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
-    params: web::Query<UpdateParam>,
+    params: Query<UpdateParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -129,7 +129,7 @@ async fn delete_payload(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     operation: Json<DeletePayload>,
-    params: web::Query<UpdateParam>,
+    params: Query<UpdateParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -153,7 +153,7 @@ async fn clear_payload(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
-    params: web::Query<UpdateParam>,
+    params: Query<UpdateParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -177,7 +177,7 @@ async fn create_field_index(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     operation: Json<CreateFieldIndex>,
-    params: web::Query<UpdateParam>,
+    params: Query<UpdateParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -201,7 +201,7 @@ async fn delete_field_index(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     field: Path<FieldPath>,
-    params: web::Query<UpdateParam>,
+    params: Query<UpdateParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(false);

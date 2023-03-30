@@ -5,7 +5,7 @@ use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
-use actix_web_validator::{Json, Path};
+use actix_web_validator::{Json, Path, Query};
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use reqwest::Url;
 use schemars::JsonSchema;
@@ -34,13 +34,13 @@ struct SnapshotPath {
     name: String,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SnapshotUploadingParam {
     pub wait: Option<bool>,
     pub priority: Option<SnapshotPriority>,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SnapshottingParam {
     pub wait: Option<bool>,
 }
@@ -127,7 +127,7 @@ async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
-    params: web::Query<SnapshotUploadingParam>,
+    params: Query<SnapshotUploadingParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let snapshot = form.snapshot;
@@ -159,7 +159,7 @@ async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<SnapshotRecover>,
-    params: web::Query<SnapshottingParam>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let snapshot_recover = request.into_inner();
