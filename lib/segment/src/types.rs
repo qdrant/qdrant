@@ -1082,7 +1082,7 @@ pub struct IsEmptyCondition {
     pub is_empty: PayloadField,
 }
 
-/// Select points with empty payload for a specified field
+/// Select points with null payload for a specified field
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct IsNullCondition {
     pub is_null: PayloadField,
