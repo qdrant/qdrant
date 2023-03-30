@@ -39,7 +39,7 @@ fn describe_error(
         "range" => {
             let msg = match (params.get("min"), params.get("max")) {
                 (Some(min), None) => format!("must be {min} or larger"),
-                (Some(min), Some(max)) => format!("must be between {min} and {max}"),
+                (Some(min), Some(max)) => format!("must be from {min} to {max}"),
                 (None, Some(max)) => format!("must be {max} or smaller"),
                 // Should be unreachable
                 _ => err.to_string(),
@@ -54,7 +54,7 @@ fn describe_error(
                 (Some(equal), _, _) => format!("must be exactly {equal} characters"),
                 (None, Some(min), None) => format!("must be at least {min} characters"),
                 (None, Some(min), Some(max)) => {
-                    format!("must be between {min} and {max} characters")
+                    format!("must be from {min} to {max} characters")
                 }
                 (None, None, Some(max)) => format!("must be at most {max} characters"),
                 // Should be unreachable
