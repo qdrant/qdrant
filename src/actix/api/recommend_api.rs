@@ -1,6 +1,6 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
-use actix_web_validator::Json;
+use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::types::{RecommendRequest, RecommendRequestBatch};
 use segment::types::ScoredPoint;
@@ -8,6 +8,7 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
 use super::read_params::ReadParams;
+use super::CollectionPath;
 use crate::actix::helpers::process_response;
 
 async fn do_recommend_points(
@@ -23,16 +24,15 @@ async fn do_recommend_points(
 #[post("/collections/{name}/points/recommend")]
 async fn recommend_points(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
+    collection: Path<CollectionPath>,
     request: Json<RecommendRequest>,
-    params: web::Query<ReadParams>,
+    params: Query<ReadParams>,
 ) -> impl Responder {
-    let name = path.into_inner();
     let timing = Instant::now();
 
     let response = do_recommend_points(
         toc.get_ref(),
-        &name,
+        &collection.name,
         request.into_inner(),
         params.consistency,
     )
@@ -54,16 +54,15 @@ async fn do_recommend_batch_points(
 #[post("/collections/{name}/points/recommend/batch")]
 async fn recommend_batch_points(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
+    collection: Path<CollectionPath>,
     request: Json<RecommendRequestBatch>,
-    params: web::Query<ReadParams>,
+    params: Query<ReadParams>,
 ) -> impl Responder {
-    let name = path.into_inner();
     let timing = Instant::now();
 
     let response = do_recommend_batch_points(
         toc.get_ref(),
-        &name,
+        &collection.name,
         request.into_inner(),
         params.consistency,
     )
