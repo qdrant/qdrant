@@ -49,7 +49,7 @@ async fn metrics(
 ) -> impl Responder {
     let anonymize = params.anonymize.unwrap_or(false);
     let telemetry_collector = telemetry_collector.lock().await;
-    let telemetry_data = telemetry_collector.prepare_data(0).await;
+    let telemetry_data = telemetry_collector.prepare_data(1).await;
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()
     } else {
