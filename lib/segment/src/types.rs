@@ -1548,7 +1548,6 @@ mod tests {
         "#;
 
         let filter: Filter = serde_json::from_str(query).unwrap();
-        println!("{filter:?}");
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
@@ -1575,7 +1574,6 @@ mod tests {
         "#;
 
         let filter: Filter = serde_json::from_str(query).unwrap();
-        println!("{filter:?}");
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
