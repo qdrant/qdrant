@@ -14,6 +14,6 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate)]
 struct CollectionPath {
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     name: String,
 }

@@ -15,6 +15,7 @@ struct QueryParams {
     #[serde(default)]
     force: bool,
     #[serde(default)]
+    #[validate(range(min = 1))]
     timeout: Option<u64>,
 }
 
