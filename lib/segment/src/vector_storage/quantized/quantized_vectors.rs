@@ -164,7 +164,8 @@ impl QuantizedVectors {
     ) -> OperationResult<Self> {
         let data_path = path.join(QUANTIZED_DATA_PATH);
         let meta_path = path.join(QUANTIZED_META_PATH);
-        let config: QuantizedVectorsConfig = read_json(&data_path.join(QUANTIZED_CONFIG_PATH))?;
+        let config_path = path.join(QUANTIZED_CONFIG_PATH);
+        let config: QuantizedVectorsConfig = read_json(&config_path)?;
         let quantized_store = match &config.quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
                 if Self::is_ram(scalar.always_ram, on_disk_vector_storage) {

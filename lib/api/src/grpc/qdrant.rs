@@ -185,7 +185,7 @@ pub struct ScalarQuantization {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProductQuantization {
-    /// Type of quantization
+    /// maximum centroid dimension
     #[prost(uint64, tag = "1")]
     pub bucket_size: u64,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
