@@ -946,6 +946,7 @@ dependencies = [
 name = "collection"
 version = "0.4.2"
 dependencies = [
+ "actix-web-validator",
  "api",
  "arc-swap",
  "async-trait",

@@ -131,7 +131,7 @@ fn validation_error_handler(
         actix_web_validator::Error::Validate(errs) => {
             format!(
                 "Validation error in {name}: [{}]",
-                validation::describe_errors(None, errs)
+                validation::describe_errors(errs)
                     .into_iter()
                     .map(|(field, err)| format!("{field}: {err}"))
                     .collect::<Vec<_>>()

@@ -1,11 +1,12 @@
-use validator::{ValidationError, ValidationErrors, ValidationErrorsKind};
+use actix_web_validator::error::flatten_errors;
+use validator::{ValidationError, ValidationErrors};
 
 /// Warn about validation errors in the log.
 ///
 /// Validation errors are pretty printed field-by-field.
 pub fn warn_validation_errors(description: &str, errs: &ValidationErrors) {
     log::warn!("{description} has validation errors:");
-    describe_errors(None, errs)
+    describe_errors(errs)
         .into_iter()
         .for_each(|(key, msg)| log::warn!("- {key}: {}", msg));
 }
@@ -13,27 +14,10 @@ pub fn warn_validation_errors(description: &str, errs: &ValidationErrors) {
 /// Describe the given validation errors.
 ///
 /// Returns a list of error messages for fields: `(field, message)`
-pub fn describe_errors(key: Option<&str>, errs: &ValidationErrors) -> Vec<(String, String)> {
-    errs.errors()
-        .iter()
-        .flat_map(|(field, err)| {
-            let key = match key {
-                Some(key) => format!("{key}.{field}"),
-                None => field.to_string(),
-            };
-
-            match err {
-                ValidationErrorsKind::Struct(errs) => describe_errors(Some(&key), errs),
-                ValidationErrorsKind::List(errs) => errs
-                    .iter()
-                    .flat_map(|(i, errs)| describe_errors(Some(&format!("{key}.{i}")), errs))
-                    .collect(),
-                ValidationErrorsKind::Field(errs) => errs
-                    .iter()
-                    .map(|err| (key.to_string(), describe_error(err)))
-                    .collect(),
-            }
-        })
+pub fn describe_errors(errs: &ValidationErrors) -> Vec<(String, String)> {
+    flatten_errors(errs)
+        .into_iter()
+        .map(|(_, name, err)| (name, describe_error(err)))
         .collect()
 }
 
