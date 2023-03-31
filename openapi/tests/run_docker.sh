@@ -15,4 +15,3 @@ cd "$(dirname "$0")"
 trap clear_after_tests EXIT
 
 pytest -s
-#pytest -s openapi_integration/test_validate_schema_infra.py

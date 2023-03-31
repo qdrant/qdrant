@@ -172,8 +172,10 @@ pub struct ScoredPoint {
     /// Points vector distance to the query vector
     pub score: ScoreType,
     /// Payload - values assigned to the point
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<Payload>,
     /// Vector of the point
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vector: Option<VectorStruct>,
 }
 

@@ -106,19 +106,22 @@ pub struct OptimizersConfigDiff {
     /// If indexation speed have more priority for your - make this parameter lower.
     /// If search speed is more important - make this parameter higher.
     /// Note: 1Kb = 1 vector of size 256
-    #[serde(alias = "max_segment_size_kb")]
+    #[serde(alias = "max_segment_size_kb", skip_serializing_if = "Option::is_none")]
     pub max_segment_size: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
     /// To enable memmap storage, lower the threshold
     /// Note: 1Kb = 1 vector of size 256
-    #[serde(alias = "memmap_threshold_kb")]
+    #[serde(alias = "memmap_threshold_kb", skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1000))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
-    #[serde(alias = "indexing_threshold_kb")]
+    #[serde(
+        alias = "indexing_threshold_kb",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[validate(range(min = 1000))]
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.

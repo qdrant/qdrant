@@ -14,6 +14,7 @@ use crate::settings::{Settings, TlsConfig};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct LocksOption {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
     pub write: bool,
 }

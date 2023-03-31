@@ -11,6 +11,7 @@ def setup():
     basic_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
+    drop_collection(collection_name=f'{collection_name}_2')
 
 
 def test_cant_create_alias_if_collection_exists():

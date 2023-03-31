@@ -42,7 +42,7 @@ pub struct OptimizersConfig {
     /// Note: 1Kb = 1 vector of size 256
     /// If not set, will be automatically selected considering the number of available CPUs.
     #[serde(alias = "max_segment_size_kb")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_segment_size: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
@@ -50,7 +50,7 @@ pub struct OptimizersConfig {
     /// Note: 1Kb = 1 vector of size 256
     /// If not set, mmap will not be used.
     #[serde(alias = "memmap_threshold_kb")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1000))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.

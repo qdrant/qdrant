@@ -233,7 +233,6 @@ def test_scroll_with_prefix():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "offset": None,
             "limit": 10,
             "with_payload": True,
             "with_vector": False,

@@ -217,7 +217,6 @@ def query_nested():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "offset": None,
             "limit": 10,
             "with_vector": ["text"],
             "filter": {

@@ -68,8 +68,10 @@ pub struct Record {
     /// Id of the point
     pub id: PointIdType,
     /// Payload - values assigned to the point
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<Payload>,
     /// Vector of the point
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vector: Option<VectorStruct>,
 }
 
@@ -172,13 +174,17 @@ pub struct UpdateResult {
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequest {
     /// Start ID to read points from.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<PointIdType>,
     /// Page size. Default: 10
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
     /// Look only for points which satisfies this conditions. If not provided - all points.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Filter>,
     /// Select which payload to return with the response. Default: All
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
     #[serde(default)]
@@ -204,6 +210,7 @@ pub struct ScrollResult {
     /// List of retrieved points
     pub points: Vec<Record>,
     /// Offset which should be used to retrieve a next page result
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_page_offset: Option<PointIdType>,
 }
 
