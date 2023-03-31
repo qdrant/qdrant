@@ -69,3 +69,56 @@ fn describe_error(
         _ => err.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use validator::Validate;
+
+    use super::*;
+
+    #[derive(Validate, Debug)]
+    struct SomeThing {
+        #[validate(range(min = 1))]
+        pub idx: usize,
+    }
+
+    #[derive(Validate, Debug)]
+    struct OtherThing {
+        #[validate]
+        pub things: Vec<SomeThing>,
+    }
+
+    #[test]
+    fn test_validation() {
+        let bad_config = OtherThing {
+            things: vec![SomeThing { idx: 0 }],
+        };
+        assert!(
+            bad_config.validate().is_err(),
+            "validation of bad config should fail"
+        );
+    }
+
+    #[test]
+    fn test_validation_render() {
+        let bad_config = OtherThing {
+            things: vec![
+                SomeThing { idx: 0 },
+                SomeThing { idx: 1 },
+                SomeThing { idx: 2 },
+            ],
+        };
+
+        let errors = bad_config
+            .validate()
+            .expect_err("validation of bad config should fail");
+
+        assert_eq!(
+            describe_errors(&errors),
+            vec![(
+                "things[0].idx".into(),
+                "value 0 invalid, must be 1.0 or larger".into()
+            )]
+        );
+    }
+}
