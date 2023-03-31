@@ -11,8 +11,8 @@ use tokio::sync::Mutex;
 
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-    SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
@@ -152,7 +152,10 @@ impl ShardOperation for ForwardProxyShard {
         // during the transfer restart and finalization.
         local_shard.update(operation.clone(), wait).await?;
 
-        self.remote_shard.update(operation, false).await
+        self.remote_shard
+            .update(operation, false)
+            .await
+            .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`

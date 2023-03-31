@@ -388,6 +388,8 @@ pub enum CollectionError {
         shards_failed: u32,
         first_err: Box<CollectionError>,
     },
+    #[error("Remote shard on {peer_id} failed during forward proxy operation: {error}")]
+    ForwardProxyError { peer_id: PeerId, error: Box<Self> },
 }
 
 impl CollectionError {
@@ -408,6 +410,20 @@ impl CollectionError {
 
     pub fn bad_shard_selection(description: String) -> CollectionError {
         CollectionError::BadShardSelection { description }
+    }
+
+    pub fn forward_proxy_error(peer_id: PeerId, error: impl Into<Self>) -> Self {
+        Self::ForwardProxyError {
+            peer_id,
+            error: Box::new(error.into()),
+        }
+    }
+
+    pub fn remote_peer_id(&self) -> Option<PeerId> {
+        match self {
+            Self::ForwardProxyError { peer_id, .. } => Some(*peer_id),
+            _ => None,
+        }
     }
 }
 
