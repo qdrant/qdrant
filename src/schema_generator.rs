@@ -9,7 +9,8 @@ use collection::operations::types::{
     CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
     ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
-use schemars::{schema_for, JsonSchema};
+use schemars::gen::SchemaSettings;
+use schemars::JsonSchema;
 use segment::types::ScoredPoint;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_meta_ops::{
@@ -65,7 +66,12 @@ struct AllDefinitions {
 }
 
 fn save_schema<T: JsonSchema>() {
-    let schema = schema_for!(T);
+    // TODO investigate using the later `draft2019_09` instead of `draft07`
+    let settings = SchemaSettings::draft07().with(|s| {
+        s.option_add_null_type = false; // do not add 'null' to the type list for optional fields
+    });
+    let gen = settings.into_generator();
+    let schema = gen.into_root_schema_for::<T>();
     let schema_str = serde_json::to_string_pretty(&schema).unwrap();
     println!("{schema_str}")
 }

@@ -3751,15 +3751,7 @@
             "$ref": "#/components/schemas/WalConfig"
           },
           "quantization_config": {
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationConfig"
           }
         }
       },
@@ -3878,15 +3870,13 @@
           },
           "on_disk": {
             "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "payload_m": {
             "description": "Custom M param for hnsw graph built for payload index. If not set, default M will be used.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           }
         }
       },
@@ -3923,16 +3913,14 @@
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "memmap_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 If not set, mmap will not be used.",
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
@@ -4005,13 +3993,11 @@
           "quantile": {
             "description": "Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values",
             "type": "number",
-            "format": "float",
-            "nullable": true
+            "format": "float"
           },
           "always_ram": {
             "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           }
         }
       },
@@ -4033,14 +4019,7 @@
             "$ref": "#/components/schemas/PayloadSchemaType"
           },
           "params": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayloadSchemaParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/PayloadSchemaParams"
           },
           "points": {
             "description": "Number of points indexed with this index",
@@ -4084,19 +4063,16 @@
           "min_token_len": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "max_token_len": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "lowercase": {
             "description": "If true, lowercase all tokens. Default: true",
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           }
         }
       },
@@ -4128,15 +4104,7 @@
             }
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: All",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithPayloadInterface"
           },
           "with_vector": {
             "$ref": "#/components/schemas/WithVector"
@@ -4246,26 +4214,10 @@
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
-            "description": "Payload - values assigned to the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Payload"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Payload"
           },
           "vector": {
-            "description": "Vector of the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorStruct"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/VectorStruct"
           }
         }
       },
@@ -4307,26 +4259,10 @@
             "$ref": "#/components/schemas/NamedVectorStruct"
           },
           "filter": {
-            "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter"
           },
           "params": {
-            "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SearchParams"
           },
           "limit": {
             "description": "Max number of result to return",
@@ -4342,33 +4278,15 @@
             "minimum": 0
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: None",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithPayloadInterface"
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithVector"
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
             "type": "number",
-            "format": "float",
-            "nullable": true
+            "format": "float"
           }
         }
       },
@@ -4417,24 +4335,21 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            }
           },
           "must": {
             "description": "All conditions must match",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            }
           },
           "must_not": {
             "description": "All conditions must NOT match",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            }
           }
         },
         "additionalProperties": false
@@ -4470,59 +4385,19 @@
             "type": "string"
           },
           "match": {
-            "description": "Check if point has field with a given value",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Match"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Match"
           },
           "range": {
-            "description": "Check if points value lies in a given range",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Range"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Range"
           },
           "geo_bounding_box": {
-            "description": "Check if points geo location lies in a given area",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GeoBoundingBox"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/GeoBoundingBox"
           },
           "geo_radius": {
-            "description": "Check if geo point is within a given radius",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GeoRadius"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/GeoRadius"
           },
           "values_count": {
-            "description": "Check number of values of the field",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ValuesCount"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ValuesCount"
           }
         }
       },
@@ -4614,26 +4489,22 @@
           "lt": {
             "description": "point.key < range.lt",
             "type": "number",
-            "format": "double",
-            "nullable": true
+            "format": "double"
           },
           "gt": {
             "description": "point.key > range.gt",
             "type": "number",
-            "format": "double",
-            "nullable": true
+            "format": "double"
           },
           "gte": {
             "description": "point.key >= range.gte",
             "type": "number",
-            "format": "double",
-            "nullable": true
+            "format": "double"
           },
           "lte": {
             "description": "point.key <= range.lte",
             "type": "number",
-            "format": "double",
-            "nullable": true
+            "format": "double"
           }
         }
       },
@@ -4697,29 +4568,25 @@
             "description": "point.key.length() < values_count.lt",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "gt": {
             "description": "point.key.length() > values_count.gt",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "gte": {
             "description": "point.key.length() >= values_count.gte",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "lte": {
             "description": "point.key.length() <= values_count.lte",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           }
         }
       },
@@ -4784,8 +4651,7 @@
             "description": "Params relevant to HNSW index /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "exact": {
             "description": "Search without approximation. If set to true, search may run long but with exact results.",
@@ -4793,16 +4659,7 @@
             "type": "boolean"
           },
           "quantization": {
-            "description": "Quantization params",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationSearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationSearchParams"
           }
         }
       },
@@ -4846,26 +4703,10 @@
             "format": "float"
           },
           "payload": {
-            "description": "Payload - values assigned to the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Payload"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Payload"
           },
           "vector": {
-            "description": "Vector of the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorStruct"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/VectorStruct"
           }
         }
       },
@@ -4919,26 +4760,10 @@
             }
           },
           "filter": {
-            "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter"
           },
           "params": {
-            "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SearchParams"
           },
           "limit": {
             "description": "Max number of result to return",
@@ -4954,57 +4779,21 @@
             "minimum": 0
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: None",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithPayloadInterface"
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithVector"
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
             "type": "number",
-            "format": "float",
-            "nullable": true
+            "format": "float"
           },
           "using": {
-            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UsingVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/UsingVector"
           },
           "lookup_from": {
-            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LookupLocation"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/LookupLocation"
           }
         }
       },
@@ -5029,8 +4818,7 @@
           "vector": {
             "description": "Optional name of the vector field within the collection. If not provided, the default vector field will be used.",
             "default": null,
-            "type": "string",
-            "nullable": true
+            "type": "string"
           }
         }
       },
@@ -5039,44 +4827,19 @@
         "type": "object",
         "properties": {
           "offset": {
-            "description": "Start ID to read points from.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ExtendedPointId"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ExtendedPointId"
           },
           "limit": {
             "description": "Page size. Default: 10",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "filter": {
-            "description": "Look only for points which satisfies this conditions. If not provided - all points.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter"
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: All",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithPayloadInterface"
           },
           "with_vector": {
             "$ref": "#/components/schemas/WithVector"
@@ -5098,15 +4861,7 @@
             }
           },
           "next_page_offset": {
-            "description": "Offset which should be used to retrieve a next page result",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ExtendedPointId"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ExtendedPointId"
           }
         }
       },
@@ -5125,87 +4880,41 @@
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "replication_factor": {
             "description": "Number of shards replicas. Default is 1 Minimum is 1",
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "write_consistency_factor": {
             "description": "Defines how many replicas should apply the operation for us to consider it successful. Increasing this number will make the collection more resilient to inconsistencies, but will also make it fail if not enough replicas are available. Does not have any performance impact.",
             "default": null,
             "type": "integer",
             "format": "uint32",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": null,
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "hnsw_config": {
-            "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HnswConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/HnswConfigDiff"
           },
           "wal_config": {
-            "description": "Custom params for WAL. If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WalConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WalConfigDiff"
           },
           "optimizers_config": {
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/OptimizersConfigDiff"
           },
           "init_from": {
-            "description": "Specify other collection to copy data from.",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/InitFrom"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/InitFrom"
           },
           "quantization_config": {
-            "description": "Quantization parameters. If none - quantization is disabled.",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationConfig"
           }
         }
       },
@@ -5216,44 +4925,38 @@
             "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "full_scan_threshold": {
             "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "max_indexing_threads": {
             "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "on_disk": {
             "description": "Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
             "default": null,
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "payload_m": {
             "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           }
         }
       },
@@ -5264,15 +4967,13 @@
             "description": "Size of a single WAL segment in MB",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "wal_segments_ahead": {
             "description": "Number of WAL segments to create ahead of actually used ones",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           }
         }
       },
@@ -5282,57 +4983,49 @@
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "type": "number",
-            "format": "double",
-            "nullable": true
+            "format": "double"
           },
           "vacuum_min_vector_number": {
             "description": "The minimal number of vectors in a segment, required to perform segment optimization",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "default_segment_number": {
             "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads If `default_segment_number = 0`, will be automatically selected by the number of available CPUs",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "max_segment_size": {
             "description": "Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "memmap_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "flush_interval_sec": {
             "description": "Minimum interval between forced flushes.",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "max_optimization_threads": {
             "description": "Maximum available threads for optimization workers",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           }
         }
       },
@@ -5353,26 +5046,10 @@
         "type": "object",
         "properties": {
           "optimizers_config": {
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/OptimizersConfigDiff"
           },
           "params": {
-            "description": "Collection base params.  If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionParamsDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/CollectionParamsDiff"
           }
         }
       },
@@ -5383,15 +5060,13 @@
             "description": "Number of replicas for each shard",
             "type": "integer",
             "format": "uint32",
-            "minimum": 1,
-            "nullable": true
+            "minimum": 1
           },
           "write_consistency_factor": {
             "description": "Minimal number successful responses from replicas to consider operation successful",
             "type": "integer",
             "format": "uint32",
-            "minimum": 1,
-            "nullable": true
+            "minimum": 1
           }
         }
       },
@@ -5513,14 +5188,7 @@
             "type": "string"
           },
           "field_schema": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayloadFieldSchema"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/PayloadFieldSchema"
           }
         }
       },
@@ -5620,15 +5288,7 @@
             "$ref": "#/components/schemas/VectorStruct"
           },
           "payload": {
-            "description": "Payload values (optional)",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Payload"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Payload"
           }
         }
       },
@@ -5651,16 +5311,8 @@
           "payloads": {
             "type": "array",
             "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/Payload"
-                },
-                {
-                  "nullable": true
-                }
-              ]
-            },
-            "nullable": true
+              "$ref": "#/components/schemas/Payload"
+            }
           }
         }
       },
@@ -5702,19 +5354,10 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
-            },
-            "nullable": true
+            }
           },
           "filter": {
-            "description": "Assigns payload to each point that satisfy this filter condition",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter"
           }
         }
       },
@@ -5736,19 +5379,10 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
-            },
-            "nullable": true
+            }
           },
           "filter": {
-            "description": "Deletes values from points that satisfy this filter condition",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter"
           }
         }
       },
@@ -5861,19 +5495,10 @@
             "description": "Leader of the current term",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "role": {
-            "description": "Role of this peer in the current term",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/StateRole"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/StateRole"
           },
           "is_voter": {
             "description": "Is this peer a voter or a learner",
@@ -5960,8 +5585,7 @@
             "minimum": 0
           },
           "latest_error": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           }
         }
       },
@@ -5977,8 +5601,7 @@
           },
           "creation_time": {
             "type": "string",
-            "format": "partial-date-time",
-            "nullable": true
+            "format": "partial-date-time"
           },
           "size": {
             "type": "integer",
@@ -5992,15 +5615,7 @@
         "type": "object",
         "properties": {
           "filter": {
-            "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter"
           },
           "exact": {
             "description": "If true, count exact number of points. If false, count approximate number of points faster. Approximate count might be unreliable during the indexing process. Default: true",
@@ -6201,24 +5816,10 @@
             "type": "string"
           },
           "features": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AppFeaturesTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/AppFeaturesTelemetry"
           },
           "system": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
           }
         }
       },
@@ -6249,12 +5850,10 @@
         ],
         "properties": {
           "distribution": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "distribution_version": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "is_docker": {
             "type": "boolean"
@@ -6262,20 +5861,17 @@
           "cores": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "ram_size": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "disk_size": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "cpu_flags": {
             "type": "string"
@@ -6297,8 +5893,7 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CollectionTelemetryEnum"
-            },
-            "nullable": true
+            }
           }
         }
       },
@@ -6361,14 +5956,7 @@
             "minimum": 0
           },
           "local": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LocalShardTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/LocalShardTelemetry"
           },
           "remote": {
             "type": "array",
@@ -6392,8 +5980,7 @@
         ],
         "properties": {
           "variant_name": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "segments": {
             "type": "array",
@@ -6521,16 +6108,7 @@
             "$ref": "#/components/schemas/PayloadStorageType"
           },
           "quantization_config": {
-            "description": "Quantization parameters. If none - quantization is disabled.",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationConfig"
           }
         }
       },
@@ -6675,8 +6253,7 @@
         ],
         "properties": {
           "index_name": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "unfiltered_plain": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
@@ -6719,18 +6296,15 @@
           },
           "avg_duration_micros": {
             "type": "number",
-            "format": "float",
-            "nullable": true
+            "format": "float"
           },
           "min_duration_micros": {
             "type": "number",
-            "format": "float",
-            "nullable": true
+            "format": "float"
           },
           "max_duration_micros": {
             "type": "number",
-            "format": "float",
-            "nullable": true
+            "format": "float"
           }
         }
       },
@@ -6742,8 +6316,7 @@
         ],
         "properties": {
           "field_name": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "points_values_count": {
             "type": "integer",
@@ -6758,8 +6331,7 @@
           "histogram_bucket_size": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           }
         }
       },
@@ -6794,8 +6366,7 @@
           "peer_id": {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "searches": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
@@ -6836,24 +6407,10 @@
             "type": "boolean"
           },
           "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ClusterStatusTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ClusterStatusTelemetry"
           },
           "config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ClusterConfigTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ClusterConfigTelemetry"
           }
         }
       },
@@ -6889,14 +6446,7 @@
             "minimum": 0
           },
           "role": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/StateRole"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/StateRole"
           },
           "is_voter": {
             "type": "boolean"
@@ -6904,8 +6454,7 @@
           "peer_id": {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "consensus_thread_status": {
             "$ref": "#/components/schemas/ConsensusThreadStatus"
@@ -7156,8 +6705,7 @@
         ],
         "properties": {
           "error_message": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "write": {
             "type": "boolean"
@@ -7176,16 +6724,7 @@
             "format": "uri"
           },
           "priority": {
-            "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SnapshotPriority"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SnapshotPriority"
           }
         }
       },

@@ -110,7 +110,7 @@ pub struct CollectionConfig {
     pub optimizer_config: OptimizersConfig,
     #[validate]
     pub wal_config: WalConfig,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantization_config: Option<QuantizationConfig>,
 }
 
