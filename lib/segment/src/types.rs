@@ -380,11 +380,48 @@ impl std::hash::Hash for ScalarQuantizationConfig {
 
 impl Eq for ScalarQuantizationConfig {}
 
+
+type Tensor = Vec<Vec<i64>>;
+
+/// This Configuration enables vector quantization using the
+/// spin-based quantum entanglement algorithm.
+///
+/// The algorithm is described in the paper: https://arxiv.org/abs/2003.08934
+/// Overall process:
+/// 1. Generate a random quantum state
+/// 2. Encode the vector into the quantum state
+/// 3. Measure the quantum state
+/// 4. Decode the measurement into a vector
+///
+/// The algorithm is based on the following assumptions:
+/// 1. The quantum state is a good approximation of the vector
+/// 2. We have at least as many qubits as the vector dimension
+/// 3. The vector is dense
+/// 4. The vector is normalized
+///
+/// Expected performance:
+///
+/// The algorithm is expected to be faster than the scalar quantization.
+/// Given a vector of dimension `d` and `n` qubits, the algorithm is expected to be
+/// `O(d * n)` in time and `O(d)` in space.
+///
+/// Disclaimer:
+///     This algorithm is an April Fool's joke.
+///
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct  QuantumQuantization {
+    entanglement: Tensor,
+    number_of_qubits: usize,
+}
+
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
+    Quantum(QuantumQuantization),
 }
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {

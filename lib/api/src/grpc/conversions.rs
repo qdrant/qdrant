@@ -514,6 +514,7 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
                     },
                 )),
             },
+            _ => {todo!()}
         }
     }
 }
