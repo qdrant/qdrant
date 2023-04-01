@@ -78,6 +78,7 @@
     - [GetResponse](#qdrant-GetResponse)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
+    - [IsNullCondition](#qdrant-IsNullCondition)
     - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
     - [NamedVectors](#qdrant-NamedVectors)
@@ -1038,6 +1039,7 @@ The JSON representation for `Value` is a JSON value.
 | is_empty | [IsEmptyCondition](#qdrant-IsEmptyCondition) |  |  |
 | has_id | [HasIdCondition](#qdrant-HasIdCondition) |  |  |
 | filter | [Filter](#qdrant-Filter) |  |  |
+| is_null | [IsNullCondition](#qdrant-IsNullCondition) |  |  |
 
 
 
@@ -1305,6 +1307,21 @@ The JSON representation for `Value` is a JSON value.
 <a name="qdrant-IsEmptyCondition"></a>
 
 ### IsEmptyCondition
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="qdrant-IsNullCondition"></a>
+
+### IsNullCondition
 
 
 

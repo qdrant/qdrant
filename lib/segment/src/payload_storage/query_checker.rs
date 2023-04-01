@@ -9,7 +9,8 @@ use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, OwnedPayloadRef, Payload, PointOffsetType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
+    PointOffsetType,
 };
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
@@ -78,6 +79,7 @@ where
             check_field_condition(field_condition, get_payload().deref())
         }
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
+        Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
         Condition::HasId(has_id) => {
             let external_id = match id_tracker.external_id(point_id) {
                 None => return false,
@@ -92,7 +94,11 @@ where
 }
 
 pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) -> bool {
-    payload.get_value(&is_empty.is_empty.key).is_empty()
+    payload.get_value(&is_empty.is_empty.key).check_is_empty()
+}
+
+pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &Payload) -> bool {
+    payload.get_value(&is_null.is_null.key).check_is_null()
 }
 
 pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
@@ -234,6 +240,9 @@ mod tests {
             "rating": vec![3, 7, 9, 9],
             "color": "red",
             "has_delivery": true,
+            "parts": [],
+            "packaging": null,
+            "not_null": [null]
         })
         .into();
 
@@ -252,20 +261,68 @@ mod tests {
             Arc::new(AtomicRefCell::new(id_tracker)),
         );
 
-        let is_empty_condition_1 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
                 key: "price".to_string(),
             },
         }));
+        assert!(!payload_checker.check(0, &is_empty_condition));
 
-        let is_empty_condition_2 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
                 key: "something_new".to_string(),
             },
         }));
+        assert!(payload_checker.check(0, &is_empty_condition));
 
-        assert!(!payload_checker.check(0, &is_empty_condition_1));
-        assert!(payload_checker.check(0, &is_empty_condition_2));
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: "parts".to_string(),
+            },
+        }));
+        assert!(payload_checker.check(0, &is_empty_condition));
+
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: "not_null".to_string(),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_empty_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "amount".to_string(),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "parts".to_string(),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "something_else".to_string(),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "packaging".to_string(),
+            },
+        }));
+        assert!(payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: "not_null".to_string(),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_null_condition));
 
         let match_red = Condition::Field(FieldCondition::new_match(
             "color".to_string(),
@@ -290,6 +347,7 @@ mod tests {
                     lte: None,
                 },
             )));
+        assert!(!payload_checker.check(0, &many_value_count_condition));
 
         let few_value_count_condition =
             Filter::new_must(Condition::Field(FieldCondition::new_values_count(
@@ -301,8 +359,6 @@ mod tests {
                     lte: None,
                 },
             )));
-
-        assert!(!payload_checker.check(0, &many_value_count_condition));
         assert!(payload_checker.check(0, &few_value_count_condition));
 
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(

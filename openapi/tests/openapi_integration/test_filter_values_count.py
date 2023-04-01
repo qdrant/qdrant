@@ -91,5 +91,5 @@ def test_filter_values_count():
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 1
+    assert len(json['result']) == 3
     assert json['result'][0]['id'] == 1

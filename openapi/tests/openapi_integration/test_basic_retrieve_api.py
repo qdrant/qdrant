@@ -42,7 +42,7 @@ def points_retrieve():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['vectors_count'] == 6
+    assert response.json()['result']['vectors_count'] == 8
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
@@ -76,7 +76,8 @@ def points_retrieve():
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 2  # only 2 London records in collection
+    # only 2 London records in collection
+    assert len(response.json()['result']) == 2
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
@@ -146,10 +147,48 @@ def is_empty_condition():
         }
     )
 
-    assert len(response.json()['result']) == 2
-    for result in response.json()['result']:
-        assert "city" not in result['payload']
     assert response.ok
+
+    json = response.json()
+    assert len(json['result']) == 3
+
+    ids = [x['id'] for x in json['result']]
+    assert 5 in ids
+    assert 6 in ids
+    assert 8 in ids
+
+
+def test_is_null_condition():
+    is_null_condition()
+
+
+def is_null_condition():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 5,
+            "filter": {
+                "should": [
+                    {
+                        "is_null": {
+                            "key": "city"
+                        }
+                    }
+                ]
+            },
+            "with_payload": True
+        }
+    )
+    assert response.ok
+
+    json = response.json()
+    assert len(json['result']) == 1
+
+    ids = [x['id'] for x in json['result']]
+    assert 7 in ids
 
 
 def test_recommendation():

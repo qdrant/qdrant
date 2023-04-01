@@ -1082,6 +1082,12 @@ pub struct IsEmptyCondition {
     pub is_empty: PayloadField,
 }
 
+/// Select points with null payload for a specified field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+pub struct IsNullCondition {
+    pub is_null: PayloadField,
+}
+
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
@@ -1100,8 +1106,10 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 pub enum Condition {
     /// Check if field satisfies provided condition
     Field(FieldCondition),
-    /// Check if payload field is empty: equals to `NULL`, empty array, or does not exists
+    /// Check if payload field is empty: equals to empty array, or does not exists
     IsEmpty(IsEmptyCondition),
+    /// Check if payload field equals `NULL`
+    IsNull(IsNullCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
     /// Nested filter
@@ -1523,6 +1531,58 @@ mod tests {
                 value: ValueVariants::Keyword("world".to_owned())
             })
         );
+    }
+
+    #[test]
+    fn test_parse_empty_query() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "is_empty" : {
+                        "key" : "Jason"
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::IsEmpty(c)) => c,
+            _ => panic!("Condition::IsEmpty expected"),
+        };
+
+        assert_eq!(c.is_empty.key.as_str(), "Jason");
+    }
+
+    #[test]
+    fn test_parse_null_query() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "is_null" : {
+                        "key" : "Jason"
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::IsNull(c)) => c,
+            _ => panic!("Condition::IsNull expected"),
+        };
+
+        assert_eq!(c.is_null.key.as_str(), "Jason");
     }
 
     #[test]
