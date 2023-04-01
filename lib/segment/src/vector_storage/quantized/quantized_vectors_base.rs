@@ -141,7 +141,9 @@ impl QuantizedVectorsStorage {
                     QuantizedVectorStorageImpl::ScalarMmap(storage)
                 }
             }
-            _ => { todo!() }
+            _ => {
+                todo!()
+            }
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
@@ -194,7 +196,9 @@ impl QuantizedVectorsStorage {
                     QuantizedVectorStorageImpl::ScalarMmap(storage)
                 }
             }
-            _ => { todo!() }
+            _ => {
+                todo!()
+            }
         };
 
         Ok(QuantizedVectorsStorage {

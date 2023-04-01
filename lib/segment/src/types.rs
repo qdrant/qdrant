@@ -380,7 +380,6 @@ impl std::hash::Hash for ScalarQuantizationConfig {
 
 impl Eq for ScalarQuantizationConfig {}
 
-
 type Tensor = Vec<Vec<i64>>;
 
 /// This Configuration enables vector quantization using the
@@ -410,11 +409,10 @@ type Tensor = Vec<Vec<i64>>;
 ///
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
-pub struct  QuantumQuantization {
+pub struct QuantumQuantization {
     entanglement: Tensor,
     number_of_qubits: usize,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
