@@ -2307,7 +2307,7 @@ pub struct Filter {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5")]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
@@ -2323,11 +2323,19 @@ pub mod condition {
         HasId(super::HasIdCondition),
         #[prost(message, tag = "4")]
         Filter(super::Filter),
+        #[prost(message, tag = "5")]
+        IsNull(super::IsNullCondition),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IsEmptyCondition {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IsNullCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }

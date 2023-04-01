@@ -4272,6 +4272,9 @@
             "$ref": "#/components/schemas/IsEmptyCondition"
           },
           {
+            "$ref": "#/components/schemas/IsNullCondition"
+          },
+          {
             "$ref": "#/components/schemas/HasIdCondition"
           },
           {
@@ -4566,6 +4569,18 @@
           "key": {
             "description": "Payload field name",
             "type": "string"
+          }
+        }
+      },
+      "IsNullCondition": {
+        "description": "Select points with null payload for a specified field",
+        "type": "object",
+        "required": [
+          "is_null"
+        ],
+        "properties": {
+          "is_null": {
+            "$ref": "#/components/schemas/PayloadField"
           }
         }
       },
@@ -5029,7 +5044,7 @@
             "nullable": true
           },
           "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -5051,7 +5066,7 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
+            "description": "Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
             "default": null,
             "type": "boolean",
             "nullable": true

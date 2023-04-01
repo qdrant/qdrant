@@ -37,7 +37,7 @@ def test_delete_points():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['vectors_count'] == 5
+    assert response.json()['result']['vectors_count'] == 7
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/delete',
@@ -57,4 +57,4 @@ def test_delete_points():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['vectors_count'] == 1
+    assert response.json()['result']['vectors_count'] == 3

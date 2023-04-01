@@ -7,12 +7,14 @@ from .helpers.collection_setup import basic_collection_setup, drop_collection
 
 collection_name = 'test_collection_filter'
 
+
 @pytest.fixture(autouse=True)
 def setup():
     basic_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
-    
+
+
 def test_match_any():
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
@@ -34,13 +36,11 @@ def test_match_any():
         }
     )
     assert response.ok
-    
+
     json = response.json()
     assert len(json['result']) == 3
-    
+
     ids = [x['id'] for x in json['result']]
     assert 2 in ids
     assert 3 in ids
     assert 4 in ids
-
-    

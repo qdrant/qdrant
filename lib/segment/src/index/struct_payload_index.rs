@@ -32,8 +32,8 @@ use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
-    IsEmptyCondition, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointOffsetType,
+    IsEmptyCondition, IsNullCondition, Payload, PayloadFieldSchema, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -250,6 +250,33 @@ impl StructPayloadIndex {
                     }
                 }
             }
+            Condition::IsNull(IsNullCondition { is_null: field }) => {
+                let total_points = self.total_points();
+
+                let mut indexed_points = 0;
+                if let Some(field_indexes) = self.field_indexes.get(&field.key) {
+                    for index in field_indexes {
+                        indexed_points = indexed_points.max(index.count_indexed_points())
+                    }
+                    CardinalityEstimation {
+                        primary_clauses: vec![PrimaryCondition::IsNull(IsNullCondition {
+                            is_null: field.to_owned(),
+                        })],
+                        min: 0,
+                        exp: total_points.saturating_sub(indexed_points),
+                        max: total_points.saturating_sub(indexed_points),
+                    }
+                } else {
+                    CardinalityEstimation {
+                        primary_clauses: vec![PrimaryCondition::IsNull(IsNullCondition {
+                            is_null: field.to_owned(),
+                        })],
+                        min: 0,
+                        exp: total_points / 2,
+                        max: total_points,
+                    }
+                }
+            }
             Condition::HasId(has_id) => {
                 let id_tracker_ref = self.id_tracker.borrow();
                 let mapped_ids: HashSet<PointOffsetType> = has_id
@@ -375,7 +402,8 @@ impl PayloadIndex for StructPayloadIndex {
                             )
                         }
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
-                        PrimaryCondition::IsEmpty(_) => points_iterator_ref.iter_ids() /* there are no fast index for IsEmpty */
+                        PrimaryCondition::IsEmpty(_) => points_iterator_ref.iter_ids(), /* there are no fast index for IsEmpty */
+                        PrimaryCondition::IsNull(_) => points_iterator_ref.iter_ids(),  /* no fast index for IsNull too */
                     }
                 })
                 .filter(|&id| !visited_list.check_and_update_visited(id))
