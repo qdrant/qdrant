@@ -25,7 +25,7 @@ use tokio::time::sleep;
 use tonic::transport::Uri;
 
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
-use crate::settings::ConsensusConfig;
+use crate::settings::{ConsensusConfig, P2pSecurityConfig};
 use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
@@ -65,6 +65,7 @@ impl Consensus {
         p2p_host: String,
         p2p_port: u16,
         config: ConsensusConfig,
+        security_config: Option<P2pSecurityConfig>,
         channel_service: ChannelService,
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
@@ -78,6 +79,7 @@ impl Consensus {
             uri,
             p2p_port,
             config,
+            security_config.clone(),
             channel_service,
             runtime.clone(),
         )?;
@@ -111,6 +113,7 @@ impl Consensus {
                 }
             })?;
 
+
         let handle = thread::Builder::new()
             .name("grpc_internal".to_string())
             .spawn(move || {
@@ -120,6 +123,7 @@ impl Consensus {
                     telemetry_collector,
                     p2p_host,
                     p2p_port,
+                    security_config.clone(),
                     message_sender,
                     runtime,
                 )
@@ -138,6 +142,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: ConsensusConfig,
+        security_config: Option<P2pSecurityConfig>,
         channel_service: ChannelService,
         runtime: Handle,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
@@ -171,13 +176,14 @@ impl Consensus {
                 uri,
                 p2p_port,
                 &config,
+                &security_config,
                 runtime.clone(),
                 leader_established_in_ms,
             )
             .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {}", err))?;
         } else {
             runtime
-                .block_on(Self::recover(&state_ref, uri.clone(), p2p_port, &config))
+                .block_on(Self::recover(&state_ref, uri.clone(), p2p_port, &security_config, &config))
                 .map_err(|err| {
                     anyhow!(
                         "Failed to recover Consensus from existing Raft state: {}",
@@ -214,6 +220,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
+        security_config: &Option<P2pSecurityConfig>,
         runtime: Handle,
         leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
@@ -279,6 +286,7 @@ impl Consensus {
         state_ref: &ConsensusStateRef,
         uri: Option<String>,
         p2p_port: u16,
+        security_config: &Option<P2pSecurityConfig>,
         config: &ConsensusConfig,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
@@ -941,6 +949,7 @@ mod tests {
             Some("http://127.0.0.1:6335".parse().unwrap()),
             6335,
             ConsensusConfig::default(),
+            None,
             ChannelService::default(),
             handle.clone(),
         )

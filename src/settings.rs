@@ -32,18 +32,30 @@ pub struct ClusterConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct P2pConfig {
     #[serde(default)]
+    pub host: Option<String>,
+    #[serde(default)]
     pub port: Option<u16>,
     #[serde(default = "default_connection_pool_size")]
     pub connection_pool_size: usize,
+    #[serde(default)]
+    pub security: Option<P2pSecurityConfig>
 }
 
 impl Default for P2pConfig {
     fn default() -> Self {
         P2pConfig {
+            host: None,
             port: None,
             connection_pool_size: default_connection_pool_size(),
+            security: None
         }
     }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct P2pSecurityConfig {
+    pub ssl_certificate_path: String,
+    pub ssl_certificate_key_path: String
 }
 
 #[derive(Debug, Deserialize, Clone)]

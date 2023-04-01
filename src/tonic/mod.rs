@@ -1,5 +1,6 @@
 mod api;
 mod tonic_telemetry;
+mod tls;
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -22,11 +23,13 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
+use crate::settings::P2pSecurityConfig;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use crate::tonic::api::snapshots_api::SnapshotsService;
+use crate::tonic::tls::WithSecurity;
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -46,7 +49,7 @@ pub fn init(
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     grpc_port: u16,
-    runtime: Handle,
+    runtime: Handle
 ) -> std::io::Result<()> {
     runtime
         .block_on(async {
@@ -99,6 +102,7 @@ pub fn init_internal(
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     internal_grpc_port: u16,
+    security_config: Option<P2pSecurityConfig>,
     to_consensus: tokio::sync::mpsc::Sender<crate::consensus::Message>,
     runtime: Handle,
 ) -> std::io::Result<()> {
@@ -118,6 +122,7 @@ pub fn init_internal(
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
             Server::builder()
+                .with_security_config(security_config)
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))

@@ -241,6 +241,7 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
+        let p2p_host = settings.cluster.p2p.host.clone().unwrap_or(settings.service.host.clone());
         let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
 
         let handle = Consensus::run(
@@ -248,9 +249,10 @@ fn main() -> anyhow::Result<()> {
             consensus_state.clone(),
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
-            settings.service.host.clone(),
+            p2p_host,
             p2p_port,
             settings.cluster.consensus.clone(),
+            settings.cluster.p2p.security.clone(),
             channel_service,
             propose_receiver,
             tonic_telemetry_collector,
