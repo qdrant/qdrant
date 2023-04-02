@@ -94,9 +94,13 @@ impl RemoteShard {
         let current_address = self.current_address()?;
         self.channel_service
             .channel_pool
-            .with_channel(&current_address, |channel| {
-                f(PointsInternalClient::new(channel))
-            })
+            .with_channel(
+                &current_address,
+                &self.channel_service.tls_certificates,
+                |channel| {
+                    f(PointsInternalClient::new(channel))
+                }
+            )
             .await
             .map_err(|err| err.into())
     }
@@ -108,9 +112,13 @@ impl RemoteShard {
         let current_address = self.current_address()?;
         self.channel_service
             .channel_pool
-            .with_channel(&current_address, |channel| {
-                f(CollectionsInternalClient::new(channel))
-            })
+            .with_channel(
+                &current_address,
+                &self.channel_service.tls_certificates,
+                |channel| {
+                    f(CollectionsInternalClient::new(channel))
+                }
+            )
             .await
             .map_err(|err| err.into())
     }

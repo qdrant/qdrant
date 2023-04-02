@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Context};
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
-use api::grpc::transport_channel_pool::TransportChannelPool;
+use api::grpc::transport_channel_pool::{ClientMutualTlsCertificates, TransportChannelPool};
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
 use raft::eraftpb::Message as RaftMessage;
@@ -26,6 +26,7 @@ use tonic::transport::Uri;
 
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::{ConsensusConfig, P2pSecurityConfig};
+use crate::tls::to_client_certificates;
 use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
@@ -51,6 +52,7 @@ pub struct Consensus {
     /// ToDo: Make if many
     bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
+    client_tls_certs: Arc<Option<ClientMutualTlsCertificates>>,
     channel_service: ChannelService,
 }
 
@@ -113,7 +115,6 @@ impl Consensus {
                 }
             })?;
 
-
         let handle = thread::Builder::new()
             .name("grpc_internal".to_string())
             .spawn(move || {
@@ -167,6 +168,7 @@ impl Consensus {
         // bounded channel for backpressure
         let (sender, receiver) = tokio::sync::mpsc::channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
+        let client_tls_certs_arc = Arc::new(to_client_certificates(&security_config));
         if state_ref.is_new_deployment() {
             let leader_established_in_ms =
                 config.tick_period_ms * raft_config.max_election_tick() as u64;
@@ -176,14 +178,20 @@ impl Consensus {
                 uri,
                 p2p_port,
                 &config,
-                &security_config,
+                client_tls_certs_arc.clone(),
                 runtime.clone(),
                 leader_established_in_ms,
             )
             .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {}", err))?;
         } else {
             runtime
-                .block_on(Self::recover(&state_ref, uri.clone(), p2p_port, &security_config, &config))
+                .block_on(Self::recover(
+                    &state_ref,
+                    uri.clone(),
+                    p2p_port,
+                    &client_tls_certs_arc.clone(),
+                    &config,
+                ))
                 .map_err(|err| {
                     anyhow!(
                         "Failed to recover Consensus from existing Raft state: {}",
@@ -207,6 +215,7 @@ impl Consensus {
             runtime,
             bootstrap_uri: bootstrap_peer,
             config,
+            client_tls_certs: client_tls_certs_arc,
             channel_service,
         };
 
@@ -220,7 +229,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
-        security_config: &Option<P2pSecurityConfig>,
+        client_tls_certs: Arc<Option<ClientMutualTlsCertificates>>,
         runtime: Handle,
         leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
@@ -232,6 +241,7 @@ impl Consensus {
                 uri,
                 p2p_port,
                 config,
+                &client_tls_certs,
             ))?;
             Ok(())
         } else {
@@ -255,6 +265,7 @@ impl Consensus {
         cluster_uri: Uri,
         current_uri: Option<String>,
         p2p_port: u16,
+        client_tls_certs: &Option<ClientMutualTlsCertificates>,
         config: &ConsensusConfig,
     ) -> anyhow::Result<AllPeers> {
         // Use dedicated transport channel for bootstrapping because of specific timeout
@@ -262,6 +273,7 @@ impl Consensus {
             Duration::from_secs(config.bootstrap_timeout_sec),
             Duration::from_secs(config.bootstrap_timeout_sec),
             cluster_uri,
+            &client_tls_certs,
         )
         .await
         .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
@@ -286,7 +298,7 @@ impl Consensus {
         state_ref: &ConsensusStateRef,
         uri: Option<String>,
         p2p_port: u16,
-        security_config: &Option<P2pSecurityConfig>,
+        client_tls_certs: &Option<ClientMutualTlsCertificates>,
         config: &ConsensusConfig,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
@@ -313,6 +325,7 @@ impl Consensus {
                         peer_uri.clone(),
                         uri.clone(),
                         p2p_port,
+                        &client_tls_certs,
                         config,
                     )
                     .await;
@@ -359,6 +372,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
+        client_tls_certs: &Option<ClientMutualTlsCertificates>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
         let all_peers = Self::add_peer_to_known_for(
@@ -366,6 +380,7 @@ impl Consensus {
             bootstrap_peer,
             uri.clone(),
             p2p_port,
+            &client_tls_certs,
             config,
         )
         .await?;
@@ -736,6 +751,7 @@ impl Consensus {
             .collect();
         let bootstrap_uri = self.bootstrap_uri.clone();
         let consensus_config_arc = Arc::new(self.config.clone());
+        let client_tls_config_arc = self.client_tls_certs.clone();
         let message_timeout = Duration::from_millis(consensus_config_arc.tick_period_ms * 2);
         let pool = self.channel_service.channel_pool.clone();
         let store = self.store();
@@ -747,6 +763,7 @@ impl Consensus {
                     None => match who_is(
                         message.to,
                         bootstrap_uri.clone(),
+                        client_tls_config_arc.clone(),
                         consensus_config_arc.clone(),
                     )
                     .await
@@ -763,6 +780,7 @@ impl Consensus {
                 };
                 send_futures.push(send_message(
                     address,
+                    client_tls_config_arc.clone(),
                     message,
                     pool.clone(),
                     store.clone(),
@@ -797,6 +815,7 @@ fn handle_committed_entries(
 async fn who_is(
     peer_id: collection::shards::shard::PeerId,
     bootstrap_uri: Option<Uri>,
+    client_tls_certs: Arc<Option<ClientMutualTlsCertificates>>,
     config: Arc<ConsensusConfig>,
 ) -> anyhow::Result<Uri> {
     log::debug!("Resolving who is {peer_id}");
@@ -804,10 +823,14 @@ async fn who_is(
         bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
     let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
     // Use dedicated transport channel for who_is because of specific timeout
-    let channel =
-        TransportChannelPool::make_channel(bootstrap_timeout, bootstrap_timeout, bootstrap_uri)
-            .await
-            .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
+    let channel = TransportChannelPool::make_channel(
+        bootstrap_timeout,
+        bootstrap_timeout,
+        bootstrap_uri,
+        &client_tls_certs,
+    )
+    .await
+    .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
     let mut client = RaftClient::new(channel);
     Ok(client
         .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
@@ -819,6 +842,7 @@ async fn who_is(
 
 async fn send_message(
     address: Uri,
+    client_tls_certs: Arc<Option<ClientMutualTlsCertificates>>,
     message: RaftMessage,
     transport_channel_pool: Arc<TransportChannelPool>,
     store: ConsensusStateRef,
@@ -836,6 +860,7 @@ async fn send_message(
     let result = transport_channel_pool
         .with_channel_timeout(
             &address,
+            &client_tls_certs,
             |channel| async move {
                 let mut client = RaftClient::new(channel);
                 let mut request = tonic::Request::new(message.clone());

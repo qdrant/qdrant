@@ -1,6 +1,5 @@
 mod api;
 mod tonic_telemetry;
-mod tls;
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -29,7 +28,7 @@ use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use crate::tonic::api::snapshots_api::SnapshotsService;
-use crate::tonic::tls::WithSecurity;
+use crate::tls::WithSecurity;
 
 #[derive(Default)]
 pub struct QdrantService {}

@@ -54,8 +54,11 @@ impl Default for P2pConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct P2pSecurityConfig {
-    pub ssl_certificate_path: String,
-    pub ssl_certificate_key_path: String
+    pub ca_certificate_path: String,
+    pub client_certificate_path: String,
+    pub client_certificate_key_path: String,
+    pub server_certificate_path: String,
+    pub server_certificate_key_path: String
 }
 
 #[derive(Debug, Deserialize, Clone)]

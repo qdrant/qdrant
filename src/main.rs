@@ -9,6 +9,7 @@ mod migrations;
 mod settings;
 mod snapshots;
 mod startup;
+mod tls;
 mod tonic;
 
 use std::io::Error;

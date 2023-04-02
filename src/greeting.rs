@@ -4,6 +4,7 @@ use api::grpc::models::VersionInfo;
 use atty::Stream;
 use colored::{Color, ColoredString, Colorize};
 
+
 fn paint(text: &str, true_color: bool) -> ColoredString {
     if true_color {
         text.bold().truecolor(184, 20, 56)
