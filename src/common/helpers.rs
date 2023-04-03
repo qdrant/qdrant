@@ -83,23 +83,38 @@ pub fn create_general_purpose_runtime() -> io::Result<Runtime> {
 /// Load client TLS configuration.
 pub fn load_tls_client_config(settings: &Settings) -> io::Result<Option<ClientTlsConfig>> {
     if settings.cluster.p2p.enable_tls {
-        let pem = fs::read_to_string(&settings.tls()?.ca_cert)?;
-        let cert = Certificate::from_pem(pem);
-        let tls_config = ClientTlsConfig::new().ca_certificate(cert);
-        Ok(Some(tls_config))
+        let tls_config = &settings.tls()?;
+        Ok(Some(
+            ClientTlsConfig::new()
+                .identity(load_identity(tls_config)?)
+                .ca_certificate(load_ca_certificate(tls_config)?),
+        ))
     } else {
         Ok(None)
     }
 }
 
-/// Load server TLS configuration.
-pub fn load_tls_server_config(tls_config: &TlsConfig) -> io::Result<ServerTlsConfig> {
+/// Load server TLS configuration for external gRPC
+pub fn load_tls_external_server_config(tls_config: &TlsConfig) -> io::Result<ServerTlsConfig> {
+    Ok(ServerTlsConfig::new().identity(load_identity(tls_config)?))
+}
+
+/// Load server TLS configuration for internal gRPC, check client certificate against CA
+pub fn load_tls_internal_server_config(tls_config: &TlsConfig) -> io::Result<ServerTlsConfig> {
+    Ok(ServerTlsConfig::new()
+        .identity(load_identity(tls_config)?)
+        .client_ca_root(load_ca_certificate(tls_config)?))
+}
+
+fn load_identity(tls_config: &TlsConfig) -> io::Result<Identity> {
     let cert = fs::read_to_string(&tls_config.cert)?;
     let key = fs::read_to_string(&tls_config.key)?;
+    Ok(Identity::from_pem(cert, key))
+}
 
-    let ident = Identity::from_pem(cert, key);
-
-    Ok(ServerTlsConfig::new().identity(ident))
+fn load_ca_certificate(tls_config: &TlsConfig) -> io::Result<Certificate> {
+    let pem = fs::read_to_string(&tls_config.ca_cert)?;
+    Ok(Certificate::from_pem(pem))
 }
 
 pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {

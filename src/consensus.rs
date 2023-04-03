@@ -123,7 +123,7 @@ impl Consensus {
                 .tls
                 .ok_or_else(Settings::tls_config_is_undefined_error)?;
 
-            Some(helpers::load_tls_server_config(&tls_config)?)
+            Some(helpers::load_tls_internal_server_config(&tls_config)?)
         } else {
             None
         };
