@@ -1,31 +1,13 @@
-use validator::{HasLen, Validate, ValidationErrors};
+use validator::{Validate, ValidationErrors};
 
 pub trait ValidateExt {
     fn validate(&self) -> Result<(), ValidationErrors>;
 }
 
 impl Validate for dyn ValidateExt {
+    #[inline]
     fn validate(&self) -> Result<(), ValidationErrors> {
         ValidateExt::validate(self)
-    }
-}
-
-pub trait HasLenExt {
-    fn length(&self) -> u64;
-}
-
-impl HasLen for dyn HasLenExt {
-    fn length(&self) -> u64 {
-        HasLenExt::length(self)
-    }
-}
-
-impl<V> ValidateExt for &::core::option::Option<V>
-where
-    V: Validate,
-{
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        self.as_ref().map(Validate::validate).unwrap_or(Ok(()))
     }
 }
 
@@ -33,14 +15,19 @@ impl<V> ValidateExt for ::core::option::Option<V>
 where
     V: Validate,
 {
+    #[inline]
     fn validate(&self) -> Result<(), ValidationErrors> {
-        self.as_ref().map(Validate::validate).unwrap_or(Ok(()))
+        (&self).validate()
     }
 }
 
-impl HasLenExt for ::prost::alloc::string::String {
-    fn length(&self) -> u64 {
-        HasLen::length(self)
+impl<V> ValidateExt for &::core::option::Option<V>
+where
+    V: Validate,
+{
+    #[inline]
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        self.as_ref().map(Validate::validate).unwrap_or(Ok(()))
     }
 }
 
@@ -48,6 +35,7 @@ impl<V> ValidateExt for Vec<V>
 where
     V: Validate,
 {
+    #[inline]
     fn validate(&self) -> Result<(), ValidationErrors> {
         let errors = self
             .iter()
