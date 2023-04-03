@@ -2438,7 +2438,6 @@ pub struct RecommendPoints {
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "5")]
-    #[validate(range(min = 1))]
     pub limit: u64,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "7")]

@@ -129,7 +129,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ScrollPoints.collection_name", "length(min = 1)"),
             // TODO: ("ScrollPoints.limit", "range(min = 1)"),
             ("RecommendPoints.collection_name", "length(min = 1)"),
-            ("RecommendPoints.limit", "range(min = 1)"),
             ("RecommendBatchPoints.collection_name", "length(min = 1)"),
             ("RecommendBatchPoints.recommend_points", ""),
             ("CountPoints.collection_name", "length(min = 1)"),
