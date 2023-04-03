@@ -12,6 +12,7 @@ use api::grpc::qdrant::{
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
+use super::validate_and_log;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
     overwrite_payload, recommend, scroll, search, search_batch, set_payload, sync, upsert,
@@ -34,6 +35,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<UpsertPointsInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let UpsertPointsInternal {
             upsert_points,
             shard_id,
@@ -49,6 +51,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<DeletePointsInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let DeletePointsInternal {
             delete_points,
             shard_id,
@@ -64,6 +67,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<SetPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let SetPayloadPointsInternal {
             set_payload_points,
             shard_id,
@@ -79,6 +83,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<DeletePayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let DeletePayloadPointsInternal {
             delete_payload_points,
             shard_id,
@@ -94,6 +99,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<ClearPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let ClearPayloadPointsInternal {
             clear_payload_points,
             shard_id,
@@ -109,6 +115,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<CreateFieldIndexCollectionInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let CreateFieldIndexCollectionInternal {
             create_field_index_collection,
             shard_id,
@@ -124,6 +131,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<DeleteFieldIndexCollectionInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let DeleteFieldIndexCollectionInternal {
             delete_field_index_collection,
             shard_id,
@@ -139,6 +147,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<SearchPointsInternal>,
     ) -> Result<Response<SearchResponse>, Status> {
+        validate_and_log(request.get_ref());
         let SearchPointsInternal {
             search_points,
             shard_id,
@@ -156,6 +165,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<SearchBatchPointsInternal>,
     ) -> Result<Response<SearchBatchResponse>, Status> {
+        validate_and_log(request.get_ref());
         let SearchBatchPointsInternal {
             collection_name,
             search_points,
@@ -182,6 +192,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<RecommendPointsInternal>,
     ) -> Result<Response<RecommendResponse>, Status> {
+        validate_and_log(request.get_ref());
         let RecommendPointsInternal {
             recommend_points,
             ..  // shard_id - is not used in internal API,
@@ -200,6 +211,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<ScrollPointsInternal>,
     ) -> Result<Response<ScrollResponse>, Status> {
+        validate_and_log(request.get_ref());
         let ScrollPointsInternal {
             scroll_points,
             shard_id,
@@ -217,6 +229,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<GetPointsInternal>,
     ) -> Result<Response<GetResponse>, Status> {
+        validate_and_log(request.get_ref());
         let GetPointsInternal {
             get_points,
             shard_id,
@@ -234,6 +247,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<CountPointsInternal>,
     ) -> Result<Response<CountResponse>, Status> {
+        validate_and_log(request.get_ref());
         let CountPointsInternal {
             count_points,
             shard_id,
@@ -248,6 +262,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let SyncPointsInternal {
             sync_points,
             shard_id,
@@ -261,6 +276,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<SetPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let SetPayloadPointsInternal {
             set_payload_points,
             shard_id,

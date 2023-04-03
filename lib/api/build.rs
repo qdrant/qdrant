@@ -99,6 +99,11 @@ fn configure_validation(builder: Builder) -> Builder {
             "ChangeAliases",
             "ListAliasesRequest",
         ])
+        // Service: collections_internal.proto
+        .validates(&[
+            ("GetCollectionInfoRequestInternal.get_collection_info_request", ""),
+            ("InitiateShardTransferRequest.collection_name", "length(min = 1)"),
+        ], &[])
         // Service: points.proto
         .validates(&[
             ("UpsertPoints.collection_name", "length(min = 1)"),
@@ -122,6 +127,26 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendBatchPoints.collection_name", "length(min = 1)"),
             ("RecommendBatchPoints.recommend_points", ""),
             ("CountPoints.collection_name", "length(min = 1)"),
+        ], &[])
+        // Service: points_internal_service.proto
+        .validates(&[
+            ("UpsertPointsInternal.upsert_points", ""),
+            ("DeletePointsInternal.delete_points", ""),
+            ("SetPayloadPointsInternal.set_payload_points", ""),
+            ("DeletePayloadPointsInternal.delete_payload_points", ""),
+            ("ClearPayloadPointsInternal.clear_payload_points", ""),
+            ("CreateFieldIndexCollectionInternal.create_field_index_collection", ""),
+            ("DeleteFieldIndexCollectionInternal.delete_field_index_collection", ""),
+            ("SearchPointsInternal.search_points", ""),
+            ("SearchBatchPointsInternal.collection_name", "length(min = 1)"),
+            ("SearchBatchPointsInternal.search_points", ""),
+            ("RecommendPointsInternal.recommend_points", ""),
+            ("ScrollPointsInternal.scroll_points", ""),
+            ("GetPointsInternal.get_points", ""),
+            ("CountPointsInternal.count_points", ""),
+            ("SyncPointsInternal.sync_points", ""),
+            ("SetPayloadPointsInternal.set_payload_points", ""),
+            ("SyncPoints.collection_name", "length(min = 1)"),
         ], &[])
         // Service: raft_service.proto
         .validates(&[
