@@ -11,6 +11,18 @@ pub fn warn_validation_errors(description: &str, errs: &ValidationErrors) {
         .for_each(|(key, msg)| log::warn!("- {key}: {}", msg));
 }
 
+/// Label the given validation errors in a single string.
+pub fn label_errors(label: &str, errs: &ValidationErrors) -> String {
+    format!(
+        "{label}: [{}]",
+        describe_errors(errs)
+            .into_iter()
+            .map(|(field, err)| format!("{field}: {err}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    )
+}
+
 /// Describe the given validation errors.
 ///
 /// Returns a list of error messages for fields: `(field, message)`
