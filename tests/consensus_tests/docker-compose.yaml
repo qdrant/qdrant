@@ -4,6 +4,7 @@ services:
   qdrant_node_1:
     image: qdrant_consensus:latest
     environment:
+      - QDRANT__LOG_LEVEL=info,hyper::proto::h2::client=debug,tonic::transport::service::reconnect=debug
       - QDRANT__SERVICE__GRPC_PORT=6334
       - QDRANT__CLUSTER__ENABLED=true
       - QDRANT__CLUSTER__P2P__PORT=6335
@@ -20,6 +21,7 @@ services:
   qdrant_node_follower:
     image: qdrant_consensus:latest
     environment:
+      - QDRANT__LOG_LEVEL=info,hyper::proto::h2::client=debug,tonic::transport::service::reconnect=debug
       - QDRANT__SERVICE__GRPC_PORT=6334
       - QDRANT__CLUSTER__ENABLED=true
       - QDRANT__CLUSTER__P2P__PORT=6335
@@ -38,6 +40,7 @@ services:
   qdrant_node_follower_2:
     image: qdrant_consensus:latest
     environment:
+      - QDRANT__LOG_LEVEL=info,hyper::proto::h2::client=debug,tonic::transport::service::reconnect=debug
       - QDRANT__SERVICE__GRPC_PORT=6334
       - QDRANT__CLUSTER__ENABLED=true
       - QDRANT__CLUSTER__P2P__PORT=6335
@@ -51,3 +54,10 @@ services:
 #      resources:
 #        limits:
 #          cpus: '0.03'
+
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.0.0.0/20
