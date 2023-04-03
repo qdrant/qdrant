@@ -11,16 +11,19 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{HnswConfig, QuantizationConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 use wal::WalOptions;
 
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
+use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 pub struct WalConfig {
     /// Size of a single WAL segment in MB
+    #[validate(range(min = 1))]
     pub wal_capacity_mb: usize,
     /// Number of WAL segments to create ahead of actually used ones
     pub wal_segments_ahead: usize,
@@ -44,7 +47,7 @@ impl Default for WalConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
@@ -97,11 +100,15 @@ fn default_on_disk_payload() -> bool {
     false
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct CollectionConfig {
+    #[validate]
     pub params: CollectionParams,
+    #[validate]
     pub hnsw_config: HnswConfig,
+    #[validate]
     pub optimizer_config: OptimizersConfig,
+    #[validate]
     pub wal_config: WalConfig,
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
@@ -130,6 +137,12 @@ impl CollectionConfig {
     pub fn check(path: &Path) -> bool {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         config_path.exists()
+    }
+
+    pub fn validate_and_warn(&self) {
+        if let Err(ref errs) = self.validate() {
+            validation::warn_validation_errors("Collection configuration file", errs);
+        }
     }
 }
 

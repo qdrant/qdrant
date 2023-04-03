@@ -24,6 +24,7 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
+use validator::Validate;
 
 use crate::config::CollectionConfig;
 use crate::save_on_disk;
@@ -73,7 +74,7 @@ pub struct Record {
 }
 
 /// Current statistics and configuration of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CollectionInfo {
     /// Status of the collection
     pub status: CollectionStatus,
@@ -95,6 +96,7 @@ pub struct CollectionInfo {
     /// Each segment has independent vector as payload indexes
     pub segments_count: usize,
     /// Collection settings
+    #[validate]
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
@@ -166,12 +168,13 @@ pub struct UpdateResult {
 }
 
 /// Scroll request - paginate over all points which matches given condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequest {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
     /// Page size. Default: 10
+    #[validate(range(min = 1))]
     pub limit: Option<usize>,
     /// Look only for points which satisfies this conditions. If not provided - all points.
     pub filter: Option<Filter>,
@@ -207,7 +210,7 @@ pub struct ScrollResult {
 /// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
     /// Look for vectors closest to this
@@ -236,13 +239,13 @@ pub struct SearchRequest {
     pub score_threshold: Option<ScoreType>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestBatch {
     pub searches: Vec<SearchRequest>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointRequest {
     /// Look for points with ids
@@ -287,7 +290,7 @@ pub struct LookupLocation {
 /// Service should look for the points which are closer to positive examples and at the same time
 /// further to negative examples. The concrete way of how to compare negative and positive distances
 /// is up to implementation in `segment` crate.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
     /// Look for vectors closest to those
@@ -326,7 +329,7 @@ pub struct RecommendRequest {
     pub lookup_from: Option<LookupLocation>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequestBatch {
     pub searches: Vec<RecommendRequest>,
@@ -335,7 +338,7 @@ pub struct RecommendRequestBatch {
 /// Count Request
 /// Counts the number of points which satisfy the given filter.
 /// If filter is not provided, the count of all points in the collection will be returned.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct CountRequest {
     /// Look only for points which satisfies this conditions
@@ -594,6 +597,14 @@ impl From<save_on_disk::Error> for CollectionError {
         CollectionError::ServiceError {
             error: err.to_string(),
             backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
+impl From<validator::ValidationErrors> for CollectionError {
+    fn from(err: validator::ValidationErrors) -> Self {
+        CollectionError::BadInput {
+            description: format!("{err}"),
         }
     }
 }

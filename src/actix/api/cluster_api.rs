@@ -1,18 +1,21 @@
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, web, Responder};
+use actix_web_validator::Query;
 use serde::Deserialize;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use validator::Validate;
 
 use crate::actix::helpers::process_response;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 struct QueryParams {
     #[serde(default)]
     force: bool,
     #[serde(default)]
+    #[validate(range(min = 1))]
     timeout: Option<u64>,
 }
 
@@ -33,7 +36,7 @@ async fn recover_current_peer(toc: web::Data<TableOfContent>) -> impl Responder 
 async fn remove_peer(
     dispatcher: web::Data<Dispatcher>,
     peer_id: web::Path<u64>,
-    web::Query(params): web::Query<QueryParams>,
+    Query(params): Query<QueryParams>,
 ) -> impl Responder {
     let timing = Instant::now();
     let dispatcher = dispatcher.into_inner();

@@ -1,11 +1,11 @@
-use std::path::Path;
+use std::path::Path as StdPath;
 
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
-use actix_web::web::Query;
 use actix_web::{delete, get, post, put, web, Responder, Result};
+use actix_web_validator::{Json, Path, Query};
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use reqwest::Url;
 use schemars::JsonSchema;
@@ -19,19 +19,28 @@ use storage::content_manager::snapshots::{
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use uuid::Uuid;
+use validator::Validate;
 
+use super::CollectionPath;
 use crate::actix::helpers::{
     collection_into_actix_error, process_response, storage_into_actix_error,
 };
 use crate::common::collections::*;
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Deserialize, Validate)]
+struct SnapshotPath {
+    #[serde(rename = "snapshot_name")]
+    #[validate(length(min = 1))]
+    name: String,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SnapshotUploadingParam {
     pub wait: Option<bool>,
     pub priority: Option<SnapshotPriority>,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SnapshottingParam {
     pub wait: Option<bool>,
 }
@@ -56,7 +65,7 @@ pub fn do_save_uploaded_snapshot(
     snapshot: TempFile,
 ) -> std::result::Result<Url, StorageError> {
     let filename = snapshot.file_name.unwrap_or(Uuid::new_v4().to_string());
-    let path = Path::new(toc.snapshots_path())
+    let path = StdPath::new(toc.snapshots_path())
         .join(collection_name)
         .join(filename);
 
@@ -94,40 +103,38 @@ pub async fn do_get_snapshot(
 }
 
 #[get("/collections/{name}/snapshots")]
-async fn list_snapshots(toc: web::Data<TableOfContent>, path: web::Path<String>) -> impl Responder {
-    let collection_name = path.into_inner();
-
+async fn list_snapshots(
+    toc: web::Data<TableOfContent>,
+    collection: Path<CollectionPath>,
+) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_snapshots(toc.get_ref(), &collection_name).await;
+    let response = do_list_snapshots(toc.get_ref(), &collection.name).await;
     process_response(response, timing)
 }
 
 #[post("/collections/{name}/snapshots")]
 async fn create_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
+    collection: Path<CollectionPath>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
-
     let timing = Instant::now();
-    let response = do_create_snapshot(toc.get_ref(), &collection_name).await;
+    let response = do_create_snapshot(toc.get_ref(), &collection.name).await;
     process_response(response, timing)
 }
 
 #[post("/collections/{name}/snapshots/upload")]
 async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
-    path: web::Path<String>,
+    collection: Path<CollectionPath>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
     params: Query<SnapshotUploadingParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let snapshot = form.snapshot;
     let wait = params.wait.unwrap_or(true);
-    let timing = Instant::now();
 
     let snapshot_location =
-        match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection_name, snapshot) {
+        match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection.name, snapshot) {
             Ok(location) => location,
             Err(err) => return process_response(Err(err), timing),
         };
@@ -139,7 +146,7 @@ async fn upload_snapshot(
 
     let response = do_recover_from_snapshot(
         dispatcher.get_ref(),
-        &collection_name,
+        &collection.name,
         snapshot_recover,
         wait,
     )
@@ -150,18 +157,17 @@ async fn upload_snapshot(
 #[put("/collections/{name}/snapshots/recover")]
 async fn recover_from_snapshot(
     dispatcher: web::Data<Dispatcher>,
-    path: web::Path<String>,
-    request: web::Json<SnapshotRecover>,
+    collection: Path<CollectionPath>,
+    request: Json<SnapshotRecover>,
     params: Query<SnapshottingParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let snapshot_recover = request.into_inner();
     let wait = params.wait.unwrap_or(true);
 
-    let timing = Instant::now();
     let response = do_recover_from_snapshot(
         dispatcher.get_ref(),
-        &collection_name,
+        &collection.name,
         snapshot_recover,
         wait,
     )
@@ -172,10 +178,10 @@ async fn recover_from_snapshot(
 #[get("/collections/{name}/snapshots/{snapshot_name}")]
 async fn get_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<(String, String)>,
+    collection: Path<CollectionPath>,
+    snapshot: Path<SnapshotPath>,
 ) -> impl Responder {
-    let (collection_name, snapshot_name) = path.into_inner();
-    do_get_snapshot(toc.get_ref(), &collection_name, &snapshot_name).await
+    do_get_snapshot(toc.get_ref(), &collection.name, &snapshot.name).await
 }
 
 #[get("/snapshots")]
@@ -195,32 +201,30 @@ async fn create_full_snapshot(toc: web::Data<TableOfContent>) -> impl Responder 
 #[get("/snapshots/{snapshot_name}")]
 async fn get_full_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
+    snapshot: Path<SnapshotPath>,
 ) -> impl Responder {
-    let snapshot_name = path.into_inner();
-    do_get_full_snapshot(toc.get_ref(), &snapshot_name).await
+    do_get_full_snapshot(toc.get_ref(), &snapshot.name).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
 async fn delete_full_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
+    snapshot: Path<SnapshotPath>,
 ) -> impl Responder {
-    let snapshot_name = path.into_inner();
     let timing = Instant::now();
-    let response = do_delete_full_snapshot(toc.get_ref(), &snapshot_name).await;
+    let response = do_delete_full_snapshot(toc.get_ref(), &snapshot.name).await;
     process_response(response, timing)
 }
 
 #[delete("/collections/{name}/snapshots/{snapshot_name}")]
 async fn delete_collection_snapshot(
     toc: web::Data<TableOfContent>,
-    path: web::Path<(String, String)>,
+    collection: Path<CollectionPath>,
+    snapshot: Path<SnapshotPath>,
 ) -> impl Responder {
-    let (collection_name, snapshot_name) = path.into_inner();
     let timing = Instant::now();
     let response =
-        do_delete_collection_snapshot(toc.get_ref(), &collection_name, &snapshot_name).await;
+        do_delete_collection_snapshot(toc.get_ref(), &collection.name, &snapshot.name).await;
     process_response(response, timing)
 }
 

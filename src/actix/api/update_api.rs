@@ -1,40 +1,48 @@
 use actix_web::rt::time::Instant;
-use actix_web::web::Query;
 use actix_web::{delete, post, put, web, Responder};
+use actix_web_validator::{Json, Path, Query};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
+use validator::Validate;
 
+use super::CollectionPath;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
     do_overwrite_payload, do_set_payload, do_upsert_points, CreateFieldIndex,
 };
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Deserialize, Validate)]
+struct FieldPath {
+    #[serde(rename = "field_name")]
+    #[validate(length(min = 1))]
+    name: String,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpdateParam {
     pub wait: Option<bool>,
     pub ordering: Option<WriteOrdering>,
 }
 
 #[put("/collections/{name}/points")]
-pub async fn upsert_points(
+async fn upsert_points(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    operation: web::Json<PointInsertOperations>,
+    collection: Path<CollectionPath>,
+    operation: Json<PointInsertOperations>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
-    let timing = Instant::now();
 
     let response = do_upsert_points(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         operation,
         None,
         wait,
@@ -45,21 +53,20 @@ pub async fn upsert_points(
 }
 
 #[post("/collections/{name}/points/delete")]
-pub async fn delete_points(
+async fn delete_points(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    operation: web::Json<PointsSelector>,
+    collection: Path<CollectionPath>,
+    operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
-    let timing = Instant::now();
 
     let response = do_delete_points(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         operation,
         None,
         wait,
@@ -70,21 +77,20 @@ pub async fn delete_points(
 }
 
 #[post("/collections/{name}/points/payload")]
-pub async fn set_payload(
+async fn set_payload(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    operation: web::Json<SetPayload>,
+    collection: Path<CollectionPath>,
+    operation: Json<SetPayload>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
-    let timing = Instant::now();
 
     let response = do_set_payload(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         operation,
         None,
         wait,
@@ -95,21 +101,20 @@ pub async fn set_payload(
 }
 
 #[put("/collections/{name}/points/payload")]
-pub async fn overwrite_payload(
+async fn overwrite_payload(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    operation: web::Json<SetPayload>,
+    collection: Path<CollectionPath>,
+    operation: Json<SetPayload>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
-    let timing = Instant::now();
 
     let response = do_overwrite_payload(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         operation,
         None,
         wait,
@@ -120,21 +125,20 @@ pub async fn overwrite_payload(
 }
 
 #[post("/collections/{name}/points/payload/delete")]
-pub async fn delete_payload(
+async fn delete_payload(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    operation: web::Json<DeletePayload>,
+    collection: Path<CollectionPath>,
+    operation: Json<DeletePayload>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
-    let timing = Instant::now();
 
     let response = do_delete_payload(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         operation,
         None,
         wait,
@@ -145,21 +149,20 @@ pub async fn delete_payload(
 }
 
 #[post("/collections/{name}/points/payload/clear")]
-pub async fn clear_payload(
+async fn clear_payload(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    operation: web::Json<PointsSelector>,
+    collection: Path<CollectionPath>,
+    operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
-    let timing = Instant::now();
 
     let response = do_clear_payload(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         operation,
         None,
         wait,
@@ -170,21 +173,20 @@ pub async fn clear_payload(
 }
 
 #[put("/collections/{name}/index")]
-pub async fn create_field_index(
+async fn create_field_index(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    operation: web::Json<CreateFieldIndex>,
+    collection: Path<CollectionPath>,
+    operation: Json<CreateFieldIndex>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
+    let timing = Instant::now();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
-    let timing = Instant::now();
 
     let response = do_create_index(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         operation,
         None,
         wait,
@@ -195,20 +197,20 @@ pub async fn create_field_index(
 }
 
 #[delete("/collections/{name}/index/{field_name}")]
-pub async fn delete_field_index(
+async fn delete_field_index(
     toc: web::Data<TableOfContent>,
-    path: web::Path<(String, String)>,
+    collection: Path<CollectionPath>,
+    field: Path<FieldPath>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let (collection_name, field_name) = path.into_inner();
+    let timing = Instant::now();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
-    let timing = Instant::now();
 
     let response = do_delete_index(
         toc.get_ref(),
-        &collection_name,
-        field_name,
+        &collection.name,
+        field.name.clone(),
         None,
         wait,
         ordering,

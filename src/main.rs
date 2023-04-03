@@ -120,6 +120,9 @@ fn main() -> anyhow::Result<()> {
 
     welcome();
 
+    // Validate as soon as possible, but we must initialize logging first
+    settings.validate_and_warn();
+
     // Saved state of the consensus.
     let persistent_consensus_state =
         Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;

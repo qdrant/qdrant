@@ -1,14 +1,25 @@
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
+use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::types::{PointRequest, Record, ScrollRequest, ScrollResult};
 use segment::types::{PointIdType, WithPayloadInterface};
+use serde::Deserialize;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+use validator::Validate;
 
 use super::read_params::ReadParams;
+use super::CollectionPath;
 use crate::actix::helpers::process_response;
 use crate::common::points::do_get_points;
+
+#[derive(Deserialize, Validate)]
+struct PointPath {
+    #[validate(length(min = 1))]
+    // TODO: validate this is a valid ID type (usize or UUID)? Does currently error on deserialize.
+    id: String,
+}
 
 async fn do_get_point(
     toc: &TableOfContent,
@@ -38,21 +49,21 @@ async fn scroll_get_points(
 }
 
 #[get("/collections/{name}/points/{id}")]
-pub async fn get_point(
+async fn get_point(
     toc: web::Data<TableOfContent>,
-    path: web::Path<(String, String)>,
-    params: web::Query<ReadParams>,
+    collection: Path<CollectionPath>,
+    point: Path<PointPath>,
+    params: Query<ReadParams>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let (collection_name, point_id_str) = path.into_inner();
 
     let point_id: PointIdType = {
-        let parse_res = point_id_str.parse();
+        let parse_res = point.id.parse();
         match parse_res {
             Ok(x) => x,
             Err(_) => {
                 let error = Err(StorageError::BadInput {
-                    description: format!("Can not recognize \"{point_id_str}\" as point id"),
+                    description: format!("Can not recognize \"{}\" as point id", point.id),
                 });
                 return process_response(error, timing);
             }
@@ -61,7 +72,7 @@ pub async fn get_point(
 
     let response = do_get_point(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         point_id,
         params.consistency,
     )
@@ -80,18 +91,17 @@ pub async fn get_point(
 }
 
 #[post("/collections/{name}/points")]
-pub async fn get_points(
+async fn get_points(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    request: web::Json<PointRequest>,
-    params: web::Query<ReadParams>,
+    collection: Path<CollectionPath>,
+    request: Json<PointRequest>,
+    params: Query<ReadParams>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
     let timing = Instant::now();
 
     let response = do_get_points(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         request.into_inner(),
         params.consistency,
         None,
@@ -101,18 +111,17 @@ pub async fn get_points(
 }
 
 #[post("/collections/{name}/points/scroll")]
-pub async fn scroll_points(
+async fn scroll_points(
     toc: web::Data<TableOfContent>,
-    path: web::Path<String>,
-    request: web::Json<ScrollRequest>,
-    params: web::Query<ReadParams>,
+    collection: Path<CollectionPath>,
+    request: Json<ScrollRequest>,
+    params: Query<ReadParams>,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
     let timing = Instant::now();
 
     let response = scroll_get_points(
         toc.get_ref(),
-        &collection_name,
+        &collection.name,
         request.into_inner(),
         params.consistency,
     )
