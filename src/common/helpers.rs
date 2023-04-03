@@ -85,8 +85,8 @@ pub fn load_tls_client_config(settings: &Settings) -> io::Result<Option<ClientTl
         let tls_config = &settings.tls()?;
         Ok(Some(
             ClientTlsConfig::new()
-                .identity(load_identity(&tls_config)?)
-                .ca_certificate(load_ca_certificate(&tls_config)?),
+                .identity(load_identity(tls_config)?)
+                .ca_certificate(load_ca_certificate(tls_config)?),
         ))
     } else {
         Ok(None)
