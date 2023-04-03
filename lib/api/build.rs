@@ -18,6 +18,7 @@ fn main() -> std::io::Result<()> {
 
 trait BuilderExt {
     fn configure_validation(self) -> Self;
+    fn validates(self, fields: &[(&str, &str)], extra_derives: &[&str]) -> Self;
     fn derive_validate(self, path: &str) -> Self;
     fn derive_validates(self, paths: &[&str]) -> Self;
     fn field_validate(self, path: &str, constraint: &str) -> Self;
@@ -27,6 +28,18 @@ trait BuilderExt {
 impl BuilderExt for Builder {
     fn configure_validation(self) -> Self {
         configure_validation(self)
+    }
+
+    fn validates(self, fields: &[(&str, &str)], extra_derives: &[&str]) -> Self {
+        let mut derives = fields
+            .iter()
+            .map(|(field, _)| field.split_once('.').unwrap().0)
+            .collect::<Vec<&str>>();
+        derives.extend(extra_derives);
+        derives.sort_unstable();
+        derives.dedup();
+
+        self.derive_validates(&derives).field_validates(fields)
     }
 
     fn derive_validate(self, path: &str) -> Self {
@@ -71,20 +84,7 @@ fn append_file(path: &str, line: &str) {
 fn configure_validation(builder: Builder) -> Builder {
     builder
         // API: collections_api.rs
-        .derive_validates(&[
-            "GetCollectionInfoRequest",
-            "ListCollectionsRequest",
-            "CreateCollection",
-            "HnswConfigDiff",
-            "UpdateCollection",
-            "OptimizersConfigDiff",
-            "CollectionParamsDiff",
-            "DeleteCollection",
-            "ChangeAliases",
-            "ListCollectionAliasesRequest",
-            "ListAliasesRequest",
-        ])
-        .field_validates(&[
+        .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1)"),
             ("CreateCollection.hnsw_config", ""),
             // TODO: ("HnswConfigDiff.m", "range(min = 4, max = 10_000)"),
@@ -101,26 +101,16 @@ fn configure_validation(builder: Builder) -> Builder {
             // TODO: ("DeleteCollection.timeout", "range(min = 1)"),
             // TODO: ("ChangeAliases.timeout", "range(min = 1)"),
             ("ListCollectionAliasesRequest.collection_name", "length(min = 1)"),
+        ], &[
+            "ListCollectionsRequest",
+            "HnswConfigDiff",
+            "OptimizersConfigDiff",
+            "CollectionParamsDiff",
+            "ChangeAliases",
+            "ListAliasesRequest",
         ])
         // API: points_api.rs
-        .derive_validates(&[
-            "UpsertPoints",
-            "DeletePoints",
-            "GetPoints",
-            "SetPayloadPoints",
-            "DeletePayloadPoints",
-            "ClearPayloadPoints",
-            "CreateFieldIndexCollection",
-            "DeleteFieldIndexCollection",
-            "SearchPoints",
-            "SearchBatchPoints",
-            "ScrollPoints",
-            "RecommendPoints",
-            "RecommendBatchPoints",
-            "CountPoints",
-            "SyncPoints",
-        ])
-        .field_validates(&[
+        .validates(&[
             ("UpsertPoints.collection_name", "length(min = 1)"),
             ("DeletePoints.collection_name", "length(min = 1)"),
             ("GetPoints.collection_name", "length(min = 1)"),
@@ -144,29 +134,23 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendBatchPoints.recommend_points", ""),
             ("CountPoints.collection_name", "length(min = 1)"),
             ("SyncPoints.collection_name", "length(min = 1)"),
-        ])
+        ], &[])
         // API: raft_api.rs
-        .derive_validates(&[
-            "AddPeerToKnownMessage",
-        ])
-        .field_validates(&[
+        .validates(&[
             // TODO: ("AddPeerToKnownMessage.uri", "length(min = 1)"),
             // TODO: ("AddPeerToKnownMessage.port", "range(min = 1)"),
+        ], &[
+            "AddPeerToKnownMessage",
         ])
         // API: snapshots_api.rs
-        .derive_validates(&[
-            "CreateSnapshotRequest",
-            "ListSnapshotsRequest",
-            "DeleteSnapshotRequest",
-            "CreateFullSnapshotRequest",
-            "ListFullSnapshotsRequest",
-            "DeleteFullSnapshotRequest",
-        ])
-        .field_validates(&[
+        .validates(&[
             ("CreateSnapshotRequest.collection_name", "length(min = 1)"),
             ("ListSnapshotsRequest.collection_name", "length(min = 1)"),
-            ("DeleteSnapshotsRequest.collection_name", "length(min = 1)"),
-            ("DeleteSnapshotsRequest.snapshot_name", "length(min = 1)"),
-            ("DeleteFullSnapshotsRequest.snapshot_name", "length(min = 1)"),
+            ("DeleteSnapshotRequest.collection_name", "length(min = 1)"),
+            ("DeleteSnapshotRequest.snapshot_name", "length(min = 1)"),
+            ("DeleteFullSnapshotRequest.snapshot_name", "length(min = 1)"),
+        ], &[
+            "CreateFullSnapshotRequest",
+            "ListFullSnapshotsRequest",
         ])
 }

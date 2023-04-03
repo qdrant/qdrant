@@ -6372,6 +6372,7 @@ pub struct ListFullSnapshotsRequest {}
 pub struct DeleteFullSnapshotRequest {
     /// Name of the full snapshot
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
@@ -6398,9 +6399,11 @@ pub struct ListSnapshotsRequest {
 pub struct DeleteSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Name of the collection snapshot
     #[prost(string, tag = "2")]
+    #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
