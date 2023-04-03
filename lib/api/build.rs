@@ -70,8 +70,8 @@ fn append_file(path: &str, line: &str) {
 #[rustfmt::skip]
 fn configure_validation(builder: Builder) -> Builder {
     builder
+        // API: collections_api.rs
         .derive_validates(&[
-            // collections_api.rs
             "GetCollectionInfoRequest",
             "ListCollectionsRequest",
             "CreateCollection",
@@ -83,7 +83,27 @@ fn configure_validation(builder: Builder) -> Builder {
             "ChangeAliases",
             "ListCollectionAliasesRequest",
             "ListAliasesRequest",
-            // points_api.rs
+        ])
+        .field_validates(&[
+            ("GetCollectionInfoRequest.collection_name", "length(min = 1)"),
+            ("CreateCollection.hnsw_config", ""),
+            // TODO: ("HnswConfigDiff.m", "range(min = 4, max = 10_000)"),
+            // TODO: ("HnswConfigDiff.ef_construct", "range(min = 4)"),
+            ("UpdateCollection.collection_name", "length(min = 1)"),
+            ("UpdateCollection.optimizers_config", ""),
+            // TODO: ("OptimizersConfigDiff.deleted_threshold", "range(min = 0.0, max = 1.0)"),
+            // TODO: ("OptimizersConfigDiff.vacuum_min_vector_number", "range(min = 100)"),
+            // TODO: ("OptimizersConfigDiff.memmap_threshold", "range(min = 1000)"),
+            // TODO: ("OptimizersConfigDiff.indexing_threshold", "range(min = 1000)"),
+            // TODO: ("UpdateCollection.timeout", "range(min = 1)"),
+            ("UpdateCollection.params", ""),
+            ("DeleteCollection.collection_name", "length(min = 1)"),
+            // TODO: ("DeleteCollection.timeout", "range(min = 1)"),
+            // TODO: ("ChangeAliases.timeout", "range(min = 1)"),
+            ("ListCollectionAliasesRequest.collection_name", "length(min = 1)"),
+        ])
+        // API: points_api.rs
+        .derive_validates(&[
             "UpsertPoints",
             "DeletePoints",
             "GetPoints",
@@ -101,24 +121,6 @@ fn configure_validation(builder: Builder) -> Builder {
             "SyncPoints",
         ])
         .field_validates(&[
-            // collections_api.rs
-            ("GetCollectionInfoRequest.collection_name", "length(min = 1)"),
-            ("CreateCollection.hnsw_config", ""),
-            // TODO: ("HnswConfigDiff.m", "range(min = 4, max = 10_000)"),
-            // TODO: ("HnswConfigDiff.ef_construct", "range(min = 4)"),
-            ("UpdateCollection.collection_name", "length(min = 1)"),
-            ("UpdateCollection.optimizers_config", ""),
-            // TODO: ("OptimizersConfigDiff.deleted_threshold", "range(min = 0.0, max = 1.0)"),
-            // TODO: ("OptimizersConfigDiff.vacuum_min_vector_number", "range(min = 100)"),
-            // TODO: ("OptimizersConfigDiff.memmap_threshold", "range(min = 1000)"),
-            // TODO: ("OptimizersConfigDiff.indexing_threshold", "range(min = 1000)"),
-            // TODO: ("UpdateCollection.timeout", "range(min = 1)"),
-            ("UpdateCollection.params", ""),
-            ("DeleteCollection.collection_name", "length(min = 1)"),
-            // TODO: ("DeleteCollection.timeout", "range(min = 1)"),
-            // TODO: ("ChangeAliases.timeout", "range(min = 1)"),
-            ("ListCollectionAliasesRequest.collection_name", "length(min = 1)"),
-            // points_api.rs
             ("UpsertPoints.collection_name", "length(min = 1)"),
             ("DeletePoints.collection_name", "length(min = 1)"),
             ("GetPoints.collection_name", "length(min = 1)"),
@@ -142,5 +144,29 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendBatchPoints.recommend_points", ""),
             ("CountPoints.collection_name", "length(min = 1)"),
             ("SyncPoints.collection_name", "length(min = 1)"),
+        ])
+        // API: raft_api.rs
+        .derive_validates(&[
+            "AddPeerToKnownMessage",
+        ])
+        .field_validates(&[
+            // TODO: ("AddPeerToKnownMessage.uri", "length(min = 1)"),
+            // TODO: ("AddPeerToKnownMessage.port", "range(min = 1)"),
+        ])
+        // API: snapshots_api.rs
+        .derive_validates(&[
+            "CreateSnapshotRequest",
+            "ListSnapshotsRequest",
+            "DeleteSnapshotRequest",
+            "CreateFullSnapshotRequest",
+            "ListFullSnapshotsRequest",
+            "DeleteFullSnapshotRequest",
+        ])
+        .field_validates(&[
+            ("CreateSnapshotRequest.collection_name", "length(min = 1)"),
+            ("ListSnapshotsRequest.collection_name", "length(min = 1)"),
+            ("DeleteSnapshotsRequest.collection_name", "length(min = 1)"),
+            ("DeleteSnapshotsRequest.snapshot_name", "length(min = 1)"),
+            ("DeleteFullSnapshotsRequest.snapshot_name", "length(min = 1)"),
         ])
 }

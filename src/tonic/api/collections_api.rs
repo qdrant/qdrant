@@ -112,7 +112,6 @@ impl Collections for CollectionsService {
         request: Request<ListCollectionsRequest>,
     ) -> Result<Response<ListCollectionsResponse>, Status> {
         validate(request.get_ref())?;
-
         let timing = Instant::now();
         let result = do_list_collections(&self.dispatcher).await;
 
