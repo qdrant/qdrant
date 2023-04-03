@@ -1,23 +1,29 @@
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParams {
     /// Size of the vectors
     #[prost(uint64, tag = "1")]
+    #[validate(range(min = 1))]
     pub size: u64,
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
     pub distance: i32,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsMap {
     #[prost(map = "string, message", tag = "1")]
+    #[validate]
     pub map: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsConfig {
     #[prost(oneof = "vectors_config::Config", tags = "1, 2")]
+    #[validate]
     pub config: ::core::option::Option<vectors_config::Config>,
 }
 /// Nested message and enum types in `VectorsConfig`.
@@ -109,6 +115,7 @@ pub struct HnswConfigDiff {
     #[prost(uint64, optional, tag = "6")]
     pub payload_m: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WalConfigDiff {
@@ -208,6 +215,7 @@ pub mod quantization_config {
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Configuration of vector index
     #[prost(message, optional, tag = "4")]
@@ -215,9 +223,11 @@ pub struct CreateCollection {
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "5")]
+    #[validate]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
     /// Configuration of the optimizers
     #[prost(message, optional, tag = "6")]
+    #[validate]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
     /// Number of shards in the collection, default = 1
     #[prost(uint32, optional, tag = "7")]
@@ -230,6 +240,7 @@ pub struct CreateCollection {
     pub timeout: ::core::option::Option<u64>,
     /// Configuration for vectors
     #[prost(message, optional, tag = "10")]
+    #[validate]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
     /// Number of replicas of each shard that network tries to maintain, default = 1
     #[prost(uint32, optional, tag = "11")]
@@ -4375,7 +4386,6 @@ pub struct DeletePointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
     #[validate]
     pub set_payload_points: ::core::option::Option<SetPayloadPoints>,
     #[prost(uint32, optional, tag = "2")]

@@ -3,6 +3,10 @@ use tonic_build::Builder;
 fn main() -> std::io::Result<()> {
     // Build gRPC bits from proto file
     tonic_build::configure()
+        // Because we want to attach all validation rules to the generated gRPC types, we must do
+        // so by extending the builder. This is ugly, but better than manually implementing
+        // `Validation` for all these types. This seems to be the best approach. The line below
+        // configures all attributes.
         .configure_validation()
         .out_dir("src/grpc/") // saves generated structures at this location
         .compile(
@@ -76,7 +80,11 @@ fn configure_validation(builder: Builder) -> Builder {
         // Service: collections.proto
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1)"),
+            ("CreateCollection.collection_name", "length(min = 1)"),
             ("CreateCollection.hnsw_config", ""),
+            ("CreateCollection.wal_config", ""),
+            ("CreateCollection.optimizers_config", ""),
+            ("CreateCollection.vectors_config", ""),
             ("UpdateCollection.collection_name", "length(min = 1)"),
             ("UpdateCollection.optimizers_config", ""),
             ("UpdateCollection.params", ""),
@@ -87,13 +95,18 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ListCollectionAliasesRequest.collection_name", "length(min = 1)"),
             // Validate: ("HnswConfigDiff.m", "range(min = 4, max = 10_000)"),
             // Validate: ("HnswConfigDiff.ef_construct", "range(min = 4)"),
+            // Validate: ("WalConfigDiff.wal_capacity_mb", "range(min = 1)"),
             // Validate: ("OptimizersConfigDiff.deleted_threshold", "range(min = 0.0, max = 1.0)"),
             // Validate: ("OptimizersConfigDiff.vacuum_min_vector_number", "range(min = 100)"),
             // Validate: ("OptimizersConfigDiff.memmap_threshold", "range(min = 1000)"),
             // Validate: ("OptimizersConfigDiff.indexing_threshold", "range(min = 1000)"),
+            ("VectorsConfig.config", ""),
+            ("VectorParams.size", "range(min = 1)"),
+            ("VectorParamsMap.map", ""),
         ], &[
             "ListCollectionsRequest",
             "HnswConfigDiff",
+            "WalConfigDiff",
             "OptimizersConfigDiff",
             "CollectionParamsDiff",
             "ChangeAliases",
@@ -145,7 +158,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("GetPointsInternal.get_points", ""),
             ("CountPointsInternal.count_points", ""),
             ("SyncPointsInternal.sync_points", ""),
-            ("SetPayloadPointsInternal.set_payload_points", ""),
             ("SyncPoints.collection_name", "length(min = 1)"),
         ], &[])
         // Service: raft_service.proto
