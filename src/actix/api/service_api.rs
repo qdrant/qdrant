@@ -2,6 +2,7 @@ use actix_web::http::header::ContentType;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{get, post, web, HttpResponse, Responder};
+use actix_web_validator::Json;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
@@ -64,7 +65,7 @@ async fn metrics(
 #[post("/locks")]
 async fn put_locks(
     toc: web::Data<TableOfContent>,
-    locks_option: web::Json<LocksOption>,
+    locks_option: Json<LocksOption>,
 ) -> impl Responder {
     let timing = Instant::now();
     let result = LocksOption {

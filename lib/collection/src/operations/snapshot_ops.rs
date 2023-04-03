@@ -6,6 +6,7 @@ use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
+use validator::Validate;
 
 use crate::operations::types::CollectionResult;
 
@@ -20,7 +21,7 @@ pub enum SnapshotPriority {
     Replica,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SnapshotRecover {
     /// Examples:
     /// - URL `http://localhost:8080/collections/my_collection/snapshots/my_snapshot`
@@ -32,6 +33,12 @@ pub struct SnapshotRecover {
     /// If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.
     #[serde(default)]
     pub priority: Option<SnapshotPriority>,
+}
+
+impl Validate for SnapshotPriority {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
