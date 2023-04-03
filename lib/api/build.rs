@@ -1,6 +1,7 @@
 use tonic_build::Builder;
 
 fn main() -> std::io::Result<()> {
+    // Build gRPC bits from proto file
     tonic_build::configure()
         .configure_validation()
         .out_dir("src/grpc/") // saves generated structures at this location
@@ -9,13 +10,13 @@ fn main() -> std::io::Result<()> {
             &["src/grpc/proto"], // specify the root location to search proto dependencies
         )?;
 
-    // Append trait imports to generated gRPC output
-    // TODO: find a better way to do this?
-    append_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
+    // Append trait extension imports to generated gRPC output
+    append_to_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
 
     Ok(())
 }
 
+/// Extension to [`Builder`] to configure validation attributes.
 trait BuilderExt {
     fn configure_validation(self) -> Self;
     fn validates(self, fields: &[(&str, &str)], extra_derives: &[&str]) -> Self;
@@ -31,6 +32,7 @@ impl BuilderExt for Builder {
     }
 
     fn validates(self, fields: &[(&str, &str)], extra_derives: &[&str]) -> Self {
+        // Build list of structs to derive validation on, guess these from list of fields
         let mut derives = fields
             .iter()
             .map(|(field, _)| field.split_once('.').unwrap().0)
@@ -65,42 +67,30 @@ impl BuilderExt for Builder {
     }
 }
 
-fn append_file(path: &str, line: &str) {
-    use std::fs::OpenOptions;
-    use std::io::prelude::*;
-
-    writeln!(
-        OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(path)
-            .unwrap(),
-        "{line}",
-    )
-    .expect("failed to append to generated file");
-}
-
+/// Configure additional attributes required for validation on generated gRPC types.
+///
+/// These are grouped by service file.
 #[rustfmt::skip]
 fn configure_validation(builder: Builder) -> Builder {
     builder
-        // API: collections_api.rs
+        // Service: collections.proto
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1)"),
             ("CreateCollection.hnsw_config", ""),
-            // TODO: ("HnswConfigDiff.m", "range(min = 4, max = 10_000)"),
-            // TODO: ("HnswConfigDiff.ef_construct", "range(min = 4)"),
             ("UpdateCollection.collection_name", "length(min = 1)"),
             ("UpdateCollection.optimizers_config", ""),
-            // TODO: ("OptimizersConfigDiff.deleted_threshold", "range(min = 0.0, max = 1.0)"),
-            // TODO: ("OptimizersConfigDiff.vacuum_min_vector_number", "range(min = 100)"),
-            // TODO: ("OptimizersConfigDiff.memmap_threshold", "range(min = 1000)"),
-            // TODO: ("OptimizersConfigDiff.indexing_threshold", "range(min = 1000)"),
-            // TODO: ("UpdateCollection.timeout", "range(min = 1)"),
             ("UpdateCollection.params", ""),
+            // Validate: ("UpdateCollection.timeout", "range(min = 1)"),
             ("DeleteCollection.collection_name", "length(min = 1)"),
-            // TODO: ("DeleteCollection.timeout", "range(min = 1)"),
-            // TODO: ("ChangeAliases.timeout", "range(min = 1)"),
+            // Validate: ("DeleteCollection.timeout", "range(min = 1)"),
+            // Validate: ("ChangeAliases.timeout", "range(min = 1)"),
             ("ListCollectionAliasesRequest.collection_name", "length(min = 1)"),
+            // Validate: ("HnswConfigDiff.m", "range(min = 4, max = 10_000)"),
+            // Validate: ("HnswConfigDiff.ef_construct", "range(min = 4)"),
+            // Validate: ("OptimizersConfigDiff.deleted_threshold", "range(min = 0.0, max = 1.0)"),
+            // Validate: ("OptimizersConfigDiff.vacuum_min_vector_number", "range(min = 100)"),
+            // Validate: ("OptimizersConfigDiff.memmap_threshold", "range(min = 1000)"),
+            // Validate: ("OptimizersConfigDiff.indexing_threshold", "range(min = 1000)"),
         ], &[
             "ListCollectionsRequest",
             "HnswConfigDiff",
@@ -109,7 +99,7 @@ fn configure_validation(builder: Builder) -> Builder {
             "ChangeAliases",
             "ListAliasesRequest",
         ])
-        // API: points_api.rs
+        // Service: points.proto
         .validates(&[
             ("UpsertPoints.collection_name", "length(min = 1)"),
             ("DeletePoints.collection_name", "length(min = 1)"),
@@ -123,25 +113,24 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
             ("SearchPoints.collection_name", "length(min = 1)"),
             ("SearchPoints.limit", "range(min = 1)"),
-            // TODO: ("SearchPoints.vector_name", "length(min = 1)"),
+            // Validate: ("SearchPoints.vector_name", "length(min = 1)"),
             ("SearchBatchPoints.collection_name", "length(min = 1)"),
             ("SearchBatchPoints.search_points", ""),
             ("ScrollPoints.collection_name", "length(min = 1)"),
-            // TODO: ("ScrollPoints.limit", "range(min = 1)"),
+            // Validate: ("ScrollPoints.limit", "range(min = 1)"),
             ("RecommendPoints.collection_name", "length(min = 1)"),
             ("RecommendBatchPoints.collection_name", "length(min = 1)"),
             ("RecommendBatchPoints.recommend_points", ""),
             ("CountPoints.collection_name", "length(min = 1)"),
-            ("SyncPoints.collection_name", "length(min = 1)"),
         ], &[])
-        // API: raft_api.rs
+        // Service: raft_service.proto
         .validates(&[
-            // TODO: ("AddPeerToKnownMessage.uri", "length(min = 1)"),
-            // TODO: ("AddPeerToKnownMessage.port", "range(min = 1)"),
+            // Validate: ("AddPeerToKnownMessage.uri", "length(min = 1)"),
+            // Validate: ("AddPeerToKnownMessage.port", "range(min = 1)"),
         ], &[
             "AddPeerToKnownMessage",
         ])
-        // API: snapshots_api.rs
+        // Service: snapshot_service.proto
         .validates(&[
             ("CreateSnapshotRequest.collection_name", "length(min = 1)"),
             ("ListSnapshotsRequest.collection_name", "length(min = 1)"),
@@ -152,4 +141,18 @@ fn configure_validation(builder: Builder) -> Builder {
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",
         ])
+}
+
+fn append_to_file(path: &str, line: &str) {
+    use std::fs::OpenOptions;
+    use std::io::prelude::*;
+    writeln!(
+        OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(path)
+            .unwrap(),
+        "{line}",
+    )
+    .unwrap()
 }

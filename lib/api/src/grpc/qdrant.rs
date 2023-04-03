@@ -4315,13 +4315,11 @@ pub mod points_server {
         const NAME: &'static str = "qdrant.Points";
     }
 }
-#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
