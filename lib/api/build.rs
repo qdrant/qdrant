@@ -7,7 +7,13 @@ fn main() -> std::io::Result<()> {
         .compile(
             &["src/grpc/proto/qdrant.proto"], // proto entry point
             &["src/grpc/proto"], // specify the root location to search proto dependencies
-        )
+        )?;
+
+    // Append trait imports to generated gRPC output
+    // TODO: find a better way to do this?
+    append_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
+
+    Ok(())
 }
 
 trait BuilderExt {
@@ -44,6 +50,21 @@ impl BuilderExt for Builder {
             c.field_validate(path, constraint)
         })
     }
+}
+
+fn append_file(path: &str, line: &str) {
+    use std::fs::OpenOptions;
+    use std::io::prelude::*;
+
+    writeln!(
+        OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(path)
+            .unwrap(),
+        "{line}",
+    )
+    .expect("failed to append to generated file");
 }
 
 #[rustfmt::skip]
