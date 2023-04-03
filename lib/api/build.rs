@@ -71,6 +71,18 @@ fn append_file(path: &str, line: &str) {
 fn configure_validation(builder: Builder) -> Builder {
     builder
         .derive_validates(&[
+            // collections_api.rs
+            "GetCollectionInfoRequest",
+            "ListCollectionsRequest",
+            "CreateCollection",
+            "HnswConfigDiff",
+            "UpdateCollection",
+            "OptimizersConfigDiff",
+            "CollectionParamsDiff",
+            "DeleteCollection",
+            "ChangeAliases",
+            "ListCollectionAliasesRequest",
+            "ListAliasesRequest",
             // points_api.rs
             "UpsertPoints",
             "DeletePoints",
@@ -86,8 +98,26 @@ fn configure_validation(builder: Builder) -> Builder {
             "RecommendPoints",
             "RecommendBatchPoints",
             "CountPoints",
+            "SyncPoints",
         ])
         .field_validates(&[
+            // collections_api.rs
+            ("GetCollectionInfoRequest.collection_name", "length(min = 1)"),
+            ("CreateCollection.hnsw_config", ""),
+            // TODO: ("HnswConfigDiff.m", "range(min = 4, max = 10_000)"),
+            // TODO: ("HnswConfigDiff.ef_construct", "range(min = 4)"),
+            ("UpdateCollection.collection_name", "length(min = 1)"),
+            ("UpdateCollection.optimizers_config", ""),
+            // TODO: ("OptimizersConfigDiff.deleted_threshold", "range(min = 0.0, max = 1.0)"),
+            // TODO: ("OptimizersConfigDiff.vacuum_min_vector_number", "range(min = 100)"),
+            // TODO: ("OptimizersConfigDiff.memmap_threshold", "range(min = 1000)"),
+            // TODO: ("OptimizersConfigDiff.indexing_threshold", "range(min = 1000)"),
+            // TODO: ("UpdateCollection.timeout", "range(min = 1)"),
+            ("UpdateCollection.params", ""),
+            ("DeleteCollection.collection_name", "length(min = 1)"),
+            // TODO: ("DeleteCollection.timeout", "range(min = 1)"),
+            // TODO: ("ChangeAliases.timeout", "range(min = 1)"),
+            ("ListCollectionAliasesRequest.collection_name", "length(min = 1)"),
             // points_api.rs
             ("UpsertPoints.collection_name", "length(min = 1)"),
             ("DeletePoints.collection_name", "length(min = 1)"),
@@ -101,15 +131,16 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
             ("SearchPoints.collection_name", "length(min = 1)"),
             ("SearchPoints.limit", "range(min = 1)"),
-            // ("SearchPoints.vector_name", "length(min = 1)"),
+            // TODO: ("SearchPoints.vector_name", "length(min = 1)"),
             ("SearchBatchPoints.collection_name", "length(min = 1)"),
-            // ("SearchBatchPoints.search_points", ""),
+            ("SearchBatchPoints.search_points", ""),
             ("ScrollPoints.collection_name", "length(min = 1)"),
-            // ("ScrollPoints.limit", "range(min = 1)"),
+            // TODO: ("ScrollPoints.limit", "range(min = 1)"),
             ("RecommendPoints.collection_name", "length(min = 1)"),
             ("RecommendPoints.limit", "range(min = 1)"),
             ("RecommendBatchPoints.collection_name", "length(min = 1)"),
-            // ("RecommendBatchPoints.recommend_points", ""),
+            ("RecommendBatchPoints.recommend_points", ""),
             ("CountPoints.collection_name", "length(min = 1)"),
+            ("SyncPoints.collection_name", "length(min = 1)"),
         ])
 }
