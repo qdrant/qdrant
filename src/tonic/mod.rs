@@ -66,7 +66,7 @@ pub fn init(
 
         if settings.service.enable_tls {
             let tls_config = settings.tls()?;
-            let tls_server_config = helpers::load_tls_server_config(tls_config)?;
+            let tls_server_config = helpers::load_tls_external_server_config(tls_config)?;
 
             server = server
                 .tls_config(tls_server_config)
