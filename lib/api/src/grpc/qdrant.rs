@@ -90,10 +90,12 @@ pub struct HnswConfigDiff {
     ///
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     #[prost(uint64, optional, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_4_max_10000")]
     pub m: ::core::option::Option<u64>,
     ///
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
     #[prost(uint64, optional, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_4")]
     pub ef_construct: ::core::option::Option<u64>,
     ///
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
@@ -121,6 +123,7 @@ pub struct HnswConfigDiff {
 pub struct WalConfigDiff {
     /// Size of a single WAL block file
     #[prost(uint64, optional, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub wal_capacity_mb: ::core::option::Option<u64>,
     /// Number of segments to create in advance
     #[prost(uint64, optional, tag = "2")]
@@ -133,10 +136,12 @@ pub struct OptimizersConfigDiff {
     ///
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[prost(double, optional, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_f64_range_1")]
     pub deleted_threshold: ::core::option::Option<f64>,
     ///
     /// The minimal number of vectors in a segment, required to perform segment optimization
     #[prost(uint64, optional, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_100")]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
     ///
     /// Target amount of segments the optimizer will try to keep.
@@ -165,12 +170,14 @@ pub struct OptimizersConfigDiff {
     /// To enable memmap storage, lower the threshold
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "5")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1000")]
     pub memmap_threshold: ::core::option::Option<u64>,
     ///
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "6")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1000")]
     pub indexing_threshold: ::core::option::Option<u64>,
     ///
     /// Interval between forced flushes.
@@ -268,6 +275,7 @@ pub struct UpdateCollection {
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "3")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
     /// New configuration parameters for the collection
     #[prost(message, optional, tag = "4")]
@@ -284,6 +292,7 @@ pub struct DeleteCollection {
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -430,6 +439,7 @@ pub struct ChangeAliases {
     pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2375,6 +2385,7 @@ pub struct SearchPoints {
     pub offset: ::core::option::Option<u64>,
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "10")]
+    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "11")]
@@ -2413,6 +2424,7 @@ pub struct ScrollPoints {
     pub offset: ::core::option::Option<PointId>,
     /// Max number of result
     #[prost(uint32, optional, tag = "4")]
+    #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
     pub limit: ::core::option::Option<u32>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "6")]
@@ -5873,8 +5885,10 @@ pub struct Peer {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddPeerToKnownMessage {
     #[prost(string, optional, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
     pub uri: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(uint32, optional, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
     pub port: ::core::option::Option<u32>,
     #[prost(uint64, tag = "3")]
     pub id: u64,

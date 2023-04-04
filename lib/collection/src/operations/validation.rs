@@ -77,6 +77,10 @@ fn describe_error(
                 None => msg,
             }
         }
+        "not_empty" => match params.get("value") {
+            Some(value) => format!("value {value} invalid, must not be empty"),
+            None => err.to_string(),
+        },
         // Undescribed error codes
         _ => err.to_string(),
     }

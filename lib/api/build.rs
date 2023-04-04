@@ -88,28 +88,24 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdateCollection.collection_name", "length(min = 1)"),
             ("UpdateCollection.optimizers_config", ""),
             ("UpdateCollection.params", ""),
-            // Validate: ("UpdateCollection.timeout", "range(min = 1)"),
+            ("UpdateCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("DeleteCollection.collection_name", "length(min = 1)"),
-            // Validate: ("DeleteCollection.timeout", "range(min = 1)"),
-            // Validate: ("ChangeAliases.timeout", "range(min = 1)"),
+            ("DeleteCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("ChangeAliases.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("ListCollectionAliasesRequest.collection_name", "length(min = 1)"),
-            // Validate: ("HnswConfigDiff.m", "range(min = 4, max = 10_000)"),
-            // Validate: ("HnswConfigDiff.ef_construct", "range(min = 4)"),
-            // Validate: ("WalConfigDiff.wal_capacity_mb", "range(min = 1)"),
-            // Validate: ("OptimizersConfigDiff.deleted_threshold", "range(min = 0.0, max = 1.0)"),
-            // Validate: ("OptimizersConfigDiff.vacuum_min_vector_number", "range(min = 100)"),
-            // Validate: ("OptimizersConfigDiff.memmap_threshold", "range(min = 1000)"),
-            // Validate: ("OptimizersConfigDiff.indexing_threshold", "range(min = 1000)"),
+            ("HnswConfigDiff.m", "custom = \"crate::grpc::validate::validate_u64_range_min_4_max_10000\""),
+            ("HnswConfigDiff.ef_construct", "custom = \"crate::grpc::validate::validate_u64_range_min_4\""),
+            ("WalConfigDiff.wal_capacity_mb", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("OptimizersConfigDiff.deleted_threshold", "custom = \"crate::grpc::validate::validate_f64_range_1\""),
+            ("OptimizersConfigDiff.vacuum_min_vector_number", "custom = \"crate::grpc::validate::validate_u64_range_min_100\""),
+            ("OptimizersConfigDiff.memmap_threshold", "custom = \"crate::grpc::validate::validate_u64_range_min_1000\""),
+            ("OptimizersConfigDiff.indexing_threshold", "custom = \"crate::grpc::validate::validate_u64_range_min_1000\""),
             ("VectorsConfig.config", ""),
             ("VectorParams.size", "range(min = 1)"),
             ("VectorParamsMap.map", ""),
         ], &[
             "ListCollectionsRequest",
-            "HnswConfigDiff",
-            "WalConfigDiff",
-            "OptimizersConfigDiff",
             "CollectionParamsDiff",
-            "ChangeAliases",
             "ListAliasesRequest",
         ])
         // Service: collections_internal.proto
@@ -131,11 +127,11 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
             ("SearchPoints.collection_name", "length(min = 1)"),
             ("SearchPoints.limit", "range(min = 1)"),
-            // Validate: ("SearchPoints.vector_name", "length(min = 1)"),
+            ("SearchPoints.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
             ("SearchBatchPoints.collection_name", "length(min = 1)"),
             ("SearchBatchPoints.search_points", ""),
             ("ScrollPoints.collection_name", "length(min = 1)"),
-            // Validate: ("ScrollPoints.limit", "range(min = 1)"),
+            ("ScrollPoints.limit", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
             ("RecommendPoints.collection_name", "length(min = 1)"),
             ("RecommendBatchPoints.collection_name", "length(min = 1)"),
             ("RecommendBatchPoints.recommend_points", ""),
@@ -162,11 +158,9 @@ fn configure_validation(builder: Builder) -> Builder {
         ], &[])
         // Service: raft_service.proto
         .validates(&[
-            // Validate: ("AddPeerToKnownMessage.uri", "length(min = 1)"),
-            // Validate: ("AddPeerToKnownMessage.port", "range(min = 1)"),
-        ], &[
-            "AddPeerToKnownMessage",
-        ])
+            ("AddPeerToKnownMessage.uri", "custom = \"crate::grpc::validate::validate_not_empty\""),
+            ("AddPeerToKnownMessage.port", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
+        ], &[])
         // Service: snapshot_service.proto
         .validates(&[
             ("CreateSnapshotRequest.collection_name", "length(min = 1)"),
