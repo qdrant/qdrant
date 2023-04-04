@@ -3654,9 +3654,11 @@
         ],
         "properties": {
           "status": {
+            "description": "Status of the collection",
             "$ref": "#/components/schemas/CollectionStatus"
           },
           "optimizer_status": {
+            "description": "Status of optimizers",
             "$ref": "#/components/schemas/OptimizersStatus"
           },
           "vectors_count": {
@@ -3684,6 +3686,7 @@
             "minimum": 0
           },
           "config": {
+            "description": "Collection settings",
             "$ref": "#/components/schemas/CollectionConfig"
           },
           "payload_schema": {
@@ -3762,6 +3765,7 @@
         ],
         "properties": {
           "vectors": {
+            "description": "Configuration of the vector storage",
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
@@ -3821,6 +3825,7 @@
             "minimum": 1
           },
           "distance": {
+            "description": "Type of distance function used for measuring distance between vectors",
             "$ref": "#/components/schemas/Distance"
           }
         }
@@ -3847,13 +3852,14 @@
             "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "maximum": 10000,
+            "minimum": 4
           },
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 4
           },
           "full_scan_threshold": {
             "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
@@ -3894,39 +3900,39 @@
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "type": "number",
-            "format": "double"
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
           },
           "vacuum_min_vector_number": {
             "description": "The minimal number of vectors in a segment, required to perform segment optimization",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 100
           },
           "default_segment_number": {
-            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads If `default_segment_number = 0`, will be automatically selected by the number of available CPUs",
+            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. If `default_segment_number = 0`, will be automatically selected by the number of available CPUs.",
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
           "max_segment_size": {
             "description": "Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
-            "default": null,
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
           "memmap_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 If not set, mmap will not be used.",
-            "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1000
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1000
           },
           "flush_interval_sec": {
             "description": "Minimum interval between forced flushes.",
@@ -3953,7 +3959,7 @@
             "description": "Size of a single WAL segment in MB",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           },
           "wal_segments_ahead": {
             "description": "Number of WAL segments to create ahead of actually used ones",
@@ -3988,12 +3994,15 @@
         ],
         "properties": {
           "type": {
+            "description": "Type of quantization to use If `int8` - 8 bit quantization will be used",
             "$ref": "#/components/schemas/ScalarType"
           },
           "quantile": {
             "description": "Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values",
             "type": "number",
-            "format": "float"
+            "format": "float",
+            "maximum": 1,
+            "minimum": 0
           },
           "always_ram": {
             "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
@@ -4058,6 +4067,7 @@
             "$ref": "#/components/schemas/TextIndexType"
           },
           "tokenizer": {
+            "default": "word",
             "$ref": "#/components/schemas/TokenizerType"
           },
           "min_token_len": {
@@ -4104,9 +4114,12 @@
             }
           },
           "with_payload": {
+            "description": "Select which payload to return with the response. Default: All",
             "$ref": "#/components/schemas/WithPayloadInterface"
           },
           "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "default": false,
             "$ref": "#/components/schemas/WithVector"
           }
         }
@@ -4140,6 +4153,7 @@
             }
           },
           {
+            "description": "Specify included or excluded fields",
             "$ref": "#/components/schemas/PayloadSelector"
           }
         ]
@@ -4148,9 +4162,11 @@
         "description": "Specifies how to treat payload selector",
         "anyOf": [
           {
+            "description": "Include only this fields into response payload",
             "$ref": "#/components/schemas/PayloadSelectorInclude"
           },
           {
+            "description": "Exclude this fields from result payload. Keep all other fields.",
             "$ref": "#/components/schemas/PayloadSelectorExclude"
           }
         ]
@@ -4211,12 +4227,15 @@
         ],
         "properties": {
           "id": {
+            "description": "Id of the point",
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
+            "description": "Payload - values assigned to the point",
             "$ref": "#/components/schemas/Payload"
           },
           "vector": {
+            "description": "Vector of the point",
             "$ref": "#/components/schemas/VectorStruct"
           }
         }
@@ -4256,12 +4275,15 @@
         ],
         "properties": {
           "vector": {
+            "description": "Look for vectors closest to this",
             "$ref": "#/components/schemas/NamedVectorStruct"
           },
           "filter": {
+            "description": "Look only for points which satisfies this conditions",
             "$ref": "#/components/schemas/Filter"
           },
           "params": {
+            "description": "Additional search params",
             "$ref": "#/components/schemas/SearchParams"
           },
           "limit": {
@@ -4278,9 +4300,12 @@
             "minimum": 0
           },
           "with_payload": {
+            "description": "Select which payload to return with the response. Default: None",
             "$ref": "#/components/schemas/WithPayloadInterface"
           },
           "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "default": null,
             "$ref": "#/components/schemas/WithVector"
           },
           "score_threshold": {
@@ -4357,18 +4382,23 @@
       "Condition": {
         "anyOf": [
           {
+            "description": "Check if field satisfies provided condition",
             "$ref": "#/components/schemas/FieldCondition"
           },
           {
+            "description": "Check if payload field is empty: equals to empty array, or does not exists",
             "$ref": "#/components/schemas/IsEmptyCondition"
           },
           {
+            "description": "Check if payload field equals `NULL`",
             "$ref": "#/components/schemas/IsNullCondition"
           },
           {
+            "description": "Check if points id is in a given set",
             "$ref": "#/components/schemas/HasIdCondition"
           },
           {
+            "description": "Nested filter",
             "$ref": "#/components/schemas/Filter"
           }
         ]
@@ -4385,18 +4415,23 @@
             "type": "string"
           },
           "match": {
+            "description": "Check if point has field with a given value",
             "$ref": "#/components/schemas/Match"
           },
           "range": {
+            "description": "Check if points value lies in a given range",
             "$ref": "#/components/schemas/Range"
           },
           "geo_bounding_box": {
+            "description": "Check if points geo location lies in a given area",
             "$ref": "#/components/schemas/GeoBoundingBox"
           },
           "geo_radius": {
+            "description": "Check if geo point is within a given radius",
             "$ref": "#/components/schemas/GeoRadius"
           },
           "values_count": {
+            "description": "Check number of values of the field",
             "$ref": "#/components/schemas/ValuesCount"
           }
         }
@@ -4517,9 +4552,11 @@
         ],
         "properties": {
           "top_left": {
+            "description": "Coordinates of the top left point of the area rectangle",
             "$ref": "#/components/schemas/GeoPoint"
           },
           "bottom_right": {
+            "description": "Coordinates of the bottom right point of the area rectangle",
             "$ref": "#/components/schemas/GeoPoint"
           }
         }
@@ -4551,6 +4588,7 @@
         ],
         "properties": {
           "center": {
+            "description": "Coordinates of the top left point of the area rectangle",
             "$ref": "#/components/schemas/GeoPoint"
           },
           "radius": {
@@ -4659,6 +4697,8 @@
             "type": "boolean"
           },
           "quantization": {
+            "description": "Quantization params",
+            "default": null,
             "$ref": "#/components/schemas/QuantizationSearchParams"
           }
         }
@@ -4689,6 +4729,7 @@
         ],
         "properties": {
           "id": {
+            "description": "Point id",
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "version": {
@@ -4703,9 +4744,11 @@
             "format": "float"
           },
           "payload": {
+            "description": "Payload - values assigned to the point",
             "$ref": "#/components/schemas/Payload"
           },
           "vector": {
+            "description": "Vector of the point",
             "$ref": "#/components/schemas/VectorStruct"
           }
         }
@@ -4724,6 +4767,7 @@
             "minimum": 0
           },
           "status": {
+            "description": "Update status",
             "$ref": "#/components/schemas/UpdateStatus"
           }
         }
@@ -4760,9 +4804,11 @@
             }
           },
           "filter": {
+            "description": "Look only for points which satisfies this conditions",
             "$ref": "#/components/schemas/Filter"
           },
           "params": {
+            "description": "Additional search params",
             "$ref": "#/components/schemas/SearchParams"
           },
           "limit": {
@@ -4779,9 +4825,12 @@
             "minimum": 0
           },
           "with_payload": {
+            "description": "Select which payload to return with the response. Default: None",
             "$ref": "#/components/schemas/WithPayloadInterface"
           },
           "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "default": null,
             "$ref": "#/components/schemas/WithVector"
           },
           "score_threshold": {
@@ -4790,9 +4839,13 @@
             "format": "float"
           },
           "using": {
+            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
+            "default": null,
             "$ref": "#/components/schemas/UsingVector"
           },
           "lookup_from": {
+            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
+            "default": null,
             "$ref": "#/components/schemas/LookupLocation"
           }
         }
@@ -4827,21 +4880,26 @@
         "type": "object",
         "properties": {
           "offset": {
+            "description": "Start ID to read points from.",
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "limit": {
             "description": "Page size. Default: 10",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           },
           "filter": {
+            "description": "Look only for points which satisfies this conditions. If not provided - all points.",
             "$ref": "#/components/schemas/Filter"
           },
           "with_payload": {
+            "description": "Select which payload to return with the response. Default: All",
             "$ref": "#/components/schemas/WithPayloadInterface"
           },
           "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "default": false,
             "$ref": "#/components/schemas/WithVector"
           }
         }
@@ -4861,6 +4919,7 @@
             }
           },
           "next_page_offset": {
+            "description": "Offset which should be used to retrieve a next page result",
             "$ref": "#/components/schemas/ExtendedPointId"
           }
         }
@@ -4873,6 +4932,7 @@
         ],
         "properties": {
           "vectors": {
+            "description": "Vector data config. It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.",
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
@@ -4902,18 +4962,25 @@
             "type": "boolean"
           },
           "hnsw_config": {
+            "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
             "$ref": "#/components/schemas/HnswConfigDiff"
           },
           "wal_config": {
+            "description": "Custom params for WAL. If none - values from service configuration file are used.",
             "$ref": "#/components/schemas/WalConfigDiff"
           },
           "optimizers_config": {
+            "description": "Custom params for Optimizers.  If none - values from service configuration file are used.",
             "$ref": "#/components/schemas/OptimizersConfigDiff"
           },
           "init_from": {
+            "description": "Specify other collection to copy data from.",
+            "default": null,
             "$ref": "#/components/schemas/InitFrom"
           },
           "quantization_config": {
+            "description": "Quantization parameters. If none - quantization is disabled.",
+            "default": null,
             "$ref": "#/components/schemas/QuantizationConfig"
           }
         }
@@ -4925,26 +4992,27 @@
             "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "maximum": 10000,
+            "minimum": 4
           },
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 4
           },
           "full_scan_threshold": {
             "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1000
           },
           "max_indexing_threads": {
             "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1000
           },
           "on_disk": {
             "description": "Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
@@ -5007,13 +5075,13 @@
             "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1000
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1000
           },
           "flush_interval_sec": {
             "description": "Minimum interval between forced flushes.",
@@ -5025,7 +5093,7 @@
             "description": "Maximum available threads for optimization workers",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           }
         }
       },
@@ -5046,9 +5114,11 @@
         "type": "object",
         "properties": {
           "optimizers_config": {
+            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete",
             "$ref": "#/components/schemas/OptimizersConfigDiff"
           },
           "params": {
+            "description": "Collection base params.  If none - values from service configuration file are used.",
             "$ref": "#/components/schemas/CollectionParamsDiff"
           }
         }
@@ -5205,9 +5275,11 @@
       "PointsSelector": {
         "anyOf": [
           {
+            "description": "Select points by list of IDs",
             "$ref": "#/components/schemas/PointIdsList"
           },
           {
+            "description": "Select points by filtering condition",
             "$ref": "#/components/schemas/FilterSelector"
           }
         ]
@@ -5282,12 +5354,15 @@
         ],
         "properties": {
           "id": {
+            "description": "Point id",
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "vector": {
+            "description": "Vectors",
             "$ref": "#/components/schemas/VectorStruct"
           },
           "payload": {
+            "description": "Payload values (optional)",
             "$ref": "#/components/schemas/Payload"
           }
         }
@@ -5357,6 +5432,7 @@
             }
           },
           "filter": {
+            "description": "Assigns payload to each point that satisfy this filter condition",
             "$ref": "#/components/schemas/Filter"
           }
         }
@@ -5382,6 +5458,7 @@
             }
           },
           "filter": {
+            "description": "Deletes values from points that satisfy this filter condition",
             "$ref": "#/components/schemas/Filter"
           }
         }
@@ -5435,9 +5512,11 @@
                 }
               },
               "raft_info": {
+                "description": "Status of the Raft consensus",
                 "$ref": "#/components/schemas/RaftInfo"
               },
               "consensus_thread_status": {
+                "description": "Status of the thread that executes raft consensus",
                 "$ref": "#/components/schemas/ConsensusThreadStatus"
               },
               "message_send_failures": {
@@ -5498,6 +5577,7 @@
             "minimum": 0
           },
           "role": {
+            "description": "Role of this peer in the current term",
             "$ref": "#/components/schemas/StateRole"
           },
           "is_voter": {
@@ -5615,6 +5695,7 @@
         "type": "object",
         "properties": {
           "filter": {
+            "description": "Look only for points which satisfies this conditions",
             "$ref": "#/components/schemas/Filter"
           },
           "exact": {
@@ -5705,6 +5786,7 @@
             "minimum": 0
           },
           "state": {
+            "description": "Is replica active",
             "$ref": "#/components/schemas/ReplicaState"
           }
         }
@@ -5741,6 +5823,7 @@
             "minimum": 0
           },
           "state": {
+            "description": "Is replica active",
             "$ref": "#/components/schemas/ReplicaState"
           }
         }
@@ -6099,15 +6182,23 @@
             }
           },
           "index": {
+            "description": "Type of index used for search",
             "$ref": "#/components/schemas/Indexes"
           },
           "storage_type": {
+            "description": "Type of vector storage",
             "$ref": "#/components/schemas/StorageType"
           },
           "payload_storage_type": {
+            "description": "Defines payload storage type",
+            "default": {
+              "type": "in_memory"
+            },
             "$ref": "#/components/schemas/PayloadStorageType"
           },
           "quantization_config": {
+            "description": "Quantization parameters. If none - quantization is disabled.",
+            "default": null,
             "$ref": "#/components/schemas/QuantizationConfig"
           }
         }
@@ -6127,6 +6218,7 @@
             "minimum": 0
           },
           "distance": {
+            "description": "Type of distance function used for measuring distance between vectors",
             "$ref": "#/components/schemas/Distance"
           }
         }
@@ -6569,15 +6661,19 @@
       "ClusterOperations": {
         "anyOf": [
           {
+            "description": "Move shard to a different peer",
             "$ref": "#/components/schemas/MoveShardOperation"
           },
           {
+            "description": "Replicate shard to a different peer",
             "$ref": "#/components/schemas/ReplicateShardOperation"
           },
           {
+            "description": "Abort currently running shard moving operation",
             "$ref": "#/components/schemas/AbortTransferOperation"
           },
           {
+            "description": "Drop replica of a shard from a peer",
             "$ref": "#/components/schemas/DropReplicaOperation"
           }
         ]
@@ -6724,6 +6820,8 @@
             "format": "uri"
           },
           "priority": {
+            "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.",
+            "default": null,
             "$ref": "#/components/schemas/SnapshotPriority"
           }
         }
