@@ -36,7 +36,7 @@ env_logger = "0.10.0"
 merge = "0.1.0"
 async-trait = "0.1.68"
 arc-swap = "1.6.0"
-tonic = { version = "0.9.0", features = ["gzip", "tls"] }
+tonic = { version = "0.9.1", features = ["gzip", "tls"] }
 tower = "0.4.13"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 url = { version = "2", features = ["serde"] }
