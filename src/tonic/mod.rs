@@ -58,7 +58,7 @@ pub fn init(
         let qdrant_service = QdrantService::default();
         let collections_service = CollectionsService::new(dispatcher.clone());
         let points_service = PointsService::new(dispatcher.toc().clone());
-        let snapshot_service = SnapshotsService::new(dispatcher.toc().clone());
+        let snapshot_service = SnapshotsService::new(dispatcher.clone());
 
         log::info!("Qdrant gRPC listening on {}", grpc_port);
 

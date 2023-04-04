@@ -1,4 +1,4 @@
-#@ load("openapi.lib.yml", "response", "reference", "type", "array")
+#@ load("openapi.lib.yml", "response", "response_with_accepted", "reference", "type", "array")
 
 paths:
   /collections/{collection_name}/snapshots/upload:
@@ -38,7 +38,7 @@ paths:
                 snapshot:
                   type: string
                   format: binary
-      responses: #@ response(type("boolean"))
+      responses: #@ response_with_accepted(type("boolean"))
   /collections/{collection_name}/snapshots/recover:
     put:
       tags:
@@ -66,7 +66,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SnapshotRecover"
-      responses: #@ response(type("boolean"))
+      responses: #@ response_with_accepted(type("boolean"))
 
   /collections/{collection_name}/snapshots:
     get:
@@ -99,7 +99,13 @@ paths:
           required: true
           schema:
             type: string
-      responses: #@ response(reference("SnapshotDescription"))
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true."
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response_with_accepted(reference("SnapshotDescription"))
 
   /collections/{collection_name}/snapshots/{snapshot_name}:
     delete:
@@ -122,7 +128,13 @@ paths:
           required: true
           schema:
             type: string
-      responses: #@ response(type("boolean"))
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true."
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response_with_accepted(type("boolean"))
     get:
       tags:
         - snapshots
@@ -180,7 +192,14 @@ paths:
       summary: Create storage snapshot
       description: Create new snapshot of the whole storage
       operationId: create_full_snapshot
-      responses: #@ response(reference("SnapshotDescription"))
+      parameters:
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true."
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response_with_accepted(reference("SnapshotDescription"))
 
   /snapshots/{snapshot_name}:
     delete:
@@ -196,7 +215,13 @@ paths:
           required: true
           schema:
             type: string
-      responses: #@ response(type("boolean"))
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true."
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response_with_accepted(type("boolean"))
     get:
       tags:
         - snapshots
@@ -210,7 +235,6 @@ paths:
           required: true
           schema:
             type: string
-
       responses:
         default:
           description: error

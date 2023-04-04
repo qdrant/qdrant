@@ -1450,6 +1450,29 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1534,6 +1557,29 @@
                     },
                     "result": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
                     }
                   }
                 }
@@ -1632,6 +1678,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -1680,6 +1735,29 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1710,6 +1788,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -1754,6 +1841,29 @@
                     },
                     "result": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
                     }
                   }
                 }
@@ -1892,6 +2002,17 @@
         "summary": "Create storage snapshot",
         "description": "Create new snapshot of the whole storage",
         "operationId": "create_full_snapshot",
+        "parameters": [
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "default": {
             "description": "error",
@@ -1938,6 +2059,29 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1958,6 +2102,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -2002,6 +2155,29 @@
                     },
                     "result": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
                     }
                   }
                 }

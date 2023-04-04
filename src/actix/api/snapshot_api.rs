@@ -23,7 +23,7 @@ use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::helpers::{
-    collection_into_actix_error, process_response, storage_into_actix_error,
+    accepted_response, collection_into_actix_error, process_response, storage_into_actix_error,
 };
 use crate::common::collections::*;
 
@@ -103,23 +103,30 @@ pub async fn do_get_snapshot(
 }
 
 #[get("/collections/{name}/snapshots")]
-async fn list_snapshots(
-    toc: web::Data<TableOfContent>,
-    collection: Path<CollectionPath>,
-) -> impl Responder {
+async fn list_snapshots(toc: web::Data<TableOfContent>, path: web::Path<String>) -> impl Responder {
+    let collection_name = path.into_inner();
     let timing = Instant::now();
-    let response = do_list_snapshots(toc.get_ref(), &collection.name).await;
+
+    let response = do_list_snapshots(&toc, &collection_name).await;
     process_response(response, timing)
 }
 
 #[post("/collections/{name}/snapshots")]
 async fn create_snapshot(
-    toc: web::Data<TableOfContent>,
-    collection: Path<CollectionPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
+    let collection_name = path.into_inner();
+    let wait = params.wait.unwrap_or(true);
+
     let timing = Instant::now();
-    let response = do_create_snapshot(toc.get_ref(), &collection.name).await;
-    process_response(response, timing)
+    let response = do_create_snapshot(dispatcher.get_ref(), &collection_name, wait).await;
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[post("/collections/{name}/snapshots/upload")]
@@ -136,7 +143,7 @@ async fn upload_snapshot(
     let snapshot_location =
         match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection.name, snapshot) {
             Ok(location) => location,
-            Err(err) => return process_response(Err(err), timing),
+            Err(err) => return process_response::<()>(Err(err), timing),
         };
 
     let snapshot_recover = SnapshotRecover {
@@ -151,7 +158,11 @@ async fn upload_snapshot(
         wait,
     )
     .await;
-    process_response(response, timing)
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[put("/collections/{name}/snapshots/recover")]
@@ -172,18 +183,21 @@ async fn recover_from_snapshot(
         wait,
     )
     .await;
-    process_response(response, timing)
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[get("/collections/{name}/snapshots/{snapshot_name}")]
 async fn get_snapshot(
     toc: web::Data<TableOfContent>,
-    collection: Path<CollectionPath>,
-    snapshot: Path<SnapshotPath>,
+    path: web::Path<(String, String)>,
 ) -> impl Responder {
-    do_get_snapshot(toc.get_ref(), &collection.name, &snapshot.name).await
+    let (collection_name, snapshot_name) = path.into_inner();
+    do_get_snapshot(&toc, &collection_name, &snapshot_name).await
 }
-
 #[get("/snapshots")]
 async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
@@ -192,40 +206,63 @@ async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
 }
 
 #[post("/snapshots")]
-async fn create_full_snapshot(toc: web::Data<TableOfContent>) -> impl Responder {
+async fn create_full_snapshot(
+    dispatcher: web::Data<Dispatcher>,
+    params: Query<SnapshottingParam>,
+) -> impl Responder {
     let timing = Instant::now();
-    let response = do_create_full_snapshot(toc.get_ref()).await;
-    process_response(response, timing)
+    let wait = params.wait.unwrap_or(true);
+    let response = do_create_full_snapshot(dispatcher.get_ref(), wait).await;
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[get("/snapshots/{snapshot_name}")]
 async fn get_full_snapshot(
     toc: web::Data<TableOfContent>,
-    snapshot: Path<SnapshotPath>,
+    path: web::Path<String>,
 ) -> impl Responder {
-    do_get_full_snapshot(toc.get_ref(), &snapshot.name).await
+    let snapshot_name = path.into_inner();
+    do_get_full_snapshot(&toc, &snapshot_name).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
 async fn delete_full_snapshot(
-    toc: web::Data<TableOfContent>,
-    snapshot: Path<SnapshotPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
+    let snapshot_name = path.into_inner();
     let timing = Instant::now();
-    let response = do_delete_full_snapshot(toc.get_ref(), &snapshot.name).await;
-    process_response(response, timing)
+    let wait = params.wait.unwrap_or(true);
+    let response = do_delete_full_snapshot(dispatcher.get_ref(), &snapshot_name, wait).await;
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[delete("/collections/{name}/snapshots/{snapshot_name}")]
 async fn delete_collection_snapshot(
-    toc: web::Data<TableOfContent>,
-    collection: Path<CollectionPath>,
-    snapshot: Path<SnapshotPath>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, String)>,
+    params: Query<SnapshottingParam>,
 ) -> impl Responder {
+    let (collection_name, snapshot_name) = path.into_inner();
     let timing = Instant::now();
+    let wait = params.wait.unwrap_or(true);
     let response =
-        do_delete_collection_snapshot(toc.get_ref(), &collection.name, &snapshot.name).await;
-    process_response(response, timing)
+        do_delete_collection_snapshot(dispatcher.get_ref(), &collection_name, &snapshot_name, wait)
+            .await;
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 // Configure services

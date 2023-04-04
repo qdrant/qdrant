@@ -44,7 +44,7 @@ async fn remove_peer(
 
     let has_shards = dispatcher.peer_has_shards(peer_id).await;
     if !params.force && has_shards {
-        return process_response(
+        return process_response::<()>(
             Err(StorageError::BadRequest {
                 description: format!("Cannot remove peer {peer_id} as there are shards on it"),
             }),
