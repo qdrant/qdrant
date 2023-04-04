@@ -1,16 +1,17 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::index::field_index::full_text_index::postings_iterator::intersect_btree_iterator;
+use super::postings_iterator::intersect_vec_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
-type PostingList = BTreeSet<PointOffsetType>;
+type PostingList = Vec<PointOffsetType>;
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Document {
-    pub tokens: BTreeSet<String>,
+    pub tokens: Vec<String>,
 }
 
 impl Document {
@@ -20,7 +21,7 @@ impl Document {
 }
 
 pub struct ParsedQuery {
-    pub tokens: BTreeSet<String>,
+    pub tokens: HashSet<String>,
 }
 
 impl ParsedQuery {
@@ -33,7 +34,7 @@ impl ParsedQuery {
 }
 
 pub struct InvertedIndex {
-    postings: BTreeMap<String, PostingList>,
+    postings: HashMap<String, PostingList>,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
@@ -41,7 +42,7 @@ pub struct InvertedIndex {
 impl InvertedIndex {
     pub fn new() -> InvertedIndex {
         InvertedIndex {
-            postings: BTreeMap::new(),
+            postings: HashMap::new(),
             point_to_docs: Vec::new(),
             points_count: 0,
         }
@@ -49,11 +50,15 @@ impl InvertedIndex {
 
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
         for token in &document.tokens {
-            let posting = self
-                .postings
-                .entry(token.to_owned())
-                .or_insert_with(BTreeSet::new);
-            posting.insert(idx);
+            self.postings
+                .entry(token.to_string())
+                .and_modify(|v| {
+                    if !v.iter().contains(&idx) {
+                        v.push(idx);
+                        v.sort();
+                    }
+                })
+                .or_insert_with(|| vec![idx]);
         }
         self.points_count += 1;
         if self.point_to_docs.len() <= idx as usize {
@@ -77,12 +82,11 @@ impl InvertedIndex {
         self.points_count -= 1;
 
         for removed_token in &removed_doc.tokens {
-            let posting = self.postings.get_mut(removed_token);
-            if let Some(posting) = posting {
-                posting.remove(&idx);
-                if posting.is_empty() {
-                    self.postings.remove(removed_token);
-                }
+            let posting = self.postings.get_mut(removed_token).unwrap();
+            posting.remove(idx as usize);
+
+            if posting.is_empty() {
+                self.postings.remove(removed_token);
             }
         }
         Some(removed_doc)
@@ -103,7 +107,7 @@ impl InvertedIndex {
             // Empty request -> no matches
             return Box::new(vec![].into_iter());
         }
-        intersect_btree_iterator(postings)
+        intersect_vec_iterator(postings)
     }
 
     pub fn estimate_cardinality(
