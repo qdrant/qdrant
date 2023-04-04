@@ -288,12 +288,3 @@ impl PointsInternal for PointsInternalService {
         overwrite_payload(self.toc.as_ref(), set_payload_points, shard_id).await
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_grpc() {
-        // For running build from IDE
-        eprintln!("hello");
-    }
-}

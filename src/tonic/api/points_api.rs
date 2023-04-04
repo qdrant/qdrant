@@ -170,12 +170,3 @@ impl Points for PointsService {
         count(self.toc.as_ref(), request.into_inner(), None).await
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_grpc() {
-        // For running build from IDE
-        eprintln!("hello");
-    }
-}
