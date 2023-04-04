@@ -60,7 +60,6 @@ pub fn init(
         let points_service = PointsService::new(dispatcher.toc().clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
 
-        let max_request_size = settings.service.max_request_size_mb * 1024 * 1024;
         log::info!("Qdrant gRPC listening on {}", grpc_port);
 
         let mut server = Server::builder();
@@ -82,25 +81,25 @@ pub fn init(
                 QdrantServer::new(qdrant_service)
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
-                    .max_decoding_message_size(max_request_size),
+                    .max_decoding_message_size(usize::MAX),
             )
             .add_service(
                 CollectionsServer::new(collections_service)
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
-                    .max_decoding_message_size(max_request_size),
+                    .max_decoding_message_size(usize::MAX),
             )
             .add_service(
                 PointsServer::new(points_service)
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
-                    .max_decoding_message_size(max_request_size),
+                    .max_decoding_message_size(usize::MAX),
             )
             .add_service(
                 SnapshotsServer::new(snapshot_service)
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
-                    .max_decoding_message_size(max_request_size),
+                    .max_decoding_message_size(usize::MAX),
             )
             .serve_with_shutdown(socket, async {
                 signal::ctrl_c().await.unwrap();
