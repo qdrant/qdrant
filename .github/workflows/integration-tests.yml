@@ -62,11 +62,11 @@ jobs:
           name: consensus-test-logs
           retention-days: 90 # default max value
           path: consensus_test_logs
-      
+
   test-consensus-compose:
-    
+
     runs-on: ubuntu-latest
-  
+
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -77,11 +77,11 @@ jobs:
       - name: Run integration tests - multiple peers - compose
         run: ./test_restart.sh
         working-directory: ./tests/consensus_tests
-      
+
   test-tls-compose:
-    
+
     runs-on: ubuntu-latest
-  
+
     steps:
       - uses: actions/checkout@v3
       - name: Run integration tests
