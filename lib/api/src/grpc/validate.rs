@@ -154,3 +154,81 @@ where
     }
     Err(err)
 }
+
+#[cfg(test)]
+mod tests {
+    use validator::Validate;
+
+    use crate::grpc::qdrant::{CreateCollection, CreateFieldIndexCollection, SearchPoints};
+
+    #[test]
+    fn test_good_request() {
+        let bad_request = CreateCollection {
+            collection_name: "test_collection".into(),
+            timeout: Some(10),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_ok(),
+            "good collection request should not error on validation"
+        );
+    }
+
+    #[test]
+    fn test_bad_collection_request() {
+        let bad_request = CreateCollection {
+            collection_name: "".into(),
+            timeout: Some(0),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_err(),
+            "bad collection request should error on validation"
+        );
+    }
+
+    #[test]
+    fn test_bad_index_request() {
+        let bad_request = CreateFieldIndexCollection {
+            collection_name: "".into(),
+            field_name: "".into(),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_err(),
+            "bad index request should error on validation"
+        );
+    }
+
+    #[test]
+    fn test_bad_search_request() {
+        let bad_request = SearchPoints {
+            collection_name: "".into(),
+            limit: 0,
+            vector_name: Some("".into()),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_err(),
+            "bad search request should error on validation"
+        );
+
+        let bad_request = SearchPoints {
+            limit: 0,
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_err(),
+            "bad search request should error on validation"
+        );
+
+        let bad_request = SearchPoints {
+            vector_name: Some("".into()),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_err(),
+            "bad search request should error on validation"
+        );
+    }
+}
