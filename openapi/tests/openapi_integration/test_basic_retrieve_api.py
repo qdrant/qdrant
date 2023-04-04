@@ -150,11 +150,12 @@ def is_empty_condition():
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 3
+    assert len(json['result']) == 4
 
     ids = [x['id'] for x in json['result']]
     assert 5 in ids
     assert 6 in ids
+    assert 7 in ids
     assert 8 in ids
 
 

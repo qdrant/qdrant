@@ -72,15 +72,24 @@ impl MultiValue<&Value> {
             Self::Single(val) => match val {
                 None => true,
                 Some(Value::Array(vec)) => vec.is_empty(),
+                Some(Value::Null) => true,
                 _ => false,
             },
         }
     }
     pub(crate) fn check_is_null(&self) -> bool {
-        if let Self::Single(Some(val)) = self {
-            return val.is_null();
+        match self {
+            MultiValue::Single(val) => {
+                if let Some(val) = val {
+                    return val.is_null();
+                }
+                false
+            }
+            // { "a": [ { "b": null }, { "b": 1 } ] } => true
+            // { "a": [ { "b": 1 }, { "b": null } ] } => true
+            // { "a": [ { "b": 1 }, { "b": 2 } ] } => false
+            MultiValue::Multiple(vals) => vals.iter().any(|val| val.is_null()),
         }
-        false
     }
 }
 
