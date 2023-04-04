@@ -82,11 +82,7 @@ impl Validate for crate::grpc::qdrant::vectors_config::Config {
 /// Validate that `value` is a non-empty string or `None`.
 pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError> {
     match value {
-        Some(value) if value.is_empty() => {
-            let mut err = ValidationError::new("not_empty");
-            err.add_param(Cow::from("value"), &value);
-            Err(err)
-        }
+        Some(value) if value.is_empty() => Err(ValidationError::new("not_empty")),
         _ => Ok(()),
     }
 }
@@ -150,7 +146,6 @@ where
     }
 
     let mut err = ValidationError::new("range");
-    err.add_param(Cow::from("value"), &value);
     if let Some(min) = min {
         err.add_param(Cow::from("min"), &min);
     }
