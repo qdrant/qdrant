@@ -66,7 +66,7 @@ struct AllDefinitions {
 }
 
 fn save_schema<T: JsonSchema>() {
-    let settings = SchemaSettings::draft2019_09().with(|s| {
+    let settings = SchemaSettings::draft07().with(|s| {
         s.option_add_null_type = false; // do not add 'null' to the type list for optional fields
     });
     let gen = settings.into_generator();

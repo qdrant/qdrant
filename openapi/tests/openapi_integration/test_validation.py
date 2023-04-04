@@ -1,4 +1,5 @@
 import pytest
+import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
@@ -29,6 +30,7 @@ def test_validation():
                 ''',
             'id': 1,
         },
+        validate_request=False,  # disable schema validation to test server side validation
     )
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]
@@ -65,7 +67,8 @@ def test_validation():
                 "size": 4,
                 "distance": "Dot"
             },
-        }
+        },
+        validate_request=False,  # disable schema validation to test server side validation
     )
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]

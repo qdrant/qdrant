@@ -7,7 +7,7 @@ collection_name = 'test_collection'
 
 
 # validate that malformed conditions raise a JsonSchema ValidationError
-def test_is_empty_condition():
+def test_malformed_condition():
     with pytest.raises(jsonschema.exceptions.ValidationError):
         malformed_condition()
 

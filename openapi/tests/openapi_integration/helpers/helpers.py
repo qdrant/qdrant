@@ -36,13 +36,14 @@ def request_with_validation(
         method: str,
         path_params: dict = None,
         query_params: dict = None,
-        body: dict = None
+        body: dict = None,
+        validate_request: bool = False,
 ) -> requests.Response:
     operation: APIOperation = SCHEMA[api][method]
 
     assert isinstance(operation.schema, OpenApi30)
 
-    if body:
+    if validate_request and body:
         validate_schema(
             data=body,
             operation_schema=operation.schema,
