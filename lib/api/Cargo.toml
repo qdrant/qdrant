@@ -24,4 +24,4 @@ thiserror = "1.0"
 segment = {path = "../segment"}
 
 [build-dependencies]
-tonic-build = { version = "0.9.0", features = ["prost"] }
+tonic-build = { version = "0.9.1", features = ["prost"] }
