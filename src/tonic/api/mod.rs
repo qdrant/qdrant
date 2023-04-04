@@ -26,3 +26,39 @@ fn validate_and_log(request: &dyn Validate) {
         validation::warn_validation_errors("Internal gRPC", err);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use validator::Validate;
+
+    use super::*;
+
+    #[derive(Validate, Debug)]
+    struct SomeThing {
+        #[validate(range(min = 1))]
+        pub idx: usize,
+    }
+
+    #[derive(Validate, Debug)]
+    struct OtherThing {
+        #[validate]
+        pub things: Vec<SomeThing>,
+    }
+
+    #[test]
+    fn test_validation() {
+        use tonic::Code;
+
+        let bad_config = OtherThing {
+            things: vec![SomeThing { idx: 0 }],
+        };
+
+        let validation =
+            validate(&bad_config).expect_err("validation of bad request payload should fail");
+        assert_eq!(validation.code(), Code::InvalidArgument);
+        assert_eq!(
+            validation.message(),
+            "Validation error in body: [things[0].idx: value 0 invalid, must be 1.0 or larger]"
+        )
+    }
+}
