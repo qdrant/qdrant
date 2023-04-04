@@ -87,42 +87,42 @@ pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError>
     }
 }
 
-/// Validate that the range of `value` is at least 1 or `None`.
+/// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u64_range_min_1(value: &Option<u64>) -> Result<(), ValidationError> {
     validate_range_generic(value, Some(1), None)
 }
 
-/// Validate that the range of `value` is at least 1 or `None`.
-pub fn validate_u64_range_min_100(value: &Option<u64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(100), None)
-}
-
-/// Validate that the range of `value` is at least 1 or `None`.
-pub fn validate_u64_range_min_1000(value: &Option<u64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(1000), None)
-}
-
-/// Validate that the range of `value` is at least 1 or `None`.
+/// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u32_range_min_1(value: &Option<u32>) -> Result<(), ValidationError> {
     validate_range_generic(value, Some(1), None)
 }
 
-/// Validate that the range of `value` is at least 1 or `None`.
-pub fn validate_u64_range_min_4_max_10000(value: &Option<u64>) -> Result<(), ValidationError> {
-    validate_range_generic(value, Some(4), Some(10_000))
+/// Validate the value is in `[100, ]` or `None`.
+pub fn validate_u64_range_min_100(value: &Option<u64>) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(100), None)
 }
 
-/// Validate that the range of `value` is at least 1 or `None`.
+/// Validate the value is in `[1000, ]` or `None`.
+pub fn validate_u64_range_min_1000(value: &Option<u64>) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(1000), None)
+}
+
+/// Validate the value is in `[4, ]` or `None`.
 pub fn validate_u64_range_min_4(value: &Option<u64>) -> Result<(), ValidationError> {
     validate_range_generic(value, Some(4), None)
 }
 
-/// Validate that the range of `value` is at least 1 or `None`.
+/// Validate the value is in `[4, 10000]` or `None`.
+pub fn validate_u64_range_min_4_max_10000(value: &Option<u64>) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(4), Some(10_000))
+}
+
+/// Validate the value is in `[0.0, 1.0]` or `None`.
 pub fn validate_f64_range_1(value: &Option<f64>) -> Result<(), ValidationError> {
     validate_range_generic(value, Some(0.0), Some(1.0))
 }
 
-/// Validate that the range of `value` is at least 1 or `None`.
+/// Validate the value is in `[min, max]` or `None`.
 #[inline]
 pub fn validate_range_generic<N>(
     value: &Option<N>,

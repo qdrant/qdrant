@@ -123,7 +123,7 @@ fn validation_error_handler(
     // Nicely describe deserialization and validation errors
     let msg = match &err {
         actix_web_validator::Error::Validate(errs) => {
-            validation::label_errors(&format!("Validation error in {name}"), errs)
+            validation::label_errors(format!("Validation error in {name}"), errs)
         }
         actix_web_validator::Error::Deserialize(err) => {
             format!(

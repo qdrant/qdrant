@@ -12,9 +12,10 @@ pub fn warn_validation_errors(description: &str, errs: &ValidationErrors) {
 }
 
 /// Label the given validation errors in a single string.
-pub fn label_errors(label: &str, errs: &ValidationErrors) -> String {
+pub fn label_errors(label: impl AsRef<str>, errs: &ValidationErrors) -> String {
     format!(
-        "{label}: [{}]",
+        "{}: [{}]",
+        label.as_ref(),
         describe_errors(errs)
             .into_iter()
             .map(|(field, err)| format!("{field}: {err}"))
@@ -26,7 +27,7 @@ pub fn label_errors(label: &str, errs: &ValidationErrors) -> String {
 /// Describe the given validation errors.
 ///
 /// Returns a list of error messages for fields: `(field, message)`
-pub fn describe_errors(errs: &ValidationErrors) -> Vec<(String, String)> {
+fn describe_errors(errs: &ValidationErrors) -> Vec<(String, String)> {
     flatten_errors(errs)
         .into_iter()
         .map(|(_, name, err)| (name, describe_error(err)))

@@ -5,7 +5,7 @@ fn main() -> std::io::Result<()> {
     tonic_build::configure()
         // Because we want to attach all validation rules to the generated gRPC types, we must do
         // so by extending the builder. This is ugly, but better than manually implementing
-        // `Validation` for all these types. This seems to be the best approach. The line below
+        // `Validation` for all these types and seems to be the best approach. The line below
         // configures all attributes.
         .configure_validation()
         .out_dir("src/grpc/") // saves generated structures at this location
