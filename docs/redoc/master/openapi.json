@@ -1450,6 +1450,29 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1534,6 +1557,29 @@
                     },
                     "result": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
                     }
                   }
                 }
@@ -1691,7 +1737,7 @@
             }
           },
           "202": {
-            "description": "operation in progress",
+            "description": "operation is accepted",
             "content": {
               "application/json": {
                 "schema": {
@@ -1705,17 +1751,7 @@
                     "status": {
                       "type": "string",
                       "enum": [
-                        "ok"
-                      ]
-                    },
-                    "result": {
-                      "anyOf": [
-                        {
-                          "nullable": true
-                        },
-                        {
-                          "$ref": "#/components/schemas/SnapshotDescription"
-                        }
+                        "accepted"
                       ]
                     }
                   }
@@ -1812,7 +1848,7 @@
             }
           },
           "202": {
-            "description": "operation in progress",
+            "description": "operation is accepted",
             "content": {
               "application/json": {
                 "schema": {
@@ -1826,12 +1862,8 @@
                     "status": {
                       "type": "string",
                       "enum": [
-                        "ok"
+                        "accepted"
                       ]
-                    },
-                    "result": {
-                      "type": "boolean",
-                      "nullable": true
                     }
                   }
                 }
@@ -2029,7 +2061,7 @@
             }
           },
           "202": {
-            "description": "operation in progress",
+            "description": "operation is accepted",
             "content": {
               "application/json": {
                 "schema": {
@@ -2043,17 +2075,7 @@
                     "status": {
                       "type": "string",
                       "enum": [
-                        "ok"
-                      ]
-                    },
-                    "result": {
-                      "anyOf": [
-                        {
-                          "nullable": true
-                        },
-                        {
-                          "$ref": "#/components/schemas/SnapshotDescription"
-                        }
+                        "accepted"
                       ]
                     }
                   }
@@ -2140,7 +2162,7 @@
             }
           },
           "202": {
-            "description": "operation in progress",
+            "description": "operation is accepted",
             "content": {
               "application/json": {
                 "schema": {
@@ -2154,12 +2176,8 @@
                     "status": {
                       "type": "string",
                       "enum": [
-                        "ok"
+                        "accepted"
                       ]
-                    },
-                    "result": {
-                      "type": "boolean",
-                      "nullable": true
                     }
                   }
                 }

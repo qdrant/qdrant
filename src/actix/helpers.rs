@@ -25,7 +25,7 @@ pub fn storage_into_actix_error(err: StorageError) -> Error {
 pub fn accepted_response(timing: Instant) -> HttpResponse {
     HttpResponse::Accepted().json(ApiResponse::<()> {
         result: None,
-        status: ApiStatus::Ok,
+        status: ApiStatus::Accepted,
         time: timing.elapsed().as_secs_f64(),
     })
 }

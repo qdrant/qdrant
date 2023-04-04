@@ -107,17 +107,13 @@ pub async fn do_list_full_snapshots(
 pub async fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     wait: bool,
-) -> Result<SnapshotDescription, StorageError> {
+) -> Result<Option<SnapshotDescription>, StorageError> {
     let dispatcher = dispatcher.clone();
     let task = tokio::spawn(async move { _do_create_full_snapshot(&dispatcher).await });
     if wait {
-        task.await?
+        Ok(Some(task.await??))
     } else {
-        Ok(SnapshotDescription {
-            name: "".to_string(),
-            creation_time: None,
-            size: 0,
-        })
+        Ok(None)
     }
 }
 

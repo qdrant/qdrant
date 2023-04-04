@@ -1,4 +1,4 @@
-#@ load("openapi.lib.yml", "response", "reference", "type", "array")
+#@ load("openapi.lib.yml", "response", "response_with_accepted", "reference", "type", "array")
 
 paths:
   /collections/{collection_name}/snapshots/upload:
@@ -38,7 +38,7 @@ paths:
                 snapshot:
                   type: string
                   format: binary
-      responses: #@ response(type("boolean"))
+      responses: #@ response_with_accepted(type("boolean"))
   /collections/{collection_name}/snapshots/recover:
     put:
       tags:
@@ -66,7 +66,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SnapshotRecover"
-      responses: #@ response(type("boolean"))
+      responses: #@ response_with_accepted(type("boolean"))
 
   /collections/{collection_name}/snapshots:
     get:
@@ -105,55 +105,7 @@ paths:
           required: false
           schema:
             type: boolean
-      responses:
-        default:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        4XX:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        '200':
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    $ref: "#/components/schemas/SnapshotDescription"
-        '202':
-          description: operation in progress
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    anyOf:
-                     - "nullable": true
-                     - $ref: "#/components/schemas/SnapshotDescription"
+      responses: #@ response_with_accepted(reference("SnapshotDescription"))
 
   /collections/{collection_name}/snapshots/{snapshot_name}:
     delete:
@@ -182,56 +134,7 @@ paths:
           required: false
           schema:
             type: boolean
-      responses:
-        default:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        4XX:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        '200':
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    type: boolean
-        '202':
-          description: operation in progress
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    type: boolean
-                    nullable: true
-
-
+      responses: #@ response_with_accepted(type("boolean"))
     get:
       tags:
         - snapshots
@@ -296,55 +199,7 @@ paths:
           required: false
           schema:
             type: boolean
-      responses:
-        default:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        4XX:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        '200':
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    $ref: "#/components/schemas/SnapshotDescription"
-        '202':
-          description: operation in progress
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    anyOf:
-                     - "nullable": true
-                     - $ref: "#/components/schemas/SnapshotDescription"
+      responses: #@ response_with_accepted(reference("SnapshotDescription"))
 
   /snapshots/{snapshot_name}:
     delete:
@@ -366,54 +221,7 @@ paths:
           required: false
           schema:
             type: boolean
-      responses:
-        default:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        4XX:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        '200':
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    type: boolean
-        '202':
-          description: operation in progress
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    type: boolean
-                    nullable: true
+      responses: #@ response_with_accepted(type("boolean"))
     get:
       tags:
         - snapshots

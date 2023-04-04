@@ -158,7 +158,11 @@ async fn upload_snapshot(
         wait,
     )
     .await;
-    process_response(response, timing)
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[put("/collections/{name}/snapshots/recover")]
@@ -179,7 +183,11 @@ async fn recover_from_snapshot(
         wait,
     )
     .await;
-    process_response(response, timing)
+    match response {
+        Err(_) => process_response(response, timing),
+        Ok(_) if wait => process_response(response, timing),
+        Ok(_) => accepted_response(timing),
+    }
 }
 
 #[get("/collections/{name}/snapshots/{snapshot_name}")]
