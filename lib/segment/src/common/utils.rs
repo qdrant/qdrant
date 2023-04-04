@@ -88,9 +88,7 @@ impl MultiValue<&Value> {
             // { "a": [ { "b": null }, { "b": 1 } ] } => true
             // { "a": [ { "b": 1 }, { "b": null } ] } => true
             // { "a": [ { "b": 1 }, { "b": 2 } ] } => false
-            MultiValue::Multiple(vals) => {
-                vals.iter().any(|val| val.is_null())
-            }
+            MultiValue::Multiple(vals) => vals.iter().any(|val| val.is_null()),
         }
     }
 }
