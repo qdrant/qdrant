@@ -101,6 +101,7 @@ pub struct InitFrom {
 pub struct CreateCollection {
     /// Vector data config.
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
+    #[validate]
     pub vectors: VectorsConfig,
     /// Number of shards in collection.
     /// Default is 1 for standalone, otherwise equal to the number of nodes

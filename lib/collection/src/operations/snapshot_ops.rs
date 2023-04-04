@@ -35,12 +35,6 @@ pub struct SnapshotRecover {
     pub priority: Option<SnapshotPriority>,
 }
 
-impl Validate for SnapshotPriority {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        Ok(())
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotDescription {
     pub name: String,
