@@ -79,6 +79,9 @@ impl StorageError {
             CollectionError::BadShardSelection { .. } => StorageError::BadRequest {
                 description: overriding_description,
             },
+            CollectionError::ForwardProxyError { error, .. } => {
+                Self::from_inconsistent_shard_failure(*error, overriding_description)
+            }
         }
     }
 }
@@ -108,6 +111,10 @@ impl From<CollectionError> for StorageError {
             }
             CollectionError::BadShardSelection { description } => {
                 StorageError::BadRequest { description }
+            }
+            CollectionError::ForwardProxyError { error, .. } => {
+                let full_description = format!("{error}");
+                StorageError::from_inconsistent_shard_failure(*error, full_description)
             }
         }
     }

@@ -1180,6 +1180,7 @@ impl ShardReplicaSet {
                     }
                     _ => {}
                 }
+
                 log::debug!(
                     "Deactivating peer {} because of failed update of shard {}:{}",
                     peer_id,
@@ -1323,7 +1324,12 @@ impl ShardReplicaSet {
                             .get()
                             .update(operation.clone(), wait)
                             .await
-                            .map_err(|err| (self.this_peer_id(), err))
+                            .map_err(|err| {
+                                let peer_id =
+                                    err.remote_peer_id().unwrap_or_else(|| self.this_peer_id());
+
+                                (peer_id, err)
+                            })
                     };
                     let remote_updates = join_all(remote_futures);
 
