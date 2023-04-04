@@ -65,7 +65,7 @@ async fn get_point(
                 let error = Err(StorageError::BadInput {
                     description: format!("Can not recognize \"{}\" as point id", point.id),
                 });
-                return process_response(error, timing);
+                return process_response::<()>(error, timing);
             }
         }
     };

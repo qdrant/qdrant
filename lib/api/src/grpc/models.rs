@@ -24,11 +24,13 @@ impl Default for VersionInfo {
 pub enum ApiStatus {
     Ok,
     Error(String),
+    Accepted,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct ApiResponse<D: Serialize + Debug> {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<D>,
     pub status: ApiStatus,
     pub time: f64,
