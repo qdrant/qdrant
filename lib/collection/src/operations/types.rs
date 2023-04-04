@@ -24,7 +24,7 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
-use validator::Validate;
+use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
 use crate::save_on_disk;
@@ -661,13 +661,19 @@ impl Record {
 }
 
 /// Params of single vector data storage
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorParams {
     /// Size of a vectors used
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+}
+
+impl Anonymize for VectorParams {
+    fn anonymize(&self) -> Self {
+        self.clone()
+    }
 }
 
 /// Vector params separator for single and multiple vector modes
@@ -691,17 +697,29 @@ pub enum VectorsConfig {
     Multi(BTreeMap<String, VectorParams>),
 }
 
-impl Anonymize for VectorParams {
-    fn anonymize(&self) -> Self {
-        self.clone()
-    }
-}
-
 impl Anonymize for VectorsConfig {
     fn anonymize(&self) -> Self {
         match self {
             VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
             VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
+        }
+    }
+}
+
+impl Validate for VectorsConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            VectorsConfig::Single(single) => single.validate(),
+            VectorsConfig::Multi(multi) => {
+                let errors = multi
+                    .values()
+                    .filter_map(|v| v.validate().err())
+                    .fold(Err(ValidationErrors::new()), |bag, err| {
+                        ValidationErrors::merge(bag, "?", Err(err))
+                    })
+                    .unwrap_err();
+                errors.errors().is_empty().then_some(()).ok_or(errors)
+            }
         }
     }
 }

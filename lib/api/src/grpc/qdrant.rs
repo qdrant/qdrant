@@ -233,6 +233,7 @@ pub struct CreateCollection {
     /// Specify name of the other collection to copy data from
     #[prost(string, optional, tag = "13")]
     pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
+    /// Quantization configuration of vector
     #[prost(message, optional, tag = "14")]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
