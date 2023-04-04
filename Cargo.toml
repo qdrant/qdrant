@@ -50,7 +50,7 @@ tokio = { version = "~1.27", features = ["full"] }
 actix-web = { version = "4.3.1", optional = true, features = ["openssl"] }
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
-tonic = { version = "0.9.0", features = ["gzip", "tls"] }
+tonic = { version = "0.9.1", features = ["gzip", "tls"] }
 tower = "0.4.13"
 tower-layer = "0.3.2"
 num-traits = "0.2.15"
