@@ -83,7 +83,8 @@ impl InvertedIndex {
 
         for removed_token in &removed_doc.tokens {
             let posting = self.postings.get_mut(removed_token).unwrap();
-            posting.remove(idx as usize);
+            let doc_idx = posting.iter().position(|doc_id| doc_id == &idx).unwrap();
+            posting.remove(doc_idx);
 
             if posting.is_empty() {
                 self.postings.remove(removed_token);
