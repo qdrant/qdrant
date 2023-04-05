@@ -150,7 +150,7 @@ impl ReplicaSetState {
 pub struct ShardReplicaSet {
     local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
     remotes: RwLock<Vec<RemoteShard>>,
-    replica_state: Arc<SaveOnDisk<ReplicaSetState>>,
+    replica_state: SaveOnDisk<ReplicaSetState>,
     /// List of peers that are marked as dead locally, but are not yet submitted to the consensus.
     /// List is checked on each consensus round and submitted to the consensus.
     /// If the state of the peer is changed in the consensus, it is removed from the list.
@@ -306,7 +306,7 @@ impl ShardReplicaSet {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
-            replica_state: replica_state.into(),
+            replica_state,
             locally_disabled_peers: Default::default(),
             shard_path,
             // TODO: move to collection config
@@ -504,7 +504,7 @@ impl ShardReplicaSet {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
-            replica_state: replica_state.into(),
+            replica_state,
             // TODO: move to collection config
             locally_disabled_peers: Default::default(),
             shard_path: shard_path.to_path_buf(),
