@@ -58,6 +58,7 @@ impl Anonymize for OperationDurationStatistics {
         Self {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
+            last_queried: self.last_queried.anonymize(),
             ..*self
         }
     }
