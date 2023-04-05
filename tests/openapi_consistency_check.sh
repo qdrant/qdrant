@@ -6,13 +6,13 @@ set -ex
 cd "$(dirname "$0")/../"
 
 # Keep current version of file to check
-cp ./docs/redoc/master/{,.repo.}openapi.json
+cp ./docs/redoc/master/{,.diff.}openapi.json
 
 # Regenerate OpenAPI files
 tools/generate_openapi_models.sh
 
 # Ensure generated files are the same as files in this repository
-if diff -Zwa ./docs/redoc/master/{,.repo.}openapi.json
+if diff -Zwa ./docs/redoc/master/{,.diff.}openapi.json
 then
     set +x
     echo "No diffs found."
@@ -24,4 +24,4 @@ else
 fi
 
 # Cleanup
-rm -f ./docs/redoc/master/.repo.openapi.json
+rm -f ./docs/redoc/master/.diff.openapi.json
