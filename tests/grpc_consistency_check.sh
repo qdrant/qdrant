@@ -6,13 +6,14 @@ set -ex
 cd "$(dirname "$0")/../"
 
 # Keep current version of files to check
-cp ./lib/api/src/grpc/qdrant.rs ./lib/api/src/grpc/.repo.qdrant.rs
+cp ./lib/api/src/grpc/{,.repo.}qdrant.rs
 
 # Regenerate gRPC files
+touch ./lib/api/src/grpc/proto/.build-trigger.proto
 cargo build --manifest-path lib/api/Cargo.toml
 
 # Ensure generated files are the same as files in this repository
-if diff -Zwa ./lib/api/src/grpc/qdrant.rs ./lib/api/src/grpc/.repo.qdrant.rs
+if diff -Zwa ./lib/api/src/grpc/{,.repo.}qdrant.rs
 then
     set +x
     echo "No diff found."
@@ -24,4 +25,4 @@ else
 fi
 
 # Cleanup
-rm -f ./lib/api/src/grpc/.repo.qdrant.rs
+rm -f ./lib/api/src/grpc/{.repo.qdrant.rs,proto/.build-trigger.proto}
