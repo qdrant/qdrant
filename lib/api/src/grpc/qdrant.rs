@@ -7,6 +7,9 @@ pub struct VectorParams {
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
     pub distance: i32,
+    /// Configuration of vector index. If omitted - the collection configuration will be used
+    #[prost(message, optional, tag = "3")]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
