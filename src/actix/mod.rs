@@ -109,7 +109,8 @@ pub fn init(
 
             if settings.service.validate_client_certificate {
                 // Trusted client CA certificate
-                acceptor.set_verify(SslVerifyMode::PEER);
+                acceptor.set_ca_file(&tls_config.ca_cert)?;
+                acceptor.set_verify(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT);
                 let ca_cert = fs::read_to_string(&tls_config.ca_cert)?;
                 let client_ca = X509::from_pem(ca_cert.as_bytes())?;
                 acceptor.add_client_ca(&client_ca)?;
