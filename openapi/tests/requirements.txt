@@ -1,3 +1,3 @@
-schemathesis~=3.14.0
+schemathesis~=3.19.0
 requests
-pytest==6.2.5
+pytest==7.2.2
