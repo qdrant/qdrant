@@ -93,6 +93,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: gRPC file consistency check
+        run: ./tests/grpc_consistency_check.sh
+        shell: bash
       - name: OpenAPI file consistency check
         run: ./tests/openapi_consistency_check.sh
         shell: bash
