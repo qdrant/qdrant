@@ -20,7 +20,7 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub enable_tls: bool,
     #[serde(default)]
-    pub verify_https_client_certificate: bool
+    pub verify_https_client_certificate: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Default, Validate)]
