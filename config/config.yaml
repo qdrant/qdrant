@@ -173,8 +173,8 @@ tls:
   # This certificate will be used to validate the certificates
   # presented by other nodes during inter-cluster communication.
   #
-  # If service.validate_client_certificate is enabled, it will validate
-  # user client certificate as well.
+  # If verify_https_client_certificate is true, it will verify
+  # HTTPS client certificate
   #
   # Required if cluster.p2p.enable_tls is true.
   ca_cert: ./tls/cacert.pem
