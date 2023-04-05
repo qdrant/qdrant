@@ -174,16 +174,30 @@ impl Anonymize for RequestsTelemetry {
 
 impl Anonymize for WebApiTelemetry {
     fn anonymize(&self) -> Self {
-        WebApiTelemetry {
-            responses: self.responses.clone(),
-        }
+        let responses = self
+            .responses
+            .iter()
+            .map(|(key, value)| {
+                let value = value
+                    .iter()
+                    .map(|(key, value)| (*key, value.anonymize()))
+                    .collect::<HashMap<HttpStatusCode, OperationDurationStatistics>>();
+                (key.clone(), value)
+            })
+            .collect();
+
+        WebApiTelemetry { responses }
     }
 }
 
 impl Anonymize for GrpcTelemetry {
     fn anonymize(&self) -> Self {
-        GrpcTelemetry {
-            responses: self.responses.clone(),
-        }
+        let responses = self
+            .responses
+            .iter()
+            .map(|(key, value)| (key.clone(), value.anonymize()))
+            .collect();
+
+        GrpcTelemetry { responses }
     }
 }
