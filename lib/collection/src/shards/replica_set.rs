@@ -150,7 +150,7 @@ impl ReplicaSetState {
 pub struct ShardReplicaSet {
     local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
     remotes: RwLock<Vec<RemoteShard>>,
-    replica_state: SaveOnDisk<ReplicaSetState>,
+    replica_state: Arc<SaveOnDisk<ReplicaSetState>>,
     /// List of peers that are marked as dead locally, but are not yet submitted to the consensus.
     /// List is checked on each consensus round and submitted to the consensus.
     /// If the state of the peer is changed in the consensus, it is removed from the list.
@@ -306,7 +306,7 @@ impl ShardReplicaSet {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
-            replica_state,
+            replica_state: replica_state.into(),
             locally_disabled_peers: Default::default(),
             shard_path,
             // TODO: move to collection config
@@ -504,7 +504,7 @@ impl ShardReplicaSet {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
-            replica_state,
+            replica_state: replica_state.into(),
             // TODO: move to collection config
             locally_disabled_peers: Default::default(),
             shard_path: shard_path.to_path_buf(),
@@ -1361,18 +1361,26 @@ impl ShardReplicaSet {
             if wait && wait_for_deactivation && !failures.is_empty() {
                 // ToDo: allow timeout configuration in API
                 let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
-                let shards_disabled = self.replica_state.wait_for(
-                    |state| {
-                        failures.iter().all(|(peer_id, _)| {
-                            state
-                                .peers
-                                .get(peer_id)
-                                .map(|state| state != &ReplicaState::Active)
-                                .unwrap_or(true) // not found means that peer is dead
-                        })
-                    },
-                    DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
-                );
+
+                let replica_state = self.replica_state.clone();
+                let peer_ids: Vec<_> = failures.iter().map(|(peer_id, _)| *peer_id).collect();
+
+                let shards_disabled = tokio::task::spawn_blocking(move || {
+                    replica_state.wait_for(
+                        |state| {
+                            peer_ids.iter().all(|peer_id| {
+                                state
+                                    .peers
+                                    .get(peer_id)
+                                    .map(|state| state != &ReplicaState::Active)
+                                    .unwrap_or(true) // not found means that peer is dead
+                            })
+                        },
+                        DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
+                    )
+                })
+                .await?;
+
                 if !shards_disabled {
                     return Err(CollectionError::service_error(format!(
                         "Some replica of shard {} failed to apply operation and deactivation \
