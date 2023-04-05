@@ -133,6 +133,9 @@ service:
   # Use TLS for client communication
   enable_tls: true
 
+  # Check user client certificate against CA file specified in tls config
+  validate_client_certificate: true
+
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: true
