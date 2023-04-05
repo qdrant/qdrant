@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,10 @@ pub struct OperationDurationStatistics {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub max_duration_micros: Option<f32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub last_queried: Option<DateTime<Utc>>,
 }
 
 pub struct OperationDurationsAggregator {
@@ -39,6 +44,7 @@ pub struct OperationDurationsAggregator {
     timing_loops: usize,
     min_value: Option<f32>,
     max_value: Option<f32>,
+    last_request_time: Option<DateTime<Utc>>,
 }
 
 pub struct ScopeDurationMeasurer {
@@ -52,9 +58,7 @@ impl Anonymize for OperationDurationStatistics {
         Self {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
-            avg_duration_micros: self.avg_duration_micros,
-            min_duration_micros: self.min_duration_micros,
-            max_duration_micros: self.max_duration_micros,
+            ..*self
         }
     }
 }
@@ -82,6 +86,7 @@ impl std::ops::Add for OperationDurationStatistics {
                 other.max_duration_micros,
                 |a, b| a > b,
             ),
+            last_queried: std::cmp::max(self.last_queried, other.last_queried),
         }
     }
 }
@@ -174,6 +179,7 @@ impl OperationDurationsAggregator {
             timing_loops: 0,
             min_value: None,
             max_value: None,
+            last_request_time: Some(Utc::now()),
         }))
     }
 
@@ -199,6 +205,9 @@ impl OperationDurationsAggregator {
         } else {
             self.fail_count += 1;
         }
+
+        let duration = chrono::Duration::microseconds(duration.as_micros() as i64);
+        self.last_request_time = Some(Utc::now() - duration);
     }
 
     pub fn get_statistics(&self) -> OperationDurationStatistics {
@@ -212,6 +221,7 @@ impl OperationDurationsAggregator {
             },
             min_duration_micros: self.min_value,
             max_duration_micros: self.max_value,
+            last_queried: self.last_request_time,
         }
     }
 
