@@ -101,12 +101,6 @@ pub fn load_tls_external_server_config(tls_config: &TlsConfig) -> io::Result<Ser
 
 /// Load server TLS configuration for internal gRPC, check client certificate against CA
 pub fn load_tls_internal_server_config(tls_config: &TlsConfig) -> io::Result<ServerTlsConfig> {
-    load_tls_server_config_with_client_validation(tls_config)
-}
-
-fn load_tls_server_config_with_client_validation(
-    tls_config: &TlsConfig,
-) -> io::Result<ServerTlsConfig> {
     Ok(ServerTlsConfig::new()
         .identity(load_identity(tls_config)?)
         .client_ca_root(load_ca_certificate(tls_config)?))
