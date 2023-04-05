@@ -93,9 +93,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Install minimal stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: gRPC file consistency check
         run: ./tests/grpc_consistency_check.sh
-        shell: bash
       - name: OpenAPI file consistency check
         run: ./tests/openapi_consistency_check.sh
-        shell: bash

@@ -10,7 +10,7 @@ cp ./lib/api/src/grpc/{,.repo.}qdrant.rs
 
 # Regenerate gRPC files
 touch ./lib/api/src/grpc/proto/.build-trigger.proto
-cargo build --manifest-path lib/api/Cargo.toml
+cargo build --package api
 
 # Ensure generated files are the same as files in this repository
 if diff -Zwa ./lib/api/src/grpc/{,.repo.}qdrant.rs
