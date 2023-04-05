@@ -4,6 +4,7 @@ package qdrant;
 message VectorParams {
   uint64 size = 1; // Size of the vectors
   Distance distance = 2; // Distance function used for comparing vectors
+  optional HnswConfigDiff hnsw_config = 3; // Configuration of vector index. If omitted - the collection configuration will be used
 }
 
 message VectorParamsMap {

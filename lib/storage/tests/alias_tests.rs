@@ -83,6 +83,7 @@ fn test_alias_operation() {
                         vectors: VectorParams {
                             size: NonZeroU64::new(10).unwrap(),
                             distance: Distance::Cosine,
+                            hnsw_config: None,
                         }
                         .into(),
                         hnsw_config: None,

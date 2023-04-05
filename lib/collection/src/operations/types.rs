@@ -27,6 +27,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
+use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -668,6 +669,10 @@ pub struct VectorParams {
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Custom params for HNSW index. If none - values from collection configuration are used.
+    #[serde(default)]
+    #[validate]
+    pub hnsw_config: Option<HnswConfigDiff>,
 }
 
 impl Anonymize for VectorParams {

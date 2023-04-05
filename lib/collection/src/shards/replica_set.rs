@@ -1539,6 +1539,7 @@ mod tests {
             vectors: VectorsConfig::Single(VectorParams {
                 size: NonZeroU64::new(4).unwrap(),
                 distance: Distance::Dot,
+                hnsw_config: None,
             }),
             shard_number: NonZeroU32::new(4).unwrap(),
             replication_factor: NonZeroU32::new(3).unwrap(),

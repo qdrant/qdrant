@@ -252,6 +252,7 @@ mod tests {
             vectors: VectorParams {
                 size: NonZeroU64::new(128).unwrap(),
                 distance: Distance::Cosine,
+                hnsw_config: None,
             }
             .into(),
             shard_number: NonZeroU32::new(1).unwrap(),
