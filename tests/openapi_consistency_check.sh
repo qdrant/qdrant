@@ -1,4 +1,13 @@
 #!/bin/bash
+# Some OpenAPI files in this repository are generated and based upon other
+# sources. When these sources change, the generated files must be generated
+# (and committed) again. It is the task of the contributing user to do this
+# properly.
+#
+# This tests makes sure the generated OpenAPI files are consistent with its
+# sources. If this fails, you probably have to generate the OpenAPI files again.
+#
+# Read more here: https://github.com/qdrant/qdrant/blob/master/docs/DEVELOPMENT.md#rest
 
 set -ex
 
