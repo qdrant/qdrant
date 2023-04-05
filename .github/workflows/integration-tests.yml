@@ -29,7 +29,6 @@ jobs:
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
-
   test-consensus:
 
     runs-on: ubuntu-latest
@@ -88,3 +87,12 @@ jobs:
       - name: Run integration tests
         run: ./test_tls.sh
         working-directory: ./tests/tls
+
+  test-consistency:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: OpenAPI file consistency check
+        run: ./tests/openapi_consistency_check.sh
+        shell: bash
