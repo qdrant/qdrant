@@ -7,13 +7,18 @@ cd "$(dirname "$0")/../"
 
 # Keep current version of file to check
 cp ./lib/api/src/grpc/{,.repo.}qdrant.rs
+cp ./docs/grpc/{,.repo.}docs.md
 
 # Regenerate gRPC files
 touch ./lib/api/src/grpc/proto/.build-trigger.proto
 cargo build --package api
 
+# Regenerate gRPC docs
+./tools/generate_grpc_docs.sh
+
 # Ensure generated files are the same as files in this repository
-if diff -Zwa ./lib/api/src/grpc/{,.repo.}qdrant.rs
+if diff -Zwa ./lib/api/src/grpc/{,.repo.}qdrant.rs \
+&& diff -Zwa ./docs/grpc/{,.repo.}docs.md
 then
     set +x
     echo "No diff found."
@@ -25,4 +30,4 @@ else
 fi
 
 # Cleanup
-rm -f ./lib/api/src/grpc/{.repo.qdrant.rs,proto/.build-trigger.proto}
+rm -f ./lib/api/src/grpc/{.repo.qdrant.rs,proto/.build-trigger.proto} ./docs/grpc/.repo.docs.md
