@@ -14,7 +14,7 @@ use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
-const NUM_VECTORS: usize = 100000;
+const NUM_VECTORS: usize = 100_000;
 const DIM: usize = 1024; // Larger dimensionality - greater the SIMD advantage
 
 fn random_vector(size: usize) -> Vec<VectorElementType> {
