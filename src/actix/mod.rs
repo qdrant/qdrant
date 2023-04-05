@@ -4,6 +4,7 @@ pub mod api;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
+use std::fs;
 use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
@@ -13,7 +14,8 @@ use actix_multipart::form::MultipartFormConfig;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use collection::operations::validation;
-use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod, SslVerifyMode};
+use openssl::x509::X509;
 use storage::dispatcher::Dispatcher;
 
 use crate::actix::api::cluster_api::config_cluster_api;
@@ -100,9 +102,18 @@ pub fn init(
                 .tls
                 .ok_or_else(Settings::tls_config_is_undefined_error)?;
 
+            // Server side TLS configuration
             acceptor.set_private_key_file(&tls_config.key, SslFiletype::PEM)?;
             acceptor.set_certificate_chain_file(&tls_config.cert)?;
             acceptor.check_private_key()?;
+
+            if settings.service.validate_client_certificate {
+                // Trusted client CA certificate
+                acceptor.set_verify(SslVerifyMode::PEER);
+                let ca_cert = fs::read_to_string(&tls_config.ca_cert)?;
+                let client_ca = X509::from_pem(ca_cert.as_bytes())?;
+                acceptor.add_client_ca(&client_ca)?;
+            }
 
             server.bind_openssl(bind_addr, acceptor)?
         } else {

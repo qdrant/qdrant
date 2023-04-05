@@ -130,6 +130,9 @@ service:
   # Use HTTPS for the REST API
   enable_tls: false
 
+  # Check user client certificate against CA file specified in tls config
+  validate_client_certificate: false
+
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false
@@ -169,5 +172,9 @@ tls:
   # Certificate authority certificate file.
   # This certificate will be used to validate the certificates
   # presented by other nodes during inter-cluster communication.
+  #
+  # If service.validate_client_certificate is enabled, it will validate
+  # user client certificate as well.
+  #
   # Required if cluster.p2p.enable_tls is true.
   ca_cert: ./tls/cacert.pem
