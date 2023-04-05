@@ -1379,8 +1379,7 @@ impl ShardReplicaSet {
                         DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
                     )
                 })
-                .await
-                .unwrap();
+                .await?;
 
                 if !shards_disabled {
                     return Err(CollectionError::service_error(format!(
