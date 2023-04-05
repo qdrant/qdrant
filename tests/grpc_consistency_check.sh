@@ -5,7 +5,7 @@ set -ex
 # Ensure current path is project root
 cd "$(dirname "$0")/../"
 
-# Keep current version of files to check
+# Keep current version of file to check
 cp ./lib/api/src/grpc/{,.repo.}qdrant.rs
 
 # Regenerate gRPC files

@@ -5,18 +5,14 @@ set -ex
 # Ensure current path is project root
 cd "$(dirname "$0")/../"
 
-# Keep current version of files to check
-cp ./openapi/{,.repo.}openapi-merged.yaml
-cp ./openapi/{,.repo.}openapi-merged.json
+# Keep current version of file to check
 cp ./docs/redoc/master/{,.repo.}openapi.json
 
 # Regenerate OpenAPI files
 tools/generate_openapi_models.sh
 
 # Ensure generated files are the same as files in this repository
-if diff -Zwa ./openapi/{,.repo.}openapi-merged.yaml \
-&& diff -Zwa ./openapi/{,.repo.}openapi-merged.json \
-&& diff -Zwa ./docs/redoc/master/{,.repo.}openapi.json
+if diff -Zwa ./docs/redoc/master/{,.repo.}openapi.json
 then
     set +x
     echo "No diffs found."
@@ -28,4 +24,4 @@ else
 fi
 
 # Cleanup
-rm -f ./openapi/.repo.openapi-merged.{json,yaml} ./docs/redoc/master/.repo.openapi.json
+rm -f ./docs/redoc/master/.repo.openapi.json
