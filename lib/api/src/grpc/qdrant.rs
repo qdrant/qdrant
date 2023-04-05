@@ -43,7 +43,7 @@ pub mod vectors_config {
 pub struct GetCollectionInfoRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
@@ -222,7 +222,7 @@ pub mod quantization_config {
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Configuration of vector index
     #[prost(message, optional, tag = "4")]
@@ -267,7 +267,7 @@ pub struct CreateCollection {
 pub struct UpdateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// New configuration parameters for the collection
     #[prost(message, optional, tag = "2")]
@@ -288,7 +288,7 @@ pub struct UpdateCollection {
 pub struct DeleteCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "2")]
@@ -498,7 +498,7 @@ pub struct ListAliasesRequest {}
 pub struct ListCollectionAliasesRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1550,7 +1550,7 @@ pub struct GetCollectionInfoRequestInternal {
 pub struct InitiateShardTransferRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the temporary shard
     #[prost(uint32, tag = "2")]
@@ -2087,7 +2087,7 @@ pub struct Vector {
 pub struct UpsertPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2104,7 +2104,7 @@ pub struct UpsertPoints {
 pub struct DeletePoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2122,7 +2122,7 @@ pub struct DeletePoints {
 pub struct GetPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// List of points to retrieve
     #[prost(message, repeated, tag = "2")]
@@ -2143,7 +2143,7 @@ pub struct GetPoints {
 pub struct SetPayloadPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2164,7 +2164,7 @@ pub struct SetPayloadPoints {
 pub struct DeletePayloadPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2185,7 +2185,7 @@ pub struct DeletePayloadPoints {
 pub struct ClearPayloadPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2203,7 +2203,7 @@ pub struct ClearPayloadPoints {
 pub struct CreateFieldIndexCollection {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2228,7 +2228,7 @@ pub struct CreateFieldIndexCollection {
 pub struct DeleteFieldIndexCollection {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2359,7 +2359,7 @@ pub struct SearchParams {
 pub struct SearchPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// vector
     #[prost(float, repeated, tag = "2")]
@@ -2400,7 +2400,7 @@ pub struct SearchPoints {
 pub struct SearchBatchPoints {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     #[validate]
@@ -2414,7 +2414,7 @@ pub struct SearchBatchPoints {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
@@ -2451,7 +2451,7 @@ pub struct LookupLocation {
 pub struct RecommendPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Look for vectors closest to those
     #[prost(message, repeated, tag = "2")]
@@ -2496,7 +2496,7 @@ pub struct RecommendPoints {
 pub struct RecommendBatchPoints {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     #[validate]
@@ -2511,7 +2511,7 @@ pub struct RecommendBatchPoints {
 pub struct CountPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
@@ -4347,7 +4347,7 @@ pub mod points_server {
 pub struct SyncPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -4462,7 +4462,7 @@ pub struct SearchPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchPointsInternal {
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     #[validate]
@@ -6437,7 +6437,7 @@ pub struct DeleteFullSnapshotRequest {
 pub struct CreateSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
@@ -6446,7 +6446,7 @@ pub struct CreateSnapshotRequest {
 pub struct ListSnapshotsRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
@@ -6455,7 +6455,7 @@ pub struct ListSnapshotsRequest {
 pub struct DeleteSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Name of the collection snapshot
     #[prost(string, tag = "2")]

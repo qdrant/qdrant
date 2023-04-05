@@ -79,20 +79,20 @@ fn configure_validation(builder: Builder) -> Builder {
     builder
         // Service: collections.proto
         .validates(&[
-            ("GetCollectionInfoRequest.collection_name", "length(min = 1)"),
-            ("CreateCollection.collection_name", "length(min = 1)"),
+            ("GetCollectionInfoRequest.collection_name", "length(min = 1, max = 255)"),
+            ("CreateCollection.collection_name", "length(min = 1, max = 255)"),
             ("CreateCollection.hnsw_config", ""),
             ("CreateCollection.wal_config", ""),
             ("CreateCollection.optimizers_config", ""),
             ("CreateCollection.vectors_config", ""),
-            ("UpdateCollection.collection_name", "length(min = 1)"),
+            ("UpdateCollection.collection_name", "length(min = 1, max = 255)"),
             ("UpdateCollection.optimizers_config", ""),
             ("UpdateCollection.params", ""),
             ("UpdateCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
-            ("DeleteCollection.collection_name", "length(min = 1)"),
+            ("DeleteCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("ChangeAliases.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
-            ("ListCollectionAliasesRequest.collection_name", "length(min = 1)"),
+            ("ListCollectionAliasesRequest.collection_name", "length(min = 1, max = 255)"),
             ("HnswConfigDiff.m", "custom = \"crate::grpc::validate::validate_u64_range_min_4_max_10000\""),
             ("HnswConfigDiff.ef_construct", "custom = \"crate::grpc::validate::validate_u64_range_min_4\""),
             ("WalConfigDiff.wal_capacity_mb", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
@@ -111,31 +111,31 @@ fn configure_validation(builder: Builder) -> Builder {
         // Service: collections_internal.proto
         .validates(&[
             ("GetCollectionInfoRequestInternal.get_collection_info_request", ""),
-            ("InitiateShardTransferRequest.collection_name", "length(min = 1)"),
+            ("InitiateShardTransferRequest.collection_name", "length(min = 1, max = 255)"),
         ], &[])
         // Service: points.proto
         .validates(&[
-            ("UpsertPoints.collection_name", "length(min = 1)"),
-            ("DeletePoints.collection_name", "length(min = 1)"),
-            ("GetPoints.collection_name", "length(min = 1)"),
-            ("SetPayloadPoints.collection_name", "length(min = 1)"),
-            ("DeletePayloadPoints.collection_name", "length(min = 1)"),
-            ("ClearPayloadPoints.collection_name", "length(min = 1)"),
-            ("CreateFieldIndexCollection.collection_name", "length(min = 1)"),
+            ("UpsertPoints.collection_name", "length(min = 1, max = 255)"),
+            ("DeletePoints.collection_name", "length(min = 1, max = 255)"),
+            ("GetPoints.collection_name", "length(min = 1, max = 255)"),
+            ("SetPayloadPoints.collection_name", "length(min = 1, max = 255)"),
+            ("DeletePayloadPoints.collection_name", "length(min = 1, max = 255)"),
+            ("ClearPayloadPoints.collection_name", "length(min = 1, max = 255)"),
+            ("CreateFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("CreateFieldIndexCollection.field_name", "length(min = 1)"),
-            ("DeleteFieldIndexCollection.collection_name", "length(min = 1)"),
+            ("DeleteFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
-            ("SearchPoints.collection_name", "length(min = 1)"),
+            ("SearchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchPoints.limit", "range(min = 1)"),
             ("SearchPoints.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
-            ("SearchBatchPoints.collection_name", "length(min = 1)"),
+            ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
-            ("ScrollPoints.collection_name", "length(min = 1)"),
+            ("ScrollPoints.collection_name", "length(min = 1, max = 255)"),
             ("ScrollPoints.limit", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
-            ("RecommendPoints.collection_name", "length(min = 1)"),
-            ("RecommendBatchPoints.collection_name", "length(min = 1)"),
+            ("RecommendPoints.collection_name", "length(min = 1, max = 255)"),
+            ("RecommendBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("RecommendBatchPoints.recommend_points", ""),
-            ("CountPoints.collection_name", "length(min = 1)"),
+            ("CountPoints.collection_name", "length(min = 1, max = 255)"),
         ], &[])
         // Service: points_internal_service.proto
         .validates(&[
@@ -147,14 +147,14 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CreateFieldIndexCollectionInternal.create_field_index_collection", ""),
             ("DeleteFieldIndexCollectionInternal.delete_field_index_collection", ""),
             ("SearchPointsInternal.search_points", ""),
-            ("SearchBatchPointsInternal.collection_name", "length(min = 1)"),
+            ("SearchBatchPointsInternal.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPointsInternal.search_points", ""),
             ("RecommendPointsInternal.recommend_points", ""),
             ("ScrollPointsInternal.scroll_points", ""),
             ("GetPointsInternal.get_points", ""),
             ("CountPointsInternal.count_points", ""),
             ("SyncPointsInternal.sync_points", ""),
-            ("SyncPoints.collection_name", "length(min = 1)"),
+            ("SyncPoints.collection_name", "length(min = 1, max = 255)"),
         ], &[])
         // Service: raft_service.proto
         .validates(&[
@@ -163,9 +163,9 @@ fn configure_validation(builder: Builder) -> Builder {
         ], &[])
         // Service: snapshot_service.proto
         .validates(&[
-            ("CreateSnapshotRequest.collection_name", "length(min = 1)"),
-            ("ListSnapshotsRequest.collection_name", "length(min = 1)"),
-            ("DeleteSnapshotRequest.collection_name", "length(min = 1)"),
+            ("CreateSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
+            ("ListSnapshotsRequest.collection_name", "length(min = 1, max = 255)"),
+            ("DeleteSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
             ("DeleteSnapshotRequest.snapshot_name", "length(min = 1)"),
             ("DeleteFullSnapshotRequest.snapshot_name", "length(min = 1)"),
         ], &[
