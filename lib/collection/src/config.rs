@@ -51,6 +51,7 @@ impl Default for WalConfig {
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
+    #[validate]
     pub vectors: VectorsConfig,
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
