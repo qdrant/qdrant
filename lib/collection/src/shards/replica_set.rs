@@ -1159,7 +1159,8 @@ impl ShardReplicaSet {
         &self,
         failures: &Vec<(PeerId, CollectionError)>,
         state: &ReplicaSetState,
-    ) {
+    ) -> bool {
+        let mut wait_for_deactivation = false;
         for (peer_id, err) in failures {
             log::warn!(
                 "Failed to update shard {}:{} on peer {}, error: {}",
@@ -1169,6 +1170,17 @@ impl ShardReplicaSet {
                 err
             );
             if let Some(ReplicaState::Active) = state.get_peer_state(peer_id) {
+                match err {
+                    CollectionError::ServiceError { .. } | CollectionError::Cancelled { .. } => {
+                        // If the error is service error, we should deactivate the peer
+                        // before allowing other operations to continue.
+                        // Otherwise, the failed node can become responsive again, before
+                        // the other nodes deactivate it, so the storage might be inconsistent.
+                        wait_for_deactivation = true;
+                    }
+                    _ => {}
+                }
+
                 log::debug!(
                     "Deactivating peer {} because of failed update of shard {}:{}",
                     peer_id,
@@ -1179,6 +1191,7 @@ impl ShardReplicaSet {
                 self.notify_peer_failure(*peer_id);
             }
         }
+        wait_for_deactivation
     }
 
     /// Check if the are any locally disabled peers
@@ -1342,7 +1355,41 @@ impl ShardReplicaSet {
         // 2. ???
 
         if !successes.is_empty() {
-            self.handle_failed_replicas(&failures, &self.replica_state.read());
+            let wait_for_deactivation =
+                self.handle_failed_replicas(&failures, &self.replica_state.read());
+            // report all failing peers to consensus
+            if wait && wait_for_deactivation && !failures.is_empty() {
+                // ToDo: allow timeout configuration in API
+                let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
+
+                let replica_state = self.replica_state.clone();
+                let peer_ids: Vec<_> = failures.iter().map(|(peer_id, _)| *peer_id).collect();
+
+                let shards_disabled = tokio::task::spawn_blocking(move || {
+                    replica_state.wait_for(
+                        |state| {
+                            peer_ids.iter().all(|peer_id| {
+                                state
+                                    .peers
+                                    .get(peer_id)
+                                    .map(|state| state != &ReplicaState::Active)
+                                    .unwrap_or(true) // not found means that peer is dead
+                            })
+                        },
+                        DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
+                    )
+                })
+                .await
+                .unwrap();
+
+                if !shards_disabled {
+                    return Err(CollectionError::service_error(format!(
+                        "Some replica of shard {} failed to apply operation and deactivation \
+                         timed out after {} seconds. Consistency of this update is not guaranteed. Please retry.",
+                        self.shard_id, timeout.as_secs()
+                    )));
+                }
+            }
         }
 
         if !failures.is_empty() {
