@@ -434,7 +434,6 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
-    use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
     use super::*;
     use crate::data_types::vectors::VectorElementType;
@@ -458,6 +457,7 @@ mod tests {
     where
         R: Rng + ?Sized,
     {
+        use rayon::prelude::{IntoParallelIterator, ParallelIterator};
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(2)
             .build()
