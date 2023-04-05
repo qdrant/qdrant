@@ -108,7 +108,8 @@ pub fn init(
             acceptor.set_certificate_chain_file(&tls_config.cert)?;
             acceptor.check_private_key()?;
 
-            if settings.service.validate_client_certificate {
+            if settings.service.verify_https_client_certificate {
+                // Verify client CA
                 let client_ca = fs::read_to_string(&tls_config.ca_cert)?;
                 let client_ca = X509::from_pem(client_ca.as_bytes())?;
 

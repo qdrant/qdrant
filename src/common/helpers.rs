@@ -95,13 +95,8 @@ pub fn load_tls_client_config(settings: &Settings) -> io::Result<Option<ClientTl
 }
 
 /// Load server TLS configuration for external gRPC
-pub fn load_tls_external_server_config(settings: &Settings) -> io::Result<ServerTlsConfig> {
-    let tls_config = settings.tls()?;
-    if settings.service.validate_client_certificate {
-        load_tls_server_config_with_client_validation(tls_config)
-    } else {
-        Ok(ServerTlsConfig::new().identity(load_identity(tls_config)?))
-    }
+pub fn load_tls_external_server_config(tls_config: &TlsConfig) -> io::Result<ServerTlsConfig> {
+    Ok(ServerTlsConfig::new().identity(load_identity(tls_config)?))
 }
 
 /// Load server TLS configuration for internal gRPC, check client certificate against CA

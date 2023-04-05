@@ -65,7 +65,7 @@ pub fn init(
         let mut server = Server::builder();
 
         if settings.service.enable_tls {
-            let tls_server_config = helpers::load_tls_external_server_config(&settings)?;
+            let tls_server_config = helpers::load_tls_external_server_config(settings.tls()?)?;
 
             server = server
                 .tls_config(tls_server_config)

@@ -44,7 +44,7 @@ trap clear_after_tests EXIT
 for node in 1 2
 do
     run_with_retry 5 "docker run --rm --network=tls_qdrant -v $CERT_DIR:/tls_path curlimages/curl --cacert /tls_path/cacert.pem --cert /tls_path/cert.pem --key /tls_path/key.pem https://node$node.qdrant:6333/telemetry" "Failed to GET /telemetry of node$node"
-    run_with_retry 5 "docker run --rm --network=tls_qdrant -v $CERT_DIR:/tls_path -v ${PWD}/../../lib/api/src/grpc/proto:/proto fullstorydev/grpcurl -cacert /tls_path/cacert.pem -cert /tls_path/cert.pem -key /tls_path/key.pem -import-path /proto -proto qdrant.proto -d {} node$node.qdrant:6334 qdrant.Qdrant/HealthCheck" "Failed to perform health check via grpc of node$node"
+    run_with_retry 5 "docker run --rm --network=tls_qdrant -v $CERT_DIR:/tls_path -v ${PWD}/../../lib/api/src/grpc/proto:/proto fullstorydev/grpcurl -cacert /tls_path/cacert.pem -import-path /proto -proto qdrant.proto -d {} node$node.qdrant:6334 qdrant.Qdrant/HealthCheck" "Failed to perform health check via grpc of node$node"
 done
 
 printf "Client TLS connection OK\n"

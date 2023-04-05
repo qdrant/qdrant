@@ -130,8 +130,8 @@ service:
   # Use HTTPS for the REST API
   enable_tls: false
 
-  # Check user client certificate against CA file specified in tls config
-  validate_client_certificate: false
+  # Check user HTTPS client certificate against CA file specified in tls config
+  verify_https_client_certificate: false
 
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
