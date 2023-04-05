@@ -164,7 +164,7 @@ telemetry_disabled: true
 
 
 # TLS settings
-tls_config:
+tls:
 
   # Certificate chain file
   cert: ./tls/cert.pem
