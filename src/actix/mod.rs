@@ -109,8 +109,9 @@ pub fn init(
             acceptor.check_private_key()?;
 
             if settings.service.validate_client_certificate {
-                let ca_cert = fs::read_to_string(&tls_config.ca_cert)?;
-                let client_ca = X509::from_pem(ca_cert.as_bytes())?;
+                let client_ca = fs::read_to_string(&tls_config.ca_cert)?;
+                let client_ca = X509::from_pem(client_ca.as_bytes())?;
+
                 let mut x509_client_store_builder = X509StoreBuilder::new()?;
                 x509_client_store_builder.add_cert(client_ca)?;
                 let client_cert_store = x509_client_store_builder.build();
@@ -120,8 +121,6 @@ pub fn init(
                 verify_mode.set(SslVerifyMode::PEER, true);
                 verify_mode.set(SslVerifyMode::FAIL_IF_NO_PEER_CERT, true);
                 acceptor.set_verify(verify_mode);
-
-                acceptor.set_ca_file(&tls_config.ca_cert)?;
             }
 
             server.bind_openssl(bind_addr, acceptor)?
