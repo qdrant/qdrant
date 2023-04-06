@@ -117,11 +117,7 @@ pub fn init(
                 x509_client_store_builder.add_cert(client_ca)?;
                 let client_cert_store = x509_client_store_builder.build();
                 acceptor.set_verify_cert_store(client_cert_store)?;
-
-                let mut verify_mode = SslVerifyMode::empty();
-                verify_mode.set(SslVerifyMode::PEER, true);
-                verify_mode.set(SslVerifyMode::FAIL_IF_NO_PEER_CERT, true);
-                acceptor.set_verify(verify_mode);
+                acceptor.set_verify(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT);
             }
 
             server.bind_openssl(bind_addr, acceptor)?
