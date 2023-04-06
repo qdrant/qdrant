@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::common::anonymize::Anonymize;
+use crate::common::utils::date_format::until_seconds;
 
 const AVG_DATASET_LEN: usize = 128;
 const SLIDING_WINDOW_LEN: usize = 8;
@@ -31,7 +32,10 @@ pub struct OperationDurationStatistics {
     #[serde(default)]
     pub max_duration_micros: Option<f32>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        serialize_with = "until_seconds::serialize_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[serde(default)]
     pub last_queried: Option<DateTime<Utc>>,
 }
