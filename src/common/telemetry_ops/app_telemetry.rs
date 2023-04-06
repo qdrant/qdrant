@@ -45,7 +45,7 @@ pub struct AppBuildTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub system: Option<RunningEnvironmentTelemetry>,
-    pub boot: DateTime<Utc>,
+    pub startup: DateTime<Utc>,
 }
 
 impl AppBuildTelemetry {
@@ -67,7 +67,7 @@ impl AppBuildTelemetry {
             } else {
                 None
             },
-            boot: collector.startup,
+            startup: collector.startup,
         }
     }
 }
@@ -136,7 +136,7 @@ impl Anonymize for AppBuildTelemetry {
             version: self.version.clone(),
             features: self.features.anonymize(),
             system: self.system.anonymize(),
-            boot: self.boot,
+            startup: self.startup,
         }
     }
 }
