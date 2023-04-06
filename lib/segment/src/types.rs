@@ -11,7 +11,7 @@ use geo::Point;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 use validator::{Validate, ValidationErrors};
@@ -305,7 +305,25 @@ pub enum Indexes {
     /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
     /// but require additional space to store index and additional time to build it.
     /// Holds an HNSW config for each named vector, or for `""` if there's just one.
+    #[serde(deserialize_with = "compat_deserialize_indexes_hnsw")]
     Hnsw(BTreeMap<String, HnswConfig>),
+}
+
+/// Value deserializer for `Indexes::Hnsw`. Keeps compatability with previous storage format.
+fn compat_deserialize_indexes_hnsw<'de, D>(d: D) -> Result<BTreeMap<String, HnswConfig>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Compat {
+        Current(BTreeMap<String, HnswConfig>), // > 1.1.0
+        Old(HnswConfig),                       // <=1.1.0
+    }
+    match Compat::deserialize(d)? {
+        Compat::Current(configs) => Ok(configs),
+        Compat::Old(config) => Ok([("".into(), config)].into()),
+    }
 }
 
 /// Config of HNSW index
