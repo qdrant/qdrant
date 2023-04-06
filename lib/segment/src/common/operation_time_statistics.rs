@@ -37,7 +37,7 @@ pub struct OperationDurationStatistics {
         skip_serializing_if = "Option::is_none"
     )]
     #[serde(default)]
-    pub last_queried: Option<DateTime<Utc>>,
+    pub last_responded: Option<DateTime<Utc>>,
 }
 
 pub struct OperationDurationsAggregator {
@@ -62,7 +62,7 @@ impl Anonymize for OperationDurationStatistics {
         Self {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
-            last_queried: self.last_queried.anonymize(),
+            last_responded: self.last_responded.anonymize(),
             ..*self
         }
     }
@@ -91,7 +91,7 @@ impl std::ops::Add for OperationDurationStatistics {
                 other.max_duration_micros,
                 |a, b| a > b,
             ),
-            last_queried: std::cmp::max(self.last_queried, other.last_queried),
+            last_responded: std::cmp::max(self.last_responded, other.last_responded),
         }
     }
 }
@@ -226,7 +226,7 @@ impl OperationDurationsAggregator {
             },
             min_duration_micros: self.min_value,
             max_duration_micros: self.max_value,
-            last_queried: self.last_request_time,
+            last_responded: self.last_request_time,
         }
     }
 
