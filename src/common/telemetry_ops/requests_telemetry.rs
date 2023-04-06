@@ -13,13 +13,15 @@ pub type HttpStatusCode = u16;
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    // #[serde(skip_serializing_if = "HashMap::is_empty")]
+    // TODO: Refactor this as an Option
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    // #[serde(skip_serializing_if = "HashMap::is_empty")] 
+    // TODO: Refactor this as an Option
     pub responses: HashMap<String, OperationDurationStatistics>,
 }
 
