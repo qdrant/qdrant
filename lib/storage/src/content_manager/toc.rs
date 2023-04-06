@@ -276,8 +276,8 @@ impl TableOfContent {
             )));
         }
 
-        if let Some(init_from_) = &init_from {
-            self.check_collections_compatibility(&vectors, &init_from_.collection)
+        if let Some(init_from) = &init_from {
+            self.check_collections_compatibility(&vectors, &init_from.collection)
                 .await?;
         }
 

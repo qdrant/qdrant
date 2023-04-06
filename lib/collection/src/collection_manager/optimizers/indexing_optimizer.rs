@@ -86,7 +86,7 @@ impl IndexingOptimizer {
                 let segment_config = read_segment.config();
 
                 let is_vector_indexed = match segment_config.index {
-                    Indexes::Plain { .. } => false,
+                    Indexes::Plain {} => false,
                     Indexes::Hnsw(_) => true,
                 };
 
@@ -139,7 +139,7 @@ impl IndexingOptimizer {
 
                 // Apply indexing to plain segments which have grown too big
                 let is_vector_indexed = match segment_config.index {
-                    Indexes::Plain { .. } => false,
+                    Indexes::Plain {} => false,
                     Indexes::Hnsw(_) => true,
                 };
 
