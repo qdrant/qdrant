@@ -194,19 +194,26 @@ impl ShardReplicaSet {
     }
 
     pub fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
-        self.replica_state
-            .read()
+        let read_lock = self.replica_state.read();
+        let peer_ids = read_lock
             .peers
             .iter()
-            .filter_map(|(peer_id, _state)| {
-                if self.peer_is_active(peer_id) {
+            .map(|(peer_id, _state)| peer_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        drop(read_lock);
+
+        peer_ids
+            .into_iter()
+            .filter_map(|peer_id| {
+                // re-acquire replica_state read lock
+                if self.peer_is_active(&peer_id) {
                     Some(peer_id)
                 } else {
                     None
                 }
             })
             .max()
-            .cloned()
     }
 
     pub async fn remote_peers(&self) -> Vec<PeerId> {
