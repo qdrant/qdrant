@@ -48,7 +48,7 @@ pub struct OperationDurationsAggregator {
     timing_loops: usize,
     min_value: Option<f32>,
     max_value: Option<f32>,
-    last_request_time: Option<DateTime<Utc>>,
+    last_response_date: Option<DateTime<Utc>>,
 }
 
 pub struct ScopeDurationMeasurer {
@@ -184,7 +184,7 @@ impl OperationDurationsAggregator {
             timing_loops: 0,
             min_value: None,
             max_value: None,
-            last_request_time: Some(Utc::now()),
+            last_response_date: Some(Utc::now()),
         }))
     }
 
@@ -211,8 +211,7 @@ impl OperationDurationsAggregator {
             self.fail_count += 1;
         }
 
-        let duration = chrono::Duration::microseconds(duration.as_micros() as i64);
-        self.last_request_time = Some(Utc::now() - duration);
+        self.last_response_date = Some(Utc::now());
     }
 
     pub fn get_statistics(&self) -> OperationDurationStatistics {
@@ -226,7 +225,7 @@ impl OperationDurationsAggregator {
             },
             min_duration_micros: self.min_value,
             max_duration_micros: self.max_value,
-            last_responded: self.last_request_time,
+            last_responded: self.last_response_date,
         }
     }
 
