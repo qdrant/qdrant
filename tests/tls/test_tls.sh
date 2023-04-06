@@ -50,7 +50,7 @@ done
 printf "Client TLS connection OK\n"
 
 # Verify both nodes are in cluster
-CLUSTER_INFO=$(docker run --rm --network=tls_qdrant -v $CERT_DIR:/tls_path curlimages/curl --cacert /tls_path/cacert.pem https://node1.qdrant:6333/cluster)
+CLUSTER_INFO=$(docker run --rm --network=tls_qdrant -v $CERT_DIR:/tls_path curlimages/curl --cacert /tls_path/cacert.pem --cert /tls_path/cert.pem --key /tls_path/key.pem https://node1.qdrant:6333/cluster)
 for node in 1 2
 do
     grep -q "{\"uri\":\"https://node$node.qdrant:6335/\"}" <<< "$CLUSTER_INFO"
