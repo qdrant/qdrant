@@ -6735,7 +6735,7 @@
             "format": "float",
             "nullable": true
           },
-          "last_queried": {
+          "last_responded": {
             "type": "string",
             "format": "date-time",
             "nullable": true
