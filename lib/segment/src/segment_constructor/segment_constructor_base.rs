@@ -123,26 +123,25 @@ fn create_segment(
                 vector_storage.clone(),
                 payload_index.clone(),
             ))),
-            Indexes::Hnsw(hnsw_config) => {
-                if hnsw_config.on_disk.unwrap_or(false) {
-                    sp(VectorIndexEnum::HnswMmap(
-                        HNSWIndex::<GraphLinksMmap>::open(
-                            &vector_index_path,
-                            id_tracker.clone(),
-                            vector_storage.clone(),
-                            payload_index.clone(),
-                            hnsw_config,
-                        )?,
-                    ))
-                } else {
-                    sp(VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
+            Indexes::Hnsw(collection_hnsw_config) => {
+                let hnsw_config = vector_config.hnsw_config.unwrap_or(collection_hnsw_config);
+                sp(if hnsw_config.on_disk == Some(true) {
+                    VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
                         &vector_index_path,
                         id_tracker.clone(),
                         vector_storage.clone(),
                         payload_index.clone(),
                         hnsw_config,
-                    )?))
-                }
+                    )?)
+                } else {
+                    VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
+                        &vector_index_path,
+                        id_tracker.clone(),
+                        vector_storage.clone(),
+                        payload_index.clone(),
+                        hnsw_config,
+                    )?)
+                })
             }
         };
 
