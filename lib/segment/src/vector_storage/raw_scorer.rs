@@ -113,7 +113,9 @@ where
     }
 
     fn check_point(&self, point: PointOffsetType) -> bool {
-        point < self.points_count && !self.deleted[point as usize]
+        point < self.points_count
+            && (point as usize) < self.deleted.len()
+            && !self.deleted[point as usize]
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
