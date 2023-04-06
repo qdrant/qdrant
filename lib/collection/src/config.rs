@@ -169,7 +169,13 @@ impl CollectionParams {
         }
     }
 
-    pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
+    /// Get all vector params as `VectorDataConfig`
+    ///
+    /// The vector specific HNSW configuration will be based upon the given `collection_hnsw`.
+    pub fn get_all_vector_params(
+        &self,
+        collection_hnsw: &HnswConfig,
+    ) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         Ok(self
             .vectors
             .params_iter()
@@ -181,7 +187,7 @@ impl CollectionParams {
                         distance: params.distance,
                         hnsw_config: params
                             .hnsw_config
-                            .and_then(|c| c.update(&HnswConfig::default()).ok()),
+                            .and_then(|c| c.update(collection_hnsw).ok()),
                     },
                 )
             })
