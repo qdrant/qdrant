@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -52,7 +52,7 @@ pub trait SegmentOptimizer {
     fn collection_params(&self) -> CollectionParams;
 
     /// Get vector specific HNSW configs by vector name
-    fn hnsw_configs(&self) -> HashMap<String, HnswConfig>;
+    fn hnsw_configs(&self) -> BTreeMap<String, HnswConfig>;
 
     /// Get quantization config
     fn quantization_config(&self) -> Option<QuantizationConfig>;

@@ -305,7 +305,7 @@ pub enum Indexes {
     /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
     /// but require additional space to store index and additional time to build it.
     /// Holds an HNSW config for each named vector, or for `""` if there's just one.
-    Hnsw(HashMap<String, HnswConfig>),
+    Hnsw(BTreeMap<String, HnswConfig>),
 }
 
 /// Config of HNSW index

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -71,7 +71,7 @@ impl SegmentOptimizer for MergeOptimizer {
         self.collection_params.clone()
     }
 
-    fn hnsw_configs(&self) -> HashMap<String, HnswConfig> {
+    fn hnsw_configs(&self) -> BTreeMap<String, HnswConfig> {
         self.collection_params
             .vectors
             .hnsw_configs(&self.hnsw_config)

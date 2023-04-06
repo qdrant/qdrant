@@ -717,7 +717,7 @@ impl VectorsConfig {
     /// Get vector specific HNSW configurations.
     ///
     /// The collection HNSW configuration must be provided, which is used as base.
-    pub fn hnsw_configs(&self, collection_hnsw: &HnswConfig) -> HashMap<String, HnswConfig> {
+    pub fn hnsw_configs(&self, collection_hnsw: &HnswConfig) -> BTreeMap<String, HnswConfig> {
         self.params_iter()
             .map(|(n, p)| {
                 (
