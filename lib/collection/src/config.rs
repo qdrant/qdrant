@@ -170,10 +170,12 @@ impl CollectionParams {
     }
 
     pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
-        Ok(match &self.vectors {
-            VectorsConfig::Single(params) => {
-                HashMap::from([(
-                    DEFAULT_VECTOR_NAME.to_string(),
+        Ok(self
+            .vectors
+            .params_iter()
+            .map(|(name, params)| {
+                (
+                    name.into(),
                     VectorDataConfig {
                         size: params.size.get() as usize,
                         distance: params.distance,
@@ -181,23 +183,8 @@ impl CollectionParams {
                             .hnsw_config
                             .and_then(|c| c.update(&HnswConfig::default()).ok()),
                     },
-                )])
-            }
-            VectorsConfig::Multi(ref map) => map
-                .iter()
-                .map(|(name, params)| {
-                    (
-                        name.clone(),
-                        VectorDataConfig {
-                            size: params.size.get() as usize,
-                            distance: params.distance,
-                            hnsw_config: params
-                                .hnsw_config
-                                .and_then(|c| c.update(&HnswConfig::default()).ok()),
-                        },
-                    )
-                })
-                .collect(),
-        })
+                )
+            })
+            .collect())
     }
 }
