@@ -284,6 +284,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
             let vector_data = VectorDataConfig {
                 size: state.config.vector_size,
                 distance: state.config.distance,
+                hnsw_config: None,
             };
             SegmentState {
                 version: Some(state.version),

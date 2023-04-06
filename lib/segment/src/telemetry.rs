@@ -120,6 +120,7 @@ impl Anonymize for VectorDataConfig {
         VectorDataConfig {
             size: self.size.anonymize(),
             distance: self.distance,
+            hnsw_config: None,
         }
     }
 }

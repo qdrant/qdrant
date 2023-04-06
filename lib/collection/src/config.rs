@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
+use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -169,17 +170,18 @@ impl CollectionParams {
     }
 
     pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
-        let vector_config = match &self.vectors {
+        Ok(match &self.vectors {
             VectorsConfig::Single(params) => {
-                let mut map = HashMap::new();
-                map.insert(
+                HashMap::from([(
                     DEFAULT_VECTOR_NAME.to_string(),
                     VectorDataConfig {
                         size: params.size.get() as usize,
                         distance: params.distance,
+                        hnsw_config: params
+                            .hnsw_config
+                            .and_then(|c| c.update(&HnswConfig::default()).ok()),
                     },
-                );
-                map
+                )])
             }
             VectorsConfig::Multi(ref map) => map
                 .iter()
@@ -189,11 +191,13 @@ impl CollectionParams {
                         VectorDataConfig {
                             size: params.size.get() as usize,
                             distance: params.distance,
+                            hnsw_config: params
+                                .hnsw_config
+                                .and_then(|c| c.update(&HnswConfig::default()).ok()),
                         },
                     )
                 })
                 .collect(),
-        };
-        Ok(vector_config)
+        })
     }
 }
