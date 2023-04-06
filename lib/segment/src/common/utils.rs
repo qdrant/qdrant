@@ -310,8 +310,8 @@ pub mod date_format {
     pub mod until_seconds {
         use super::*;
 
-        const FORMAT: &'static str = "%Y-%m-%d %H:%M:%S";
-        
+        const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
         pub fn serialize<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
