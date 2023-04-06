@@ -51,8 +51,8 @@ pub trait SegmentOptimizer {
     /// Get basic segment config
     fn collection_params(&self) -> CollectionParams;
 
-    /// Get HNSW config
-    fn hnsw_config(&self) -> HnswConfig;
+    /// Get vector specific HNSW configs by vector name
+    fn hnsw_configs(&self) -> HashMap<String, HnswConfig>;
 
     /// Get quantization config
     fn quantization_config(&self) -> Option<QuantizationConfig>;
@@ -123,7 +123,7 @@ pub trait SegmentOptimizer {
         let optimized_config = SegmentConfig {
             vector_data: collection_params.get_all_vector_params()?,
             index: if is_indexed {
-                Indexes::Hnsw(self.hnsw_config())
+                Indexes::Hnsw(self.hnsw_configs())
             } else {
                 Indexes::Plain {}
             },

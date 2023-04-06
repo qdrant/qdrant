@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -225,8 +225,10 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.collection_params.clone()
     }
 
-    fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config
+    fn hnsw_configs(&self) -> HashMap<String, HnswConfig> {
+        self.collection_params
+            .vectors
+            .hnsw_configs(&self.hnsw_config)
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {

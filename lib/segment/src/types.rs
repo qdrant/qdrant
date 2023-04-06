@@ -295,7 +295,7 @@ pub struct SearchParams {
 }
 
 /// Vector index configuration of the segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
@@ -304,7 +304,8 @@ pub enum Indexes {
     Plain {},
     /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
     /// but require additional space to store index and additional time to build it.
-    Hnsw(HnswConfig),
+    /// Holds an HNSW config for each named vector, or for `""` if there's just one.
+    Hnsw(HashMap<String, HnswConfig>),
 }
 
 /// Config of HNSW index

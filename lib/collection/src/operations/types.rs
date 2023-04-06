@@ -13,8 +13,8 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType,
-    SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, HnswConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
+    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
+use super::config_diff::DiffConfig;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
@@ -700,6 +701,34 @@ impl Anonymize for VectorParams {
 pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
+}
+
+impl VectorsConfig {
+    /// Iterate over the named vector parameters.
+    ///
+    /// If this is `Single` it iterates over a single parameter having an empty name.
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParams)> + 'a> {
+        match self {
+            VectorsConfig::Single(p) => Box::new(std::iter::once(("", p))),
+            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+        }
+    }
+
+    /// Get vector specific HNSW configurations.
+    ///
+    /// The collection HNSW configuration must be provided, which is used as base.
+    pub fn hnsw_configs(&self, collection_hnsw: &HnswConfig) -> HashMap<String, HnswConfig> {
+        self.params_iter()
+            .map(|(n, p)| {
+                (
+                    n.into(),
+                    p.hnsw_config
+                        .and_then(|c| c.update(collection_hnsw).ok())
+                        .unwrap_or(*collection_hnsw),
+                )
+            })
+            .collect()
+    }
 }
 
 impl Anonymize for VectorsConfig {

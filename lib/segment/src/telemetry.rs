@@ -107,7 +107,7 @@ impl Anonymize for SegmentConfig {
     fn anonymize(&self) -> Self {
         SegmentConfig {
             vector_data: self.vector_data.anonymize(),
-            index: self.index,
+            index: self.index.clone(),
             storage_type: self.storage_type,
             payload_storage_type: self.payload_storage_type,
             quantization_config: self.quantization_config.clone(),

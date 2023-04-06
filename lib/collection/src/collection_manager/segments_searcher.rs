@@ -10,7 +10,7 @@ use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::OperationError;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoreType, ScoredPoint, SearchParams, SegmentConfig,
-    SeqNumberType, WithPayload, WithPayloadInterface, WithVector,
+    SeqNumberType, WithPayload, WithPayloadInterface, WithVector, DEFAULT_HNSW_EF_CONSTRUCT,
 };
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
@@ -468,7 +468,14 @@ async fn search_in_segment(
 fn config_hnsw_ef_construct(config: SegmentConfig) -> Option<usize> {
     match config.index {
         Indexes::Plain { .. } => None,
-        Indexes::Hnsw(config) => Some(config.ef_construct),
+        Indexes::Hnsw(config) => Some(
+            // Grab ef_construct from any config until we rewrite this to support named vectors
+            config
+                .values()
+                .map(|c| c.ef_construct)
+                .next()
+                .unwrap_or(DEFAULT_HNSW_EF_CONSTRUCT),
+        ),
     }
 }
 
