@@ -28,7 +28,7 @@ def validate_schema(data, operation_schema: OpenApi30, raw_definitions):
         nullable_name=operation_schema.nullable_name,
         is_response_schema=False
     )
-    jsonschema.validate(data, raw_definitions, cls=jsonschema.Draft4Validator, resolver=resolver)
+    jsonschema.validate(data, raw_definitions, cls=jsonschema.Draft7Validator, resolver=resolver)
 
 
 def request_with_validation(

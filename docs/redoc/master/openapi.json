@@ -3855,13 +3855,14 @@
             "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "maximum": 10000,
+            "minimum": 4
           },
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 4
           },
           "full_scan_threshold": {
             "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
@@ -3904,16 +3905,18 @@
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "type": "number",
-            "format": "double"
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
           },
           "vacuum_min_vector_number": {
             "description": "The minimal number of vectors in a segment, required to perform segment optimization",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 100
           },
           "default_segment_number": {
-            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads If `default_segment_number = 0`, will be automatically selected by the number of available CPUs",
+            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. If `default_segment_number = 0`, will be automatically selected by the number of available CPUs.",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -3931,14 +3934,14 @@
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1000,
             "nullable": true
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1000
           },
           "flush_interval_sec": {
             "description": "Minimum interval between forced flushes.",
@@ -3965,7 +3968,7 @@
             "description": "Size of a single WAL segment in MB",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           },
           "wal_segments_ahead": {
             "description": "Number of WAL segments to create ahead of actually used ones",
@@ -4006,6 +4009,8 @@
             "description": "Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values",
             "type": "number",
             "format": "float",
+            "maximum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "always_ram": {
@@ -5053,7 +5058,7 @@
             "description": "Page size. Default: 10",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "filter": {
@@ -5216,21 +5221,22 @@
             "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "maximum": 10000,
+            "minimum": 4,
             "nullable": true
           },
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 4,
             "nullable": true
           },
           "full_scan_threshold": {
             "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1000,
             "nullable": true
           },
           "max_indexing_threads": {
@@ -5238,7 +5244,7 @@
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1000,
             "nullable": true
           },
           "on_disk": {
@@ -5310,14 +5316,14 @@
             "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1000,
             "nullable": true
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1000,
             "nullable": true
           },
           "flush_interval_sec": {
@@ -5331,7 +5337,7 @@
             "description": "Maximum available threads for optimization workers",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           }
         }
