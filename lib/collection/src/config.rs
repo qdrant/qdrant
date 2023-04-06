@@ -150,23 +150,16 @@ impl CollectionConfig {
 
 impl CollectionParams {
     pub fn get_vector_params(&self, vector_name: &str) -> CollectionResult<VectorParams> {
-        if vector_name == DEFAULT_VECTOR_NAME {
-            self.vectors
-                .get_params(vector_name)
-                .cloned()
-                .ok_or_else(|| CollectionError::BadInput {
-                    description: "Default vector params are not specified in config".to_string(),
-                })
-        } else {
-            self.vectors
-                .get_params(vector_name)
-                .cloned()
-                .ok_or_else(|| CollectionError::BadInput {
-                    description: format!(
-                        "vector params for {vector_name} are not specified in config"
-                    ),
-                })
-        }
+        self.vectors
+            .get_params(vector_name)
+            .cloned()
+            .ok_or_else(|| CollectionError::BadInput {
+                description: if vector_name == DEFAULT_VECTOR_NAME {
+                    "Default vector params are not specified in config".into()
+                } else {
+                    format!("Vector params for {vector_name} are not specified in config")
+                },
+            })
     }
 
     /// Get all vector params as `VectorDataConfig`

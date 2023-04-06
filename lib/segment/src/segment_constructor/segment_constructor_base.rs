@@ -118,7 +118,7 @@ fn create_segment(
         }
 
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match config.index {
-            Indexes::Plain { .. } => sp(VectorIndexEnum::Plain(PlainIndex::new(
+            Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
                 id_tracker.clone(),
                 vector_storage.clone(),
                 payload_index.clone(),
@@ -155,7 +155,7 @@ fn create_segment(
     }
 
     let segment_type = match config.index {
-        Indexes::Plain { .. } => SegmentType::Plain,
+        Indexes::Plain {} => SegmentType::Plain,
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
 

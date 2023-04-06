@@ -116,9 +116,8 @@ impl ConsensusOpWal {
                         )));
                     }
                     log::debug!(
-                        "Truncate conflicting WAL entries from index {}, raft: {}",
+                        "Truncate conflicting WAL entries from index {}, raft: {index}",
                         index - offset,
-                        index
                     );
                     self.0.truncate(index - offset)?;
                 } // else:

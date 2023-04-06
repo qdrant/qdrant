@@ -13,24 +13,19 @@ use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::OptimizersConfig;
 
 // Structures for partial update of collection params
-// ToDo: Make auto-generated somehow...
+// TODO: make auto-generated somehow...
 
 pub trait DiffConfig<T: DeserializeOwned + Serialize> {
     fn update(self, config: &T) -> CollectionResult<T>
     where
-        Self: Sized,
-        Self: Serialize,
-        Self: DeserializeOwned,
-        Self: Merge,
+        Self: Sized + Serialize + DeserializeOwned + Merge,
     {
         update_config(config, self)
     }
 
     fn from_full(full: &T) -> CollectionResult<Self>
     where
-        Self: Sized,
-        Self: Serialize,
-        Self: DeserializeOwned,
+        Self: Sized + Serialize + DeserializeOwned,
     {
         from_full(full)
     }
@@ -197,7 +192,7 @@ pub fn from_full<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serializ
     Ok(res)
 }
 
-/// Merge first level of json values, if diff values present explicitly
+/// Merge first level of JSON values, if diff values present explicitly
 ///
 /// Example:
 ///
@@ -224,7 +219,7 @@ fn merge_level_0(base: &mut Value, diff: Value) {
 
 /// Hacky way to update configuration structures with diff-updates.
 /// Intended to only be used in non critical for speed places.
-/// ToDo: Replace with proc macro
+/// TODO: replace with proc macro
 pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serialize + Merge>(
     config: &T,
     update: Y,

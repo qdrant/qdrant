@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -128,7 +127,7 @@ impl SegmentsSearcher {
                         && retrieved_points < required_limit
                         && segment_lowest_score >= lowest_batch_score
                     {
-                        log::debug!("Search to re-run without sampling on segment_id: {} segment_lowest_score: {}, lowest_batch_score: {}, retrieved_points: {}, required_limit: {}", segment_id, segment_lowest_score, lowest_batch_score, retrieved_points, required_limit);
+                        log::debug!("Search to re-run without sampling on segment_id: {segment_id} segment_lowest_score: {segment_lowest_score}, lowest_batch_score: {lowest_batch_score}, retrieved_points: {retrieved_points}, required_limit: {required_limit}");
                         // It is possible, that current segment can have better results than
                         // the lowest score in the batch. In that case, we need to re-run the search
                         // without sampling on that segment.
@@ -330,21 +329,9 @@ fn sampling_limit(
     let poisson_sampling =
         find_search_sampling_over_point_distribution(limit as f64, segment_probability)
             .unwrap_or(limit);
-    let res = if poisson_sampling > limit {
-        // sampling cannot be greater than limit
-        return limit;
-    } else {
-        // sampling should not be less than ef_limit
-        max(poisson_sampling, ef_limit.unwrap_or(0))
-    };
-    log::trace!(
-        "sampling: {}, poisson: {} segment_probability: {}, segment_points: {}, total_points: {}",
-        res,
-        poisson_sampling,
-        segment_probability,
-        segment_points,
-        total_points
-    );
+    // Sampling cannot be greater tham limit, cannot be less than ef_limit
+    let res = poisson_sampling.max(ef_limit.unwrap_or(0)).min(limit);
+    log::trace!("sampling: {res}, poisson: {poisson_sampling} segment_probability: {segment_probability}, segment_points: {segment_points}, total_points: {total_points}");
     res
 }
 
@@ -467,7 +454,8 @@ async fn search_in_segment(
 /// None if plain index, Some if hnsw.
 fn config_hnsw_ef_construct(config: SegmentConfig) -> Option<usize> {
     match config.index {
-        Indexes::Plain { .. } => None,
+        Indexes::Plain {} => None,
+        // TODO: vectors can have their own HNSW parameters; should this be named vector aware?
         Indexes::Hnsw(config) => Some(config.ef_construct),
     }
 }
