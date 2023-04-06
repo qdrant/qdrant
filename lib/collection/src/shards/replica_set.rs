@@ -195,24 +195,12 @@ impl ShardReplicaSet {
 
     pub fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
         let read_lock = self.replica_state.read();
-        let peer_ids = read_lock
-            .peers
-            .iter()
-            .map(|(peer_id, _state)| peer_id)
-            .cloned()
-            .collect::<Vec<_>>();
+        let peer_ids = read_lock.peers.keys().cloned().collect::<Vec<_>>();
         drop(read_lock);
 
         peer_ids
             .into_iter()
-            .filter_map(|peer_id| {
-                // re-acquire replica_state read lock
-                if self.peer_is_active(&peer_id) {
-                    Some(peer_id)
-                } else {
-                    None
-                }
-            })
+            .filter(|peer_id| self.peer_is_active(peer_id)) // re-acquire replica_state read lock
             .max()
     }
 
