@@ -114,7 +114,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(
             rand::random::<u64>() % 100 + 1,
         ))
-            .await;
+        .await;
         item.item()
             .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
         drop(item);
