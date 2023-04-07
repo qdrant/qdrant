@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use patricia_tree::PatriciaMap;
 use serde::{Deserialize, Serialize};
 
 use super::postings_iterator::intersect_vec_iterator;
@@ -38,7 +39,7 @@ impl ParsedQuery {
 #[derive(Default)]
 pub struct InvertedIndex {
     postings: Vec<Option<PostingList>>,
-    pub vocab: HashMap<String, usize>,
+    pub vocab: PatriciaMap<usize>,
     vocab_count: usize,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
@@ -53,11 +54,16 @@ impl InvertedIndex {
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab
-            let vocab_idx = *self.vocab.entry(token).or_insert_with(|| {
-                let len = self.vocab_count;
-                self.vocab_count += 1;
-                len
-            });
+            //
+            let vocab_idx = match self.vocab.get(&token) {
+                Some(&idx) => idx,
+                None => {
+                    let len = self.vocab_count;
+                    self.vocab_count += 1;
+                    self.vocab.insert(token, len);
+                    len
+                }
+            };
             document_tokens.push(vocab_idx);
         }
 
@@ -111,10 +117,11 @@ impl InvertedIndex {
                 if vec.len() == 1 {
                     // only document in posting
                     *posting = None;
-                } else if let Err(doc_idx) = vec.binary_search(&idx) {
-                    vec.remove(doc_idx);
                 } else {
-                    panic!("trying to remove document from posting while it doesn't exist");
+                    // unwrap safety: document should exist in the posting
+                    // since it contains the token and has been indexed
+                    let doc_idx = vec.binary_search(&idx).unwrap();
+                    vec.remove(doc_idx);
                 }
             }
         }
@@ -213,13 +220,16 @@ impl InvertedIndex {
                 .filter(move |(_token, &posting_idx)| {
                     self.postings[posting_idx].as_ref().unwrap().len() >= threshold
                 })
-                .map(|(token, &posting_idx)| (token, self.postings[posting_idx].as_ref().unwrap()))
+                .map(|(token, &posting_idx)| {
+                    (
+                        std::string::String::from_utf8(token).expect("token is not valid utf-8"),
+                        self.postings[posting_idx].as_ref().unwrap(),
+                    )
+                })
                 .map(move |(token, posting)| PayloadBlockCondition {
                     condition: FieldCondition {
                         key: key.clone(),
-                        r#match: Some(Match::Text(MatchText {
-                            text: token.to_owned(),
-                        })),
+                        r#match: Some(Match::Text(MatchText { text: token })),
                         range: None,
                         geo_bounding_box: None,
                         geo_radius: None,
