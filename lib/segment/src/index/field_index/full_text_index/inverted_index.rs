@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::postings_iterator::intersect_vec_iterator;
@@ -11,7 +10,7 @@ type PostingList = Vec<PointOffsetType>;
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Document {
-    pub tokens: Vec<String>,
+    pub tokens: Vec<usize>,
 }
 
 impl Document {
@@ -21,44 +20,69 @@ impl Document {
 }
 
 pub struct ParsedQuery {
-    pub tokens: HashSet<String>,
+    pub tokens: Vec<Option<usize>>,
 }
 
 impl ParsedQuery {
     pub fn check_match(&self, document: &Document) -> bool {
+        if self.tokens.contains(&None) {
+            return false;
+        }
         // Check that all tokens are in document
         self.tokens
             .iter()
-            .all(|query_token| document.tokens.contains(query_token))
+            .all(|query_token| document.tokens.binary_search(&query_token.unwrap()).is_ok())
     }
 }
 
+#[derive(Default)]
 pub struct InvertedIndex {
-    postings: HashMap<String, PostingList>,
+    postings: Vec<Option<PostingList>>,
+    pub vocab: HashMap<String, usize>,
+    vocab_count: usize,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
 
 impl InvertedIndex {
     pub fn new() -> InvertedIndex {
-        InvertedIndex {
-            postings: HashMap::new(),
-            point_to_docs: Vec::new(),
-            points_count: 0,
+        Default::default()
+    }
+
+    pub fn document_from_tokens(&mut self, tokens: HashSet<String>) -> Document {
+        let mut document_tokens = vec![];
+        for token in tokens {
+            // check if in vocab
+            let vocab_idx = *self.vocab.entry(token).or_insert_with(|| {
+                let len = self.vocab_count;
+                self.vocab_count += 1;
+                len
+            });
+            document_tokens.push(vocab_idx);
+        }
+
+        Document {
+            tokens: document_tokens,
         }
     }
 
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
-        for token in &document.tokens {
-            self.postings
-                .entry(token.to_string())
-                .and_modify(|v| {
-                    if !v.iter().contains(&idx) {
-                        v.push(idx);
-                        v.sort();
+        for &token_idx in &document.tokens {
+            if self.postings.len() <= token_idx {
+                self.postings.resize(token_idx + 1, Default::default());
+            }
+            let posting = self
+                .postings
+                .get_mut(token_idx)
+                .expect("posting must exist even if with None");
+            match posting {
+                None => *posting = Some(vec![idx]),
+                Some(vec) => {
+                    if let Err(sorted_idx) = vec.binary_search(&idx) {
+                        vec.insert(sorted_idx, idx)
                     }
-                })
-                .or_insert_with(|| vec![idx]);
+                }
+            }
         }
         self.points_count += 1;
         if self.point_to_docs.len() <= idx as usize {
@@ -82,12 +106,16 @@ impl InvertedIndex {
         self.points_count -= 1;
 
         for removed_token in &removed_doc.tokens {
-            let posting = self.postings.get_mut(removed_token).unwrap();
-            let doc_idx = posting.iter().position(|doc_id| doc_id == &idx).unwrap();
-            posting.remove(doc_idx);
-
-            if posting.is_empty() {
-                self.postings.remove(removed_token);
+            let posting = self.postings.get_mut(*removed_token).unwrap();
+            if let Some(vec) = posting {
+                if vec.len() == 1 {
+                    // only document in posting
+                    *posting = None;
+                } else if let Err(doc_idx) = vec.binary_search(&idx) {
+                    vec.remove(doc_idx);
+                } else {
+                    panic!("trying to remove document from posting while it doesn't exist");
+                }
             }
         }
         Some(removed_doc)
@@ -97,7 +125,10 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| self.postings.get(token))
+            .map(|&vocab_idx| match vocab_idx {
+                None => None,
+                Some(idx) => self.postings.get(idx).unwrap().as_ref(),
+            })
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -119,7 +150,10 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| self.postings.get(token))
+            .map(|&vocab_idx| match vocab_idx {
+                None => None,
+                Some(idx) => self.postings.get(idx).unwrap().as_ref(),
+            })
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -173,9 +207,13 @@ impl InvertedIndex {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
         Box::new(
-            self.postings
+            self.vocab
                 .iter()
-                .filter(move |(_token, posting)| posting.len() >= threshold)
+                .filter(|(_token, &posting_idx)| self.postings[posting_idx].is_some())
+                .filter(move |(_token, &posting_idx)| {
+                    self.postings[posting_idx].as_ref().unwrap().len() >= threshold
+                })
+                .map(|(token, &posting_idx)| (token, self.postings[posting_idx].as_ref().unwrap()))
                 .map(move |(token, posting)| PayloadBlockCondition {
                     condition: FieldCondition {
                         key: key.clone(),

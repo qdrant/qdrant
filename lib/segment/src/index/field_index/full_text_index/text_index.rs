@@ -81,9 +81,9 @@ impl FullTextIndex {
     }
 
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
-        let mut tokens = vec![];
+        let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, &self.config, |token| {
-            tokens.push(token.to_owned());
+            tokens.insert(self.inverted_index.vocab.get(token).copied());
         });
         ParsedQuery {
             tokens: tokens.into_iter().collect(),
@@ -105,10 +105,7 @@ impl ValueIndexer<String> for FullTextIndex {
             });
         }
 
-        let document = Document {
-            tokens: tokens.into_iter().collect(),
-        };
-
+        let document = self.inverted_index.document_from_tokens(tokens);
         self.inverted_index.index_document(idx, document);
 
         let db_idx = Self::store_key(&idx);
