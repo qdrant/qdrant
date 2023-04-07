@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::iter;
 use std::sync::Arc;
 
 use futures::future::try_join_all;
@@ -391,7 +392,7 @@ async fn search_in_segment(
                     let ef_limit = prev_params
                         .params
                         .and_then(|p| p.hnsw_ef)
-                        .or_else(|| config_hnsw_ef_construct(read_segment.config()));
+                        .or_else(|| config_max_hnsw_ef_construct(read_segment.config()));
                     sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
                 } else {
                     prev_params.top
@@ -428,7 +429,7 @@ async fn search_in_segment(
             let ef_limit = prev_params
                 .params
                 .and_then(|p| p.hnsw_ef)
-                .or_else(|| config_hnsw_ef_construct(read_segment.config()));
+                .or_else(|| config_max_hnsw_ef_construct(read_segment.config()));
             sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
         } else {
             prev_params.top
@@ -451,12 +452,19 @@ async fn search_in_segment(
     Ok((result, further_results))
 }
 
-/// None if plain index, Some if hnsw.
-fn config_hnsw_ef_construct(config: SegmentConfig) -> Option<usize> {
+/// Find the maximum segment or vector specific HNSW ef_construct in this config
+///
+/// If the index is `Plain`, `None` is returned.
+fn config_max_hnsw_ef_construct(config: SegmentConfig) -> Option<usize> {
     match config.index {
         Indexes::Plain {} => None,
-        // TODO: vectors can have their own HNSW parameters; should this be named vector aware?
-        Indexes::Hnsw(config) => Some(config.ef_construct),
+        Indexes::Hnsw(hnsw_config) => config
+            .vector_data
+            .values()
+            .flat_map(|v| v.hnsw_config)
+            .map(|c| c.ef_construct)
+            .chain(iter::once(hnsw_config.ef_construct))
+            .max(),
     }
 }
 
