@@ -21,8 +21,6 @@ const CHANNEL_TTL: Duration = Duration::from_secs(5);
 
 struct ChannelPool {
     channels: Vec<Channel>,
-    /// Channel for fast connectivity test
-    fast_channel: Channel,
     init_at: Instant,
 }
 
@@ -45,17 +43,9 @@ impl ChannelPool {
             .await?;
             channels.push(channel);
         }
-        let fast_channel = TransportChannelPool::make_channel(
-            SMART_CONNECT_TIMEOUT,
-            connection_timeout,
-            uri,
-            tls_config,
-        )
-        .await?;
 
         Ok(Self {
             channels,
-            fast_channel,
             init_at: Instant::now(),
         })
     }
@@ -164,11 +154,6 @@ impl TransportChannelPool {
         guard.get(uri).map(|channels| channels.choose())
     }
 
-    async fn get_fast_pooled_channel(&self, uri: &Uri) -> Option<Channel> {
-        let guard = self.uri_to_pool.read().await;
-        guard.get(uri).map(|channels| channels.fast_channel.clone())
-    }
-
     async fn get_or_create_pooled_channel(&self, uri: &Uri) -> Result<Channel, TonicError> {
         match self.get_pooled_channel(uri).await {
             None => self.init_pool_for_uri(uri.clone()).await,
@@ -190,7 +175,7 @@ impl TransportChannelPool {
     async fn check_connectability(&self, uri: &Uri) -> Status {
         loop {
             tokio::time::sleep(SMART_CONNECT_TIMEOUT).await;
-            let channel = self.get_fast_pooled_channel(uri).await;
+            let channel = self.get_pooled_channel(uri).await;
             match channel {
                 None => return Status::unavailable("Channel dropped"),
                 Some(channel) => {
