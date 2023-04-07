@@ -3,8 +3,6 @@ use std::marker::PhantomData;
 use std::path::Path;
 use std::result;
 use std::thread::JoinHandle;
-
-use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
