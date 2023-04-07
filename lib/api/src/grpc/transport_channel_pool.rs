@@ -169,8 +169,7 @@ impl TransportChannelPool {
                Err(res)
             }
             _res = tokio::time::sleep(max_timeout) => {
-                log::debug!("Timeout reached for uri: {}", uri);
-                Err(Status::deadline_exceeded("Timeout exceeded"))
+                Err(Status::deadline_exceeded(format!("Timeout {}ms reached for uri: {}", max_timeout.as_millis(), uri)))
             }
         };
 
