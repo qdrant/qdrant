@@ -3979,22 +3979,20 @@
         }
       },
       "QuantizationConfig": {
-        "anyOf": [
+        "oneOf": [
           {
-            "$ref": "#/components/schemas/ScalarQuantization"
+            "type": "object",
+            "required": [
+              "scalar"
+            ],
+            "properties": {
+              "scalar": {
+                "$ref": "#/components/schemas/ScalarQuantizationConfig"
+              }
+            },
+            "additionalProperties": false
           }
         ]
-      },
-      "ScalarQuantization": {
-        "type": "object",
-        "required": [
-          "scalar"
-        ],
-        "properties": {
-          "scalar": {
-            "$ref": "#/components/schemas/ScalarQuantizationConfig"
-          }
-        }
       },
       "ScalarQuantizationConfig": {
         "type": "object",
