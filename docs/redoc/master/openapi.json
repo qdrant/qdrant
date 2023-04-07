@@ -3830,6 +3830,18 @@
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"
+          },
+          "hnsw_config": {
+            "description": "Custom params for HNSW index. If none - values from collection configuration are used.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -3841,6 +3853,55 @@
           "Euclid",
           "Dot"
         ]
+      },
+      "HnswConfigDiff": {
+        "type": "object",
+        "properties": {
+          "m": {
+            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
+            "type": "integer",
+            "format": "uint",
+            "maximum": 10000,
+            "minimum": 4,
+            "nullable": true
+          },
+          "ef_construct": {
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 4,
+            "nullable": true
+          },
+          "full_scan_threshold": {
+            "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1000,
+            "nullable": true
+          },
+          "max_indexing_threads": {
+            "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1000,
+            "nullable": true
+          },
+          "on_disk": {
+            "description": "Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "default": null,
+            "type": "boolean",
+            "nullable": true
+          },
+          "payload_m": {
+            "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
@@ -5214,55 +5275,6 @@
           }
         }
       },
-      "HnswConfigDiff": {
-        "type": "object",
-        "properties": {
-          "m": {
-            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
-            "type": "integer",
-            "format": "uint",
-            "maximum": 10000,
-            "minimum": 4,
-            "nullable": true
-          },
-          "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 4,
-            "nullable": true
-          },
-          "full_scan_threshold": {
-            "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1000,
-            "nullable": true
-          },
-          "max_indexing_threads": {
-            "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
-            "default": null,
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1000,
-            "nullable": true
-          },
-          "on_disk": {
-            "description": "Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
-            "default": null,
-            "type": "boolean",
-            "nullable": true
-          },
-          "payload_m": {
-            "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
-            "default": null,
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          }
-        }
-      },
       "WalConfigDiff": {
         "type": "object",
         "properties": {
@@ -6556,6 +6568,18 @@
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"
+          },
+          "hnsw_config": {
+            "description": "Vector specific HNSW config that overrides collection config",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
