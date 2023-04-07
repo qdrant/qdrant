@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
+use std::hash::{Hash, Hasher};
 use std::mem::size_of;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -362,12 +363,6 @@ pub struct ScalarQuantizationConfig {
     pub always_ram: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
-pub struct ScalarQuantization {
-    #[validate]
-    pub scalar: ScalarQuantizationConfig,
-}
-
 impl PartialEq for ScalarQuantizationConfig {
     fn eq(&self, other: &Self) -> bool {
         self.quantile == other.quantile
@@ -376,8 +371,8 @@ impl PartialEq for ScalarQuantizationConfig {
     }
 }
 
-impl std::hash::Hash for ScalarQuantizationConfig {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl Hash for ScalarQuantizationConfig {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.always_ram.hash(state);
         self.r#type.hash(state);
     }
@@ -387,9 +382,8 @@ impl Eq for ScalarQuantizationConfig {}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
-#[serde(untagged)]
 pub enum QuantizationConfig {
-    Scalar(ScalarQuantization),
+    Scalar(ScalarQuantizationConfig),
 }
 
 impl Validate for QuantizationConfig {
@@ -402,7 +396,7 @@ impl Validate for QuantizationConfig {
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {
     fn from(config: ScalarQuantizationConfig) -> Self {
-        QuantizationConfig::Scalar(ScalarQuantization { scalar: config })
+        QuantizationConfig::Scalar(config)
     }
 }
 

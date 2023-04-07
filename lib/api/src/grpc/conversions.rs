@@ -499,9 +499,7 @@ impl TryFrom<PointId> for segment::types::PointIdType {
 impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
-            segment::types::QuantizationConfig::Scalar(segment::types::ScalarQuantization {
-                scalar: config,
-            }) => Self {
+            segment::types::QuantizationConfig::Scalar(config) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Scalar(
                     ScalarQuantization {
                         r#type: match config.r#type {

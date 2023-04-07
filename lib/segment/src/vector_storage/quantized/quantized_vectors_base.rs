@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig};
+use crate::types::{Distance, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::scalar_quantized::ScalarQuantizedVectors;
 use crate::vector_storage::quantized::scalar_quantized_mmap_storage::{
@@ -117,9 +117,7 @@ impl QuantizedVectorsStorage {
         let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
         let quantized_storage = match quantization_config {
-            QuantizationConfig::Scalar(ScalarQuantization {
-                scalar: scalar_config,
-            }) => {
+            QuantizationConfig::Scalar(scalar_config) => {
                 let in_ram =
                     Self::check_use_ram_quantization_storage(scalar_config, on_disk_vector_storage);
                 if in_ram {
@@ -170,9 +168,7 @@ impl QuantizedVectorsStorage {
     ) -> OperationResult<Self> {
         let config: QuantizedVectorsConfig = read_json(&data_path.join(QUANTIZED_CONFIG_PATH))?;
         let quantized_store = match &config.quantization_config {
-            QuantizationConfig::Scalar(ScalarQuantization {
-                scalar: scalar_u8_config,
-            }) => {
+            QuantizationConfig::Scalar(scalar_u8_config) => {
                 let is_ram = Self::check_use_ram_quantization_storage(
                     scalar_u8_config,
                     on_disk_vector_storage,
