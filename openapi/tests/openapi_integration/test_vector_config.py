@@ -39,16 +39,34 @@ def multivec_collection_setup(collection_name='test_collection', on_disk_payload
                     "distance": "Dot",
                     "hnsw_config": {
                         "ef_construct": 100
+                    },
+                    "quantization_config": {
+                        "scalar": {
+                            "type": "int8",
+                            "quantile": 0.6
+                        }
                     }
                 },
                 "text": {
                     "size": 8,
-                    "distance": "Cosine"
+                    "distance": "Cosine",
+                    "quantization_config": {
+                        "scalar": {
+                            "type": "int8",
+                            "always_ram": True
+                        }
+                    }
                 }
             },
             "hnsw_config": {
                 "m": 10,
                 "ef_construct": 80
+            },
+            "quantization": {
+                "scalar": {
+                    "type": "int8",
+                    "quantile": 0.5
+                }
             },
             "on_disk_payload": on_disk_payload
         }
@@ -103,3 +121,24 @@ def test_retrieve_vector_specific_hnsw():
     assert vectors['text'].get('hnsw_config') is None
     assert config['hnsw_config']['m'] == 10
     assert config['hnsw_config']['ef_construct'] == 80
+
+
+def test_retrieve_vector_specific_quantization():
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    config = response.json()['result']['config']
+    vectors = config['params']['vectors']
+    assert vectors['image']['quantization_config'] is None
+    assert vectors['audio']['quantization_config']['scalar']['type'] == "int8"
+    assert vectors['audio']['quantization_config']['scalar']['quantile'] == 0.6
+    assert 'always_ram' not in vectors['audio']['quantization_config']['scalar']
+    assert vectors['text']['quantization_config']['scalar']['type'] == "int8"
+    assert 'quantile' not in vectors['text']['quantization_config']['scalar']
+    assert vectors['text']['quantization_config']['scalar']['always_ram']
+    assert config['quantization_config']['scalar']['type'] == "int8"
+    assert config['quantization_config']['scalar']['quantile'] == 0.5
