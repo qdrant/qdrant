@@ -2,15 +2,17 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
-use std::vec::Vec;
 
-use rand::seq::SliceRandom;
 use tokio::select;
 use tonic::transport::{Channel, ClientTlsConfig, Error as TonicError, Uri};
 use tonic::{Code, Status};
 
+use crate::grpc::dynamic_channel_pool::DynamicChannelPool;
+use crate::grpc::dynamic_pool::CountedItem;
 use crate::grpc::qdrant::qdrant_client::QdrantClient;
 use crate::grpc::qdrant::HealthCheckRequest;
+
+const MAX_CONNECTIONS_PER_CHANNEL: usize = 32;
 
 const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
@@ -18,45 +20,6 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const SMART_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_POOL_SIZE: usize = 1;
 const CHANNEL_TTL: Duration = Duration::from_secs(5);
-
-struct ChannelPool {
-    channels: Vec<Channel>,
-    init_at: Instant,
-}
-
-impl ChannelPool {
-    async fn init(
-        uri: Uri,
-        pool_size: NonZeroUsize,
-        grpc_timeout: Duration,
-        connection_timeout: Duration,
-        tls_config: Option<ClientTlsConfig>,
-    ) -> Result<Self, TonicError> {
-        let mut channels = Vec::with_capacity(pool_size.into());
-        for _ in 0..pool_size.into() {
-            let channel = TransportChannelPool::make_channel(
-                grpc_timeout,
-                connection_timeout,
-                uri.clone(),
-                tls_config.clone(),
-            )
-            .await?;
-            channels.push(channel);
-        }
-
-        Ok(Self {
-            channels,
-            init_at: Instant::now(),
-        })
-    }
-
-    fn choose(&self) -> Channel {
-        self.channels
-            .choose(&mut rand::thread_rng())
-            .expect("Pool size can not be zero")
-            .clone()
-    }
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum RequestError<E: std::error::Error> {
@@ -70,7 +33,7 @@ pub enum RequestError<E: std::error::Error> {
 /// Channel are shared by cloning them.
 /// Make the `pool_size` larger to increase throughput.
 pub struct TransportChannelPool {
-    uri_to_pool: tokio::sync::RwLock<HashMap<Uri, ChannelPool>>,
+    uri_to_pool: tokio::sync::RwLock<HashMap<Uri, DynamicChannelPool>>,
     pool_size: NonZeroUsize,
     grpc_timeout: Duration,
     connection_timeout: Duration,
@@ -105,42 +68,26 @@ impl TransportChannelPool {
         }
     }
 
-    pub async fn make_channel(
-        grpc_timeout: Duration,
-        connection_timeout: Duration,
-        uri: Uri,
-        tls_config: Option<ClientTlsConfig>,
-    ) -> Result<Channel, TonicError> {
-        let mut endpoint = Channel::builder(uri)
-            .timeout(grpc_timeout)
-            .connect_timeout(connection_timeout)
-            .keep_alive_while_idle(true);
-        if let Some(config) = tls_config {
-            endpoint = endpoint.tls_config(config)?;
-        }
-        // `connect` is using the `Reconnect` network service internally to handle dropped connections
-        endpoint.connect().await
-    }
-
     /// Initialize a pool for the URI and return a clone of the first channel.
     /// Does not fail if the pool already exist.
-    async fn init_pool_for_uri(&self, uri: Uri) -> Result<Channel, TonicError> {
+    async fn init_pool_for_uri(&self, uri: Uri) -> Result<CountedItem<Channel>, TonicError> {
         let mut guard = self.uri_to_pool.write().await;
-        match guard.get(&uri) {
+        match guard.get_mut(&uri) {
             None => {
-                let channels = ChannelPool::init(
+                let channels = DynamicChannelPool::new(
                     uri.clone(),
-                    self.pool_size,
                     self.grpc_timeout,
                     self.connection_timeout,
                     self.tls_config.clone(),
+                    MAX_CONNECTIONS_PER_CHANNEL,
+                    self.pool_size.get(),
                 )
                 .await?;
-                let channel = channels.choose();
+                let channel = channels.choose().await?;
                 guard.insert(uri, channels);
                 Ok(channel)
             }
-            Some(channels) => Ok(channels.choose()),
+            Some(channels) => channels.choose().await,
         }
     }
 
@@ -149,21 +96,30 @@ impl TransportChannelPool {
         guard.remove(uri);
     }
 
-    async fn get_pooled_channel(&self, uri: &Uri) -> Option<Channel> {
+    async fn get_pooled_channel(
+        &self,
+        uri: &Uri,
+    ) -> Option<Result<CountedItem<Channel>, TonicError>> {
         let guard = self.uri_to_pool.read().await;
-        guard.get(uri).map(|channels| channels.choose())
+        match guard.get(uri) {
+            None => None,
+            Some(channels) => Some(channels.choose().await),
+        }
     }
 
-    async fn get_or_create_pooled_channel(&self, uri: &Uri) -> Result<Channel, TonicError> {
+    async fn get_or_create_pooled_channel(
+        &self,
+        uri: &Uri,
+    ) -> Result<CountedItem<Channel>, TonicError> {
         match self.get_pooled_channel(uri).await {
             None => self.init_pool_for_uri(uri.clone()).await,
-            Some(channel) => Ok(channel),
+            Some(channel) => channel,
         }
     }
 
     async fn get_created_at(&self, uri: &Uri) -> Option<Instant> {
         let guard = self.uri_to_pool.read().await;
-        guard.get(uri).map(|channels| channels.init_at)
+        guard.get(uri).map(|channels| channels.init_at())
     }
 
     /// Checks if the channel is still alive.
@@ -178,8 +134,11 @@ impl TransportChannelPool {
             let channel = self.get_pooled_channel(uri).await;
             match channel {
                 None => return Status::unavailable("Channel dropped"),
-                Some(channel) => {
-                    let mut client = QdrantClient::new(channel);
+                Some(Err(tonic_error)) => {
+                    return Status::unavailable(format!("Connection error: {}", tonic_error))
+                }
+                Some(Ok(channel)) => {
+                    let mut client = QdrantClient::new(channel.item().clone());
                     let resp = client.health_check(HealthCheckRequest {}).await;
                     match resp {
                         Ok(_) => {
@@ -203,7 +162,7 @@ impl TransportChannelPool {
         let max_timeout = timeout.unwrap_or_else(|| self.grpc_timeout + self.connection_timeout);
 
         let result: Result<T, Status> = select! {
-            res = f(channel) => {
+            res = f(channel.item().clone()) => {
                 res
             }
             res = self.check_connectability(uri) => {
@@ -227,7 +186,9 @@ impl TransportChannelPool {
                         log::debug!("dropping channel pool for uri: {}", uri);
                         self.drop_pool(uri).await;
                         let channel = self.get_or_create_pooled_channel(uri).await?;
-                        f(channel).await.map_err(RequestError::FromClosure)
+                        f(channel.item().clone())
+                            .await
+                            .map_err(RequestError::FromClosure)
                     } else {
                         Err(err).map_err(RequestError::FromClosure)
                     }

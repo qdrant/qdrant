@@ -431,6 +431,7 @@ dependencies = [
  "chrono",
  "env_logger",
  "log",
+ "parking_lot",
  "prost",
  "prost-types",
  "rand 0.8.5",

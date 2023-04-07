@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
+use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
 use api::grpc::transport_channel_pool::TransportChannelPool;
@@ -281,7 +282,7 @@ impl Consensus {
         tls_config: Option<ClientTlsConfig>,
     ) -> anyhow::Result<AllPeers> {
         // Use dedicated transport channel for bootstrapping because of specific timeout
-        let channel = TransportChannelPool::make_channel(
+        let channel = make_grpc_channel(
             Duration::from_secs(config.bootstrap_timeout_sec),
             Duration::from_secs(config.bootstrap_timeout_sec),
             cluster_uri,
@@ -830,7 +831,7 @@ async fn who_is(
         bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
     let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
     // Use dedicated transport channel for who_is because of specific timeout
-    let channel = TransportChannelPool::make_channel(
+    let channel = make_grpc_channel(
         bootstrap_timeout,
         bootstrap_timeout,
         bootstrap_uri,
