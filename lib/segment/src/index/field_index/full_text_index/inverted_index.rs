@@ -32,6 +32,7 @@ impl ParsedQuery {
         // Check that all tokens are in document
         self.tokens
             .iter()
+            // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
             .all(|query_token| document.tokens.binary_search(&query_token.unwrap()).is_ok())
     }
 }
@@ -112,6 +113,7 @@ impl InvertedIndex {
         self.points_count -= 1;
 
         for removed_token in &removed_doc.tokens {
+            // unwrap safety: posting list exists and contains the document id
             let posting = self.postings.get_mut(*removed_token).unwrap();
             if let Some(vec) = posting {
                 if vec.len() == 1 {
@@ -134,6 +136,8 @@ impl InvertedIndex {
             .iter()
             .map(|&vocab_idx| match vocab_idx {
                 None => None,
+                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
+                // dictionary. Posting list entry can be None but it exists.
                 Some(idx) => self.postings.get(idx).unwrap().as_ref(),
             })
             .collect();
@@ -159,6 +163,7 @@ impl InvertedIndex {
             .iter()
             .map(|&vocab_idx| match vocab_idx {
                 None => None,
+                // unwrap safety: same as in filter()
                 Some(idx) => self.postings.get(idx).unwrap().as_ref(),
             })
             .collect();
@@ -218,11 +223,13 @@ impl InvertedIndex {
                 .iter()
                 .filter(|(_token, &posting_idx)| self.postings[posting_idx].is_some())
                 .filter(move |(_token, &posting_idx)| {
+                    // unwrap crash safety: all tokens that passes the first filter should have postings
                     self.postings[posting_idx].as_ref().unwrap().len() >= threshold
                 })
                 .map(|(token, &posting_idx)| {
                     (
                         std::string::String::from_utf8(token).expect("token is not valid utf-8"),
+                        // same as the above case
                         self.postings[posting_idx].as_ref().unwrap(),
                     )
                 })
