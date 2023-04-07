@@ -707,6 +707,31 @@ pub enum VectorsConfig {
     Multi(BTreeMap<String, VectorParams>),
 }
 
+impl VectorsConfig {
+    pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
+        match self {
+            VectorsConfig::Single(params) => {
+                if name == DEFAULT_VECTOR_NAME {
+                    Some(params)
+                } else {
+                    None
+                }
+            }
+            VectorsConfig::Multi(params) => params.get(name),
+        }
+    }
+
+    /// Iterate over the named vector parameters.
+    ///
+    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParams)> + 'a> {
+        match self {
+            VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
+            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+        }
+    }
+}
+
 impl Anonymize for VectorsConfig {
     fn anonymize(&self) -> Self {
         match self {
@@ -737,31 +762,6 @@ impl Validate for VectorsConfig {
 impl From<VectorParams> for VectorsConfig {
     fn from(params: VectorParams) -> Self {
         VectorsConfig::Single(params)
-    }
-}
-
-impl VectorsConfig {
-    pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
-        match self {
-            VectorsConfig::Single(params) => {
-                if name == DEFAULT_VECTOR_NAME {
-                    Some(params)
-                } else {
-                    None
-                }
-            }
-            VectorsConfig::Multi(params) => params.get(name),
-        }
-    }
-
-    /// Iterate over the named vector parameters.
-    ///
-    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
-    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParams)> + 'a> {
-        match self {
-            VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
-            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
-        }
     }
 }
 

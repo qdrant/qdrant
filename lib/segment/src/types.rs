@@ -485,6 +485,21 @@ pub struct SegmentConfig {
     pub quantization_config: Option<QuantizationConfig>,
 }
 
+impl SegmentConfig {
+    /// Helper to get vector specific quantization config.
+    ///
+    /// This grabs the quantization config for the given vector name if it exists. Falls back to
+    /// the collection quantization config.
+    ///
+    /// If no quantization is configured, `None` is returned.
+    pub fn quantization_config(&self, vector_name: &str) -> Option<&QuantizationConfig> {
+        self.vector_data
+            .get(vector_name)
+            .and_then(|v| v.quantization_config.as_ref())
+            .or(self.quantization_config.as_ref())
+    }
+}
+
 /// Config of single vector data storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -496,6 +511,9 @@ pub struct VectorDataConfig {
     /// Vector specific HNSW config that overrides collection config
     #[serde(default)]
     pub hnsw_config: Option<HnswConfig>,
+    /// Vector specific quantization config that overrides collection config
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>

@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use merge::Merge;
 use schemars::JsonSchema;
-use segment::types::{HnswConfig, ScalarType};
+use segment::types::{HnswConfig, QuantizationConfig, ScalarType};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -72,6 +72,16 @@ pub struct HnswConfigDiff {
 #[serde(untagged)]
 pub enum QuantizationConfigDiff {
     Scalar(ScalarQuantizationDiff),
+}
+
+impl Merge for QuantizationConfigDiff {
+    fn merge(&mut self, other: Self) {
+        match (self, other) {
+            (QuantizationConfigDiff::Scalar(config), QuantizationConfigDiff::Scalar(other)) => {
+                config.merge(other)
+            }
+        }
+    }
 }
 
 impl Validate for QuantizationConfigDiff {
@@ -232,6 +242,8 @@ impl DiffConfig<HnswConfig> for HnswConfigDiff {}
 impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {}
 
 impl DiffConfig<WalConfig> for WalConfigDiff {}
+
+impl DiffConfig<QuantizationConfig> for QuantizationConfigDiff {}
 
 impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
 
