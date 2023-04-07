@@ -4010,7 +4010,7 @@
             "type": "number",
             "format": "float",
             "maximum": 1,
-            "minimum": 0,
+            "minimum": 0.5,
             "nullable": true
           },
           "always_ram": {
