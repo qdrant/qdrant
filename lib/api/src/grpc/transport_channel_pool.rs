@@ -12,7 +12,7 @@ use crate::grpc::dynamic_pool::CountedItem;
 use crate::grpc::qdrant::qdrant_client::QdrantClient;
 use crate::grpc::qdrant::HealthCheckRequest;
 
-const MAX_CONNECTIONS_PER_CHANNEL: usize = 32;
+const MAX_CONNECTIONS_PER_CHANNEL: usize = 16;
 
 const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
