@@ -874,6 +874,7 @@ async fn send_message(
                 client.send(request).await
             },
             Some(timeout),
+            0,
         )
         .await;
 
