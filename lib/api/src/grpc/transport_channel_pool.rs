@@ -31,6 +31,25 @@ pub enum RequestError<E: std::error::Error> {
     Tonic(#[from] TonicError),
 }
 
+enum RetryAction {
+    Fail(Status),
+    RetryOnce(Status),
+    RetryWithBackoff(Status),
+    RetryWithoutBackoff(Status),
+}
+
+enum HealthCheckError {
+    NoChannel,
+    ConnectionError(TonicError),
+    RequestError(Status),
+}
+
+enum RequestFailure {
+    HealthCheck(HealthCheckError),
+    RequestError(Status),
+    RequestConnection(TonicError),
+}
+
 /// Holds a pool of channels established for a set of URIs.
 /// Channel are shared by cloning them.
 /// Make the `pool_size` larger to increase throughput.
@@ -136,18 +155,13 @@ impl TransportChannelPool {
     /// If it can't get healthcheck response in the timeout, it assumes the channel is dead.
     /// And we need to drop the pool for the uri and try again.
     /// For performance reasons, we start the check only after `SMART_CONNECT_TIMEOUT`.
-    async fn check_connectability(&self, uri: &Uri) -> Status {
+    async fn check_connectability(&self, uri: &Uri) -> HealthCheckError {
         loop {
             tokio::time::sleep(SMART_CONNECT_TIMEOUT).await;
             let channel = self.get_pooled_channel(uri).await;
             match channel {
-                None => return Status::unavailable("Channel dropped"),
-                Some(Err(tonic_error)) => {
-                    return Status::unavailable(format!(
-                        "Healthcheck connection error: {}",
-                        tonic_error
-                    ))
-                }
+                None => return HealthCheckError::NoChannel,
+                Some(Err(tonic_error)) => return HealthCheckError::ConnectionError(tonic_error),
                 Some(Ok(channel)) => {
                     let mut client = QdrantClient::new(channel.item().clone());
                     let resp = client.health_check(HealthCheckRequest {}).await;
@@ -156,11 +170,56 @@ impl TransportChannelPool {
                             channel.report_success();
                             // continue watching
                         }
-                        Err(status) => return status,
+                        Err(status) => return HealthCheckError::RequestError(status),
                     }
                 }
             }
         }
+    }
+
+    async fn _make_request<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        uri: &Uri,
+        f: &impl Fn(Channel) -> O,
+        timeout: Duration,
+    ) -> Result<T, RequestFailure> {
+        let channel = match self.get_or_create_pooled_channel(uri).await {
+            Ok(channel) => channel,
+            Err(tonic_error) => {
+                return Err(RequestFailure::RequestConnection(tonic_error));
+            }
+        };
+
+        let result: RequestFailure = select! {
+            res = f(channel.item().clone()) => {
+                match res {
+                    Ok(body) => {
+                        channel.report_success();
+                        return Ok(body);
+                    },
+                    Err(err) => RequestFailure::RequestError(err)
+                }
+            }
+            res = self.check_connectability(uri) => {
+               RequestFailure::HealthCheck(res)
+            }
+            _res = tokio::time::sleep(timeout) => {
+                RequestFailure::RequestError(Status::deadline_exceeded(format!("Timeout {}ms reached for uri: {}", timeout.as_millis(), uri)))
+            }
+        };
+
+        // After this point the request is not successful, but we can try to recover
+        let last_success_age = channel.last_success_age();
+        if last_success_age > CHANNEL_TTL {
+            // There were no successful requests for a long time, we can try to reconnect
+            // It might be possible that server died and changed its ip address
+            self.drop_channel(uri, channel).await;
+        } else {
+            // We don't need this channel anymore, drop before waiting for the backoff
+            drop(channel);
+        }
+
+        Err(result)
     }
 
     // Allows to use channel to `uri`. If there is no channels to specified uri - they will be created.
@@ -173,85 +232,122 @@ impl TransportChannelPool {
     ) -> Result<T, RequestError<Status>> {
         let mut retries_left = retries;
         let mut attempt = 0;
+        let max_timeout = timeout.unwrap_or_else(|| self.grpc_timeout + self.connection_timeout);
 
         loop {
-            let channel = self.get_or_create_pooled_channel(uri).await?;
-            let max_timeout =
-                timeout.unwrap_or_else(|| self.grpc_timeout + self.connection_timeout);
+            let request_result: Result<T, _> = self._make_request(uri, &f, max_timeout).await;
 
-            let result: Result<T, Status> = select! {
-                res = f(channel.item().clone()) => {
-                    res
-                }
-                res = self.check_connectability(uri) => {
-                   Err(res)
-                }
-                _res = tokio::time::sleep(max_timeout) => {
-                    Err(Status::deadline_exceeded(format!("Timeout {}ms reached for uri: {}", max_timeout.as_millis(), uri)))
-                }
+            let error_result = match request_result {
+                Ok(body) => return Ok(body),
+                Err(err) => err,
             };
 
-            let res = match result {
-                Ok(res) => {
-                    channel.report_success();
-                    return Ok(res);
-                }
-                Err(err) => match err.code() {
-                    Code::Internal
-                    | Code::Unavailable
-                    | Code::Cancelled
-                    | Code::DeadlineExceeded => {
-                        // Possible situations:
-                        // - Server is frozen and will never respond.
-                        // - Server is overloaded and will respond in a while.
-                        // - Server is overloaded and will respond in a while,
-                        //     but we can't wait for this request any longer.
-                        // - Server is broken and will never respond correctly.
-
-                        // Actions:
-                        //   - check if channels require reconnect
-                        //   - check if backoff is possible
-                        //   - return error or retry
-                        let last_success_age = channel.last_success_age();
-                        if last_success_age > CHANNEL_TTL {
-                            // There were no successful requests for a long time, we can try to reconnect
-                            // It might be possible that server died and changed its ip address
-                            self.drop_channel(uri, channel).await;
+            let action = match error_result {
+                RequestFailure::HealthCheck(healthcheck_error) => {
+                    match healthcheck_error {
+                        HealthCheckError::NoChannel => {
+                            // The channel pool was dropped during the request processing.
+                            // Meaning that the peer is not available anymore.
+                            // So we can just fail the request.
+                            RetryAction::Fail(Status::unavailable(format!(
+                                "Peer {} is not available",
+                                uri
+                            )))
                         }
-
-                        if retries_left > 0 {
-                            // We can try to make one more attempt
-                            if err.code() == Code::DeadlineExceeded || err.code() == Code::Internal
-                            {
-                                // We can't wait for the request any longer, last attempt no backoff
-                                retries_left = 0;
-                                continue;
-                            }
-
-                            // Calculate backoff
-                            let backoff = DEFAULT_BACKOFF * 2u32.pow(attempt as u32)
-                                + Duration::from_millis(rand::random::<u64>() % 100);
-
-                            if backoff > max_timeout {
-                                // We can't wait for the request any longer, return the error as is
-                                return Err(RequestError::FromClosure(err));
-                            }
-
-                            // Wait for the backoff
-                            tokio::time::sleep(backoff).await;
-                            // Try again
-                            retries_left -= 1;
-                            attempt += 1;
-                            continue;
-                        } else {
-                            // We can't make more attempts, return the error
-                            return Err(RequestError::FromClosure(err));
+                        HealthCheckError::ConnectionError(error) => {
+                            // Can't establish connection to the server during the healthcheck.
+                            // Possible situation:
+                            // - Server was killed during the request processing and request timed out.
+                            // Actions:
+                            // - retry no backoff
+                            log::warn!(
+                                "HealthCheckError::ConnectionError to {}, error: {}",
+                                uri,
+                                error
+                            );
+                            RetryAction::RetryWithoutBackoff(Status::unavailable(format!(
+                                "Failed to connect to {}, error: {}",
+                                uri, error
+                            )))
+                        }
+                        HealthCheckError::RequestError(status) => {
+                            // Channel might be unavailable or overloaded.
+                            // Or server might be dead.
+                            log::warn!(
+                                "HealthCheckError::RequestError to {}, error: {}",
+                                uri,
+                                status
+                            );
+                            RetryAction::RetryWithBackoff(status)
                         }
                     }
-                    _ => Err(RequestError::FromClosure(err)),
-                },
+                }
+                RequestFailure::RequestError(status) => {
+                    log::warn!("RequestError to {}, error: {}", uri, status);
+                    match status.code() {
+                        Code::Cancelled | Code::Unavailable => {
+                            // Possible situations:
+                            // - Server is frozen and will never respond.
+                            // - Server is overloaded and will respond in the future.
+                            RetryAction::RetryWithBackoff(status)
+                        }
+                        Code::Internal => {
+                            // Something is broken, but let's retry anyway, but only once.
+                            RetryAction::RetryOnce(status)
+                        }
+                        _ => {
+                            // No special handling, just fail already.
+                            RetryAction::Fail(status)
+                        }
+                    }
+                }
+                RequestFailure::RequestConnection(error) => {
+                    // Can't establish connection to the server during the request.
+                    // Possible situation:
+                    // - Server is killed
+                    // - Server is overloaded
+                    // Actions:
+                    // - retry with backoff
+                    log::warn!("RequestConnectionError to {}, error: {}", uri, error);
+                    RetryAction::RetryWithBackoff(Status::unavailable(format!(
+                        "Failed to connect to {}, error: {}",
+                        uri, error
+                    )))
+                }
             };
-            return res;
+
+            let (backoff_time, fallback_status) = match action {
+                RetryAction::Fail(err) => return Err(RequestError::FromClosure(err)),
+                RetryAction::RetryWithBackoff(fallback_status) => {
+                    (Duration::from_millis(0), fallback_status)
+                }
+                RetryAction::RetryWithoutBackoff(fallback_status) => {
+                    // Calculate backoff
+                    let backoff = DEFAULT_BACKOFF * 2u32.pow(attempt as u32)
+                        + Duration::from_millis(rand::random::<u64>() % 100);
+
+                    if backoff > max_timeout {
+                        // We can't wait for the request any longer, return the error as is
+                        return Err(RequestError::FromClosure(fallback_status));
+                    }
+                    (backoff, fallback_status)
+                }
+                RetryAction::RetryOnce(fallback_status) => {
+                    if retries_left > 1 {
+                        retries_left = 1;
+                    }
+                    (Duration::from_millis(0), fallback_status)
+                }
+            };
+
+            attempt += 1;
+            if retries_left == 0 {
+                return Err(RequestError::FromClosure(fallback_status));
+            }
+            retries_left = retries_left.saturating_sub(1);
+
+            // Wait for the backoff
+            tokio::time::sleep(backoff_time).await;
         }
     }
 
