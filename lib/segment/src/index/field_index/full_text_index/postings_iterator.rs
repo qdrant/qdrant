@@ -1,6 +1,9 @@
-pub fn intersect_vec_iterator<'a, T: Ord + Copy>(
-    mut postings: Vec<&'a Vec<T>>,
-) -> Box<dyn Iterator<Item = T> + 'a> {
+use super::posting_list::PostingList;
+use crate::types::PointOffsetType;
+
+pub fn intersect_postings_iterator<'a>(
+    mut postings: Vec<&'a PostingList>,
+) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings
         .iter()
         .enumerate()
@@ -10,9 +13,10 @@ pub fn intersect_vec_iterator<'a, T: Ord + Copy>(
     let smallest_posting = postings.remove(smallest_posting_idx);
 
     let and_iter = smallest_posting
-        .iter()
-        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)))
-        .copied();
+        .into_iter()
+        // .iter()
+        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)));
+    // .copied();
 
     Box::new(and_iter)
 }
@@ -23,12 +27,26 @@ mod tests {
 
     #[test]
     fn test_postings_iterator() {
-        let v1 = vec![1, 2, 3, 4, 5];
-        let v2 = vec![2, 4, 5];
-        let v3 = vec![1, 2, 5, 6, 7];
+        let mut p1 = PostingList::default();
+        p1.insert(1, 8);
+        p1.insert(2, 8);
+        p1.insert(3, 8);
+        p1.insert(4, 8);
+        p1.insert(5, 8);
+        let mut p2 = PostingList::default();
+        p2.insert(2, 8);
+        p2.insert(4, 8);
+        p2.insert(5, 8);
+        p2.insert(5, 8);
+        let mut p3 = PostingList::default();
+        p3.insert(1, 8);
+        p3.insert(2, 8);
+        p3.insert(5, 8);
+        p3.insert(6, 8);
+        p3.insert(7, 8);
 
-        let postings = vec![&v1, &v2, &v3];
-        let merged = intersect_vec_iterator(postings);
+        let postings = vec![&p1, &p2, &p3];
+        let merged = intersect_postings_iterator(postings);
 
         let res = merged.collect::<Vec<_>>();
 

@@ -3,11 +3,10 @@ use std::collections::HashSet;
 use patricia_tree::PatriciaMap;
 use serde::{Deserialize, Serialize};
 
-use super::postings_iterator::intersect_vec_iterator;
+use super::posting_list::PostingList;
+use super::postings_iterator::intersect_postings_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
-
-type PostingList = Vec<PointOffsetType>;
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Document {
@@ -74,6 +73,12 @@ impl InvertedIndex {
     }
 
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
+        self.points_count += 1;
+        if self.point_to_docs.len() <= idx as usize {
+            self.point_to_docs
+                .resize(idx as usize + 1, Default::default());
+        }
+
         for &token_idx in &document.tokens {
             if self.postings.len() <= token_idx {
                 self.postings.resize(token_idx + 1, Default::default());
@@ -83,20 +88,10 @@ impl InvertedIndex {
                 .get_mut(token_idx)
                 .expect("posting must exist even if with None");
             match posting {
-                None => *posting = Some(vec![idx]),
-                Some(vec) => {
-                    if let Err(sorted_idx) = vec.binary_search(&idx) {
-                        vec.insert(sorted_idx, idx)
-                    }
-                }
+                None => *posting = Some(PostingList::new(idx)),
+                Some(vec) => vec.insert(idx, self.point_to_docs.len()),
             }
         }
-        self.points_count += 1;
-        if self.point_to_docs.len() <= idx as usize {
-            self.point_to_docs
-                .resize(idx as usize + 1, Default::default());
-        }
-
         self.point_to_docs[idx as usize] = Some(document);
     }
 
@@ -116,15 +111,7 @@ impl InvertedIndex {
             // unwrap safety: posting list exists and contains the document id
             let posting = self.postings.get_mut(*removed_token).unwrap();
             if let Some(vec) = posting {
-                if vec.len() == 1 {
-                    // only document in posting
-                    *posting = None;
-                } else {
-                    // unwrap safety: document should exist in the posting
-                    // since it contains the token and has been indexed
-                    let doc_idx = vec.binary_search(&idx).unwrap();
-                    vec.remove(doc_idx);
-                }
+                vec.remove(idx, self.point_to_docs.len());
             }
         }
         Some(removed_doc)
@@ -150,7 +137,7 @@ impl InvertedIndex {
             // Empty request -> no matches
             return Box::new(vec![].into_iter());
         }
-        intersect_vec_iterator(postings)
+        intersect_postings_iterator(postings)
     }
 
     pub fn estimate_cardinality(
