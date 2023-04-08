@@ -321,7 +321,7 @@ impl ShardReplicaSet {
             rs.remove_peer_state(&peer_id);
         })?;
 
-        self.locally_disabled_peers.write().remove(&peer_id);
+        self.update_locally_disabled(peer_id);
 
         let mut remotes = self.remotes.write().await;
         remotes.retain(|remote| remote.peer_id != peer_id);
@@ -333,7 +333,7 @@ impl ShardReplicaSet {
             rs.set_peer_state(peer_id, state);
         })?;
 
-        self.locally_disabled_peers.write().remove(&peer_id);
+        self.update_locally_disabled(peer_id);
 
         let mut remotes = self.remotes.write().await;
 
@@ -359,9 +359,7 @@ impl ShardReplicaSet {
             rs.remove_peer_state(&this_peer_id);
         })?;
 
-        self.locally_disabled_peers
-            .write()
-            .remove(&self.this_peer_id());
+        self.update_locally_disabled(self.this_peer_id());
 
         let removing_local = {
             let mut local = self.local.write().await;
@@ -390,9 +388,7 @@ impl ShardReplicaSet {
                 }
             })?;
         }
-        self.locally_disabled_peers
-            .write()
-            .remove(&self.this_peer_id());
+        self.update_locally_disabled(self.this_peer_id());
         Ok(old_shard)
     }
 
@@ -542,7 +538,7 @@ impl ShardReplicaSet {
             }
             rs.set_peer_state(*peer_id, state);
         })?;
-        self.locally_disabled_peers.write().remove(peer_id);
+        self.update_locally_disabled(*peer_id);
         Ok(())
     }
 
@@ -1187,6 +1183,26 @@ impl ShardReplicaSet {
             }
         }
         wait_for_deactivation
+    }
+
+    // Make sure that locally disabled peers do not contradict the consensus
+    fn update_locally_disabled(&self, peer_id_to_remove: PeerId) {
+        // Check that we are not trying to disable the last active peer
+        let peers = self.peers();
+        let active_peers: Vec<_> = peers
+            .iter()
+            .filter(|(_, state)| **state == ReplicaState::Active)
+            .map(|(peer, _)| *peer)
+            .collect();
+
+        let mut locally_disabled = self.locally_disabled_peers.write();
+
+        locally_disabled.remove(&peer_id_to_remove);
+
+        if active_peers.len() == 1 {
+            let last_peer = active_peers.into_iter().next().unwrap();
+            locally_disabled.remove(&last_peer);
+        }
     }
 
     /// Check if the are any locally disabled peers
