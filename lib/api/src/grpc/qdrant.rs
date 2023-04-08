@@ -502,6 +502,16 @@ impl Distance {
             Distance::Dot => "Dot",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UnknownDistance" => Some(Self::UnknownDistance),
+            "Cosine" => Some(Self::Cosine),
+            "Euclid" => Some(Self::Euclid),
+            "Dot" => Some(Self::Dot),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -525,6 +535,16 @@ impl CollectionStatus {
             CollectionStatus::Green => "Green",
             CollectionStatus::Yellow => "Yellow",
             CollectionStatus::Red => "Red",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UnknownCollectionStatus" => Some(Self::UnknownCollectionStatus),
+            "Green" => Some(Self::Green),
+            "Yellow" => Some(Self::Yellow),
+            "Red" => Some(Self::Red),
+            _ => None,
         }
     }
 }
@@ -553,6 +573,18 @@ impl PayloadSchemaType {
             PayloadSchemaType::Text => "Text",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UnknownType" => Some(Self::UnknownType),
+            "Keyword" => Some(Self::Keyword),
+            "Integer" => Some(Self::Integer),
+            "Float" => Some(Self::Float),
+            "Geo" => Some(Self::Geo),
+            "Text" => Some(Self::Text),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -569,6 +601,14 @@ impl QuantizationType {
         match self {
             QuantizationType::UnknownQuantization => "UnknownQuantization",
             QuantizationType::Int8 => "Int8",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UnknownQuantization" => Some(Self::UnknownQuantization),
+            "Int8" => Some(Self::Int8),
+            _ => None,
         }
     }
 }
@@ -593,6 +633,16 @@ impl TokenizerType {
             TokenizerType::Word => "Word",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Unknown" => Some(Self::Unknown),
+            "Prefix" => Some(Self::Prefix),
+            "Whitespace" => Some(Self::Whitespace),
+            "Word" => Some(Self::Word),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod collections_client {
@@ -607,7 +657,7 @@ pub mod collections_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -663,12 +713,31 @@ pub mod collections_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         ///
         /// Get detailed information about specified existing collection
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetCollectionInfoRequest>,
-        ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::GetCollectionInfoResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -680,14 +749,19 @@ pub mod collections_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Get");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Get"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Get list name of all existing collections
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListCollectionsRequest>,
-        ) -> Result<tonic::Response<super::ListCollectionsResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListCollectionsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -699,14 +773,19 @@ pub mod collections_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/List");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "List"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Create new collection with given parameters
         pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateCollection>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -720,14 +799,19 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Collections/Create",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Create"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Update parameters of the existing collection
         pub async fn update(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateCollection>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -741,14 +825,19 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Collections/Update",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Update"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Drop collection and all associated data
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteCollection>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -762,14 +851,19 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Collections/Delete",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Delete"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Update Aliases of the existing collection
         pub async fn update_aliases(
             &mut self,
             request: impl tonic::IntoRequest<super::ChangeAliases>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -783,14 +877,20 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Collections/UpdateAliases",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "UpdateAliases"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Get list of all aliases for a collection
         pub async fn list_collection_aliases(
             &mut self,
             request: impl tonic::IntoRequest<super::ListCollectionAliasesRequest>,
-        ) -> Result<tonic::Response<super::ListAliasesResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListAliasesResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -804,14 +904,20 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Collections/ListCollectionAliases",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "ListCollectionAliases"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Get list of all aliases for all existing collections
         pub async fn list_aliases(
             &mut self,
             request: impl tonic::IntoRequest<super::ListAliasesRequest>,
-        ) -> Result<tonic::Response<super::ListAliasesResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListAliasesResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -825,7 +931,10 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Collections/ListAliases",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "ListAliases"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -841,55 +950,81 @@ pub mod collections_server {
         async fn get(
             &self,
             request: tonic::Request<super::GetCollectionInfoRequest>,
-        ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::GetCollectionInfoResponse>,
+            tonic::Status,
+        >;
         ///
         /// Get list name of all existing collections
         async fn list(
             &self,
             request: tonic::Request<super::ListCollectionsRequest>,
-        ) -> Result<tonic::Response<super::ListCollectionsResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListCollectionsResponse>,
+            tonic::Status,
+        >;
         ///
         /// Create new collection with given parameters
         async fn create(
             &self,
             request: tonic::Request<super::CreateCollection>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Update parameters of the existing collection
         async fn update(
             &self,
             request: tonic::Request<super::UpdateCollection>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Drop collection and all associated data
         async fn delete(
             &self,
             request: tonic::Request<super::DeleteCollection>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Update Aliases of the existing collection
         async fn update_aliases(
             &self,
             request: tonic::Request<super::ChangeAliases>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Get list of all aliases for a collection
         async fn list_collection_aliases(
             &self,
             request: tonic::Request<super::ListCollectionAliasesRequest>,
-        ) -> Result<tonic::Response<super::ListAliasesResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListAliasesResponse>,
+            tonic::Status,
+        >;
         ///
         /// Get list of all aliases for all existing collections
         async fn list_aliases(
             &self,
             request: tonic::Request<super::ListAliasesRequest>,
-        ) -> Result<tonic::Response<super::ListAliasesResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListAliasesResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct CollectionsServer<T: Collections> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Collections> CollectionsServer<T> {
@@ -902,6 +1037,8 @@ pub mod collections_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -925,6 +1062,22 @@ pub mod collections_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionsServer<T>
     where
@@ -938,7 +1091,7 @@ pub mod collections_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -960,13 +1113,15 @@ pub mod collections_server {
                             &mut self,
                             request: tonic::Request<super::GetCollectionInfoRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).get(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -976,6 +1131,10 @@ pub mod collections_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -998,13 +1157,15 @@ pub mod collections_server {
                             &mut self,
                             request: tonic::Request<super::ListCollectionsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).list(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1014,6 +1175,10 @@ pub mod collections_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1036,13 +1201,15 @@ pub mod collections_server {
                             &mut self,
                             request: tonic::Request<super::CreateCollection>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).create(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1052,6 +1219,10 @@ pub mod collections_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1074,13 +1245,15 @@ pub mod collections_server {
                             &mut self,
                             request: tonic::Request<super::UpdateCollection>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).update(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1090,6 +1263,10 @@ pub mod collections_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1112,13 +1289,15 @@ pub mod collections_server {
                             &mut self,
                             request: tonic::Request<super::DeleteCollection>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).delete(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1128,6 +1307,10 @@ pub mod collections_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1150,7 +1333,7 @@ pub mod collections_server {
                             &mut self,
                             request: tonic::Request<super::ChangeAliases>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).update_aliases(request).await
                             };
@@ -1159,6 +1342,8 @@ pub mod collections_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1168,6 +1353,10 @@ pub mod collections_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1190,7 +1379,7 @@ pub mod collections_server {
                             &mut self,
                             request: tonic::Request<super::ListCollectionAliasesRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).list_collection_aliases(request).await
                             };
@@ -1199,6 +1388,8 @@ pub mod collections_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1208,6 +1399,10 @@ pub mod collections_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1230,7 +1425,7 @@ pub mod collections_server {
                             &mut self,
                             request: tonic::Request<super::ListAliasesRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).list_aliases(request).await
                             };
@@ -1239,6 +1434,8 @@ pub mod collections_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1248,6 +1445,10 @@ pub mod collections_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1276,12 +1477,14 @@ pub mod collections_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: Collections> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -1324,7 +1527,7 @@ pub mod collections_internal_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -1380,12 +1583,31 @@ pub mod collections_internal_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         ///
         /// Get collection info
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetCollectionInfoRequestInternal>,
-        ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::GetCollectionInfoResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -1399,14 +1621,20 @@ pub mod collections_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.CollectionsInternal/Get",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.CollectionsInternal", "Get"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Initiate shard transfer
         pub async fn initiate(
             &mut self,
             request: impl tonic::IntoRequest<super::InitiateShardTransferRequest>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -1420,7 +1648,10 @@ pub mod collections_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.CollectionsInternal/Initiate",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.CollectionsInternal", "Initiate"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -1436,19 +1667,27 @@ pub mod collections_internal_server {
         async fn get(
             &self,
             request: tonic::Request<super::GetCollectionInfoRequestInternal>,
-        ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::GetCollectionInfoResponse>,
+            tonic::Status,
+        >;
         ///
         /// Initiate shard transfer
         async fn initiate(
             &self,
             request: tonic::Request<super::InitiateShardTransferRequest>,
-        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct CollectionsInternalServer<T: CollectionsInternal> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: CollectionsInternal> CollectionsInternalServer<T> {
@@ -1461,6 +1700,8 @@ pub mod collections_internal_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -1484,6 +1725,22 @@ pub mod collections_internal_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionsInternalServer<T>
     where
@@ -1497,7 +1754,7 @@ pub mod collections_internal_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -1522,13 +1779,15 @@ pub mod collections_internal_server {
                                 super::GetCollectionInfoRequestInternal,
                             >,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).get(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1538,6 +1797,10 @@ pub mod collections_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1560,13 +1823,15 @@ pub mod collections_internal_server {
                             &mut self,
                             request: tonic::Request<super::InitiateShardTransferRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).initiate(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1576,6 +1841,10 @@ pub mod collections_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1604,12 +1873,14 @@ pub mod collections_internal_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: CollectionsInternal> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -1707,6 +1978,13 @@ impl NullValue {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             NullValue::NullValue => "NULL_VALUE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "NULL_VALUE" => Some(Self::NullValue),
+            _ => None,
         }
     }
 }
@@ -2307,7 +2585,7 @@ pub struct Filter {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5")]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
@@ -2323,11 +2601,19 @@ pub mod condition {
         HasId(super::HasIdCondition),
         #[prost(message, tag = "4")]
         Filter(super::Filter),
+        #[prost(message, tag = "5")]
+        IsNull(super::IsNullCondition),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IsEmptyCondition {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IsNullCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }
@@ -2510,6 +2796,15 @@ impl WriteOrderingType {
             WriteOrderingType::Strong => "Strong",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Weak" => Some(Self::Weak),
+            "Medium" => Some(Self::Medium),
+            "Strong" => Some(Self::Strong),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2531,6 +2826,15 @@ impl ReadConsistencyType {
             ReadConsistencyType::All => "All",
             ReadConsistencyType::Majority => "Majority",
             ReadConsistencyType::Quorum => "Quorum",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "All" => Some(Self::All),
+            "Majority" => Some(Self::Majority),
+            "Quorum" => Some(Self::Quorum),
+            _ => None,
         }
     }
 }
@@ -2557,6 +2861,17 @@ impl FieldType {
             FieldType::Text => "FieldTypeText",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "FieldTypeKeyword" => Some(Self::Keyword),
+            "FieldTypeInteger" => Some(Self::Integer),
+            "FieldTypeFloat" => Some(Self::Float),
+            "FieldTypeGeo" => Some(Self::Geo),
+            "FieldTypeText" => Some(Self::Text),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2579,6 +2894,15 @@ impl UpdateStatus {
             UpdateStatus::Completed => "Completed",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UnknownUpdateStatus" => Some(Self::UnknownUpdateStatus),
+            "Acknowledged" => Some(Self::Acknowledged),
+            "Completed" => Some(Self::Completed),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod points_client {
@@ -2593,7 +2917,7 @@ pub mod points_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -2649,12 +2973,31 @@ pub mod points_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         ///
         /// Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
         pub async fn upsert(
             &mut self,
             request: impl tonic::IntoRequest<super::UpsertPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2666,14 +3009,19 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Upsert");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Upsert"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Delete points
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2685,14 +3033,16 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Delete");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Delete"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Retrieve points
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetPoints>,
-        ) -> Result<tonic::Response<super::GetResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -2704,14 +3054,19 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Get");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Get"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Set payload for points
         pub async fn set_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2723,14 +3078,19 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/SetPayload");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "SetPayload"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Overwrite payload for points
         pub async fn overwrite_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2744,14 +3104,20 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Points/OverwritePayload",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "OverwritePayload"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Delete specified key payload for points
         pub async fn delete_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePayloadPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2765,14 +3131,20 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Points/DeletePayload",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "DeletePayload"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Remove all payload for specified points
         pub async fn clear_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::ClearPayloadPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2786,14 +3158,20 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Points/ClearPayload",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "ClearPayload"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Create index for field in collection
         pub async fn create_field_index(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateFieldIndexCollection>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2807,14 +3185,20 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Points/CreateFieldIndex",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "CreateFieldIndex"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Delete field index for collection
         pub async fn delete_field_index(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteFieldIndexCollection>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2828,14 +3212,17 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Points/DeleteFieldIndex",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "DeleteFieldIndex"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Retrieve closest points based on vector similarity and given filtering conditions
         pub async fn search(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPoints>,
-        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -2847,14 +3234,19 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Search");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Search"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Retrieve closest points based on vector similarity and given filtering conditions
         pub async fn search_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchBatchPoints>,
-        ) -> Result<tonic::Response<super::SearchBatchResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2868,14 +3260,16 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Points/SearchBatch",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "SearchBatch"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Iterate over all or filtered points points
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPoints>,
-        ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::ScrollResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -2887,14 +3281,19 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Scroll");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Scroll"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         pub async fn recommend(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPoints>,
-        ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::RecommendResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2906,14 +3305,19 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Recommend");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Recommend"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         pub async fn recommend_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendBatchPoints>,
-        ) -> Result<tonic::Response<super::RecommendBatchResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::RecommendBatchResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -2927,14 +3331,17 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Points/RecommendBatch",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "RecommendBatch"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Count points in collection with given filtering conditions
         pub async fn count(
             &mut self,
             request: impl tonic::IntoRequest<super::CountPoints>,
-        ) -> Result<tonic::Response<super::CountResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::CountResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -2946,7 +3353,9 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Count");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Count"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -2962,97 +3371,132 @@ pub mod points_server {
         async fn upsert(
             &self,
             request: tonic::Request<super::UpsertPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Delete points
         async fn delete(
             &self,
             request: tonic::Request<super::DeletePoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Retrieve points
         async fn get(
             &self,
             request: tonic::Request<super::GetPoints>,
-        ) -> Result<tonic::Response<super::GetResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status>;
         ///
         /// Set payload for points
         async fn set_payload(
             &self,
             request: tonic::Request<super::SetPayloadPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Overwrite payload for points
         async fn overwrite_payload(
             &self,
             request: tonic::Request<super::SetPayloadPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Delete specified key payload for points
         async fn delete_payload(
             &self,
             request: tonic::Request<super::DeletePayloadPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Remove all payload for specified points
         async fn clear_payload(
             &self,
             request: tonic::Request<super::ClearPayloadPoints>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Create index for field in collection
         async fn create_field_index(
             &self,
             request: tonic::Request<super::CreateFieldIndexCollection>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Delete field index for collection
         async fn delete_field_index(
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollection>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         ///
         /// Retrieve closest points based on vector similarity and given filtering conditions
         async fn search(
             &self,
             request: tonic::Request<super::SearchPoints>,
-        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
         ///
         /// Retrieve closest points based on vector similarity and given filtering conditions
         async fn search_batch(
             &self,
             request: tonic::Request<super::SearchBatchPoints>,
-        ) -> Result<tonic::Response<super::SearchBatchResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        >;
         ///
         /// Iterate over all or filtered points points
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPoints>,
-        ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
         ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         async fn recommend(
             &self,
             request: tonic::Request<super::RecommendPoints>,
-        ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::RecommendResponse>,
+            tonic::Status,
+        >;
         ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         async fn recommend_batch(
             &self,
             request: tonic::Request<super::RecommendBatchPoints>,
-        ) -> Result<tonic::Response<super::RecommendBatchResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::RecommendBatchResponse>,
+            tonic::Status,
+        >;
         ///
         /// Count points in collection with given filtering conditions
         async fn count(
             &self,
             request: tonic::Request<super::CountPoints>,
-        ) -> Result<tonic::Response<super::CountResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::CountResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Points> PointsServer<T> {
@@ -3065,6 +3509,8 @@ pub mod points_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -3088,6 +3534,22 @@ pub mod points_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsServer<T>
     where
@@ -3101,7 +3563,7 @@ pub mod points_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -3121,13 +3583,15 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::UpsertPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).upsert(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3137,6 +3601,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3157,13 +3625,15 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::DeletePoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).delete(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3173,6 +3643,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3193,13 +3667,15 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::GetPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).get(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3209,6 +3685,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3229,13 +3709,15 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::SetPayloadPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).set_payload(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3245,6 +3727,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3265,7 +3751,7 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::SetPayloadPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).overwrite_payload(request).await
                             };
@@ -3274,6 +3760,8 @@ pub mod points_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3283,6 +3771,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3305,7 +3797,7 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::DeletePayloadPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).delete_payload(request).await
                             };
@@ -3314,6 +3806,8 @@ pub mod points_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3323,6 +3817,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3345,7 +3843,7 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::ClearPayloadPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).clear_payload(request).await
                             };
@@ -3354,6 +3852,8 @@ pub mod points_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3363,6 +3863,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3385,7 +3889,7 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::CreateFieldIndexCollection>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).create_field_index(request).await
                             };
@@ -3394,6 +3898,8 @@ pub mod points_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3403,6 +3909,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3425,7 +3935,7 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::DeleteFieldIndexCollection>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).delete_field_index(request).await
                             };
@@ -3434,6 +3944,8 @@ pub mod points_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3443,6 +3955,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3463,13 +3979,15 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::SearchPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).search(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3479,6 +3997,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3499,7 +4021,7 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::SearchBatchPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).search_batch(request).await
                             };
@@ -3508,6 +4030,8 @@ pub mod points_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3517,6 +4041,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3537,13 +4065,15 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::ScrollPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).scroll(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3553,6 +4083,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3573,13 +4107,15 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::RecommendPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).recommend(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3589,6 +4125,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3611,7 +4151,7 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::RecommendBatchPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).recommend_batch(request).await
                             };
@@ -3620,6 +4160,8 @@ pub mod points_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3629,6 +4171,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3649,13 +4195,15 @@ pub mod points_server {
                             &mut self,
                             request: tonic::Request<super::CountPoints>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).count(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -3665,6 +4213,10 @@ pub mod points_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -3693,12 +4245,14 @@ pub mod points_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: Points> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -3861,7 +4415,7 @@ pub mod points_internal_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -3917,10 +4471,29 @@ pub mod points_internal_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn upsert(
             &mut self,
             request: impl tonic::IntoRequest<super::UpsertPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -3934,12 +4507,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Upsert",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Upsert"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn sync(
             &mut self,
             request: impl tonic::IntoRequest<super::SyncPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -3953,12 +4532,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Sync",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Sync"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -3972,12 +4557,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Delete",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Delete"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn set_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -3991,12 +4582,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/SetPayload",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "SetPayload"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn overwrite_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -4010,12 +4607,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/OverwritePayload",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "OverwritePayload"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn delete_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePayloadPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -4029,12 +4632,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/DeletePayload",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "DeletePayload"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn clear_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::ClearPayloadPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -4048,12 +4657,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/ClearPayload",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "ClearPayload"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn create_field_index(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateFieldIndexCollectionInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -4067,12 +4682,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/CreateFieldIndex",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "CreateFieldIndex"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn delete_field_index(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteFieldIndexCollectionInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -4086,12 +4707,15 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/DeleteFieldIndex",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "DeleteFieldIndex"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn search(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPointsInternal>,
-        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -4105,12 +4729,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Search",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Search"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn search_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchBatchPointsInternal>,
-        ) -> Result<tonic::Response<super::SearchBatchResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -4124,12 +4754,15 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/SearchBatch",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "SearchBatch"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPointsInternal>,
-        ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::ScrollResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -4143,12 +4776,15 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Scroll",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Scroll"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn count(
             &mut self,
             request: impl tonic::IntoRequest<super::CountPointsInternal>,
-        ) -> Result<tonic::Response<super::CountResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::CountResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -4162,12 +4798,18 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Count",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Count"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn recommend(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPointsInternal>,
-        ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::RecommendResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -4181,12 +4823,15 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Recommend",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Recommend"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetPointsInternal>,
-        ) -> Result<tonic::Response<super::GetResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -4200,7 +4845,9 @@ pub mod points_internal_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.PointsInternal/Get",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.PointsInternal", "Get"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -4214,69 +4861,104 @@ pub mod points_internal_server {
         async fn upsert(
             &self,
             request: tonic::Request<super::UpsertPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn sync(
             &self,
             request: tonic::Request<super::SyncPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn delete(
             &self,
             request: tonic::Request<super::DeletePointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn set_payload(
             &self,
             request: tonic::Request<super::SetPayloadPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn overwrite_payload(
             &self,
             request: tonic::Request<super::SetPayloadPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn delete_payload(
             &self,
             request: tonic::Request<super::DeletePayloadPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn clear_payload(
             &self,
             request: tonic::Request<super::ClearPayloadPointsInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn create_field_index(
             &self,
             request: tonic::Request<super::CreateFieldIndexCollectionInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn delete_field_index(
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
-        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn search(
             &self,
             request: tonic::Request<super::SearchPointsInternal>,
-        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
         async fn search_batch(
             &self,
             request: tonic::Request<super::SearchBatchPointsInternal>,
-        ) -> Result<tonic::Response<super::SearchBatchResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::SearchBatchResponse>,
+            tonic::Status,
+        >;
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPointsInternal>,
-        ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
         async fn count(
             &self,
             request: tonic::Request<super::CountPointsInternal>,
-        ) -> Result<tonic::Response<super::CountResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::CountResponse>, tonic::Status>;
         async fn recommend(
             &self,
             request: tonic::Request<super::RecommendPointsInternal>,
-        ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::RecommendResponse>,
+            tonic::Status,
+        >;
         async fn get(
             &self,
             request: tonic::Request<super::GetPointsInternal>,
-        ) -> Result<tonic::Response<super::GetResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsInternalServer<T: PointsInternal> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: PointsInternal> PointsInternalServer<T> {
@@ -4289,6 +4971,8 @@ pub mod points_internal_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -4312,6 +4996,22 @@ pub mod points_internal_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsInternalServer<T>
     where
@@ -4325,7 +5025,7 @@ pub mod points_internal_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -4347,13 +5047,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::UpsertPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).upsert(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4363,6 +5065,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4385,13 +5091,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::SyncPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).sync(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4401,6 +5109,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4423,13 +5135,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::DeletePointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).delete(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4439,6 +5153,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4461,13 +5179,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::SetPayloadPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).set_payload(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4477,6 +5197,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4499,7 +5223,7 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::SetPayloadPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).overwrite_payload(request).await
                             };
@@ -4508,6 +5232,8 @@ pub mod points_internal_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4517,6 +5243,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4539,7 +5269,7 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::DeletePayloadPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).delete_payload(request).await
                             };
@@ -4548,6 +5278,8 @@ pub mod points_internal_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4557,6 +5289,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4579,7 +5315,7 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::ClearPayloadPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).clear_payload(request).await
                             };
@@ -4588,6 +5324,8 @@ pub mod points_internal_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4597,6 +5335,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4622,7 +5364,7 @@ pub mod points_internal_server {
                                 super::CreateFieldIndexCollectionInternal,
                             >,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).create_field_index(request).await
                             };
@@ -4631,6 +5373,8 @@ pub mod points_internal_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4640,6 +5384,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4665,7 +5413,7 @@ pub mod points_internal_server {
                                 super::DeleteFieldIndexCollectionInternal,
                             >,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).delete_field_index(request).await
                             };
@@ -4674,6 +5422,8 @@ pub mod points_internal_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4683,6 +5433,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4705,13 +5459,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::SearchPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).search(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4721,6 +5477,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4743,7 +5503,7 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::SearchBatchPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).search_batch(request).await
                             };
@@ -4752,6 +5512,8 @@ pub mod points_internal_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4761,6 +5523,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4783,13 +5549,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::ScrollPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).scroll(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4799,6 +5567,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4821,13 +5593,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::CountPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).count(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4837,6 +5611,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4859,13 +5637,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::RecommendPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).recommend(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4875,6 +5655,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4897,13 +5681,15 @@ pub mod points_internal_server {
                             &mut self,
                             request: tonic::Request<super::GetPointsInternal>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).get(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -4913,6 +5699,10 @@ pub mod points_internal_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -4941,12 +5731,14 @@ pub mod points_internal_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: PointsInternal> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -5015,7 +5807,7 @@ pub mod raft_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -5071,11 +5863,27 @@ pub mod raft_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// Send Raft message to another peer
         pub async fn send(
             &mut self,
             request: impl tonic::IntoRequest<super::RaftMessage>,
-        ) -> Result<tonic::Response<()>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -5087,14 +5895,16 @@ pub mod raft_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Raft/Send");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Raft", "Send"));
+            self.inner.unary(req, path, codec).await
         }
         /// Send to bootstrap peer
         /// Returns uri by id if bootstrap knows this peer
         pub async fn who_is(
             &mut self,
             request: impl tonic::IntoRequest<super::PeerId>,
-        ) -> Result<tonic::Response<super::Uri>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::Uri>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -5106,7 +5916,9 @@ pub mod raft_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Raft/WhoIs");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Raft", "WhoIs"));
+            self.inner.unary(req, path, codec).await
         }
         /// Send to bootstrap peer
         /// Adds peer to the network
@@ -5114,7 +5926,7 @@ pub mod raft_client {
         pub async fn add_peer_to_known(
             &mut self,
             request: impl tonic::IntoRequest<super::AddPeerToKnownMessage>,
-        ) -> Result<tonic::Response<super::AllPeers>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::AllPeers>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -5128,7 +5940,10 @@ pub mod raft_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Raft/AddPeerToKnown",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Raft", "AddPeerToKnown"));
+            self.inner.unary(req, path, codec).await
         }
         /// DEPRECATED
         /// Its functionality is now included in `AddPeerToKnown`
@@ -5138,7 +5953,7 @@ pub mod raft_client {
         pub async fn add_peer_as_participant(
             &mut self,
             request: impl tonic::IntoRequest<super::PeerId>,
-        ) -> Result<tonic::Response<()>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -5152,7 +5967,10 @@ pub mod raft_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Raft/AddPeerAsParticipant",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Raft", "AddPeerAsParticipant"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -5167,20 +5985,20 @@ pub mod raft_server {
         async fn send(
             &self,
             request: tonic::Request<super::RaftMessage>,
-        ) -> Result<tonic::Response<()>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
         /// Send to bootstrap peer
         /// Returns uri by id if bootstrap knows this peer
         async fn who_is(
             &self,
             request: tonic::Request<super::PeerId>,
-        ) -> Result<tonic::Response<super::Uri>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::Uri>, tonic::Status>;
         /// Send to bootstrap peer
         /// Adds peer to the network
         /// Returns all peers
         async fn add_peer_to_known(
             &self,
             request: tonic::Request<super::AddPeerToKnownMessage>,
-        ) -> Result<tonic::Response<super::AllPeers>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::AllPeers>, tonic::Status>;
         /// DEPRECATED
         /// Its functionality is now included in `AddPeerToKnown`
         ///
@@ -5189,13 +6007,15 @@ pub mod raft_server {
         async fn add_peer_as_participant(
             &self,
             request: tonic::Request<super::PeerId>,
-        ) -> Result<tonic::Response<()>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct RaftServer<T: Raft> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Raft> RaftServer<T> {
@@ -5208,6 +6028,8 @@ pub mod raft_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -5231,6 +6053,22 @@ pub mod raft_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for RaftServer<T>
     where
@@ -5244,7 +6082,7 @@ pub mod raft_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -5264,13 +6102,15 @@ pub mod raft_server {
                             &mut self,
                             request: tonic::Request<super::RaftMessage>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).send(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5280,6 +6120,10 @@ pub mod raft_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -5300,13 +6144,15 @@ pub mod raft_server {
                             &mut self,
                             request: tonic::Request<super::PeerId>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).who_is(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5316,6 +6162,10 @@ pub mod raft_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -5338,7 +6188,7 @@ pub mod raft_server {
                             &mut self,
                             request: tonic::Request<super::AddPeerToKnownMessage>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).add_peer_to_known(request).await
                             };
@@ -5347,6 +6197,8 @@ pub mod raft_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5356,6 +6208,10 @@ pub mod raft_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -5376,7 +6232,7 @@ pub mod raft_server {
                             &mut self,
                             request: tonic::Request<super::PeerId>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).add_peer_as_participant(request).await
                             };
@@ -5385,6 +6241,8 @@ pub mod raft_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5394,6 +6252,10 @@ pub mod raft_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -5422,12 +6284,14 @@ pub mod raft_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: Raft> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -5527,7 +6391,7 @@ pub mod snapshots_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -5583,12 +6447,31 @@ pub mod snapshots_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         ///
         /// Create collection snapshot
         pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateSnapshotRequest>,
-        ) -> Result<tonic::Response<super::CreateSnapshotResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CreateSnapshotResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -5600,14 +6483,19 @@ pub mod snapshots_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Snapshots/Create");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Snapshots", "Create"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// List collection snapshots
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListSnapshotsRequest>,
-        ) -> Result<tonic::Response<super::ListSnapshotsResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListSnapshotsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -5619,14 +6507,19 @@ pub mod snapshots_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Snapshots/List");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Snapshots", "List"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Delete collection snapshots
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteSnapshotRequest>,
-        ) -> Result<tonic::Response<super::DeleteSnapshotResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteSnapshotResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -5638,14 +6531,19 @@ pub mod snapshots_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Snapshots/Delete");
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Snapshots", "Delete"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// Create full storage snapshot
         pub async fn create_full(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateFullSnapshotRequest>,
-        ) -> Result<tonic::Response<super::CreateSnapshotResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CreateSnapshotResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -5659,14 +6557,20 @@ pub mod snapshots_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Snapshots/CreateFull",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Snapshots", "CreateFull"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// List full storage snapshots
         pub async fn list_full(
             &mut self,
             request: impl tonic::IntoRequest<super::ListFullSnapshotsRequest>,
-        ) -> Result<tonic::Response<super::ListSnapshotsResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListSnapshotsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -5680,14 +6584,19 @@ pub mod snapshots_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Snapshots/ListFull",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Snapshots", "ListFull"));
+            self.inner.unary(req, path, codec).await
         }
         ///
         /// List full storage snapshots
         pub async fn delete_full(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteFullSnapshotRequest>,
-        ) -> Result<tonic::Response<super::DeleteSnapshotResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteSnapshotResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -5701,7 +6610,10 @@ pub mod snapshots_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Snapshots/DeleteFull",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Snapshots", "DeleteFull"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -5717,43 +6629,63 @@ pub mod snapshots_server {
         async fn create(
             &self,
             request: tonic::Request<super::CreateSnapshotRequest>,
-        ) -> Result<tonic::Response<super::CreateSnapshotResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CreateSnapshotResponse>,
+            tonic::Status,
+        >;
         ///
         /// List collection snapshots
         async fn list(
             &self,
             request: tonic::Request<super::ListSnapshotsRequest>,
-        ) -> Result<tonic::Response<super::ListSnapshotsResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListSnapshotsResponse>,
+            tonic::Status,
+        >;
         ///
         /// Delete collection snapshots
         async fn delete(
             &self,
             request: tonic::Request<super::DeleteSnapshotRequest>,
-        ) -> Result<tonic::Response<super::DeleteSnapshotResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteSnapshotResponse>,
+            tonic::Status,
+        >;
         ///
         /// Create full storage snapshot
         async fn create_full(
             &self,
             request: tonic::Request<super::CreateFullSnapshotRequest>,
-        ) -> Result<tonic::Response<super::CreateSnapshotResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CreateSnapshotResponse>,
+            tonic::Status,
+        >;
         ///
         /// List full storage snapshots
         async fn list_full(
             &self,
             request: tonic::Request<super::ListFullSnapshotsRequest>,
-        ) -> Result<tonic::Response<super::ListSnapshotsResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListSnapshotsResponse>,
+            tonic::Status,
+        >;
         ///
         /// List full storage snapshots
         async fn delete_full(
             &self,
             request: tonic::Request<super::DeleteFullSnapshotRequest>,
-        ) -> Result<tonic::Response<super::DeleteSnapshotResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteSnapshotResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct SnapshotsServer<T: Snapshots> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Snapshots> SnapshotsServer<T> {
@@ -5766,6 +6698,8 @@ pub mod snapshots_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -5789,6 +6723,22 @@ pub mod snapshots_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for SnapshotsServer<T>
     where
@@ -5802,7 +6752,7 @@ pub mod snapshots_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -5824,13 +6774,15 @@ pub mod snapshots_server {
                             &mut self,
                             request: tonic::Request<super::CreateSnapshotRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).create(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5840,6 +6792,10 @@ pub mod snapshots_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -5862,13 +6818,15 @@ pub mod snapshots_server {
                             &mut self,
                             request: tonic::Request<super::ListSnapshotsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).list(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5878,6 +6836,10 @@ pub mod snapshots_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -5900,13 +6862,15 @@ pub mod snapshots_server {
                             &mut self,
                             request: tonic::Request<super::DeleteSnapshotRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).delete(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5916,6 +6880,10 @@ pub mod snapshots_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -5938,13 +6906,15 @@ pub mod snapshots_server {
                             &mut self,
                             request: tonic::Request<super::CreateFullSnapshotRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).create_full(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5954,6 +6924,10 @@ pub mod snapshots_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -5976,13 +6950,15 @@ pub mod snapshots_server {
                             &mut self,
                             request: tonic::Request<super::ListFullSnapshotsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).list_full(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -5992,6 +6968,10 @@ pub mod snapshots_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -6014,13 +6994,15 @@ pub mod snapshots_server {
                             &mut self,
                             request: tonic::Request<super::DeleteFullSnapshotRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).delete_full(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -6030,6 +7012,10 @@ pub mod snapshots_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -6058,12 +7044,14 @@ pub mod snapshots_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: Snapshots> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -6099,7 +7087,7 @@ pub mod qdrant_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -6155,10 +7143,29 @@ pub mod qdrant_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn health_check(
             &mut self,
             request: impl tonic::IntoRequest<super::HealthCheckRequest>,
-        ) -> Result<tonic::Response<super::HealthCheckReply>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::HealthCheckReply>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -6172,7 +7179,9 @@ pub mod qdrant_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/qdrant.Qdrant/HealthCheck",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Qdrant", "HealthCheck"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -6186,13 +7195,18 @@ pub mod qdrant_server {
         async fn health_check(
             &self,
             request: tonic::Request<super::HealthCheckRequest>,
-        ) -> Result<tonic::Response<super::HealthCheckReply>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::HealthCheckReply>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct QdrantServer<T: Qdrant> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Qdrant> QdrantServer<T> {
@@ -6205,6 +7219,8 @@ pub mod qdrant_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -6228,6 +7244,22 @@ pub mod qdrant_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for QdrantServer<T>
     where
@@ -6241,7 +7273,7 @@ pub mod qdrant_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -6263,7 +7295,7 @@ pub mod qdrant_server {
                             &mut self,
                             request: tonic::Request<super::HealthCheckRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).health_check(request).await
                             };
@@ -6272,6 +7304,8 @@ pub mod qdrant_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -6281,6 +7315,10 @@ pub mod qdrant_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -6309,12 +7347,14 @@ pub mod qdrant_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: Qdrant> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {

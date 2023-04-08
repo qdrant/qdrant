@@ -74,10 +74,22 @@ pub async fn do_list_snapshots(
 }
 
 pub async fn do_create_snapshot(
-    toc: &TableOfContent,
+    dispatcher: &Dispatcher,
     collection_name: &str,
+    wait: bool,
 ) -> Result<SnapshotDescription, StorageError> {
-    toc.create_snapshot(collection_name).await
+    let collection = collection_name.to_string();
+    let dispatcher = dispatcher.clone();
+    let snapshot = tokio::spawn(async move { dispatcher.create_snapshot(&collection).await });
+    if wait {
+        Ok(snapshot.await??)
+    } else {
+        Ok(SnapshotDescription {
+            name: "".to_string(),
+            creation_time: None,
+            size: 0,
+        })
+    }
 }
 
 pub async fn do_get_collection_cluster(

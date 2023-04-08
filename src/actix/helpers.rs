@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use actix_web::rt::time::Instant;
-use actix_web::{error, Error, HttpResponse, Responder};
+use actix_web::{error, Error, HttpResponse};
 use api::grpc::models::{ApiResponse, ApiStatus};
 use collection::operations::types::CollectionError;
 use serde::Serialize;
@@ -22,7 +22,15 @@ pub fn storage_into_actix_error(err: StorageError) -> Error {
     }
 }
 
-pub fn process_response<D>(response: Result<D, StorageError>, timing: Instant) -> impl Responder
+pub fn accepted_response(timing: Instant) -> HttpResponse {
+    HttpResponse::Accepted().json(ApiResponse::<()> {
+        result: None,
+        status: ApiStatus::Accepted,
+        time: timing.elapsed().as_secs_f64(),
+    })
+}
+
+pub fn process_response<D>(response: Result<D, StorageError>, timing: Instant) -> HttpResponse
 where
     D: Serialize + Debug,
 {

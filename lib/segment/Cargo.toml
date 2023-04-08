@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-tempfile = "3.4.0"
+tempfile = "3.5.0"
 criterion = "0.4"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
@@ -50,6 +50,7 @@ semver = "1.0.17"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 patricia_tree = "0.5.5"
+validator = { version = "0.16", features = ["derive"] }
 
 [[bench]]
 name = "vector_search"

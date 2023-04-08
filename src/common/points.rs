@@ -14,8 +14,9 @@ use segment::types::{PayloadFieldSchema, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+use validator::Validate;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CreateFieldIndex {
     pub field_name: String,
     #[serde(alias = "field_type")]

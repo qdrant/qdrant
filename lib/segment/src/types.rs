@@ -14,6 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
+use validator::{Validate, ValidationErrors};
 
 use crate::common::utils;
 use crate::common::utils::MultiValue;
@@ -307,12 +308,14 @@ pub enum Indexes {
 }
 
 /// Config of HNSW index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    #[validate(range(min = 4, max = 10_000))]
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    #[validate(range(min = 4))]
     pub ef_construct: usize,
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
@@ -344,7 +347,7 @@ pub enum ScalarType {
     Int8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScalarQuantizationConfig {
     /// Type of quantization to use
@@ -352,14 +355,16 @@ pub struct ScalarQuantizationConfig {
     pub r#type: ScalarType,
     /// Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0, max = 1.0))]
     pub quantile: Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct ScalarQuantization {
+    #[validate]
     pub scalar: ScalarQuantizationConfig,
 }
 
@@ -385,6 +390,14 @@ impl Eq for ScalarQuantizationConfig {}
 #[serde(untagged)]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
+}
+
+impl Validate for QuantizationConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            QuantizationConfig::Scalar(scalar) => scalar.validate(),
+        }
+    }
 }
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {
@@ -1082,6 +1095,12 @@ pub struct IsEmptyCondition {
     pub is_empty: PayloadField,
 }
 
+/// Select points with null payload for a specified field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+pub struct IsNullCondition {
+    pub is_null: PayloadField,
+}
+
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
@@ -1100,8 +1119,10 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 pub enum Condition {
     /// Check if field satisfies provided condition
     Field(FieldCondition),
-    /// Check if payload field is empty: equals to `NULL`, empty array, or does not exists
+    /// Check if payload field is empty: equals to empty array, or does not exists
     IsEmpty(IsEmptyCondition),
+    /// Check if payload field equals `NULL`
+    IsNull(IsNullCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
     /// Nested filter
@@ -1523,6 +1544,58 @@ mod tests {
                 value: ValueVariants::Keyword("world".to_owned())
             })
         );
+    }
+
+    #[test]
+    fn test_parse_empty_query() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "is_empty" : {
+                        "key" : "Jason"
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::IsEmpty(c)) => c,
+            _ => panic!("Condition::IsEmpty expected"),
+        };
+
+        assert_eq!(c.is_empty.key.as_str(), "Jason");
+    }
+
+    #[test]
+    fn test_parse_null_query() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "is_null" : {
+                        "key" : "Jason"
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::IsNull(c)) => c,
+            _ => panic!("Condition::IsNull expected"),
+        };
+
+        assert_eq!(c.is_null.key.as_str(), "Jason");
     }
 
     #[test]

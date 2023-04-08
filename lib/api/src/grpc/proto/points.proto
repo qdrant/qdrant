@@ -350,11 +350,16 @@ message Condition {
     IsEmptyCondition is_empty = 2;
     HasIdCondition has_id = 3;
     Filter filter = 4;
+    IsNullCondition is_null = 5;
   }
 }
 
 message IsEmptyCondition {
   string key = 1;
+}
+
+message IsNullCondition {
+    string key = 1;
 }
 
 message HasIdCondition {

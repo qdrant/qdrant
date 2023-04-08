@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-tempfile = "3.4.0"
+tempfile = "3.5.0"
 criterion = "0.4"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
@@ -23,23 +23,25 @@ serde = { version = "~1.0", features = ["derive"] }
 serde_json = { version = "~1.0", features = ["std"] }
 serde_cbor = "0.11.2"
 rmp-serde = "~1.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "7536f9e222d55cc53f7f7507a3028b0e303976cc"}
+wal = { git = "https://github.com/qdrant/wal.git", rev = "1a6bb813611cd5549500eb03d7232c6b1d48df39"}
 ordered-float = "3.6"
 hashring = "0.3.0"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 
-tokio = {version = "~1.26", features = ["full"]}
-futures = "0.3.27"
+tokio = {version = "~1.27", features = ["full"]}
+futures = "0.3.28"
 atomicwrites = "0.4.0"
 log = "0.4"
 env_logger = "0.10.0"
 merge = "0.1.0"
-async-trait = "0.1.67"
+async-trait = "0.1.68"
 arc-swap = "1.6.0"
-tonic = { version = "0.8.3", features = ["gzip"] }
+tonic = { version = "0.9.1", features = ["gzip", "tls"] }
 tower = "0.4.13"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 url = { version = "2", features = ["serde"] }
+actix-web-validator = "5.0.1"
+validator = { version = "0.16", features = ["derive"] }
 
 segment = {path = "../segment"}
 api = {path = "../api"}

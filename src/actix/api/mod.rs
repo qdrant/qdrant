@@ -8,3 +8,12 @@ pub mod search_api;
 pub mod service_api;
 pub mod snapshot_api;
 pub mod update_api;
+
+use serde::Deserialize;
+use validator::Validate;
+
+#[derive(Deserialize, Validate)]
+struct CollectionPath {
+    #[validate(length(min = 1, max = 255))]
+    name: String,
+}

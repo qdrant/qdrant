@@ -58,7 +58,7 @@ pub fn init(
         let qdrant_service = QdrantService::default();
         let collections_service = CollectionsService::new(dispatcher.clone());
         let points_service = PointsService::new(dispatcher.toc().clone());
-        let snapshot_service = SnapshotsService::new(dispatcher.toc().clone());
+        let snapshot_service = SnapshotsService::new(dispatcher.clone());
 
         log::info!("Qdrant gRPC listening on {}", grpc_port);
 
@@ -66,7 +66,7 @@ pub fn init(
 
         if settings.service.enable_tls {
             let tls_config = settings.tls()?;
-            let tls_server_config = helpers::load_tls_server_config(tls_config)?;
+            let tls_server_config = helpers::load_tls_external_server_config(tls_config)?;
 
             server = server
                 .tls_config(tls_server_config)
@@ -80,22 +80,26 @@ pub fn init(
             .add_service(
                 QdrantServer::new(qdrant_service)
                     .send_compressed(CompressionEncoding::Gzip)
-                    .accept_compressed(CompressionEncoding::Gzip),
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
             )
             .add_service(
                 CollectionsServer::new(collections_service)
                     .send_compressed(CompressionEncoding::Gzip)
-                    .accept_compressed(CompressionEncoding::Gzip),
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
             )
             .add_service(
                 PointsServer::new(points_service)
                     .send_compressed(CompressionEncoding::Gzip)
-                    .accept_compressed(CompressionEncoding::Gzip),
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
             )
             .add_service(
                 SnapshotsServer::new(snapshot_service)
                     .send_compressed(CompressionEncoding::Gzip)
-                    .accept_compressed(CompressionEncoding::Gzip),
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
             )
             .serve_with_shutdown(socket, async {
                 signal::ctrl_c().await.unwrap();
@@ -147,22 +151,26 @@ pub fn init_internal(
                 .add_service(
                     QdrantServer::new(qdrant_service)
                         .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip),
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
                     CollectionsInternalServer::new(collections_internal_service)
                         .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip),
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
                     PointsInternalServer::new(points_internal_service)
                         .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip),
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
                 )
                 .add_service(
                     RaftServer::new(raft_service)
                         .send_compressed(CompressionEncoding::Gzip)
-                        .accept_compressed(CompressionEncoding::Gzip),
+                        .accept_compressed(CompressionEncoding::Gzip)
+                        .max_decoding_message_size(usize::MAX),
                 )
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();

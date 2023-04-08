@@ -65,6 +65,34 @@ impl<T> MultiValue<T> {
     }
 }
 
+impl MultiValue<&Value> {
+    pub(crate) fn check_is_empty(&self) -> bool {
+        match self {
+            Self::Multiple(vec) => vec.is_empty(),
+            Self::Single(val) => match val {
+                None => true,
+                Some(Value::Array(vec)) => vec.is_empty(),
+                Some(Value::Null) => true,
+                _ => false,
+            },
+        }
+    }
+    pub(crate) fn check_is_null(&self) -> bool {
+        match self {
+            MultiValue::Single(val) => {
+                if let Some(val) = val {
+                    return val.is_null();
+                }
+                false
+            }
+            // { "a": [ { "b": null }, { "b": 1 } ] } => true
+            // { "a": [ { "b": 1 }, { "b": null } ] } => true
+            // { "a": [ { "b": 1 }, { "b": 2 } ] } => false
+            MultiValue::Multiple(vals) => vals.iter().any(|val| val.is_null()),
+        }
+    }
+}
+
 impl<T> Iterator for MultiValue<T> {
     type Item = T;
 

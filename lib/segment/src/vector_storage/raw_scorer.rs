@@ -95,7 +95,7 @@ where
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         let mut size: usize = 0;
         for point_id in points.iter().copied() {
-            if self.deleted[point_id as usize] {
+            if !self.check_point(point_id) {
                 continue;
             }
             let other_vector = self.vector_storage.get_vector(point_id);
@@ -113,7 +113,9 @@ where
     }
 
     fn check_point(&self, point: PointOffsetType) -> bool {
-        point < self.points_count && !self.deleted[point as usize]
+        point < self.points_count
+            && (point as usize) < self.deleted.len()
+            && !self.deleted[point as usize]
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
@@ -133,7 +135,7 @@ where
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let scores = points
-            .filter(|point_id| !self.deleted[*point_id as usize])
+            .filter(|point_id| self.check_point(*point_id))
             .map(|point_id| {
                 let other_vector = self.vector_storage.get_vector(point_id);
                 ScoredPointOffset {
