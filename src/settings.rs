@@ -1,5 +1,8 @@
 use std::{env, io};
 
+use api::grpc::transport_channel_pool::{
+    DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
+};
 use collection::operations::validation;
 use config::{Config, ConfigError, Environment, File};
 use segment::common::cpu::get_num_cpus;
@@ -145,11 +148,11 @@ fn default_log_level() -> String {
 }
 
 fn default_timeout_ms() -> u64 {
-    1000 * 60
+    DEFAULT_GRPC_TIMEOUT.as_millis() as u64
 }
 
 fn default_connection_timeout_ms() -> u64 {
-    2000
+    DEFAULT_CONNECT_TIMEOUT.as_millis() as u64
 }
 
 fn default_tick_period_ms() -> u64 {
@@ -166,7 +169,7 @@ fn default_max_message_queue_size() -> usize {
 }
 
 fn default_connection_pool_size() -> usize {
-    2
+    DEFAULT_POOL_SIZE
 }
 
 impl Settings {

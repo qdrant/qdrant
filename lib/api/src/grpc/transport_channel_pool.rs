@@ -12,15 +12,22 @@ use crate::grpc::dynamic_pool::CountedItem;
 use crate::grpc::qdrant::qdrant_client::QdrantClient;
 use crate::grpc::qdrant::HealthCheckRequest;
 
-const MAX_CONNECTIONS_PER_CHANNEL: usize = 16;
-const DEFAULT_RETRIES: usize = 10;
+pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+pub const DEFAULT_POOL_SIZE: usize = 2;
+
+const MAX_CONNECTIONS_PER_CHANNEL: usize = usize::MAX; // Unlimited
+const DEFAULT_RETRIES: usize = 2;
 const DEFAULT_BACKOFF: Duration = Duration::from_millis(100);
 
-const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
-const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
+// How long to wait for response from server, before checking health of the server
+const SMART_CONNECT_INTERVAL: Duration = Duration::from_secs(1);
 
-const SMART_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
-const DEFAULT_POOL_SIZE: usize = 1;
+// There is no indication, that health-check API is affected by high parallel load
+// So we can use small timeout for health-check
+const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
+
+// Try to recreate channel, if there were no successful requests within this time
 const CHANNEL_TTL: Duration = Duration::from_secs(5);
 
 #[derive(thiserror::Error, Debug)]
@@ -35,7 +42,7 @@ enum RetryAction {
     Fail(Status),
     RetryOnce(Status),
     RetryWithBackoff(Status),
-    RetryWithoutBackoff(Status),
+    RetryImmediately(Status),
 }
 
 enum HealthCheckError {
@@ -157,14 +164,22 @@ impl TransportChannelPool {
     /// For performance reasons, we start the check only after `SMART_CONNECT_TIMEOUT`.
     async fn check_connectability(&self, uri: &Uri) -> HealthCheckError {
         loop {
-            tokio::time::sleep(SMART_CONNECT_TIMEOUT).await;
+            tokio::time::sleep(SMART_CONNECT_INTERVAL).await;
             let channel = self.get_pooled_channel(uri).await;
             match channel {
                 None => return HealthCheckError::NoChannel,
                 Some(Err(tonic_error)) => return HealthCheckError::ConnectionError(tonic_error),
                 Some(Ok(channel)) => {
                     let mut client = QdrantClient::new(channel.item().clone());
-                    let resp = client.health_check(HealthCheckRequest {}).await;
+
+                    let resp: Result<_, Status> = select! {
+                        res = client.health_check(HealthCheckRequest {}) => {
+                            res
+                        }
+                        _ = tokio::time::sleep(HEALTH_CHECK_TIMEOUT) => {
+                            Err(Status::deadline_exceeded(format!("Healthcheck timeout {}ms exceeded", HEALTH_CHECK_TIMEOUT.as_millis())))
+                        }
+                    };
                     match resp {
                         Ok(_) => {
                             channel.report_success();
@@ -260,12 +275,7 @@ impl TransportChannelPool {
                             // - Server was killed during the request processing and request timed out.
                             // Actions:
                             // - retry no backoff
-                            log::warn!(
-                                "HealthCheckError::ConnectionError to {}, error: {}",
-                                uri,
-                                error
-                            );
-                            RetryAction::RetryWithoutBackoff(Status::unavailable(format!(
+                            RetryAction::RetryImmediately(Status::unavailable(format!(
                                 "Failed to connect to {}, error: {}",
                                 uri, error
                             )))
@@ -273,17 +283,11 @@ impl TransportChannelPool {
                         HealthCheckError::RequestError(status) => {
                             // Channel might be unavailable or overloaded.
                             // Or server might be dead.
-                            log::warn!(
-                                "HealthCheckError::RequestError to {}, error: {}",
-                                uri,
-                                status
-                            );
                             RetryAction::RetryWithBackoff(status)
                         }
                     }
                 }
                 RequestFailure::RequestError(status) => {
-                    log::warn!("RequestError to {}, error: {}", uri, status);
                     match status.code() {
                         Code::Cancelled | Code::Unavailable => {
                             // Possible situations:
@@ -308,7 +312,6 @@ impl TransportChannelPool {
                     // - Server is overloaded
                     // Actions:
                     // - retry with backoff
-                    log::warn!("RequestConnectionError to {}, error: {}", uri, error);
                     RetryAction::RetryWithBackoff(Status::unavailable(format!(
                         "Failed to connect to {}, error: {}",
                         uri, error
@@ -318,10 +321,10 @@ impl TransportChannelPool {
 
             let (backoff_time, fallback_status) = match action {
                 RetryAction::Fail(err) => return Err(RequestError::FromClosure(err)),
-                RetryAction::RetryWithBackoff(fallback_status) => {
+                RetryAction::RetryImmediately(fallback_status) => {
                     (Duration::from_millis(0), fallback_status)
                 }
-                RetryAction::RetryWithoutBackoff(fallback_status) => {
+                RetryAction::RetryWithBackoff(fallback_status) => {
                     // Calculate backoff
                     let backoff = DEFAULT_BACKOFF * 2u32.pow(attempt as u32)
                         + Duration::from_millis(rand::random::<u64>() % 100);

@@ -114,7 +114,7 @@ impl<T: Clone> DynamicPool<T> {
 
     // Returns None if current capacity is not enough
     pub fn choose(&mut self) -> Option<CountedItem<T>> {
-        if self.items.is_empty() {
+        if self.items.len() < self.min_items {
             return None;
         }
 
