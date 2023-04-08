@@ -102,11 +102,11 @@ impl TransportChannelPool {
         guard.remove(uri);
     }
 
-    pub async fn recreate_pool(&self, uri: &Uri) -> Result<(), TonicError> {
-        let mut guard = self.uri_to_pool.write().await;
-        guard.remove(uri);
-        guard.insert(uri.clone(), self._init_pool_for_uri(uri.clone()).await?);
-        Ok(())
+    pub async fn drop_channel(&self, uri: &Uri, channel: CountedItem<Channel>) {
+        let guard = self.uri_to_pool.read().await;
+        if let Some(pool) = guard.get(uri) {
+            pool.drop_channel(channel);
+        }
     }
 
     async fn get_pooled_channel(
@@ -130,18 +130,6 @@ impl TransportChannelPool {
         }
     }
 
-    async fn set_last_success(&self, uri: &Uri) {
-        let guard = self.uri_to_pool.read().await;
-        if let Some(channels) = guard.get(uri) {
-            channels.set_last_success();
-        }
-    }
-
-    pub async fn last_success_age(&self, uri: &Uri) -> Option<Duration> {
-        let guard = self.uri_to_pool.read().await;
-        guard.get(uri).map(|channels| channels.last_success_age())
-    }
-
     /// Checks if the channel is still alive.
     ///
     /// It uses duplicate "fast" chanel, equivalent ot the original, but with smaller timeout.
@@ -155,13 +143,17 @@ impl TransportChannelPool {
             match channel {
                 None => return Status::unavailable("Channel dropped"),
                 Some(Err(tonic_error)) => {
-                    return Status::unavailable(format!("Connection error: {}", tonic_error))
+                    return Status::unavailable(format!(
+                        "Healthcheck connection error: {}",
+                        tonic_error
+                    ))
                 }
                 Some(Ok(channel)) => {
                     let mut client = QdrantClient::new(channel.item().clone());
                     let resp = client.health_check(HealthCheckRequest {}).await;
                     match resp {
                         Ok(_) => {
+                            channel.report_success();
                             // continue watching
                         }
                         Err(status) => return status,
@@ -201,7 +193,7 @@ impl TransportChannelPool {
 
             let res = match result {
                 Ok(res) => {
-                    self.set_last_success(uri).await;
+                    channel.report_success();
                     return Ok(res);
                 }
                 Err(err) => match err.code() {
@@ -220,21 +212,12 @@ impl TransportChannelPool {
                         //   - check if channels require reconnect
                         //   - check if backoff is possible
                         //   - return error or retry
-                        let last_success_age = self.last_success_age(uri).await;
-                        match last_success_age {
-                            None => {
-                                // Pool doesn't exist, that is possible if the peer was removed from the cluster
-                                // we can simply return the error
-                                return Err(RequestError::FromClosure(err));
-                            }
-                            Some(success_age) => {
-                                if success_age > CHANNEL_TTL {
-                                    // There were no successful requests for a long time, we can try to reconnect
-                                    // It might be possible that server died and changed its ip address
-                                    self.recreate_pool(uri).await?;
-                                }
-                            }
-                        };
+                        let last_success_age = channel.last_success_age();
+                        if last_success_age > CHANNEL_TTL {
+                            // There were no successful requests for a long time, we can try to reconnect
+                            // It might be possible that server died and changed its ip address
+                            self.drop_channel(uri, channel).await;
+                        }
 
                         if retries_left > 0 {
                             // We can try to make one more attempt

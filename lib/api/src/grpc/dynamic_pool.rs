@@ -1,84 +1,134 @@
-use std::sync::atomic::AtomicUsize;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use rand::Rng;
+
+#[derive(Debug)]
+struct ItemWithStats<T: Clone> {
+    pub item: T,
+    pub usage: AtomicUsize,
+    pub last_success: AtomicUsize,
+}
+
+impl<T: Clone> ItemWithStats<T> {
+    fn new(item: T, last_used_since: usize) -> Self {
+        Self {
+            item,
+            usage: AtomicUsize::new(0),
+            last_success: AtomicUsize::new(last_used_since),
+        }
+    }
+}
 
 pub struct DynamicPool<T: Clone> {
-    items: Vec<T>,
-    // How many items are currently in use
-    usage: Vec<Arc<AtomicUsize>>,
+    items: HashMap<u64, Arc<ItemWithStats<T>>>,
     // How many times one item can be used
     max_usage_per_item: usize,
     // Minimal number of items in the pool
     min_items: usize,
+    // Instant when the pool was created
+    init_at: Instant,
 }
 
 pub struct CountedItem<T: Clone> {
-    item: T,
-    counter: Arc<AtomicUsize>,
+    item: Arc<ItemWithStats<T>>,
+    item_id: u64,
+    init_at: Instant,
 }
 
 impl<T: Clone> CountedItem<T> {
-    fn new(item: T, counter: Arc<AtomicUsize>) -> Self {
-        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Self { item, counter }
+    fn new(item_id: u64, item: Arc<ItemWithStats<T>>, init_at: Instant) -> Self {
+        item.usage.fetch_add(1, Ordering::Relaxed);
+        Self {
+            item,
+            item_id,
+            init_at,
+        }
     }
 
     pub fn item(&self) -> &T {
-        &self.item
+        &self.item.item
     }
 
-    pub fn item_mut(&mut self) -> &mut T {
-        &mut self.item
+    pub fn report_success(&self) {
+        let time_since_init = Instant::now().duration_since(self.init_at).as_millis() as usize;
+        self.item
+            .last_success
+            .store(time_since_init, Ordering::Relaxed);
+    }
+
+    pub fn last_success_age(&self) -> Duration {
+        let time_since_init = Instant::now().duration_since(self.init_at).as_millis() as usize;
+        let time_since_last_success = self.item.last_success.load(Ordering::Relaxed);
+        Duration::from_millis((time_since_init - time_since_last_success) as u64)
     }
 }
 
 impl<T: Clone> Drop for CountedItem<T> {
     fn drop(&mut self) {
-        self.counter
-            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        self.item.usage.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
 impl<T: Clone> DynamicPool<T> {
+    fn random_idx() -> u64 {
+        rand::thread_rng().gen()
+    }
+
     pub fn new(items: Vec<T>, max_usage_per_item: usize, min_items: usize) -> Self {
         debug_assert!(max_usage_per_item > 0);
         debug_assert!(items.len() >= min_items);
-        let usages = items
-            .iter()
-            .map(|_| Arc::new(AtomicUsize::new(0)))
+        let init_at = Instant::now();
+        let last_success_since = Instant::now().duration_since(init_at).as_millis() as usize;
+        let items = items
+            .into_iter()
+            .map(|item| {
+                let item = Arc::new(ItemWithStats::new(item, last_success_since));
+                (Self::random_idx(), item)
+            })
             .collect();
         Self {
             items,
-            usage: usages,
             max_usage_per_item,
             min_items,
+            init_at,
         }
     }
 
+    pub fn drop_item(&mut self, item: CountedItem<T>) {
+        let item_id = item.item_id;
+        self.items.remove(&item_id);
+    }
+
     pub fn add(&mut self, item: T) -> CountedItem<T> {
-        self.items.push(item.clone());
-        let usage = Arc::new(AtomicUsize::new(0));
-        self.usage.push(usage.clone());
-        CountedItem::new(item, usage)
+        let item_with_stats = Arc::new(ItemWithStats::new(
+            item,
+            Instant::now().duration_since(self.init_at).as_millis() as usize,
+        ));
+        let item_id = Self::random_idx();
+        self.items.insert(item_id, item_with_stats.clone());
+        CountedItem::new(item_id, item_with_stats, self.init_at)
     }
 
     // Returns None if current capacity is not enough
     pub fn choose(&mut self) -> Option<CountedItem<T>> {
+        if self.items.is_empty() {
+            return None;
+        }
+
         let mut total_usage = 0;
         let mut min_usage = std::usize::MAX;
         let mut min_usage_idx = 0;
-        for (idx, usage) in self
-            .usage
-            .iter()
-            .enumerate()
-            .map(|(id, usage)| (id, usage.load(std::sync::atomic::Ordering::SeqCst)))
-        {
+        for (idx, item) in self.items.iter() {
+            let usage = item.usage.load(Ordering::Relaxed);
             total_usage += usage;
             if usage < min_usage {
                 min_usage = usage;
-                min_usage_idx = idx;
+                min_usage_idx = *idx;
             }
         }
-
         if min_usage >= self.max_usage_per_item {
             // All items are used too much, we can not use any of them.
             // Return None to indicate that we need to add a new item
@@ -91,32 +141,39 @@ impl<T: Clone> DynamicPool<T> {
             && self.items.len() > self.min_items
         {
             // We have too many items, and we have enough capacity to remove some of them
-            let item = self.items.remove(min_usage_idx);
-            let usage = self.usage.remove(min_usage_idx);
-            return Some(CountedItem::new(item, usage));
+            let item = self
+                .items
+                .remove(&min_usage_idx)
+                .expect("Item must exist, as we just found it");
+            return Some(CountedItem::new(min_usage_idx, item, self.init_at));
         }
 
         Some(CountedItem::new(
-            self.items[min_usage_idx].clone(),
-            self.usage[min_usage_idx].clone(),
+            min_usage_idx,
+            self.items
+                .get(&min_usage_idx)
+                .expect("Item must exist, as we just found it")
+                .clone(),
+            self.init_at,
         ))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
 
     async fn use_item(item: CountedItem<Arc<AtomicUsize>>) {
-        item.item()
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        item.item().fetch_add(1, Ordering::SeqCst);
         // Sleep for 1-100 ms
         tokio::time::sleep(std::time::Duration::from_millis(
             rand::random::<u64>() % 100 + 1,
         ))
         .await;
-        item.item()
-            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        item.item().fetch_sub(1, Ordering::SeqCst);
+        item.report_success();
         drop(item);
     }
 
@@ -134,8 +191,7 @@ mod tests {
                 Some(it) => it,
             };
 
-            item.item()
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            item.item().fetch_add(1, Ordering::SeqCst);
             items.push(item);
         }
 
@@ -145,8 +201,8 @@ mod tests {
             items.pop();
         }
 
-        for usage in pool.usage.iter() {
-            println!("{}", usage.load(std::sync::atomic::Ordering::SeqCst));
+        for (idx, item) in pool.items.iter() {
+            println!("{} -> {:?}", idx, item);
         }
 
         assert!(pool.choose().is_some());
@@ -182,12 +238,9 @@ mod tests {
             }
         });
 
-        pool.items.iter().for_each(|item| {
-            assert_eq!(item.load(std::sync::atomic::Ordering::SeqCst), 0);
-        });
-
-        pool.usage.iter().for_each(|usage| {
-            assert_eq!(usage.load(std::sync::atomic::Ordering::SeqCst), 0);
+        pool.items.iter().for_each(|(_, item)| {
+            assert_eq!(item.item.load(Ordering::SeqCst), 0);
+            assert_eq!(item.usage.load(Ordering::SeqCst), 0);
         });
 
         assert!(pool.items.len() < 50);

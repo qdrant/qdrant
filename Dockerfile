@@ -34,6 +34,9 @@ RUN cargo chef cook --release --target $(bash target_arch.sh) --recipe-path reci
 
 COPY . .
 
+ARG CARGO_PROFILE_RELEASE_LTO
+ENV CARGO_PROFILE_RELEASE_LTO=${CARGO_PROFILE_RELEASE_LTO:-'fat'}
+
 # Build actual target here
 RUN cargo build --release --target $(bash target_arch.sh) --bin qdrant
 

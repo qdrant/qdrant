@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -30,8 +29,6 @@ pub struct DynamicChannelPool {
     timeout: Duration,
     connection_timeout: Duration,
     tls_config: Option<ClientTlsConfig>,
-    // Timestamp of the last successful connection.
-    last_success: AtomicUsize,
 }
 
 impl DynamicChannelPool {
@@ -52,7 +49,6 @@ impl DynamicChannelPool {
         }
 
         let init_at = Instant::now();
-        let last_success_since = Instant::now().duration_since(init_at).as_millis() as usize;
 
         let pool = DynamicPool::new(channels, usage_per_channel, min_channels);
         Ok(Self {
@@ -62,7 +58,6 @@ impl DynamicChannelPool {
             timeout,
             connection_timeout,
             tls_config,
-            last_success: AtomicUsize::new(last_success_since),
         })
     }
 
@@ -88,15 +83,7 @@ impl DynamicChannelPool {
         Ok(channel)
     }
 
-    pub fn set_last_success(&self) {
-        let last_success_since = Instant::now().duration_since(self.init_at).as_millis() as usize;
-        self.last_success
-            .store(last_success_since, Ordering::Relaxed);
-    }
-
-    pub fn last_success_age(&self) -> Duration {
-        let last_success_since = self.last_success.load(Ordering::Relaxed);
-        let last_success = self.init_at + Duration::from_millis(last_success_since as u64);
-        Instant::now().duration_since(last_success)
+    pub fn drop_channel(&self, channel: CountedItem<Channel>) {
+        self.pool.lock().drop_item(channel);
     }
 }
