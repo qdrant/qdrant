@@ -72,6 +72,28 @@ impl InvertedIndex {
         }
     }
 
+    pub fn get_document_tokens(&self, document: &Document) -> HashSet<String> {
+        let mut document_idx = 0;
+        self.vocab
+            .iter()
+            .filter(|(_token, &idx)| {
+                // if we found all document tokens
+                if document_idx >= document.tokens.len() {
+                    return false;
+                }
+                if document.tokens.contains(&idx) {
+                    document_idx += 1;
+                    true
+                } else {
+                    false
+                }
+            })
+            .map(|(token, _idx)| {
+                std::string::String::from_utf8(token).expect("token not valid utf-8")
+            })
+            .collect()
+    }
+
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
         self.points_count += 1;
         if self.point_to_docs.len() <= idx as usize {

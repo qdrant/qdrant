@@ -15,8 +15,8 @@ impl Default for PostingList {
 }
 
 impl PostingList {
-    const LOWER_THRESHOLD: f64 = 0.1;
-    const UPPER_THRESHOLD: f64 = 0.2;
+    const LOWER_THRESHOLD: f64 = 0.03;
+    const UPPER_THRESHOLD: f64 = 0.032;
 
     pub fn new(idx: PointOffsetType) -> Self {
         Self::FullVec(vec![idx])
