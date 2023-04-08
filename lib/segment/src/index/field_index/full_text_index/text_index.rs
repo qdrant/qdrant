@@ -262,16 +262,11 @@ mod tests {
                     .unwrap();
             }
 
-            assert_eq!(
-                index.inverted_index.vocab_count,
-                index.inverted_index.vocab.len()
-            );
-
             assert_eq!(index.count_indexed_points(), payloads.len());
-            //
-            // let filter_condition = filter_request("multivac");
-            // let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            // assert_eq!(search_res, vec![0, 4]);
+
+            let filter_condition = filter_request("multivac");
+            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
+            assert_eq!(search_res, vec![0, 4]);
 
             let filter_condition = filter_request("giant computer");
             let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
@@ -310,7 +305,6 @@ mod tests {
             let mut index = FullTextIndex::new(db, config, "text");
             let loaded = index.load().unwrap();
             assert!(loaded);
-            assert_eq!(index.inverted_index.vocab_count, 1);
 
             assert_eq!(index.count_indexed_points(), 4);
 
