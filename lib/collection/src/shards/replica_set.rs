@@ -999,11 +999,15 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+    pub async fn create_snapshot(
+        &self,
+        target_path: &Path,
+        save_wal: bool,
+    ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
 
         if let Some(local) = &*local_read {
-            local.create_snapshot(target_path).await?
+            local.create_snapshot(target_path, save_wal).await?
         }
 
         self.replica_state

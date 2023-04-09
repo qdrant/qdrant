@@ -53,15 +53,17 @@ type Result<T> = result::Result<T, WalError>;
 pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,
+    options: WalOptions,
 }
 
 impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
-    pub fn new(dir: &str, wal_options: &WalOptions) -> Result<SerdeWal<R>> {
-        let wal = Wal::with_options(dir, wal_options)
+    pub fn new(dir: &str, wal_options: WalOptions) -> Result<SerdeWal<R>> {
+        let wal = Wal::with_options(dir, &wal_options)
             .map_err(|err| WalError::InitWalError(format!("{err:?}")))?;
         Ok(SerdeWal {
             record: PhantomData,
             wal,
+            options: wal_options,
         })
     }
 
@@ -125,6 +127,14 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn path(&self) -> &Path {
         self.wal.path()
     }
+
+    pub fn last_index(&self) -> u64 {
+        self.wal.last_index()
+    }
+
+    pub fn segment_capacity(&self) -> usize {
+        self.options.segment_capacity
+    }
 }
 
 #[cfg(test)]
@@ -141,13 +151,14 @@ mod tests {
     #[test]
     fn test_wal() {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let capacity = 32 * 1024 * 1024;
         let wal_options = WalOptions {
-            segment_capacity: 32 * 1024 * 1024,
+            segment_capacity: capacity,
             segment_queue_len: 0,
         };
 
         let mut serde_wal: SerdeWal<TestRecord> =
-            SerdeWal::new(dir.path().to_str().unwrap(), &wal_options).unwrap();
+            SerdeWal::new(dir.path().to_str().unwrap(), wal_options).unwrap();
 
         let record = TestRecord::Struct1(TestInternalStruct1 { data: 10 });
 
@@ -157,7 +168,7 @@ mod tests {
         {
             let metadata = fs::metadata(dir.path().join("open-1").to_str().unwrap()).unwrap();
             println!("file size: {}", metadata.size());
-            assert_eq!(metadata.size() as usize, wal_options.segment_capacity);
+            assert_eq!(metadata.size() as usize, capacity);
         };
 
         for (_idx, rec) in serde_wal.read(0) {

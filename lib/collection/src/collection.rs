@@ -1390,7 +1390,11 @@ impl Collection {
                 let shard_snapshot_path =
                     versioned_shard_path(&snapshot_path_with_tmp_extension, *shard_id, 0);
                 create_dir_all(&shard_snapshot_path).await?;
-                replica_set.create_snapshot(&shard_snapshot_path).await?;
+                // If node is listener, we can save whatever currently is in the storage
+                let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
+                replica_set
+                    .create_snapshot(&shard_snapshot_path, save_wal)
+                    .await?;
             }
         }
 

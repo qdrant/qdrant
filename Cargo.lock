@@ -4568,7 +4568,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=1a6bb813611cd5549500eb03d7232c6b1d48df39#1a6bb813611cd5549500eb03d7232c6b1d48df39"
+source = "git+https://github.com/qdrant/wal.git?rev=a0ed4ebd79899471b49fcceb2537e1d6890ca869#a0ed4ebd79899471b49fcceb2537e1d6890ca869"
 dependencies = [
  "byteorder",
  "crc",
@@ -4580,7 +4580,7 @@ dependencies = [
  "memmap2",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.36.5",
+ "rustix 0.35.13",
  "serde",
 ]
 
