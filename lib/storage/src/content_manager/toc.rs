@@ -1253,10 +1253,6 @@ impl TableOfContent {
         wait: bool,
         ordering: WriteOrdering,
     ) -> Result<UpdateResult, StorageError> {
-        let _rate_limit = match &self.update_rate_limiter {
-            None => None,
-            Some(rate_limiter) => Some(rate_limiter.acquire().await),
-        };
         let collection = self.get_collection(collection_name).await?;
         let result = match shard_selection {
             Some(shard_selection) => {
@@ -1265,6 +1261,10 @@ impl TableOfContent {
                     .await
             }
             None => {
+                let _rate_limit = match &self.update_rate_limiter {
+                    None => None,
+                    Some(rate_limiter) => Some(rate_limiter.acquire().await),
+                };
                 if operation.is_write_operation() {
                     self.check_write_lock()?;
                 }
