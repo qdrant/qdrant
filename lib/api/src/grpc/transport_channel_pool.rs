@@ -45,12 +45,14 @@ enum RetryAction {
     RetryImmediately(Status),
 }
 
+#[derive(Debug)]
 enum HealthCheckError {
     NoChannel,
     ConnectionError(TonicError),
     RequestError(Status),
 }
 
+#[derive(Debug)]
 enum RequestFailure {
     HealthCheck(HealthCheckError),
     RequestError(Status),
@@ -177,7 +179,14 @@ impl TransportChannelPool {
                             res
                         }
                         _ = tokio::time::sleep(HEALTH_CHECK_TIMEOUT) => {
-                            Err(Status::deadline_exceeded(format!("Healthcheck timeout {}ms exceeded", HEALTH_CHECK_TIMEOUT.as_millis())))
+                            // Current healthcheck timed out, but maybe there were other requests
+                            // that succeeded in a given time window.
+                            // If so, we can continue watching.
+                            if channel.last_success_age() > HEALTH_CHECK_TIMEOUT {
+                                return HealthCheckError::RequestError(Status::deadline_exceeded(format!("Healthcheck timeout {}ms exceeded", HEALTH_CHECK_TIMEOUT.as_millis())))
+                            } else {
+                                continue;
+                            }
                         }
                     };
                     match resp {
@@ -256,6 +265,13 @@ impl TransportChannelPool {
                 Ok(body) => return Ok(body),
                 Err(err) => err,
             };
+
+            log::warn!(
+                "Request to {} failed, attempt: {}, error: {:?}",
+                uri,
+                attempt,
+                error_result
+            );
 
             let action = match error_result {
                 RequestFailure::HealthCheck(healthcheck_error) => {

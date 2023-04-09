@@ -135,9 +135,10 @@ impl<T: Clone> DynamicPool<T> {
             return None;
         }
 
-        let current_usage_capacity = self.items.len() * self.max_usage_per_item;
+        let current_usage_capacity = self.items.len().saturating_mul(self.max_usage_per_item);
 
-        if current_usage_capacity.saturating_sub(total_usage) > self.max_usage_per_item * 2
+        if current_usage_capacity.saturating_sub(total_usage)
+            > self.max_usage_per_item.saturating_mul(2)
             && self.items.len() > self.min_items
         {
             // We have too many items, and we have enough capacity to remove some of them
