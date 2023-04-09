@@ -30,7 +30,7 @@ Expected response:
 ```json
 {
   "title": "qdrant - vector search engine",
-  "version": "<vesion>"
+  "version": "<version>"
 }
 ```
 
