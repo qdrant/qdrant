@@ -533,8 +533,19 @@ impl LocalShard {
             (wal_guard.segment_capacity(), wal_guard.last_index())
         };
 
+        let target_path = Self::wal_path(snapshot_shard_path);
+
+        // Create directory if it does not exist
+        std::fs::create_dir_all(&target_path).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can not crate directory {}: {}",
+                target_path.display(),
+                err
+            ))
+        })?;
+
         Wal::generate_empty_wal_starting_at_index(
-            snapshot_shard_path,
+            target_path,
             &WalOptions {
                 segment_capacity,
                 segment_queue_len: 0,
