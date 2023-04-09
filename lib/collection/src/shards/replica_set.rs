@@ -1302,6 +1302,7 @@ impl ShardReplicaSet {
         let all_res: Vec<Result<_, _>> = {
             let local = self.local.read().await;
             let remotes = self.remotes.read().await;
+            let this_peer_id = self.this_peer_id();
 
             // target all remote peers that can receive updates
             let active_remote_shards: Vec<_> = remotes
@@ -1311,13 +1312,12 @@ impl ShardReplicaSet {
 
             // local is defined AND the peer itself can receive updates
             let local_is_updatable =
-                local.is_some() && self.peer_is_active_or_pending(&self.this_peer_id());
+                local.is_some() && self.peer_is_active_or_pending(&this_peer_id);
 
             if active_remote_shards.is_empty() && !local_is_updatable {
                 return Err(CollectionError::service_error(format!(
                     "The replica set for shard {} on peer {} has no active replica",
-                    self.shard_id,
-                    self.this_peer_id()
+                    self.shard_id, this_peer_id
                 )));
             }
 
@@ -1333,15 +1333,21 @@ impl ShardReplicaSet {
             }
 
             match local.deref() {
-                Some(local) if self.peer_is_active_or_pending(&self.this_peer_id()) => {
+                Some(local) if self.peer_is_active_or_pending(&this_peer_id) => {
+                    let local_wait =
+                        if self.peer_state(&this_peer_id) == Some(ReplicaState::Listener) {
+                            false
+                        } else {
+                            wait
+                        };
+
                     let local_update = async move {
                         local
                             .get()
-                            .update(operation.clone(), wait)
+                            .update(operation.clone(), local_wait)
                             .await
                             .map_err(|err| {
-                                let peer_id =
-                                    err.remote_peer_id().unwrap_or_else(|| self.this_peer_id());
+                                let peer_id = err.remote_peer_id().unwrap_or(this_peer_id);
 
                                 (peer_id, err)
                             })
