@@ -14,9 +14,7 @@ pub fn intersect_postings_iterator<'a>(
 
     let and_iter = smallest_posting
         .into_iter()
-        // .iter()
         .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)));
-    // .copied();
 
     Box::new(and_iter)
 }
