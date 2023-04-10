@@ -6213,6 +6213,7 @@
         "type": "object",
         "required": [
           "name",
+          "startup",
           "version"
         ],
         "properties": {
@@ -6241,6 +6242,10 @@
                 "nullable": true
               }
             ]
+          },
+          "startup": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

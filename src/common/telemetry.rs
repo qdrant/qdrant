@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use storage::dispatcher::Dispatcher;
 use uuid::Uuid;
 
-use crate::common::telemetry_ops::app_telemetry::AppBuildTelemetry;
+use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppBuildTelemetryCollector};
 use crate::common::telemetry_ops::cluster_telemetry::ClusterTelemetry;
 use crate::common::telemetry_ops::collections_telemetry::CollectionsTelemetry;
 use crate::common::telemetry_ops::requests_telemetry::{
@@ -19,6 +19,7 @@ pub struct TelemetryCollector {
     process_id: Uuid,
     settings: Settings,
     dispatcher: Arc<Dispatcher>,
+    pub app_telemetry_collector: AppBuildTelemetryCollector,
     pub actix_telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
     pub tonic_telemetry_collector: Arc<Mutex<TonicTelemetryCollector>>,
 }
@@ -59,6 +60,7 @@ impl TelemetryCollector {
             process_id: id,
             settings,
             dispatcher,
+            app_telemetry_collector: AppBuildTelemetryCollector::new(),
             actix_telemetry_collector: Arc::new(Mutex::new(ActixTelemetryCollector {
                 workers: Vec::new(),
             })),
@@ -69,16 +71,15 @@ impl TelemetryCollector {
     }
 
     pub async fn prepare_data(&self, level: usize) -> TelemetryData {
-        let result = TelemetryData {
+        TelemetryData {
             id: self.process_id.to_string(),
-            app: AppBuildTelemetry::collect(level),
             collections: CollectionsTelemetry::collect(level, self.dispatcher.toc()).await,
+            app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector),
             cluster: ClusterTelemetry::collect(level, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
                 &self.actix_telemetry_collector.lock(),
                 &self.tonic_telemetry_collector.lock(),
             ),
-        };
-        result
+        }
     }
 }
