@@ -3841,6 +3841,17 @@
                 "nullable": true
               }
             ]
+          },
+          "quantization_config": {
+            "description": "Custom params for quantization. If none - values from collection configuration are used.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -3898,6 +3909,59 @@
             "nullable": true
           }
         }
+      },
+      "QuantizationConfigDiff": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ScalarQuantizationDiff"
+          }
+        ]
+      },
+      "ScalarQuantizationDiff": {
+        "type": "object",
+        "required": [
+          "scalar"
+        ],
+        "properties": {
+          "scalar": {
+            "$ref": "#/components/schemas/ScalarQuantizationConfigDiff"
+          }
+        }
+      },
+      "ScalarQuantizationConfigDiff": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "description": "Type of quantization to use If `int8` - 8 bit quantization will be used",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScalarType"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quantile": {
+            "description": "Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values",
+            "type": "number",
+            "format": "float",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true
+          },
+          "always_ram": {
+            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "ScalarType": {
+        "type": "string",
+        "enum": [
+          "int8"
+        ]
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
@@ -4076,12 +4140,6 @@
             "nullable": true
           }
         }
-      },
-      "ScalarType": {
-        "type": "string",
-        "enum": [
-          "int8"
-        ]
       },
       "PayloadIndexInfo": {
         "description": "Display payload field type & index information",
@@ -6571,6 +6629,18 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/HnswConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quantization_config": {
+            "description": "Vector specific quantization config that overrides collection config",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
               },
               {
                 "nullable": true
