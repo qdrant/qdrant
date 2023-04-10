@@ -21,6 +21,7 @@ rand = "0.8.5"
 chrono = { version = "~0.4", features = ["serde"] }
 thiserror = "1.0"
 parking_lot = "0.12"
+validator = { version = "0.16", features = ["derive"] }
 
 segment = {path = "../segment"}
 
