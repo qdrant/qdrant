@@ -59,10 +59,7 @@
                       ]
                     },
                     "result": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/TelemetryData"
-                      }
+                      "$ref": "#/components/schemas/TelemetryData"
                     }
                   }
                 }
@@ -6756,6 +6753,11 @@
           "max_duration_micros": {
             "type": "number",
             "format": "float",
+            "nullable": true
+          },
+          "last_responded": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         }
