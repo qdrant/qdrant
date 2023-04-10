@@ -133,6 +133,9 @@ service:
   # Use TLS for client communication
   enable_tls: true
 
+  # Check user HTTPS client certificate against CA file specified in tls config
+  verify_https_client_certificate: true
+
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: true
@@ -142,7 +145,7 @@ cluster:
     # Port for internal communication between peers
     port: 6335
 
-    # Use TLS for internal communication between peers
+    # Use mTLS for internal communication between peers
     enable_tls: true
 
   # Configuration related to distributed consensus algorithm
@@ -161,7 +164,7 @@ telemetry_disabled: true
 
 
 # TLS settings
-tls_config:
+tls:
 
   # Certificate chain file
   cert: ./tls/cert.pem

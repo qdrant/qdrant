@@ -22,6 +22,8 @@ pub struct ServiceConfig {
     pub enable_cors: bool,
     #[serde(default)]
     pub enable_tls: bool,
+    #[serde(default)]
+    pub verify_https_client_certificate: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Default, Validate)]
