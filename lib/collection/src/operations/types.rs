@@ -675,7 +675,11 @@ pub struct VectorParams {
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for quantization. If none - values from collection configuration are used.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "quantization",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[validate]
     pub quantization_config: Option<QuantizationConfigDiff>,
 }
