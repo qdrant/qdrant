@@ -168,6 +168,7 @@ impl CollectionParams {
     pub fn get_all_vector_params(
         &self,
         collection_hnsw: &HnswConfig,
+        collection_quantization: Option<&QuantizationConfig>,
     ) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         Ok(self
             .vectors
@@ -181,6 +182,11 @@ impl CollectionParams {
                         hnsw_config: params
                             .hnsw_config
                             .and_then(|c| c.update(collection_hnsw).ok()),
+                        quantization_config: params
+                            .quantization_config
+                            .as_ref()
+                            .or(collection_quantization)
+                            .cloned(),
                     },
                 )
             })

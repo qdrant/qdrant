@@ -3838,6 +3838,17 @@
                 "nullable": true
               }
             ]
+          },
+          "quantization_config": {
+            "description": "Custom params for quantization. If none - values from collection configuration are used.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -3895,6 +3906,54 @@
             "nullable": true
           }
         }
+      },
+      "QuantizationConfig": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ScalarQuantization"
+          }
+        ]
+      },
+      "ScalarQuantization": {
+        "type": "object",
+        "required": [
+          "scalar"
+        ],
+        "properties": {
+          "scalar": {
+            "$ref": "#/components/schemas/ScalarQuantizationConfig"
+          }
+        }
+      },
+      "ScalarQuantizationConfig": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ScalarType"
+          },
+          "quantile": {
+            "description": "Quantile for quantization. Expected value range in [0.5, 1.0]. If not set - use the whole range of values",
+            "type": "number",
+            "format": "float",
+            "maximum": 1,
+            "minimum": 0.5,
+            "nullable": true
+          },
+          "always_ram": {
+            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "ScalarType": {
+        "type": "string",
+        "enum": [
+          "int8"
+        ]
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
@@ -4031,54 +4090,6 @@
             "minimum": 0
           }
         }
-      },
-      "QuantizationConfig": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/ScalarQuantization"
-          }
-        ]
-      },
-      "ScalarQuantization": {
-        "type": "object",
-        "required": [
-          "scalar"
-        ],
-        "properties": {
-          "scalar": {
-            "$ref": "#/components/schemas/ScalarQuantizationConfig"
-          }
-        }
-      },
-      "ScalarQuantizationConfig": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/ScalarType"
-          },
-          "quantile": {
-            "description": "Quantile for quantization. Expected value range in [0.5, 1.0]. If not set - use the whole range of values",
-            "type": "number",
-            "format": "float",
-            "maximum": 1,
-            "minimum": 0.5,
-            "nullable": true
-          },
-          "always_ram": {
-            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
-            "type": "boolean",
-            "nullable": true
-          }
-        }
-      },
-      "ScalarType": {
-        "type": "string",
-        "enum": [
-          "int8"
-        ]
       },
       "PayloadIndexInfo": {
         "description": "Display payload field type & index information",
@@ -6568,6 +6579,18 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/HnswConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quantization_config": {
+            "description": "Vector specific quantization config that overrides collection config",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
               },
               {
                 "nullable": true

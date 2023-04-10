@@ -210,9 +210,10 @@ impl SegmentBuilder {
     }
 
     fn update_quantization(segment: &Segment, stopped: &AtomicBool) -> OperationResult<()> {
-        if let Some(quantization) = &segment.config().quantization_config {
-            let segment_path = segment.current_path.as_path();
-            for (vector_name, vector_data) in &segment.vector_data {
+        let config = segment.config();
+        for (vector_name, vector_data) in &segment.vector_data {
+            if let Some(quantization) = config.quantization_config(vector_name) {
+                let segment_path = segment.current_path.as_path();
                 check_process_stopped(stopped)?;
 
                 let vector_storage_path = get_vector_storage_path(segment_path, vector_name);

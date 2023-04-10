@@ -75,7 +75,8 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
-            vector_data: collection_params.get_all_vector_params(&self.hnsw_config())?,
+            vector_data: collection_params
+                .get_all_vector_params(&self.hnsw_config(), self.quantization_config().as_ref())?,
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
@@ -121,7 +122,8 @@ pub trait SegmentOptimizer {
             total_vectors_size >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let optimized_config = SegmentConfig {
-            vector_data: collection_params.get_all_vector_params(&self.hnsw_config())?,
+            vector_data: collection_params
+                .get_all_vector_params(&self.hnsw_config(), self.quantization_config().as_ref())?,
             index: if is_indexed {
                 Indexes::Hnsw(self.hnsw_config())
             } else {

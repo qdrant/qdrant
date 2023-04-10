@@ -46,6 +46,7 @@ mod tests {
                     size: dim,
                     distance,
                     hnsw_config: None,
+                    quantization_config: None,
                 },
             )]),
             index: Indexes::Plain {},
