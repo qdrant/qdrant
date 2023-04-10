@@ -1,8 +1,21 @@
 use std::path::Path;
 
+use chrono::{DateTime, SubsecRound, Utc};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
+
+pub struct AppBuildTelemetryCollector {
+    pub startup: DateTime<Utc>,
+}
+
+impl AppBuildTelemetryCollector {
+    pub fn new() -> Self {
+        AppBuildTelemetryCollector {
+            startup: Utc::now().round_subsecs(2),
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct AppFeaturesTelemetry {
@@ -32,10 +45,11 @@ pub struct AppBuildTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub system: Option<RunningEnvironmentTelemetry>,
+    pub startup: DateTime<Utc>,
 }
 
 impl AppBuildTelemetry {
-    pub fn collect(level: usize) -> Self {
+    pub fn collect(level: usize, collector: &AppBuildTelemetryCollector) -> Self {
         AppBuildTelemetry {
             name: env!("CARGO_PKG_NAME").to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -53,6 +67,7 @@ impl AppBuildTelemetry {
             } else {
                 None
             },
+            startup: collector.startup,
         }
     }
 }
@@ -121,6 +136,7 @@ impl Anonymize for AppBuildTelemetry {
             version: self.version.clone(),
             features: self.features.anonymize(),
             system: self.system.anonymize(),
+            startup: self.startup.anonymize(),
         }
     }
 }
