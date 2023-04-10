@@ -32,6 +32,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             size: NonZeroU64::new(4).unwrap(),
             distance: Distance::Dot,
             hnsw_config: None,
+            quantization_config: None,
         }),
         shard_number: NonZeroU32::new(1).unwrap(),
         replication_factor: NonZeroU32::new(1).unwrap(),
