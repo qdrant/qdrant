@@ -35,9 +35,9 @@ impl CollectionsService {
                 Error = Status,
             >,
     {
+        let timing = Instant::now();
         let operation = request.into_inner();
         let wait_timeout = operation.wait_timeout();
-        let timing = Instant::now();
         let result = self
             .dispatcher
             .submit_collection_meta_op(operation.try_into()?, wait_timeout)

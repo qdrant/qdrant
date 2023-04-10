@@ -2039,11 +2039,13 @@ pub struct Vector {
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2054,11 +2056,13 @@ pub struct UpsertPoints {
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2070,11 +2074,13 @@ pub struct DeletePoints {
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// List of points to retrieve
     #[prost(message, repeated, tag = "2")]
@@ -2089,11 +2095,13 @@ pub struct GetPoints {
     #[prost(message, optional, tag = "6")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2108,11 +2116,13 @@ pub struct SetPayloadPoints {
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2127,11 +2137,13 @@ pub struct DeletePayloadPoints {
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClearPayloadPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -2143,17 +2155,20 @@ pub struct ClearPayloadPoints {
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFieldIndexCollection {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
     /// Field name to index
     #[prost(string, tag = "3")]
+    #[validate(length(min = 1))]
     pub field_name: ::prost::alloc::string::String,
     /// Field type.
     #[prost(enumeration = "FieldType", optional, tag = "4")]
@@ -2165,17 +2180,20 @@ pub struct CreateFieldIndexCollection {
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteFieldIndexCollection {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
     /// Field name to delete
     #[prost(string, tag = "3")]
+    #[validate(length(min = 1))]
     pub field_name: ::prost::alloc::string::String,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
@@ -2293,11 +2311,13 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "3")]
     pub quantization: ::core::option::Option<QuantizationSearchParams>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// vector
     #[prost(float, repeated, tag = "2")]
@@ -2307,6 +2327,7 @@ pub struct SearchPoints {
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "4")]
+    #[validate(range(min = 1))]
     pub limit: u64,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "6")]
@@ -2330,11 +2351,13 @@ pub struct SearchPoints {
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchPoints {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
@@ -2342,10 +2365,12 @@ pub struct SearchBatchPoints {
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
@@ -2375,11 +2400,13 @@ pub struct LookupLocation {
     #[prost(string, optional, tag = "2")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Look for vectors closest to those
     #[prost(message, repeated, tag = "2")]
@@ -2392,6 +2419,7 @@ pub struct RecommendPoints {
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "5")]
+    #[validate(range(min = 1))]
     pub limit: u64,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "7")]
@@ -2418,11 +2446,13 @@ pub struct RecommendPoints {
     #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchPoints {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub recommend_points: ::prost::alloc::vec::Vec<RecommendPoints>,
@@ -2430,11 +2460,13 @@ pub struct RecommendBatchPoints {
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
