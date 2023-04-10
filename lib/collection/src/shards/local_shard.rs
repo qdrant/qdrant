@@ -304,7 +304,9 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
 
-        let vector_params = config.params.get_all_vector_params(&config.hnsw_config)?;
+        let vector_params = config
+            .params
+            .get_all_vector_params(&config.hnsw_config, config.quantization_config.as_ref())?;
         let segment_number = config.optimizer_config.get_number_segments();
 
         for _sid in 0..segment_number {

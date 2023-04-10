@@ -2,9 +2,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
+use api::grpc::qdrant::QuantizationType;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::Distance;
+use segment::types::{
+    Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+};
 use tonic::Status;
 
 use super::config_diff::CollectionParamsDiff;
@@ -326,7 +329,38 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             })?,
             distance: from_grpc_dist(vector_params.distance)?,
             hnsw_config: vector_params.hnsw_config.map(Into::into),
+            quantization_config: match vector_params.quantization_config {
+                Some(config) => Some(
+                    grpc_to_segment_quantization_config(config)
+                        .map_err(Status::invalid_argument)?,
+                ),
+                None => None,
+            },
         })
+    }
+}
+
+fn grpc_to_segment_quantization_config(
+    value: api::grpc::qdrant::QuantizationConfig,
+) -> Result<QuantizationConfig, String> {
+    let quantization = value
+        .quantization
+        .ok_or_else(|| "QuantizationConfig should always have a value".to_string())?;
+    match quantization {
+        api::grpc::qdrant::quantization_config::Quantization::Scalar(config) => {
+            Ok(QuantizationConfig::Scalar(ScalarQuantization {
+                scalar: ScalarQuantizationConfig {
+                    r#type: match QuantizationType::from_i32(config.r#type) {
+                        Some(QuantizationType::Int8) => ScalarType::Int8,
+                        Some(QuantizationType::UnknownQuantization) | None => {
+                            return Err(format!("Cannot convert ordering: {}", config.r#type));
+                        }
+                    },
+                    quantile: config.quantile,
+                    always_ram: config.always_ram,
+                },
+            }))
+        }
     }
 }
 
@@ -705,6 +739,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             }
             .into(),
             hnsw_config: value.hnsw_config.map(Into::into),
+            quantization_config: value.quantization_config.map(Into::into),
         }
     }
 }

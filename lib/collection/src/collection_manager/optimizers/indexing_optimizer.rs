@@ -318,6 +318,7 @@ mod tests {
                         size: NonZeroU64::new(params.size as u64).unwrap(),
                         distance: params.distance,
                         hnsw_config: None,
+                        quantization_config: None,
                     },
                 )
             })
@@ -434,6 +435,7 @@ mod tests {
                     .unwrap(),
                     distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                     hnsw_config: None,
+                    quantization_config: None,
                 }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 replication_factor: NonZeroU32::new(1).unwrap(),

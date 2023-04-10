@@ -13,8 +13,8 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType,
-    SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
+    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -673,6 +673,14 @@ pub struct VectorParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
+    /// Custom params for quantization. If none - values from collection configuration are used.
+    #[serde(
+        default,
+        alias = "quantization",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[validate]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 impl Anonymize for VectorParams {
@@ -700,6 +708,31 @@ impl Anonymize for VectorParams {
 pub enum VectorsConfig {
     Single(VectorParams),
     Multi(BTreeMap<String, VectorParams>),
+}
+
+impl VectorsConfig {
+    pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
+        match self {
+            VectorsConfig::Single(params) => {
+                if name == DEFAULT_VECTOR_NAME {
+                    Some(params)
+                } else {
+                    None
+                }
+            }
+            VectorsConfig::Multi(params) => params.get(name),
+        }
+    }
+
+    /// Iterate over the named vector parameters.
+    ///
+    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParams)> + 'a> {
+        match self {
+            VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
+            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+        }
+    }
 }
 
 impl Anonymize for VectorsConfig {
@@ -732,31 +765,6 @@ impl Validate for VectorsConfig {
 impl From<VectorParams> for VectorsConfig {
     fn from(params: VectorParams) -> Self {
         VectorsConfig::Single(params)
-    }
-}
-
-impl VectorsConfig {
-    pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
-        match self {
-            VectorsConfig::Single(params) => {
-                if name == DEFAULT_VECTOR_NAME {
-                    Some(params)
-                } else {
-                    None
-                }
-            }
-            VectorsConfig::Multi(params) => params.get(name),
-        }
-    }
-
-    /// Iterate over the named vector parameters.
-    ///
-    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
-    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParams)> + 'a> {
-        match self {
-            VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
-            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
-        }
     }
 }
 
