@@ -3640,6 +3640,7 @@ dependencies = [
  "atomicwrites",
  "bincode",
  "bitvec",
+ "chrono",
  "criterion",
  "fs_extra",
  "geo",

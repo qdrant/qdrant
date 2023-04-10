@@ -2,6 +2,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
+use chrono::{DateTime, Utc};
+
 pub trait Anonymize {
     fn anonymize(&self) -> Self;
 }
@@ -58,5 +60,13 @@ impl Anonymize for usize {
         } else {
             *self
         }
+    }
+}
+
+impl Anonymize for DateTime<Utc> {
+    fn anonymize(&self) -> Self {
+        let coeff: f32 = rand::random();
+
+        *self + chrono::Duration::seconds(((coeff * 20.0) - 10.0) as i64)
     }
 }
