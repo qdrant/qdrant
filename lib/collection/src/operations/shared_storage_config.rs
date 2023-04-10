@@ -1,7 +1,7 @@
 use crate::operations::types::NodeType;
 
 const DEFAULT_UPDATE_QUEUE_SIZE: usize = 100;
-const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 5000;
+const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
 
 /// Storage configuration shared between all collections.
 /// Represents a per-node configuration, which might be changes with restart.

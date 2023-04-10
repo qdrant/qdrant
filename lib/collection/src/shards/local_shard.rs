@@ -20,7 +20,8 @@ use segment::types::{
 use tokio::fs::{copy, create_dir_all, remove_dir_all};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
+use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
+use wal::{Wal, WalOptions};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
@@ -157,7 +158,7 @@ impl LocalShard {
 
         let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
             wal_path.to_str().unwrap(),
-            &(&collection_config_read.wal_config).into(),
+            (&collection_config_read.wal_config).into(),
         )
         .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
 
@@ -345,7 +346,7 @@ impl LocalShard {
         }
 
         let wal: SerdeWal<CollectionUpdateOperations> =
-            SerdeWal::new(wal_path.to_str().unwrap(), &(&config.wal_config).into())?;
+            SerdeWal::new(wal_path.to_str().unwrap(), (&config.wal_config).into())?;
 
         let optimizers = build_optimizers(
             shard_path,
@@ -478,7 +479,11 @@ impl LocalShard {
     }
 
     /// create snapshot for local shard into `target_path`
-    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+    pub async fn create_snapshot(
+        &self,
+        target_path: &Path,
+        save_wal: bool,
+    ) -> CollectionResult<()> {
         let snapshot_shard_path = target_path;
 
         // snapshot all shard's segment
@@ -489,14 +494,28 @@ impl LocalShard {
         let wal = self.wal.clone();
         let snapshot_shard_path_owned = snapshot_shard_path.to_owned();
 
+        if !save_wal {
+            // If we are not saving WAL, we still need to make sure that all submitted by this point
+            // updates have made it to the segments. So we use the Plunger to achieve that.
+            // It will notify us when all submitted updates so far have been processed.
+            let (tx, rx) = oneshot::channel();
+            let plunger = UpdateSignal::Plunger(tx);
+            self.update_sender.load().send(plunger).await?;
+            rx.await?;
+        }
+
         tokio::task::spawn_blocking(move || {
             let segments_read = segments.read();
 
             // Do not change segments while snapshotting
             segments_read.snapshot_all_segments(&snapshot_segments_shard_path)?;
 
-            // snapshot all shard's WAL
-            Self::snapshot_wal(wal, &snapshot_shard_path_owned)
+            if save_wal {
+                // snapshot all shard's WAL
+                Self::snapshot_wal(wal, &snapshot_shard_path_owned)
+            } else {
+                Self::snapshot_empty_wal(wal, &snapshot_shard_path_owned)
+            }
         })
         .await??;
 
@@ -505,6 +524,37 @@ impl LocalShard {
         let target_shard_config_path = snapshot_shard_path.join(SHARD_CONFIG_FILE);
         copy(&shard_config_path, &target_shard_config_path).await?;
         Ok(())
+    }
+
+    /// Create empty WAL which is compatible with currently stored data
+    pub fn snapshot_empty_wal(wal: LockedWal, snapshot_shard_path: &Path) -> CollectionResult<()> {
+        let (segment_capacity, latest_op_num) = {
+            let wal_guard = wal.lock();
+            (wal_guard.segment_capacity(), wal_guard.last_index())
+        };
+
+        let target_path = Self::wal_path(snapshot_shard_path);
+
+        // Create directory if it does not exist
+        std::fs::create_dir_all(&target_path).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can not crate directory {}: {}",
+                target_path.display(),
+                err
+            ))
+        })?;
+
+        Wal::generate_empty_wal_starting_at_index(
+            target_path,
+            &WalOptions {
+                segment_capacity,
+                segment_queue_len: 0,
+            },
+            latest_op_num,
+        )
+        .map_err(|err| {
+            CollectionError::service_error(format!("Error while create empty WAL: {err}"))
+        })
     }
 
     /// snapshot WAL

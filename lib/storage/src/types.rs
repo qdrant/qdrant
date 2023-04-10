@@ -21,6 +21,8 @@ pub struct PerformanceConfig {
     pub max_search_threads: usize,
     #[serde(default = "default_max_optimization_threads")]
     pub max_optimization_threads: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_rate_limit: Option<usize>,
 }
 
 fn default_max_optimization_threads() -> usize {

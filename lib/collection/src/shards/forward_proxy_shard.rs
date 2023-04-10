@@ -120,8 +120,14 @@ impl ForwardProxyShard {
     }
 
     /// Forward `create_snapshot` to `wrapped_shard`
-    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
-        self.wrapped_shard.create_snapshot(target_path).await
+    pub async fn create_snapshot(
+        &self,
+        target_path: &Path,
+        save_wal: bool,
+    ) -> CollectionResult<()> {
+        self.wrapped_shard
+            .create_snapshot(target_path, save_wal)
+            .await
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
