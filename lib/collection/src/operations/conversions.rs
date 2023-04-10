@@ -329,33 +329,37 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             })?,
             distance: from_grpc_dist(vector_params.distance)?,
             hnsw_config: vector_params.hnsw_config.map(Into::into),
-            quantization_config: vector_params
-                .quantization_config
-                .map(grpc_to_segment_quantization_config),
+            quantization_config: match vector_params.quantization_config {
+                Some(config) => Some(
+                    grpc_to_segment_quantization_config(config)
+                        .map_err(Status::invalid_argument)?,
+                ),
+                None => None,
+            },
         })
     }
 }
 
 fn grpc_to_segment_quantization_config(
     value: api::grpc::qdrant::QuantizationConfig,
-) -> QuantizationConfig {
-    match value
+) -> Result<QuantizationConfig, String> {
+    let quantization = value
         .quantization
-        .expect("QuantizationConfig should always have a value")
-    {
+        .ok_or_else(|| "QuantizationConfig should always have a value".to_string())?;
+    match quantization {
         api::grpc::qdrant::quantization_config::Quantization::Scalar(config) => {
-            QuantizationConfig::Scalar(ScalarQuantization {
+            Ok(QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: ScalarQuantizationConfig {
                     r#type: match QuantizationType::from_i32(config.r#type) {
                         Some(QuantizationType::Int8) => ScalarType::Int8,
                         Some(QuantizationType::UnknownQuantization) | None => {
-                            panic!("cannot convert ordering: {}", config.r#type)
+                            return Err(format!("Cannot convert ordering: {}", config.r#type));
                         }
                     },
                     quantile: config.quantile,
                     always_ram: config.always_ram,
                 },
-            })
+            }))
         }
     }
 }
