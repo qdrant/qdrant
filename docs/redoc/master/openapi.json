@@ -3846,7 +3846,7 @@
             "description": "Custom params for quantization. If none - values from collection configuration are used.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/QuantizationConfigDiff"
+                "$ref": "#/components/schemas/QuantizationConfig"
               },
               {
                 "nullable": true
@@ -3910,40 +3910,35 @@
           }
         }
       },
-      "QuantizationConfigDiff": {
+      "QuantizationConfig": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/ScalarQuantizationDiff"
+            "$ref": "#/components/schemas/ScalarQuantization"
           }
         ]
       },
-      "ScalarQuantizationDiff": {
+      "ScalarQuantization": {
         "type": "object",
         "required": [
           "scalar"
         ],
         "properties": {
           "scalar": {
-            "$ref": "#/components/schemas/ScalarQuantizationConfigDiff"
+            "$ref": "#/components/schemas/ScalarQuantizationConfig"
           }
         }
       },
-      "ScalarQuantizationConfigDiff": {
+      "ScalarQuantizationConfig": {
         "type": "object",
+        "required": [
+          "type"
+        ],
         "properties": {
           "type": {
-            "description": "Type of quantization to use If `int8` - 8 bit quantization will be used",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ScalarType"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ScalarType"
           },
           "quantile": {
-            "description": "Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values",
+            "description": "Quantile for quantization. Expected value range in [0.5, 1.0]. If not set - use the whole range of values",
             "type": "number",
             "format": "float",
             "maximum": 1,
@@ -4096,48 +4091,6 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
-          }
-        }
-      },
-      "QuantizationConfig": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/ScalarQuantization"
-          }
-        ]
-      },
-      "ScalarQuantization": {
-        "type": "object",
-        "required": [
-          "scalar"
-        ],
-        "properties": {
-          "scalar": {
-            "$ref": "#/components/schemas/ScalarQuantizationConfig"
-          }
-        }
-      },
-      "ScalarQuantizationConfig": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/ScalarType"
-          },
-          "quantile": {
-            "description": "Quantile for quantization. Expected value range in [0.5, 1.0]. If not set - use the whole range of values",
-            "type": "number",
-            "format": "float",
-            "maximum": 1,
-            "minimum": 0.5,
-            "nullable": true
-          },
-          "always_ram": {
-            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
-            "type": "boolean",
-            "nullable": true
           }
         }
       },
