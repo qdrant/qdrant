@@ -58,11 +58,17 @@ impl Shard {
         telemetry
     }
 
-    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+    pub async fn create_snapshot(
+        &self,
+        target_path: &Path,
+        save_wal: bool,
+    ) -> CollectionResult<()> {
         match self {
-            Shard::Local(local_shard) => local_shard.create_snapshot(target_path).await,
-            Shard::Proxy(proxy_shard) => proxy_shard.create_snapshot(target_path).await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.create_snapshot(target_path).await,
+            Shard::Local(local_shard) => local_shard.create_snapshot(target_path, save_wal).await,
+            Shard::Proxy(proxy_shard) => proxy_shard.create_snapshot(target_path, save_wal).await,
+            Shard::ForwardProxy(proxy_shard) => {
+                proxy_shard.create_snapshot(target_path, save_wal).await
+            }
         }
     }
 
