@@ -48,7 +48,11 @@ pub struct HnswConfigDiff {
     /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
     /// Note: 1Kb = 1 vector of size 256
-    #[serde(alias = "full_scan_threshold_kb", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        alias = "full_scan_threshold_kb",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     #[validate(range(min = 1000))]
     pub full_scan_threshold: Option<usize>,
     /// Number of parallel threads used for background index building. If 0 - auto selection.
