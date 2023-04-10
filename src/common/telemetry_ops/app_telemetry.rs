@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SubsecRound, Utc};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ pub struct AppBuildTelemetryCollector {
 impl AppBuildTelemetryCollector {
     pub fn new() -> Self {
         AppBuildTelemetryCollector {
-            startup: Utc::now(),
+            startup: Utc::now().round_subsecs(2),
         }
     }
 }
@@ -136,7 +136,7 @@ impl Anonymize for AppBuildTelemetry {
             version: self.version.clone(),
             features: self.features.anonymize(),
             system: self.system.anonymize(),
-            startup: self.startup,
+            startup: self.startup.anonymize(),
         }
     }
 }

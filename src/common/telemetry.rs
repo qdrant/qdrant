@@ -19,7 +19,7 @@ pub struct TelemetryCollector {
     process_id: Uuid,
     settings: Settings,
     dispatcher: Arc<Dispatcher>,
-    pub app_telemetry_collector: Arc<Mutex<AppBuildTelemetryCollector>>,
+    pub app_telemetry_collector: AppBuildTelemetryCollector,
     pub actix_telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
     pub tonic_telemetry_collector: Arc<Mutex<TonicTelemetryCollector>>,
 }
@@ -60,7 +60,7 @@ impl TelemetryCollector {
             process_id: id,
             settings,
             dispatcher,
-            app_telemetry_collector: Arc::new(Mutex::new(AppBuildTelemetryCollector::new())),
+            app_telemetry_collector: AppBuildTelemetryCollector::new(),
             actix_telemetry_collector: Arc::new(Mutex::new(ActixTelemetryCollector {
                 workers: Vec::new(),
             })),
@@ -74,7 +74,7 @@ impl TelemetryCollector {
         TelemetryData {
             id: self.process_id.to_string(),
             collections: CollectionsTelemetry::collect(level, self.dispatcher.toc()).await,
-            app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector.lock()),
+            app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector),
             cluster: ClusterTelemetry::collect(level, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
                 &self.actix_telemetry_collector.lock(),
