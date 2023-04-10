@@ -118,22 +118,19 @@ impl<T: Clone> DynamicPool<T> {
             return None;
         }
 
+        // If all items are used too much, we cannot use any of them so we return None
         let mut total_usage = 0;
-        let mut min_usage = std::usize::MAX;
-        let mut min_usage_idx = 0;
-        for (idx, item) in self.items.iter() {
-            let usage = item.usage.load(Ordering::Relaxed);
-            total_usage += usage;
-            if usage < min_usage {
-                min_usage = usage;
-                min_usage_idx = *idx;
-            }
-        }
-        if min_usage >= self.max_usage_per_item {
-            // All items are used too much, we can not use any of them.
-            // Return None to indicate that we need to add a new item
-            return None;
-        }
+        let min_usage_idx = *self
+            .items
+            .iter()
+            .map(|(idx, item)| {
+                let usage = item.usage.load(Ordering::Relaxed);
+                total_usage += usage;
+                (idx, usage)
+            })
+            .filter(|(_, min_usage)| *min_usage < self.max_usage_per_item)
+            .min_by_key(|(_, usage)| *usage)?
+            .0;
 
         let current_usage_capacity = self.items.len().saturating_mul(self.max_usage_per_item);
 
