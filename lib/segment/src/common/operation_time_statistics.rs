@@ -1,13 +1,12 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SubsecRound, Utc};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::common::anonymize::Anonymize;
-use crate::common::utils::date_format::until_seconds;
 
 const AVG_DATASET_LEN: usize = 128;
 const SLIDING_WINDOW_LEN: usize = 8;
@@ -32,10 +31,7 @@ pub struct OperationDurationStatistics {
     #[serde(default)]
     pub max_duration_micros: Option<f32>,
 
-    #[serde(
-        serialize_with = "until_seconds::serialize_option",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub last_responded: Option<DateTime<Utc>>,
 }
@@ -184,7 +180,7 @@ impl OperationDurationsAggregator {
             timing_loops: 0,
             min_value: None,
             max_value: None,
-            last_response_date: Some(Utc::now()),
+            last_response_date: Some(Utc::now().round_subsecs(2)),
         }))
     }
 
@@ -211,7 +207,7 @@ impl OperationDurationsAggregator {
             self.fail_count += 1;
         }
 
-        self.last_response_date = Some(Utc::now());
+        self.last_response_date = Some(Utc::now().round_subsecs(2));
     }
 
     pub fn get_statistics(&self) -> OperationDurationStatistics {

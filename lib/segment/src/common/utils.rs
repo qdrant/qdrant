@@ -301,49 +301,6 @@ pub fn transpose_map_into_named_vector(
     result
 }
 
-pub mod date_format {
-    // Adapted from https://serde.rs/custom-date-format.html
-
-    use chrono::{DateTime, TimeZone, Utc};
-    use serde::{self, Deserialize, Deserializer, Serializer};
-
-    pub mod until_seconds {
-        use super::*;
-
-        const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
-
-        pub fn serialize<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            let s = format!("{}", date.format(FORMAT));
-            serializer.serialize_str(&s)
-        }
-
-        pub fn serialize_option<S>(
-            date: &Option<DateTime<Utc>>,
-            serializer: S,
-        ) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            match date {
-                Some(date) => serialize(date, serializer),
-                None => serializer.serialize_none(),
-            }
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let s = String::deserialize(deserializer)?;
-            Utc.datetime_from_str(&s, FORMAT)
-                .map_err(serde::de::Error::custom)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

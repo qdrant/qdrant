@@ -13,15 +13,11 @@ pub type HttpStatusCode = u16;
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
-    // #[serde(skip_serializing_if = "HashMap::is_empty")]
-    // TODO: Refactor this as an Option
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
-    // #[serde(skip_serializing_if = "HashMap::is_empty")]
-    // TODO: Refactor this as an Option
     pub responses: HashMap<String, OperationDurationStatistics>,
 }
 
@@ -180,10 +176,10 @@ impl Anonymize for WebApiTelemetry {
             .responses
             .iter()
             .map(|(key, value)| {
-                let value = value
+                let value: HashMap<_, _> = value
                     .iter()
                     .map(|(key, value)| (*key, value.anonymize()))
-                    .collect::<HashMap<HttpStatusCode, OperationDurationStatistics>>();
+                    .collect();
                 (key.clone(), value)
             })
             .collect();

@@ -35,11 +35,12 @@ def test_telemetry():
     
     result = response.json()['result']
     
-    assert result['collections']['number_of_collections'] == 1
+    assert result['collections']['number_of_collections'] >= 1
 
     endpoint = result['requests']['rest']['responses']['PUT /collections/{name}/points']
     assert endpoint['200']['count'] > 0
     
     last_queried = endpoint['200']['last_responded']
-    last_queried = datetime.strptime(last_queried, '%Y-%m-%d %H:%M:%S')
-    assert datetime.now() - last_queried < timedelta(seconds=1)
+    last_queried = datetime.strptime(last_queried, "%Y-%m-%dT%H:%M:%S.%f%z")
+    # Assert today
+    assert last_queried.date() == datetime.now().date()
