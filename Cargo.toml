@@ -40,8 +40,6 @@ clap = { version = "4.2.1", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.3", features = ["v4", "serde"] }
 sys-info = "0.9.1"
-actix-web-validator = "5.0.1"
-validator = { version = "0.16", features = ["derive"] }
 
 config = "~0.13.3"
 
@@ -58,6 +56,8 @@ tar = "0.4.38"
 reqwest = { version = "0.11", features = ["stream", "rustls-tls", "blocking"] }
 openssl = { version = "0.10", features = ["vendored"] }
 prometheus = { version = "0.13.3", default-features = false }
+validator = { version = "0.16", features = ["derive"] }
+actix-web-validator = "5.0.1"
 
 # Consensus related crates
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }

@@ -11,10 +11,23 @@ pub fn warn_validation_errors(description: &str, errs: &ValidationErrors) {
         .for_each(|(key, msg)| log::warn!("- {key}: {}", msg));
 }
 
+/// Label the given validation errors in a single string.
+pub fn label_errors(label: impl AsRef<str>, errs: &ValidationErrors) -> String {
+    format!(
+        "{}: [{}]",
+        label.as_ref(),
+        describe_errors(errs)
+            .into_iter()
+            .map(|(field, err)| format!("{field}: {err}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    )
+}
+
 /// Describe the given validation errors.
 ///
 /// Returns a list of error messages for fields: `(field, message)`
-pub fn describe_errors(errs: &ValidationErrors) -> Vec<(String, String)> {
+fn describe_errors(errs: &ValidationErrors) -> Vec<(String, String)> {
     flatten_errors(errs)
         .into_iter()
         .map(|(_, name, err)| (name, describe_error(err)))
@@ -65,6 +78,10 @@ fn describe_error(
                 None => msg,
             }
         }
+        "not_empty" => match params.get("value") {
+            Some(value) => format!("value {value} invalid, must not be empty"),
+            None => err.to_string(),
+        },
         // Undescribed error codes
         _ => err.to_string(),
     }

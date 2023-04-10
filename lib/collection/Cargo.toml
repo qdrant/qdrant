@@ -40,8 +40,8 @@ tonic = { version = "0.9.1", features = ["gzip", "tls"] }
 tower = "0.4.13"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 url = { version = "2", features = ["serde"] }
-actix-web-validator = "5.0.1"
 validator = { version = "0.16", features = ["derive"] }
+actix-web-validator = "5.0.1"
 
 segment = {path = "../segment"}
 api = {path = "../api"}

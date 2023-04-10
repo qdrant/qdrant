@@ -10,6 +10,7 @@ use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
+use super::validate_and_log;
 use crate::tonic::api::collections_common::get;
 
 pub struct CollectionsInternalService {
@@ -28,6 +29,7 @@ impl CollectionsInternal for CollectionsInternalService {
         &self,
         request: Request<GetCollectionInfoRequestInternal>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
+        validate_and_log(request.get_ref());
         let GetCollectionInfoRequestInternal {
             get_collection_info_request,
             shard_id,
@@ -48,6 +50,7 @@ impl CollectionsInternal for CollectionsInternalService {
         &self,
         request: Request<InitiateShardTransferRequest>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
         let timing = Instant::now();
         let InitiateShardTransferRequest {
             collection_name,
