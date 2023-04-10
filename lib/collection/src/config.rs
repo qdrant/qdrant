@@ -182,15 +182,11 @@ impl CollectionParams {
                         hnsw_config: params
                             .hnsw_config
                             .and_then(|c| c.update(collection_hnsw).ok()),
-                        quantization_config: collection_quantization
+                        quantization_config: params
+                            .quantization_config
                             .as_ref()
-                            .zip(params.quantization_config.as_ref())
-                            .and_then(|(collection_quantization, vector_quantization)| {
-                                vector_quantization
-                                    .clone()
-                                    .update(collection_quantization)
-                                    .ok()
-                            }),
+                            .or(collection_quantization)
+                            .cloned(),
                     },
                 )
             })

@@ -14,7 +14,7 @@ pub struct VectorParams {
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of vector quantization config. If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "4")]
-    pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
+    pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -220,34 +220,6 @@ pub mod quantization_config {
     pub enum Quantization {
         #[prost(message, tag = "1")]
         Scalar(super::ScalarQuantization),
-    }
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ScalarQuantizationDiff {
-    /// Type of quantization
-    #[prost(enumeration = "QuantizationType", optional, tag = "1")]
-    pub r#type: ::core::option::Option<i32>,
-    /// Number of bits to use for quantization
-    #[prost(float, optional, tag = "2")]
-    pub quantile: ::core::option::Option<f32>,
-    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-    #[prost(bool, optional, tag = "3")]
-    pub always_ram: ::core::option::Option<bool>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QuantizationConfigDiff {
-    #[prost(oneof = "quantization_config_diff::Quantization", tags = "1")]
-    pub quantization: ::core::option::Option<quantization_config_diff::Quantization>,
-}
-/// Nested message and enum types in `QuantizationConfigDiff`.
-pub mod quantization_config_diff {
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Quantization {
-        #[prost(message, tag = "1")]
-        Scalar(super::ScalarQuantizationDiff),
     }
 }
 #[derive(validator::Validate)]

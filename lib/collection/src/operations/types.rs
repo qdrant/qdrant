@@ -13,8 +13,8 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType,
-    SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
+    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,6 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
-use super::config_diff::QuantizationConfigDiff;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
@@ -681,7 +680,7 @@ pub struct VectorParams {
         skip_serializing_if = "Option::is_none"
     )]
     #[validate]
-    pub quantization_config: Option<QuantizationConfigDiff>,
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 impl Anonymize for VectorParams {

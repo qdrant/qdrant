@@ -2,11 +2,11 @@ use std::num::NonZeroU32;
 
 use merge::Merge;
 use schemars::JsonSchema;
-use segment::types::{HnswConfig, QuantizationConfig, ScalarType};
+use segment::types::HnswConfig;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
@@ -66,85 +66,6 @@ pub struct HnswConfigDiff {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_m: Option<usize>,
 }
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
-pub enum QuantizationConfigDiff {
-    Scalar(ScalarQuantizationDiff),
-}
-
-impl Merge for QuantizationConfigDiff {
-    fn merge(&mut self, other: Self) {
-        match (self, other) {
-            (QuantizationConfigDiff::Scalar(config), QuantizationConfigDiff::Scalar(other)) => {
-                config.merge(other)
-            }
-        }
-    }
-}
-
-impl Validate for QuantizationConfigDiff {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            QuantizationConfigDiff::Scalar(config) => config.validate(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct ScalarQuantizationConfigDiff {
-    /// Type of quantization to use
-    /// If `int8` - 8 bit quantization will be used
-    pub r#type: Option<ScalarType>,
-    /// Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 0.5, max = 1.0))]
-    pub quantile: Option<f32>,
-    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub always_ram: Option<bool>,
-}
-
-impl Merge for ScalarQuantizationConfigDiff {
-    fn merge(&mut self, other: Self) {
-        if let Some(r#type) = other.r#type {
-            self.r#type.replace(r#type);
-        }
-        if let Some(quantile) = other.quantile {
-            self.quantile.replace(quantile);
-        }
-        if let Some(always_ram) = other.always_ram {
-            self.always_ram.replace(always_ram);
-        }
-    }
-}
-
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Merge, Hash,
-)]
-pub struct ScalarQuantizationDiff {
-    #[validate]
-    pub scalar: ScalarQuantizationConfigDiff,
-}
-
-impl PartialEq for ScalarQuantizationConfigDiff {
-    fn eq(&self, other: &Self) -> bool {
-        self.quantile == other.quantile
-            && self.always_ram == other.always_ram
-            && self.r#type == other.r#type
-    }
-}
-
-impl std::hash::Hash for ScalarQuantizationConfigDiff {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.always_ram.hash(state);
-        self.r#type.hash(state);
-    }
-}
-
-impl Eq for ScalarQuantizationConfigDiff {}
 
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
@@ -242,8 +163,6 @@ impl DiffConfig<HnswConfig> for HnswConfigDiff {}
 impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {}
 
 impl DiffConfig<WalConfig> for WalConfigDiff {}
-
-impl DiffConfig<QuantizationConfig> for QuantizationConfigDiff {}
 
 impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
 

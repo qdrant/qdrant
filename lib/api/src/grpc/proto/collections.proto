@@ -5,7 +5,7 @@ message VectorParams {
   uint64 size = 1; // Size of the vectors
   Distance distance = 2; // Distance function used for comparing vectors
   optional HnswConfigDiff hnsw_config = 3; // Configuration of vector HNSW graph. If omitted - the collection configuration will be used
-  optional QuantizationConfigDiff quantization_config = 4; // Configuration of vector quantization config. If omitted - the collection configuration will be used
+  optional QuantizationConfig quantization_config = 4; // Configuration of vector quantization config. If omitted - the collection configuration will be used
 }
 
 message VectorParamsMap {
@@ -170,18 +170,6 @@ message ScalarQuantization {
 message QuantizationConfig {
   oneof quantization {
     ScalarQuantization scalar = 1;
-  }
-}
-
-message ScalarQuantizationDiff {
-  optional QuantizationType type = 1; // Type of quantization
-  optional float quantile = 2; // Number of bits to use for quantization
-  optional bool always_ram = 3; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-}
-
-message QuantizationConfigDiff {
-  oneof quantization {
-    ScalarQuantizationDiff scalar = 1;
   }
 }
 
