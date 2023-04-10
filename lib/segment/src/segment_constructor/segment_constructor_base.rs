@@ -60,7 +60,7 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &str) -> PathBuf 
 }
 
 fn create_segment(
-    version: SeqNumberType,
+    version: Option<SeqNumberType>,
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
@@ -238,7 +238,7 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 
     std::fs::create_dir_all(&segment_path)?;
 
-    let segment = create_segment(0, &segment_path, config)?;
+    let segment = create_segment(None, &segment_path, config)?;
     segment.save_current_state()?;
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.
@@ -286,7 +286,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 distance: state.config.distance,
             };
             SegmentState {
-                version: state.version,
+                version: Some(state.version),
                 config: SegmentConfig {
                     vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
                     index: state.config.index,

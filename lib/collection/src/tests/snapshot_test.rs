@@ -7,7 +7,8 @@ use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
-use crate::operations::types::{VectorParams, VectorsConfig};
+use crate::operations::shared_storage_config::SharedStorageConfig;
+use crate::operations::types::{NodeType, VectorParams, VectorsConfig};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -32,8 +33,7 @@ pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
     Arc::new(move |_transfer| {})
 }
 
-#[tokio::test]
-async fn test_snapshot_collection() {
+async fn _test_snapshot_collection(node_type: NodeType) {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
@@ -72,13 +72,18 @@ async fn test_snapshot_collection() {
     shards.insert(2, HashSet::from([10_000])); // remote shard
     shards.insert(3, HashSet::from([1, 20_000, 30_000]));
 
+    let storage_config: SharedStorageConfig = SharedStorageConfig {
+        node_type,
+        ..Default::default()
+    };
+
     let mut collection = Collection::new(
         collection_name,
         1,
         collection_dir.path(),
         snapshots_path.path(),
         &config,
-        Default::default(),
+        Arc::new(storage_config),
         CollectionShardDistribution { shards },
         ChannelService::default(),
         dummy_on_replica_failure(),
@@ -148,4 +153,10 @@ async fn test_snapshot_collection() {
 
     collection.before_drop().await;
     recovered_collection.before_drop().await;
+}
+
+#[tokio::test]
+async fn test_snapshot_collection() {
+    _test_snapshot_collection(NodeType::Normal).await;
+    _test_snapshot_collection(NodeType::Listener).await;
 }

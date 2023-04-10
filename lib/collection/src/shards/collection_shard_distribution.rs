@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::collection_state::ShardInfo;
 use crate::shards::shard::{PeerId, ShardId};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CollectionShardDistribution {
     pub shards: HashMap<ShardId, HashSet<PeerId>>,
 }

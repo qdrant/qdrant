@@ -58,7 +58,7 @@ impl SegmentBuilder {
                 "Segment building error: created segment not found",
             )),
             Some(self_segment) => {
-                self_segment.version = cmp::max(self_segment.version(), other.version());
+                self_segment.version = Some(cmp::max(self_segment.version(), other.version()));
 
                 let other_id_tracker = other.id_tracker.borrow();
                 let other_vector_storages: HashMap<_, _> = other

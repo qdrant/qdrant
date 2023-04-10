@@ -59,9 +59,10 @@ impl StorageVersion for SegmentVersion {
 /// - Keeps track of occurred errors
 pub struct Segment {
     /// Latest update operation number, applied to this segment
-    pub version: SeqNumberType,
+    /// If None, there were no updates and segment is empty
+    pub version: Option<SeqNumberType>,
     /// Latest persisted version
-    pub persisted_version: Arc<Mutex<SeqNumberType>>,
+    pub persisted_version: Arc<Mutex<Option<SeqNumberType>>>,
     /// Path of the storage root
     pub current_path: PathBuf,
     /// Component for mapping external ids to internal and also keeping track of point versions
@@ -197,7 +198,7 @@ impl Segment {
         match op_point_offset {
             None => {
                 // Not a point operation, use global version to check if already applied
-                if self.version > op_num {
+                if self.version.unwrap_or(0) > op_num {
                     return Ok(false); // Skip without execution
                 }
             }
@@ -217,7 +218,7 @@ impl Segment {
         let res = operation(self);
 
         if res.is_ok() {
-            self.version = max(op_num, self.version);
+            self.version = Some(max(op_num, self.version.unwrap_or(0)));
             if let Ok((_, Some(point_id))) = res {
                 self.id_tracker
                     .borrow_mut()
@@ -239,7 +240,7 @@ impl Segment {
 
     fn get_state(&self) -> SegmentState {
         SegmentState {
-            version: self.version(),
+            version: self.version,
             config: self.segment_config.clone(),
         }
     }
@@ -549,7 +550,7 @@ impl Segment {
 /// meaning that it implements the _actual_ operations with data and not any kind of proxy or wrapping
 impl SegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
-        self.version
+        self.version.unwrap_or(0)
     }
 
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
@@ -950,14 +951,24 @@ impl SegmentEntry for Segment {
     }
 
     fn flush(&self, sync: bool) -> OperationResult<SeqNumberType> {
-        let current_persisted_version: SeqNumberType = *self.persisted_version.lock();
+        let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
         if !sync && self.is_background_flushing() {
-            return Ok(current_persisted_version);
+            return Ok(current_persisted_version.unwrap_or(0));
         }
 
         let mut background_flush_lock = self.lock_flushing()?;
-        if current_persisted_version == self.version() {
-            return Ok(current_persisted_version);
+        match (self.version, current_persisted_version) {
+            (None, _) => {
+                // Segment is empty, nothing to flush
+                return Ok(current_persisted_version.unwrap_or(0));
+            }
+            (Some(version), Some(persisted_version)) => {
+                if version == persisted_version {
+                    // Segment is already flushed
+                    return Ok(persisted_version);
+                }
+            }
+            (_, _) => {}
         }
 
         let vector_storage_flushers: Vec<_> = self
@@ -1046,7 +1057,8 @@ impl SegmentEntry for Segment {
             })?;
             *persisted_version.lock() = state.version;
 
-            Ok(state.version)
+            debug_assert!(state.version.is_some());
+            Ok(state.version.unwrap_or(0))
         };
 
         if sync {
@@ -1058,7 +1070,7 @@ impl SegmentEntry for Segment {
                     .spawn(flush_op)
                     .unwrap(),
             );
-            Ok(current_persisted_version)
+            Ok(current_persisted_version.unwrap_or(0))
         }
     }
 
