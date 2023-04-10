@@ -115,10 +115,10 @@ def test_retrieve_vector_specific_hnsw():
     config = response.json()['result']['config']
     vectors = config['params']['vectors']
     assert vectors['image']['hnsw_config']['m'] == 20
-    assert vectors['image']['hnsw_config'].get('ef_construct') is None
-    assert vectors['audio']['hnsw_config'].get('m') is None
+    assert 'ef_construct' not in vectors['image']['hnsw_config']
+    assert 'm' not in vectors['audio']['hnsw_config']
     assert vectors['audio']['hnsw_config']['ef_construct'] == 100
-    assert vectors['text'].get('hnsw_config') is None
+    assert 'hnsw_config' not in vectors['text']
     assert config['hnsw_config']['m'] == 10
     assert config['hnsw_config']['ef_construct'] == 80
 
@@ -133,7 +133,7 @@ def test_retrieve_vector_specific_quantization():
 
     config = response.json()['result']['config']
     vectors = config['params']['vectors']
-    assert vectors['image']['quantization_config'] is None
+    assert 'quantization_config' not in vectors['image']
     assert vectors['audio']['quantization_config']['scalar']['type'] == "int8"
     assert vectors['audio']['quantization_config']['scalar']['quantile'] == 0.6
     assert 'always_ram' not in vectors['audio']['quantization_config']['scalar']
