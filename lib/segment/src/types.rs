@@ -502,7 +502,7 @@ pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentState {
-    pub version: SeqNumberType,
+    pub version: Option<SeqNumberType>,
     pub config: SegmentConfig,
 }
 
