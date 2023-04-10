@@ -142,6 +142,7 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 Qdrant uses the [openapi](https://spec.openapis.org/oas/latest.html) specification to document its API.
 
 This means changes to the API must be followed by changes to the specification.
+This is enforced by CI.
 
 Here is a quick step-by-step guide:
 
