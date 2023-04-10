@@ -353,9 +353,9 @@ pub struct ScalarQuantizationConfig {
     /// Type of quantization to use
     /// If `int8` - 8 bit quantization will be used
     pub r#type: ScalarType,
-    /// Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values
+    /// Quantile for quantization. Expected value range in [0.5, 1.0]. If not set - use the whole range of values
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 0.0, max = 1.0))]
+    #[validate(range(min = 0.5, max = 1.0))]
     pub quantile: Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[serde(skip_serializing_if = "Option::is_none")]

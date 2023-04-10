@@ -4006,11 +4006,11 @@
             "$ref": "#/components/schemas/ScalarType"
           },
           "quantile": {
-            "description": "Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values",
+            "description": "Quantile for quantization. Expected value range in [0.5, 1.0]. If not set - use the whole range of values",
             "type": "number",
             "format": "float",
             "maximum": 1,
-            "minimum": 0,
+            "minimum": 0.5,
             "nullable": true
           },
           "always_ram": {
