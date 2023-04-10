@@ -493,6 +493,9 @@ pub struct VectorDataConfig {
     pub size: usize,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Vector specific HNSW config that overrides collection config
+    #[serde(default)]
+    pub hnsw_config: Option<HnswConfig>,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>

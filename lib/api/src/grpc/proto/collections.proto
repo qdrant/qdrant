@@ -4,6 +4,7 @@ package qdrant;
 message VectorParams {
   uint64 size = 1; // Size of the vectors
   Distance distance = 2; // Distance function used for comparing vectors
+  optional HnswConfigDiff hnsw_config = 3; // Configuration of vector index. If omitted - the collection configuration will be used
 }
 
 message VectorParamsMap {
@@ -185,7 +186,7 @@ message CreateCollection {
   optional uint32 replication_factor = 11; // Number of replicas of each shard that network tries to maintain, default = 1
   optional uint32 write_consistency_factor = 12; // How many replicas should apply the operation for us to consider it successful, default = 1
   optional string init_from_collection = 13; // Specify name of the other collection to copy data from
-  optional QuantizationConfig quantization_config = 14;
+  optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
 }
 
 message UpdateCollection {

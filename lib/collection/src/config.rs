@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
+use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -51,6 +52,7 @@ impl Default for WalConfig {
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
+    #[validate]
     pub vectors: VectorsConfig,
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
@@ -148,51 +150,40 @@ impl CollectionConfig {
 
 impl CollectionParams {
     pub fn get_vector_params(&self, vector_name: &str) -> CollectionResult<VectorParams> {
-        if vector_name == DEFAULT_VECTOR_NAME {
-            self.vectors
-                .get_params(vector_name)
-                .cloned()
-                .ok_or_else(|| CollectionError::BadInput {
-                    description: "Default vector params are not specified in config".to_string(),
-                })
-        } else {
-            self.vectors
-                .get_params(vector_name)
-                .cloned()
-                .ok_or_else(|| CollectionError::BadInput {
-                    description: format!(
-                        "vector params for {vector_name} are not specified in config"
-                    ),
-                })
-        }
+        self.vectors
+            .get_params(vector_name)
+            .cloned()
+            .ok_or_else(|| CollectionError::BadInput {
+                description: if vector_name == DEFAULT_VECTOR_NAME {
+                    "Default vector params are not specified in config".into()
+                } else {
+                    format!("Vector params for {vector_name} are not specified in config")
+                },
+            })
     }
 
-    pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
-        let vector_config = match &self.vectors {
-            VectorsConfig::Single(params) => {
-                let mut map = HashMap::new();
-                map.insert(
-                    DEFAULT_VECTOR_NAME.to_string(),
+    /// Get all vector params as `VectorDataConfig`
+    ///
+    /// The vector specific HNSW configuration will be based upon the given `collection_hnsw`.
+    pub fn get_all_vector_params(
+        &self,
+        collection_hnsw: &HnswConfig,
+    ) -> CollectionResult<HashMap<String, VectorDataConfig>> {
+        Ok(self
+            .vectors
+            .params_iter()
+            .map(|(name, params)| {
+                (
+                    name.into(),
                     VectorDataConfig {
                         size: params.size.get() as usize,
                         distance: params.distance,
+                        hnsw_config: params
+                            .hnsw_config
+                            .and_then(|c| c.update(collection_hnsw).ok()),
                     },
-                );
-                map
-            }
-            VectorsConfig::Multi(ref map) => map
-                .iter()
-                .map(|(name, params)| {
-                    (
-                        name.clone(),
-                        VectorDataConfig {
-                            size: params.size.get() as usize,
-                            distance: params.distance,
-                        },
-                    )
-                })
-                .collect(),
-        };
-        Ok(vector_config)
+                )
+            })
+            .collect())
     }
 }

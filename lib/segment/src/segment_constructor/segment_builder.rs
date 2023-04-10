@@ -127,10 +127,7 @@ impl SegmentBuilder {
                         {
                             external_id
                         } else {
-                            log::warn!(
-                                "Cannot find external id for internal id {}, skipping",
-                                old_internal_id
-                            );
+                            log::warn!("Cannot find external id for internal id {old_internal_id}, skipping");
                             continue;
                         };
                         let other_version =

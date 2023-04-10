@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -128,7 +127,7 @@ impl SegmentsSearcher {
                         && retrieved_points < required_limit
                         && segment_lowest_score >= lowest_batch_score
                     {
-                        log::debug!("Search to re-run without sampling on segment_id: {} segment_lowest_score: {}, lowest_batch_score: {}, retrieved_points: {}, required_limit: {}", segment_id, segment_lowest_score, lowest_batch_score, retrieved_points, required_limit);
+                        log::debug!("Search to re-run without sampling on segment_id: {segment_id} segment_lowest_score: {segment_lowest_score}, lowest_batch_score: {lowest_batch_score}, retrieved_points: {retrieved_points}, required_limit: {required_limit}");
                         // It is possible, that current segment can have better results than
                         // the lowest score in the batch. In that case, we need to re-run the search
                         // without sampling on that segment.
@@ -330,21 +329,9 @@ fn sampling_limit(
     let poisson_sampling =
         find_search_sampling_over_point_distribution(limit as f64, segment_probability)
             .unwrap_or(limit);
-    let res = if poisson_sampling > limit {
-        // sampling cannot be greater than limit
-        return limit;
-    } else {
-        // sampling should not be less than ef_limit
-        max(poisson_sampling, ef_limit.unwrap_or(0))
-    };
-    log::trace!(
-        "sampling: {}, poisson: {} segment_probability: {}, segment_points: {}, total_points: {}",
-        res,
-        poisson_sampling,
-        segment_probability,
-        segment_points,
-        total_points
-    );
+    // Sampling cannot be greater than limit, cannot be less than ef_limit
+    let res = poisson_sampling.clamp(ef_limit.unwrap_or(0), limit);
+    log::trace!("sampling: {res}, poisson: {poisson_sampling} segment_probability: {segment_probability}, segment_points: {segment_points}, total_points: {total_points}");
     res
 }
 
@@ -401,10 +388,9 @@ async fn search_in_segment(
                 let read_segment = locked_segment.read();
                 let segment_points = read_segment.points_count();
                 let top = if use_sampling {
-                    let ef_limit = prev_params
-                        .params
-                        .and_then(|p| p.hnsw_ef)
-                        .or_else(|| config_hnsw_ef_construct(read_segment.config()));
+                    let ef_limit = prev_params.params.and_then(|p| p.hnsw_ef).or_else(|| {
+                        get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name)
+                    });
                     sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
                 } else {
                     prev_params.top
@@ -441,7 +427,7 @@ async fn search_in_segment(
             let ef_limit = prev_params
                 .params
                 .and_then(|p| p.hnsw_ef)
-                .or_else(|| config_hnsw_ef_construct(read_segment.config()));
+                .or_else(|| get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name));
             sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
         } else {
             prev_params.top
@@ -464,11 +450,20 @@ async fn search_in_segment(
     Ok((result, further_results))
 }
 
-/// None if plain index, Some if hnsw.
-fn config_hnsw_ef_construct(config: SegmentConfig) -> Option<usize> {
+/// Find the maximum segment or vector specific HNSW ef_construct in this config
+///
+/// If the index is `Plain`, `None` is returned.
+fn get_hnsw_ef_construct(config: SegmentConfig, vector_name: &str) -> Option<usize> {
     match config.index {
-        Indexes::Plain { .. } => None,
-        Indexes::Hnsw(config) => Some(config.ef_construct),
+        Indexes::Plain {} => None,
+        Indexes::Hnsw(hnsw_config) => Some(
+            config
+                .vector_data
+                .get(vector_name)
+                .and_then(|c| c.hnsw_config)
+                .map(|c| c.ef_construct)
+                .unwrap_or(hnsw_config.ef_construct),
+        ),
     }
 }
 

@@ -101,6 +101,19 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     }
 }
 
+impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
+    fn from(value: HnswConfigDiff) -> Self {
+        Self {
+            m: value.m.map(|v| v as u64),
+            ef_construct: value.ef_construct.map(|v| v as u64),
+            full_scan_threshold: value.full_scan_threshold.map(|v| v as u64),
+            max_indexing_threads: value.max_indexing_threads.map(|v| v as u64),
+            on_disk: value.on_disk,
+            payload_m: value.payload_m.map(|v| v as u64),
+        }
+    }
+}
+
 impl From<api::grpc::qdrant::WalConfigDiff> for WalConfigDiff {
     fn from(value: api::grpc::qdrant::WalConfigDiff) -> Self {
         Self {
@@ -312,6 +325,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 Status::invalid_argument("VectorParams size must be greater than zero")
             })?,
             distance: from_grpc_dist(vector_params.distance)?,
+            hnsw_config: vector_params.hnsw_config.map(Into::into),
         })
     }
 }
@@ -690,6 +704,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 Distance::Dot => api::grpc::qdrant::Distance::Dot,
             }
             .into(),
+            hnsw_config: value.hnsw_config.map(Into::into),
         }
     }
 }

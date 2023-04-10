@@ -118,31 +118,30 @@ fn create_segment(
         }
 
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match config.index {
-            Indexes::Plain { .. } => sp(VectorIndexEnum::Plain(PlainIndex::new(
+            Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
                 id_tracker.clone(),
                 vector_storage.clone(),
                 payload_index.clone(),
             ))),
-            Indexes::Hnsw(hnsw_config) => {
-                if hnsw_config.on_disk.unwrap_or(false) {
-                    sp(VectorIndexEnum::HnswMmap(
-                        HNSWIndex::<GraphLinksMmap>::open(
-                            &vector_index_path,
-                            id_tracker.clone(),
-                            vector_storage.clone(),
-                            payload_index.clone(),
-                            hnsw_config,
-                        )?,
-                    ))
-                } else {
-                    sp(VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
+            Indexes::Hnsw(collection_hnsw_config) => {
+                let hnsw_config = vector_config.hnsw_config.unwrap_or(collection_hnsw_config);
+                sp(if hnsw_config.on_disk == Some(true) {
+                    VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
                         &vector_index_path,
                         id_tracker.clone(),
                         vector_storage.clone(),
                         payload_index.clone(),
                         hnsw_config,
-                    )?))
-                }
+                    )?)
+                } else {
+                    VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
+                        &vector_index_path,
+                        id_tracker.clone(),
+                        vector_storage.clone(),
+                        payload_index.clone(),
+                        hnsw_config,
+                    )?)
+                })
             }
         };
 
@@ -156,7 +155,7 @@ fn create_segment(
     }
 
     let segment_type = match config.index {
-        Indexes::Plain { .. } => SegmentType::Plain,
+        Indexes::Plain {} => SegmentType::Plain,
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
 
@@ -284,6 +283,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
             let vector_data = VectorDataConfig {
                 size: state.config.vector_size,
                 distance: state.config.distance,
+                hnsw_config: None,
             };
             SegmentState {
                 version: Some(state.version),

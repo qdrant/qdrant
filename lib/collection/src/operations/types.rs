@@ -24,9 +24,10 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
-use validator::Validate;
+use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
+use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -661,13 +662,23 @@ impl Record {
 }
 
 /// Params of single vector data storage
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorParams {
     /// Size of a vectors used
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Custom params for HNSW index. If none - values from collection configuration are used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate]
+    pub hnsw_config: Option<HnswConfigDiff>,
+}
+
+impl Anonymize for VectorParams {
+    fn anonymize(&self) -> Self {
+        self.clone()
+    }
 }
 
 /// Vector params separator for single and multiple vector modes
@@ -691,17 +702,29 @@ pub enum VectorsConfig {
     Multi(BTreeMap<String, VectorParams>),
 }
 
-impl Anonymize for VectorParams {
-    fn anonymize(&self) -> Self {
-        self.clone()
-    }
-}
-
 impl Anonymize for VectorsConfig {
     fn anonymize(&self) -> Self {
         match self {
             VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
             VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
+        }
+    }
+}
+
+impl Validate for VectorsConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            VectorsConfig::Single(single) => single.validate(),
+            VectorsConfig::Multi(multi) => {
+                let errors = multi
+                    .values()
+                    .filter_map(|v| v.validate().err())
+                    .fold(Err(ValidationErrors::new()), |bag, err| {
+                        ValidationErrors::merge(bag, "?", Err(err))
+                    })
+                    .unwrap_err();
+                errors.errors().is_empty().then_some(()).ok_or(errors)
+            }
         }
     }
 }
@@ -723,6 +746,16 @@ impl VectorsConfig {
                 }
             }
             VectorsConfig::Multi(params) => params.get(name),
+        }
+    }
+
+    /// Iterate over the named vector parameters.
+    ///
+    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParams)> + 'a> {
+        match self {
+            VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
+            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
         }
     }
 }
