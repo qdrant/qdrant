@@ -670,7 +670,7 @@ pub struct VectorParams {
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Custom params for HNSW index. If none - values from collection configuration are used.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
 }

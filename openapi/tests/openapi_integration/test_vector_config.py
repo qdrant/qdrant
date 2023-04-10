@@ -97,9 +97,9 @@ def test_retrieve_vector_specific_hnsw():
     config = response.json()['result']['config']
     vectors = config['params']['vectors']
     assert vectors['image']['hnsw_config']['m'] == 20
-    assert vectors['image']['hnsw_config']['ef_construct'] == None
-    assert vectors['audio']['hnsw_config']['m'] == None
+    assert vectors['image']['hnsw_config'].get('ef_construct') is None
+    assert vectors['audio']['hnsw_config'].get('m') is None
     assert vectors['audio']['hnsw_config']['ef_construct'] == 100
-    assert vectors['text']['hnsw_config'] is None
+    assert vectors['text'].get('hnsw_config') is None
     assert config['hnsw_config']['m'] == 10
     assert config['hnsw_config']['ef_construct'] == 80

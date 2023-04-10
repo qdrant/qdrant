@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::iter;
 use std::sync::Arc;
 
 use futures::future::try_join_all;
@@ -330,8 +329,8 @@ fn sampling_limit(
     let poisson_sampling =
         find_search_sampling_over_point_distribution(limit as f64, segment_probability)
             .unwrap_or(limit);
-    // Sampling cannot be greater tham limit, cannot be less than ef_limit
-    let res = poisson_sampling.max(ef_limit.unwrap_or(0)).min(limit);
+    // Sampling cannot be greater than limit, cannot be less than ef_limit
+    let res = poisson_sampling.clamp(ef_limit.unwrap_or(0), limit);
     log::trace!("sampling: {res}, poisson: {poisson_sampling} segment_probability: {segment_probability}, segment_points: {segment_points}, total_points: {total_points}");
     res
 }
@@ -389,10 +388,9 @@ async fn search_in_segment(
                 let read_segment = locked_segment.read();
                 let segment_points = read_segment.points_count();
                 let top = if use_sampling {
-                    let ef_limit = prev_params
-                        .params
-                        .and_then(|p| p.hnsw_ef)
-                        .or_else(|| config_max_hnsw_ef_construct(read_segment.config()));
+                    let ef_limit = prev_params.params.and_then(|p| p.hnsw_ef).or_else(|| {
+                        get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name)
+                    });
                     sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
                 } else {
                     prev_params.top
@@ -429,7 +427,7 @@ async fn search_in_segment(
             let ef_limit = prev_params
                 .params
                 .and_then(|p| p.hnsw_ef)
-                .or_else(|| config_max_hnsw_ef_construct(read_segment.config()));
+                .or_else(|| get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name));
             sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
         } else {
             prev_params.top
@@ -455,16 +453,17 @@ async fn search_in_segment(
 /// Find the maximum segment or vector specific HNSW ef_construct in this config
 ///
 /// If the index is `Plain`, `None` is returned.
-fn config_max_hnsw_ef_construct(config: SegmentConfig) -> Option<usize> {
+fn get_hnsw_ef_construct(config: SegmentConfig, vector_name: &str) -> Option<usize> {
     match config.index {
         Indexes::Plain {} => None,
-        Indexes::Hnsw(hnsw_config) => config
-            .vector_data
-            .values()
-            .flat_map(|v| v.hnsw_config)
-            .map(|c| c.ef_construct)
-            .chain(iter::once(hnsw_config.ef_construct))
-            .max(),
+        Indexes::Hnsw(hnsw_config) => Some(
+            config
+                .vector_data
+                .get(vector_name)
+                .and_then(|c| c.hnsw_config)
+                .map(|c| c.ef_construct)
+                .unwrap_or(hnsw_config.ef_construct),
+        ),
     }
 }
 
