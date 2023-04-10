@@ -369,7 +369,7 @@
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain, default = 1 |
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
 | init_from_collection | [string](#string) | optional | Specify name of the other collection to copy data from |
-| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional |  |
+| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 
 
 
@@ -695,6 +695,7 @@ If indexation speed has more priority for you - make this parameter lower. If se
 | ----- | ---- | ----- | ----------- |
 | size | [uint64](#uint64) |  | Size of the vectors |
 | distance | [Distance](#qdrant-Distance) |  | Distance function used for comparing vectors |
+| hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Configuration of vector index. If omitted - the collection configuration will be used |
 
 
 
