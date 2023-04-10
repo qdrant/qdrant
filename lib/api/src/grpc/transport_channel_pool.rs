@@ -3,6 +3,7 @@ use std::future::Future;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use rand::{thread_rng, Rng};
 use tokio::select;
 use tonic::transport::{Channel, ClientTlsConfig, Error as TonicError, Uri};
 use tonic::{Code, Status};
@@ -20,14 +21,14 @@ const MAX_CONNECTIONS_PER_CHANNEL: usize = usize::MAX; // Unlimited
 const DEFAULT_RETRIES: usize = 2;
 const DEFAULT_BACKOFF: Duration = Duration::from_millis(100);
 
-// How long to wait for response from server, before checking health of the server
+/// How long to wait for response from server, before checking health of the server
 const SMART_CONNECT_INTERVAL: Duration = Duration::from_secs(1);
 
-// There is no indication, that health-check API is affected by high parallel load
-// So we can use small timeout for health-check
+/// There is no indication, that health-check API is affected by high parallel load
+/// So we can use small timeout for health-check
 const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
 
-// Try to recreate channel, if there were no successful requests within this time
+/// Try to recreate channel, if there were no successful requests within this time
 const CHANNEL_TTL: Duration = Duration::from_secs(5);
 
 #[derive(thiserror::Error, Debug)]
@@ -266,13 +267,6 @@ impl TransportChannelPool {
                 Err(err) => err,
             };
 
-            log::warn!(
-                "Request to {} failed, attempt: {}, error: {:?}",
-                uri,
-                attempt,
-                error_result
-            );
-
             let action = match error_result {
                 RequestFailure::HealthCheck(healthcheck_error) => {
                     match healthcheck_error {
@@ -337,13 +331,11 @@ impl TransportChannelPool {
 
             let (backoff_time, fallback_status) = match action {
                 RetryAction::Fail(err) => return Err(RequestError::FromClosure(err)),
-                RetryAction::RetryImmediately(fallback_status) => {
-                    (Duration::from_millis(0), fallback_status)
-                }
+                RetryAction::RetryImmediately(fallback_status) => (Duration::ZERO, fallback_status),
                 RetryAction::RetryWithBackoff(fallback_status) => {
                     // Calculate backoff
                     let backoff = DEFAULT_BACKOFF * 2u32.pow(attempt as u32)
-                        + Duration::from_millis(rand::random::<u64>() % 100);
+                        + Duration::from_millis(thread_rng().gen_range(0..100));
 
                     if backoff > max_timeout {
                         // We can't wait for the request any longer, return the error as is
@@ -355,7 +347,7 @@ impl TransportChannelPool {
                     if retries_left > 1 {
                         retries_left = 1;
                     }
-                    (Duration::from_millis(0), fallback_status)
+                    (Duration::ZERO, fallback_status)
                 }
             };
 

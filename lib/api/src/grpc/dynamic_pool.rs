@@ -24,11 +24,11 @@ impl<T: Clone> ItemWithStats<T> {
 
 pub struct DynamicPool<T: Clone> {
     items: HashMap<u64, Arc<ItemWithStats<T>>>,
-    // How many times one item can be used
+    /// How many times one item can be used
     max_usage_per_item: usize,
-    // Minimal number of items in the pool
+    /// Minimal number of items in the pool
     min_items: usize,
-    // Instant when the pool was created
+    /// Instant when the pool was created
     init_at: Instant,
 }
 

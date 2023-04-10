@@ -1204,8 +1204,8 @@ impl ShardReplicaSet {
         locally_disabled.remove(&peer_id_to_remove);
 
         if active_peers.len() == 1 {
-            let last_peer = active_peers.into_iter().next().unwrap();
-            locally_disabled.remove(&last_peer);
+            let last_peer = active_peers.first().unwrap();
+            locally_disabled.remove(last_peer);
         }
     }
 
