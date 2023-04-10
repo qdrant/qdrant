@@ -86,7 +86,7 @@ impl IndexingOptimizer {
                 let segment_config = read_segment.config();
 
                 let is_vector_indexed = match segment_config.index {
-                    Indexes::Plain { .. } => false,
+                    Indexes::Plain {} => false,
                     Indexes::Hnsw(_) => true,
                 };
 
@@ -139,7 +139,7 @@ impl IndexingOptimizer {
 
                 // Apply indexing to plain segments which have grown too big
                 let is_vector_indexed = match segment_config.index {
-                    Indexes::Plain { .. } => false,
+                    Indexes::Plain {} => false,
                     Indexes::Hnsw(_) => true,
                 };
 
@@ -317,6 +317,7 @@ mod tests {
                     VectorParams {
                         size: NonZeroU64::new(params.size as u64).unwrap(),
                         distance: params.distance,
+                        hnsw_config: None,
                     },
                 )
             })
@@ -432,6 +433,7 @@ mod tests {
                     )
                     .unwrap(),
                     distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                    hnsw_config: None,
                 }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 replication_factor: NonZeroU32::new(1).unwrap(),

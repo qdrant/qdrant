@@ -9,6 +9,9 @@ pub struct VectorParams {
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
     pub distance: i32,
+    /// Configuration of vector index. If omitted - the collection configuration will be used
+    #[prost(message, optional, tag = "3")]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -258,6 +261,7 @@ pub struct CreateCollection {
     /// Specify name of the other collection to copy data from
     #[prost(string, optional, tag = "13")]
     pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
+    /// Quantization configuration of vector
     #[prost(message, optional, tag = "14")]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }

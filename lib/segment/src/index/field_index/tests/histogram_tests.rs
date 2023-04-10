@@ -121,12 +121,8 @@ pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Poi
     let real = count_range(points_index, 0., 0.);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -134,12 +130,8 @@ pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Poi
     let real = count_range(points_index, 0., 0.0001);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -147,12 +139,8 @@ pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Poi
     let real = count_range(points_index, 0., 0.01);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -160,12 +148,8 @@ pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Poi
     let real = count_range(points_index, 0., 1.);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -173,12 +157,8 @@ pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Poi
     let real = count_range(points_index, 0., 100.);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -186,12 +166,8 @@ pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Poi
     let real = count_range(points_index, -100., 100.);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -199,12 +175,8 @@ pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Poi
     let real = count_range(points_index, 20., 100.);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 }

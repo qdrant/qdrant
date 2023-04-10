@@ -117,6 +117,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Dot,
+                        hnsw_config: None,
                     },
                 ),
                 (
@@ -124,6 +125,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 1,
                         distance: Distance::Dot,
+                        hnsw_config: None,
                     },
                 ),
                 (
@@ -131,6 +133,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Euclid,
+                        hnsw_config: None,
                     },
                 ),
             ]),

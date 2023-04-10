@@ -140,8 +140,7 @@ impl SimpleIdTracker {
             for (idx, id) in external_to_internal_num.iter() {
                 debug_assert!(
                     internal_to_external[*id as usize] == PointIdType::NumId(*idx),
-                    "Internal id {} is mapped to external id {}, but should be {}",
-                    id,
+                    "Internal id {id} is mapped to external id {}, but should be {}",
                     internal_to_external[*id as usize],
                     PointIdType::NumId(*idx)
                 );

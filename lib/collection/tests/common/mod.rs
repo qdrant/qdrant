@@ -43,6 +43,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         vectors: VectorParams {
             size: NonZeroU64::new(4).unwrap(),
             distance: Distance::Dot,
+            hnsw_config: None,
         }
         .into(),
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),

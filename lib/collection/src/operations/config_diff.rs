@@ -13,24 +13,19 @@ use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::OptimizersConfig;
 
 // Structures for partial update of collection params
-// ToDo: Make auto-generated somehow...
+// TODO: make auto-generated somehow...
 
 pub trait DiffConfig<T: DeserializeOwned + Serialize> {
     fn update(self, config: &T) -> CollectionResult<T>
     where
-        Self: Sized,
-        Self: Serialize,
-        Self: DeserializeOwned,
-        Self: Merge,
+        Self: Sized + Serialize + DeserializeOwned + Merge,
     {
         update_config(config, self)
     }
 
     fn from_full(full: &T) -> CollectionResult<Self>
     where
-        Self: Sized,
-        Self: Serialize,
-        Self: DeserializeOwned,
+        Self: Sized + Serialize + DeserializeOwned,
     {
         from_full(full)
     }
@@ -43,26 +38,32 @@ pub trait DiffConfig<T: DeserializeOwned + Serialize> {
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     #[validate(range(min = 4, max = 10_000))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub m: Option<usize>,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
     #[validate(range(min = 4))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ef_construct: Option<usize>,
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
     /// Note: 1Kb = 1 vector of size 256
-    #[serde(alias = "full_scan_threshold_kb")]
+    #[serde(
+        alias = "full_scan_threshold_kb",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     #[validate(range(min = 1000))]
     pub full_scan_threshold: Option<usize>,
     /// Number of parallel threads used for background index building. If 0 - auto selection.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1000))]
     pub max_indexing_threads: Option<usize>,
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
     /// Custom M param for additional payload-aware HNSW links. If not set, default M will be used.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_m: Option<usize>,
 }
 
@@ -197,7 +198,7 @@ pub fn from_full<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serializ
     Ok(res)
 }
 
-/// Merge first level of json values, if diff values present explicitly
+/// Merge first level of JSON values, if diff values present explicitly
 ///
 /// Example:
 ///
@@ -224,7 +225,7 @@ fn merge_level_0(base: &mut Value, diff: Value) {
 
 /// Hacky way to update configuration structures with diff-updates.
 /// Intended to only be used in non critical for speed places.
-/// ToDo: Replace with proc macro
+/// TODO: replace with proc macro
 pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serialize + Merge>(
     config: &T,
     update: Y,
@@ -252,6 +253,7 @@ mod tests {
             vectors: VectorParams {
                 size: NonZeroU64::new(128).unwrap(),
                 distance: Distance::Cosine,
+                hnsw_config: None,
             }
             .into(),
             shard_number: NonZeroU32::new(1).unwrap(),
