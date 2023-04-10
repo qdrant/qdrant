@@ -2,12 +2,17 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
+use api::grpc::qdrant::quantization_config_diff::Quantization;
+use api::grpc::qdrant::QuantizationType;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::Distance;
+use segment::types::{Distance, ScalarType};
 use tonic::Status;
 
-use super::config_diff::CollectionParamsDiff;
+use super::config_diff::{
+    CollectionParamsDiff, QuantizationConfigDiff, ScalarQuantizationConfigDiff,
+    ScalarQuantizationDiff,
+};
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams, WalConfig,
@@ -119,6 +124,46 @@ impl From<api::grpc::qdrant::WalConfigDiff> for WalConfigDiff {
         Self {
             wal_capacity_mb: value.wal_capacity_mb.map(|v| v as usize),
             wal_segments_ahead: value.wal_segments_ahead.map(|v| v as usize),
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::QuantizationConfigDiff> for QuantizationConfigDiff {
+    fn from(value: api::grpc::qdrant::QuantizationConfigDiff) -> Self {
+        match value
+            .quantization
+            .expect("QuantizationConfigDiff should always have a value")
+        {
+            api::grpc::qdrant::quantization_config_diff::Quantization::Scalar(config) => {
+                Self::Scalar(ScalarQuantizationDiff {
+                    scalar: ScalarQuantizationConfigDiff {
+                        r#type: match config.r#type {
+                            Some(t) if t == QuantizationType::Int8 as i32 => Some(ScalarType::Int8),
+                            Some(_) | None => None,
+                        },
+                        quantile: config.quantile,
+                        always_ram: config.always_ram,
+                    },
+                })
+            }
+        }
+    }
+}
+
+impl From<QuantizationConfigDiff> for api::grpc::qdrant::QuantizationConfigDiff {
+    fn from(value: QuantizationConfigDiff) -> Self {
+        match value {
+            QuantizationConfigDiff::Scalar(ScalarQuantizationDiff { scalar: config }) => Self {
+                quantization: Some(Quantization::Scalar(
+                    api::grpc::qdrant::ScalarQuantizationDiff {
+                        r#type: config.r#type.map(|t| match t {
+                            ScalarType::Int8 => QuantizationType::Int8 as i32,
+                        }),
+                        quantile: config.quantile,
+                        always_ram: config.always_ram,
+                    },
+                )),
+            },
         }
     }
 }
@@ -326,6 +371,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             })?,
             distance: from_grpc_dist(vector_params.distance)?,
             hnsw_config: vector_params.hnsw_config.map(Into::into),
+            quantization_config: vector_params.quantization_config.map(Into::into),
         })
     }
 }
@@ -705,6 +751,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             }
             .into(),
             hnsw_config: value.hnsw_config.map(Into::into),
+            quantization_config: value.quantization_config.map(Into::into),
         }
     }
 }

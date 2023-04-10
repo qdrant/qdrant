@@ -26,6 +26,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
+use super::config_diff::QuantizationConfigDiff;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
@@ -673,6 +674,10 @@ pub struct VectorParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
+    /// Custom params for quantization. If none - values from collection configuration are used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate]
+    pub quantization_config: Option<QuantizationConfigDiff>,
 }
 
 impl Anonymize for VectorParams {
