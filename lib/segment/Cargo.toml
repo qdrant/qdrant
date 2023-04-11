@@ -50,7 +50,7 @@ semver = "1.0.17"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
-chrono = "0.4.24"
+chrono = { version = "0.4.24", features = ["serde"] }
 
 [[bench]]
 name = "vector_search"
