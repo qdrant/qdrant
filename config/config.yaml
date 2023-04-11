@@ -82,7 +82,7 @@ storage:
     # If `max_optimization_threads = 0`, optimization will be disabled.
     max_optimization_threads: 1
 
-  # Default parameters of HNSW Index. Could be overridden for each collection individually
+  # Default parameters of HNSW Index. Could be overridden for each collection or named vector individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     m: 16
