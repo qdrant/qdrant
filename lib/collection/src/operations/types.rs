@@ -182,7 +182,7 @@ pub struct ScrollRequest {
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
-    #[serde(default)]
+    #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 }
 
@@ -231,7 +231,7 @@ pub struct SearchRequest {
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
-    #[serde(default)]
+    #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
@@ -254,7 +254,7 @@ pub struct PointRequest {
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
-    #[serde(default)]
+    #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 }
 
@@ -314,7 +314,7 @@ pub struct RecommendRequest {
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
-    #[serde(default)]
+    #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.

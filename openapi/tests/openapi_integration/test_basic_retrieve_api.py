@@ -263,3 +263,56 @@ def query_nested():
     )
     assert response.ok
     assert len(response.json()['result']['points']) == 1
+
+
+def test_with_vectors_alias_of_with_vector():
+    database_id = "8594ff5d-265f-adfh-a9f5-b3b4b9665506"
+    vector = [0.15, 0.31, 0.76, 0.74]
+    
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 8,
+                    "vector": vector,
+                    "payload": {
+                        "database_id": database_id,
+                    }
+                }
+            ]
+        }
+    )
+    assert response.ok
+        
+    def scroll_with_vector(keyword):
+        response = request_with_validation(
+            api='/collections/{collection_name}/points/scroll',
+            method='POST',
+            path_params={'collection_name': collection_name},
+            body={
+                keyword: True, # <--- should make no difference
+                "filter": {
+                    "must": [
+                        {
+                            "key": "database_id",
+                            "match": {
+                                "value": database_id
+                            }
+                        }
+                    ]
+                },
+                "limit": 1,
+            }
+        )
+        
+        assert response.ok
+        body = response.json()
+        
+        assert body["result"]["points"][0]["vector"] == vector
+        
+    scroll_with_vector("with_vector")
+    scroll_with_vector("with_vectors")
