@@ -32,5 +32,5 @@ starlette==0.26.1
 toml==0.10.2
 typing_extensions==4.1.1
 urllib3==1.26.9
-Werkzeug==2.0.3
+Werkzeug==2.2.3
 yarl==1.7.2
