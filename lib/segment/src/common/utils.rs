@@ -82,7 +82,6 @@ impl MultiValue<&Value> {
         }
     }
 
-    // }
     pub(crate) fn check_is_null(&self) -> bool {
         match self {
             MultiValue::Single(val) => {
@@ -365,20 +364,20 @@ mod tests {
         let multivalue = get_value_from_json_map("a[].b", &map);
         let is_empty = multivalue.check_is_empty();
 
-        assert_eq!(is_empty, false, "a[].b is not empty");
+        assert!(!is_empty, "a[].b is not empty");
 
         let multivalue = get_value_from_json_map("a[].c", &map);
         let is_empty = multivalue.check_is_empty();
 
-        assert_eq!(is_empty, true, "a[].c is empty");
+        assert!(is_empty, "a[].c is empty");
 
         let multivalue = get_value_from_json_map("a[].d", &map);
         let is_empty = multivalue.check_is_empty();
-        assert_eq!(is_empty, true, "a[].d is empty");
+        assert!(is_empty, "a[].d is empty");
 
         let multivalue = get_value_from_json_map("a[].f", &map);
         let is_empty = multivalue.check_is_empty();
-        assert_eq!(is_empty, true, "a[].f is empty");
+        assert!(is_empty, "a[].f is empty");
     }
 
     #[test]
