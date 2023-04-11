@@ -2791,7 +2791,7 @@ dependencies = [
 [[package]]
 name = "quantization"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/quantization.git?branch=product-quantization#ddde59e80ee8d3d6fb0bff2124fd20a8b7dd3fd8"
+source = "git+https://github.com/qdrant/quantization.git?branch=product-quantization#1e8191fcb9388e21b991da63d4c2f8037ed90589"
 dependencies = [
  "cc",
  "permutation_iterator",
