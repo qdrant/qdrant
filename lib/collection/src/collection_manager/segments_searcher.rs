@@ -336,13 +336,8 @@ fn sampling_limit(
 
 /// Determines the effective ef limit value for the given parameters.
 fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> usize {
-    if poisson_sampling > limit {
-        // sampling cannot be greater than limit
-        limit
-    } else {
-        // sampling should not be less than ef_limit
-        poisson_sampling.max(ef_limit)
-    }
+    // Prefer the highest of poisson_sampling/ef_limit, but never be higher than limit
+    poisson_sampling.max(ef_limit).min(limit)
 }
 
 /// Process sequentially contiguous batches
