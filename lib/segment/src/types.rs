@@ -1794,15 +1794,15 @@ mod tests {
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("k", &mut payload.0);
-        assert!(removed.is_empty());
+        assert!(removed.as_ref().check_is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("", &mut payload.0);
-        assert!(removed.is_empty());
+        assert!(removed.as_ref().check_is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("b.e.l", &mut payload.0);
-        assert!(removed.is_empty());
+        assert!(removed.as_ref().check_is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("a", &mut payload.0).values();

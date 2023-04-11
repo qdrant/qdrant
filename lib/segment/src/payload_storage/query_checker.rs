@@ -103,9 +103,6 @@ pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &Payload) -> 
 
 pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
     let field_values = payload.get_value(&field_condition.key);
-    if field_values.is_empty() {
-        return false;
-    }
 
     let mut res = false;
     for p in field_values {
