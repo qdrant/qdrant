@@ -290,14 +290,14 @@ mod tests {
             default_segment_number: 10,
             max_segment_size: None,
             memmap_threshold: None,
-            indexing_threshold: 50_000,
+            indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: 1,
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
         let new_config = update.update(&base_config).unwrap();
-        assert_eq!(new_config.indexing_threshold, 10000)
+        assert_eq!(new_config.indexing_threshold, Some(10000))
     }
 
     #[test]
