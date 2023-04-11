@@ -80,7 +80,7 @@ fn batch_search_bench(c: &mut Criterion) {
             default_segment_number: 2,
             max_segment_size: Some(100_000),
             memmap_threshold: Some(100_000),
-            indexing_threshold: 50_000,
+            indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: 2,
         },
