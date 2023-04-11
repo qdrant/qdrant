@@ -329,8 +329,13 @@ fn sampling_limit(
     let poisson_sampling =
         find_search_sampling_over_point_distribution(limit as f64, segment_probability)
             .unwrap_or(limit);
-    // Sampling cannot be greater than limit, cannot be less than ef_limit
-    let res = poisson_sampling.clamp(ef_limit.unwrap_or(0), limit);
+    let res = if poisson_sampling > limit {
+        // sampling cannot be greater than limit
+        return limit;
+    } else {
+        // sampling should not be less than ef_limit
+        poisson_sampling.max(ef_limit.unwrap_or(0))
+    };
     log::trace!("sampling: {res}, poisson: {poisson_sampling} segment_probability: {segment_probability}, segment_points: {segment_points}, total_points: {total_points}");
     res
 }
