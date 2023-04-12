@@ -60,8 +60,11 @@ where
                             Code::Ok => {
                                 log::trace!("gRPC {} Ok {:.6}", method_name, elapsed_sec);
                             }
-                            Code::Cancelled
-                            | Code::DeadlineExceeded
+                            Code::Cancelled => {
+                                // cluster mode generates a large amount of `stream error received: stream no longer needed`
+                                log::trace!("gRPC {} {:.6}", method_name, elapsed_sec);
+                            }
+                            Code::DeadlineExceeded
                             | Code::Aborted
                             | Code::OutOfRange
                             | Code::ResourceExhausted
