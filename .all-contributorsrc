@@ -310,6 +310,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "moaz-mokhtar",
+      "name": "Moaz bin Mokhtar",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5870208?v=4",
+      "profile": "https://github.com/moaz-mokhtar",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
