@@ -760,7 +760,9 @@ impl Consensus {
             .collect();
         let bootstrap_uri = self.bootstrap_uri.clone();
         let consensus_config_arc = Arc::new(self.config.clone());
-        let message_timeout = Duration::from_millis(consensus_config_arc.tick_period_ms * 2);
+        let message_timeout = Duration::from_millis(
+            consensus_config_arc.tick_period_ms * consensus_config_arc.message_timeout_ticks,
+        );
         let pool = self.channel_service.channel_pool.clone();
         let store = self.store();
         let tls_config = self.tls_config.clone();
