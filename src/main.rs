@@ -106,6 +106,26 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Use `console` and/or `tracy` features to enable both `tracing-subscriber` and the layer(s)
+    #[cfg(feature = "tracing-subscriber")]
+    {
+        use tracing_subscriber::prelude::*;
+
+        let reg = tracing_subscriber::registry();
+
+        // Use `console` feature to enable both `tracing-subscriber` and `console-subscriber`
+        #[cfg(feature = "console-subscriber")]
+        let reg = reg.with(console_subscriber::spawn());
+
+        // Use `tracy` feature to enable both `tracing-subscriber` and `tracing-tracy`
+        #[cfg(feature = "tracing-tracy")]
+        let reg = reg.with(tracing_tracy::TracyLayer::new().with_filter(
+            tracing_subscriber::filter::filter_fn(|metadata| metadata.is_span()),
+        ));
+
+        tracing::subscriber::set_global_default(reg)?;
+    }
+
     remove_started_file_indicator();
 
     let args = Args::parse();
