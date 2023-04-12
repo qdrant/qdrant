@@ -256,6 +256,15 @@
       "contributions": [
         "doc"
       ]
+    },
+    {
+      "login": "timonv",
+      "name": "Timon Vonk",
+      "avatar_url": "https://avatars.githubusercontent.com/u/49373?v=4",
+      "profile": "http://www.timonv.nl",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
