@@ -117,6 +117,18 @@ fn main() -> anyhow::Result<()> {
         #[cfg(feature = "console-subscriber")]
         let reg = reg.with(console_subscriber::spawn());
 
+        // Note, that `console-subscriber` requires manually enabling
+        // `--cfg tokio_unstable` rust flags during compilation!
+        //
+        // Otherwise `console_subscriber::spawn` call panics!
+        //
+        // See https://docs.rs/tokio/latest/tokio/#unstable-features
+        #[cfg(all(feature = "console-subscriber", not(tokio_unstable)))]
+        eprintln!(
+            "`console-subscriber` requires manually enabling \
+             `--cfg tokio_unstable` rust flags during compilation!"
+        );
+
         // Use `tracy` feature to enable both `tracing-subscriber` and `tracing-tracy`
         #[cfg(feature = "tracing-tracy")]
         let reg = reg.with(tracing_tracy::TracyLayer::new().with_filter(
