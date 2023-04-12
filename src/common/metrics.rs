@@ -114,30 +114,6 @@ impl MetricsProvider for CollectionsTelemetry {
             MetricType::GAUGE,
             vec![gauge(vector_count as f64, &[])],
         ));
-
-        // Count collection types
-        if let Some(ref collections) = self.collections {
-            let full_count = collections
-                .iter()
-                .filter(|p| matches!(p, CollectionTelemetryEnum::Full(_)))
-                .count();
-            let aggregated_count = collections
-                .iter()
-                .filter(|p| matches!(p, CollectionTelemetryEnum::Aggregated(_)))
-                .count();
-            metrics.push(metric_family(
-                "collections_full_total",
-                "number of full collections",
-                MetricType::GAUGE,
-                vec![gauge(full_count as f64, &[])],
-            ));
-            metrics.push(metric_family(
-                "collections_aggregated_total",
-                "number of aggregated collections",
-                MetricType::GAUGE,
-                vec![gauge(aggregated_count as f64, &[])],
-            ));
-        }
     }
 }
 
