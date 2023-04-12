@@ -74,6 +74,7 @@ pub struct ConsensusConfig {
     #[serde(default = "default_bootstrap_timeout_sec")]
     #[validate(range(min = 1))]
     pub bootstrap_timeout_sec: u64,
+    #[validate(range(min = 1))]
     #[serde(default = "default_message_timeout_tics")]
     pub message_timeout_ticks: u64,
 }
