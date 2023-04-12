@@ -43,9 +43,11 @@ where
         let mut inner = std::mem::replace(&mut self.inner, clone);
 
         let method_name = request.uri().path().to_string();
+        let instant = std::time::Instant::now();
         let future = inner.call(request);
         Box::pin(async move {
             let response = future.await;
+            let elapsed_sec = instant.elapsed().as_secs_f32();
             match response {
                 Err(error) => {
                     log::error!("gGRPC request error {}", method_name);
@@ -55,8 +57,10 @@ where
                     let grpc_status = tonic::Status::from_header_map(response_tonic.headers());
                     if let Some(grpc_status) = grpc_status {
                         match grpc_status.code() {
-                            Code::Ok
-                            | Code::Cancelled
+                            Code::Ok => {
+                                log::trace!("gRPC {} Ok {:.6}", method_name, elapsed_sec);
+                            }
+                            Code::Cancelled
                             | Code::DeadlineExceeded
                             | Code::Aborted
                             | Code::OutOfRange
@@ -66,18 +70,29 @@ where
                             | Code::AlreadyExists
                             | Code::FailedPrecondition
                             | Code::PermissionDenied
-                            | Code::Unauthenticated => {} // no logging
+                            | Code::Unauthenticated => {
+                                log::info!(
+                                    "gRPC {} failed with {} {:?} {:.6}",
+                                    method_name,
+                                    grpc_status.code(),
+                                    grpc_status.message(),
+                                    elapsed_sec,
+                                );
+                            }
                             Code::Internal
                             | Code::Unimplemented
                             | Code::Unavailable
                             | Code::DataLoss
                             | Code::Unknown => log::error!(
-                                "gRPC request {} failed with {} {:?}",
+                                "gRPC {} unexpectedly failed with {} {:?} {:.6}",
                                 method_name,
                                 grpc_status.code(),
-                                grpc_status.message()
+                                grpc_status.message(),
+                                elapsed_sec,
                             ),
                         };
+                    } else {
+                        log::trace!("gRPC {} Ok {:.6}", method_name, elapsed_sec);
                     }
                     Ok(response_tonic)
                 }

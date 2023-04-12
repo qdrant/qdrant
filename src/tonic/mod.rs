@@ -1,5 +1,5 @@
 mod api;
-mod logging_middleware;
+mod logging;
 mod tonic_telemetry;
 
 use std::io;
@@ -75,7 +75,7 @@ pub fn init(
 
         // The stack of middleware that our service will be wrapped in
         let middleware_layer = tower::ServiceBuilder::new()
-            .layer(logging_middleware::LoggingMiddlewareLayer::new())
+            .layer(logging::LoggingMiddlewareLayer::new())
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
             ))
@@ -152,7 +152,7 @@ pub fn init_internal(
 
             // The stack of middleware that our service will be wrapped in
             let middleware_layer = tower::ServiceBuilder::new()
-                .layer(logging_middleware::LoggingMiddlewareLayer::new())
+                .layer(logging::LoggingMiddlewareLayer::new())
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
