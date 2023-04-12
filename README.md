@@ -263,6 +263,7 @@ Thanks to the people who contributed to Qdrant:
       <td align="center" valign="top" width="14.28%"><a href="http://coszio.github.io"><img src="https://avatars.githubusercontent.com/u/62079184?v=4?s=50" width="50px;" alt="Luis Cossío"/><br /><sub><b>Luis Cossío</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=coszio" title="Documentation">📖</a></td>
     </tr>
     <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://timvisee.com/"><img src="https://avatars.githubusercontent.com/u/856222?v=4?s=50" width="50px;" alt="Tim Visée"/><br /><sub><b>Tim Visée</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=timvisee" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="http://www.timonv.nl"><img src="https://avatars.githubusercontent.com/u/49373?v=4?s=50" width="50px;" alt="Timon Vonk"/><br /><sub><b>Timon Vonk</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=timonv" title="Code">💻</a></td>
     </tr>
   </tbody>
