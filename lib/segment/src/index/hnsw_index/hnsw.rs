@@ -439,7 +439,13 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
-            max(1, total_points / self.config.indexing_threshold * 10),
+            max(
+                1,
+                total_points
+                    .checked_div(self.config.indexing_threshold)
+                    .unwrap_or(0)
+                    * 10,
+            ),
             HNSW_USE_HEURISTIC,
         );
 
