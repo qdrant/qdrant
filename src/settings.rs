@@ -178,7 +178,7 @@ fn default_connection_pool_size() -> usize {
 }
 
 fn default_message_timeout_tics() -> u64 {
-    8
+    10
 }
 
 impl Settings {
