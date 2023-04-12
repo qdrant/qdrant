@@ -146,6 +146,14 @@ impl VectorStorage for MemmapVectorStorage {
         }
         files
     }
+
+    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        unimplemented!()
+    }
+
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]

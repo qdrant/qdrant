@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use bitvec::vec::BitVec;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -30,6 +31,9 @@ pub struct SimpleVectorStorage {
     quantized_vectors: Option<QuantizedVectorsStorage>,
     db_wrapper: DatabaseColumnWrapper,
     update_buffer: StoredRecord,
+    /// BitVec for deleted flags. Grows dynamically upto last set flag.
+    deleted: BitVec,
+    deleted_count: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -45,6 +49,8 @@ pub fn open_simple_vector_storage(
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let mut vectors = ChunkedVectors::new(dim);
+    let mut deleted = BitVec::new();
+    let mut deleted_count = 0;
 
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
     for (key, value) in db_wrapper.lock_db().iter()? {
@@ -52,6 +58,13 @@ pub fn open_simple_vector_storage(
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
         let stored_record: StoredRecord = bincode::deserialize(&value)
             .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
+
+        // Set deleted flag
+        if stored_record.deleted {
+            deleted_count += 1;
+            bitvec_set_deleted(&mut deleted, point_id, true);
+        }
+
         vectors.insert(point_id, &stored_record.vector);
     }
 
@@ -72,21 +85,43 @@ pub fn open_simple_vector_storage(
                 deleted: false,
                 vector: vec![0.; dim],
             },
+            deleted,
+            deleted_count,
         },
     ))))
 }
 
 impl SimpleVectorStorage {
+    /// Set deleted flag for given key. Returns previous deleted state.
+    #[inline]
+    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) {
+        let previous = bitvec_set_deleted(&mut self.deleted, key, deleted);
+        if !previous && deleted {
+            self.deleted_count += 1;
+        } else if previous && !deleted {
+            self.deleted_count -= 1;
+        }
+    }
+
     fn update_stored(
         &mut self,
-        point_id: PointOffsetType,
-        vector: &[VectorElementType],
+        key: PointOffsetType,
+        deleted: bool,
+        vector: Option<&[VectorElementType]>,
     ) -> OperationResult<()> {
-        self.update_buffer.vector.copy_from_slice(vector);
+        // Write vector state to buffer record
+        let record = &mut self.update_buffer;
+        record.deleted = deleted;
+        if let Some(vector) = vector {
+            record.vector.copy_from_slice(vector);
+        }
+
+        // Store updated record
         self.db_wrapper.put(
-            bincode::serialize(&point_id).unwrap(),
-            bincode::serialize(&self.update_buffer).unwrap(),
+            bincode::serialize(&key).unwrap(),
+            bincode::serialize(&record).unwrap(),
         )?;
+
         Ok(())
     }
 }
@@ -114,7 +149,8 @@ impl VectorStorage for SimpleVectorStorage {
         vector: &[VectorElementType],
     ) -> OperationResult<()> {
         self.vectors.insert(key, vector);
-        self.update_stored(key, vector)?;
+        self.set_deleted(key, false);
+        self.update_stored(key, false, Some(vector))?;
         Ok(())
     }
 
@@ -130,7 +166,8 @@ impl VectorStorage for SimpleVectorStorage {
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = other.get_vector(point_id);
             let new_id = self.vectors.push(other_vector);
-            self.update_stored(new_id, other_vector)?;
+            self.set_deleted(new_id, false);
+            self.update_stored(new_id, false, Some(other_vector))?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
         Ok(start_index..end_index)
@@ -176,6 +213,40 @@ impl VectorStorage for SimpleVectorStorage {
         } else {
             vec![]
         }
+    }
+
+    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        self.set_deleted(key, true);
+        self.update_stored(key, true, None)?;
+        Ok(())
+    }
+
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        self.deleted
+            .get(key as usize)
+            .as_deref()
+            .copied()
+            .unwrap_or(false)
+    }
+}
+
+/// Set deleted state in given bitvec.
+///
+/// Grows bitvec if it is not big enough.
+///
+/// Returns the previous state.
+#[inline]
+fn bitvec_set_deleted(bitvec: &mut BitVec, point_id: PointOffsetType, deleted: bool) -> bool {
+    if bitvec.len() > point_id as usize {
+        // Set deleted flag if bitvec is large enough
+        bitvec.replace(point_id as usize, deleted)
+    } else if deleted {
+        // Bitvec is too small; we only need to grow and set flag if deleting
+        bitvec.resize(point_id as usize + 1, false);
+        bitvec.set(point_id as usize, true);
+        false
+    } else {
+        false
     }
 }
 

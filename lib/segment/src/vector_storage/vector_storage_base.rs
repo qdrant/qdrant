@@ -75,6 +75,12 @@ pub trait VectorStorage {
     fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage>;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    /// Flag the vector by the given key as deleted.
+    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
+
+    /// Check whether the vector at the given key is flagged as deleted.
+    fn is_deleted(&self, key: PointOffsetType) -> bool;
 }
 
 pub enum VectorStorageEnum {
@@ -170,6 +176,20 @@ impl VectorStorage for VectorStorageEnum {
         match self {
             VectorStorageEnum::Simple(v) => v.files(),
             VectorStorageEnum::Memmap(v) => v.files(),
+        }
+    }
+
+    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.delete(key),
+            VectorStorageEnum::Memmap(v) => v.delete(key),
+        }
+    }
+
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        match self {
+            VectorStorageEnum::Simple(v) => v.is_deleted(key),
+            VectorStorageEnum::Memmap(v) => v.is_deleted(key),
         }
     }
 }
