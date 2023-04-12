@@ -59,9 +59,10 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) {
         let key = key as usize;
         self.len = max(self.len, key + 1);
-        while self.chunks.len() * self.chunk_capacity < self.len {
-            self.chunks.push(vec![]);
-        }
+        self.chunks.resize(
+            (self.len + self.chunk_capacity - 1) / self.chunk_capacity,
+            vec![],
+        );
 
         let chunk_data = &mut self.chunks[key / self.chunk_capacity];
         let idx = (key % self.chunk_capacity) * self.dim;
