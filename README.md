@@ -268,6 +268,7 @@ Thanks to the people who contributed to Qdrant:
       <td align="center" valign="top" width="14.28%"><a href="http://loudcoder.com"><img src="https://avatars.githubusercontent.com/u/12176046?v=4?s=50" width="50px;" alt="Yiping Deng"/><br /><sub><b>Yiping Deng</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=DengYiping" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://weijun-h.github.io/"><img src="https://avatars.githubusercontent.com/u/20267695?v=4?s=50" width="50px;" alt="Alex Huang"/><br /><sub><b>Alex Huang</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=Weijun-H" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/ibrahim-akrab"><img src="https://avatars.githubusercontent.com/u/30220322?v=4?s=50" width="50px;" alt="Ibrahim M. Akrab"/><br /><sub><b>Ibrahim M. Akrab</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=ibrahim-akrab" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/stencillogic"><img src="https://avatars.githubusercontent.com/u/59373360?v=4?s=50" width="50px;" alt="stencillogic"/><br /><sub><b>stencillogic</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=stencillogic" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>
