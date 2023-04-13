@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use bitvec::slice::BitSlice;
 
 use super::quantized::quantized_vectors_base::QuantizedVectorsStorage;
 use super::VectorStorageEnum;
@@ -160,6 +161,10 @@ impl VectorStorage for MemmapVectorStorage {
 
     fn is_deleted(&self, key: PointOffsetType) -> bool {
         self.mmap_store.as_ref().unwrap().is_deleted(key)
+    }
+
+    fn deleted_bitslice(&self) -> &BitSlice {
+        self.mmap_store.as_ref().unwrap().deleted_bitslice()
     }
 }
 

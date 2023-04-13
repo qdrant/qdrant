@@ -1,11 +1,11 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::mem::{size_of, transmute};
+use std::mem::{self, size_of, transmute};
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
-use std::sync::Arc;
 
+use bitvec::slice::BitSlice;
 use memmap2::{Mmap, MmapMut, MmapOptions};
-use parking_lot::{RwLock, RwLockReadGuard};
 
 use crate::common::error_logging::LogError;
 use crate::data_types::vectors::VectorElementType;
@@ -22,90 +22,39 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 pub struct MmapVectors {
     pub dim: usize,
     pub num_vectors: usize,
-    /// Has an exact size to fit `num_vectors` of vectors.
+    /// Memory mapped file for vector data
+    ///
+    /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Mmap,
     pub quantized_vectors: Option<QuantizedVectorsStorage>,
-    /// Has an exact size to fit deleted flags for `num_vectors`.
-    deleted_mmap: Arc<RwLock<MmapMut>>,
+    /// Memory mapped file for deletion flags
+    ///
+    /// Has an exact size to fit a header and an aligned `BitSlice` for `num_vectors` of vectors.
+    deleted_mmap: MmapMut,
     pub deleted_count: usize,
-}
-
-fn open_read(path: &Path) -> OperationResult<Mmap> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(false)
-        .append(true)
-        .create(true)
-        .open(path)?;
-
-    let mmap = unsafe { MmapOptions::new().map(&file)? };
-    madvise::madvise(&mmap, madvise::get_global())?;
-    Ok(mmap)
-}
-
-fn open_write(path: &Path) -> OperationResult<MmapMut> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(false)
-        .open(path)?;
-
-    let mmap = unsafe { MmapMut::map_mut(&file)? };
-    madvise::madvise(&mmap, madvise::get_global())?;
-    Ok(mmap)
-}
-
-/// Ensure the given mmap file exists
-///
-/// # Arguments
-/// * `path`: path of the file.
-/// * `header`: header to set when the file is newly created.
-/// * `size_bytes`: grow the file to this number of bytes filled with zeroes>
-fn ensure_mmap_file_exists(
-    path: &Path,
-    header: &[u8],
-    size_bytes: Option<usize>,
-) -> OperationResult<()> {
-    if path.exists() {
-        return Ok(());
-    }
-    let mut file = File::create(path)?;
-    file.write_all(header)?;
-    if let Some(size) = size_bytes {
-        file.write_all(&vec![0; size - HEADER_SIZE])?;
-    }
-    Ok(())
 }
 
 impl MmapVectors {
     pub fn open(vectors_path: &Path, deleted_path: &Path, dim: usize) -> OperationResult<Self> {
         // Allocate/open vectors mmap
-        ensure_mmap_file_exists(vectors_path, VECTORS_HEADER, None)
+        ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
         let mmap = open_read(vectors_path).describe("Open mmap for reading")?;
         let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<VectorElementType>();
 
         // Allocate/open deleted mmap
-        ensure_mmap_file_exists(
-            deleted_path,
-            DELETED_HEADER,
-            Some(num_vectors + HEADER_SIZE),
-        )
-        .describe("Create mmap data file")?;
+        let deleted_mmap_size = deleted_mmap_size(num_vectors);
+        ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
+            .describe("Create mmap deleted file")?;
         let deleted_mmap = open_write(deleted_path).describe("Open mmap deleted for writing")?;
-        let deleted_count = deleted_mmap.as_ref().iter().filter(|b| b != &&0).count();
-        debug_assert_eq!(
-            num_vectors + HEADER_SIZE,
-            deleted_mmap.len(),
-            "deleted mmap file size must match number of mmap vectors",
-        );
+        let deleted_count = deleted_mmap_bitslice(&deleted_mmap).count_ones();
 
         Ok(MmapVectors {
             dim,
             num_vectors,
             mmap,
             quantized_vectors: None,
-            deleted_mmap: Arc::new(RwLock::new(deleted_mmap)),
+            deleted_mmap,
             deleted_count,
         })
     }
@@ -170,31 +119,126 @@ impl MmapVectors {
     }
 
     pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        let i = key as usize;
-        debug_assert!(
-            i < self.num_vectors,
-            "key must always be in-bound of deleted mmap"
-        );
-
-        let mut deleted_mmap = self.deleted_mmap.write();
-        let flag = &mut deleted_mmap[HEADER_SIZE + i];
-        if *flag == 0 {
-            *flag = 1;
+        if !self.deleted_bitslice_mut().replace(key as usize, true) {
             self.deleted_count += 1;
         }
         Ok(())
     }
 
     pub fn is_deleted(&self, key: PointOffsetType) -> bool {
-        Self::check_deleted(&self.deleted_mmap.read(), key)
+        self.deleted_bitslice()[key as usize]
     }
 
-    #[inline]
-    pub fn check_deleted(mmap: &MmapMut, key: PointOffsetType) -> bool {
-        mmap[HEADER_SIZE + (key as usize)] != 0
+    pub fn deleted_bitslice(&self) -> &BitSlice {
+        deleted_mmap_bitslice(&self.deleted_mmap)
     }
 
-    pub fn read_deleted_map(&self) -> RwLockReadGuard<MmapMut> {
-        self.deleted_mmap.read()
+    pub fn deleted_bitslice_mut(&mut self) -> &mut BitSlice {
+        deleted_mmap_bitslice_mut(&mut self.deleted_mmap)
+    }
+}
+
+fn open_read(path: &Path) -> OperationResult<Mmap> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(false)
+        .append(true)
+        .create(true)
+        .open(path)?;
+
+    let mmap = unsafe { MmapOptions::new().map(&file)? };
+    madvise::madvise(&mmap, madvise::get_global())?;
+    Ok(mmap)
+}
+
+fn open_write(path: &Path) -> OperationResult<MmapMut> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(false)
+        .open(path)?;
+
+    let mmap = unsafe { MmapMut::map_mut(&file)? };
+    madvise::madvise(&mmap, madvise::get_global())?;
+    Ok(mmap)
+}
+
+/// Ensure the given mmap file exists and is the given size
+///
+/// # Arguments
+/// * `path`: path of the file.
+/// * `header`: header to set when the file is newly created.
+/// * `size`: set the file size in bytes, filled with zeroes.
+fn ensure_mmap_file_size(path: &Path, header: &[u8], size: Option<u64>) -> OperationResult<()> {
+    // If it exists, only set the length
+    if path.exists() {
+        if let Some(size) = size {
+            let file = OpenOptions::new().write(true).open(path)?;
+            file.set_len(size)?;
+        }
+        return Ok(());
+    }
+
+    // Create file, and make it the correct size
+    let mut file = File::create(path)?;
+    file.write_all(header)?;
+    if let Some(size) = size {
+        if size > header.len() as u64 {
+            file.set_len(size)?;
+        }
+    }
+    Ok(())
+}
+
+#[inline]
+const fn div_ceil(a: usize, b: usize) -> usize {
+    (a / b) + (a % b > 0) as usize
+}
+
+/// Get start position of flags `BitSlice` in deleted mmap.
+#[inline]
+const fn deleted_mmap_data_start() -> usize {
+    let align = mem::align_of::<usize>();
+    div_ceil(HEADER_SIZE, align) * align
+}
+
+/// Calculate size for deleted mmap to hold the given number of vectors.
+///
+/// The mmap will hold a file header and an aligned `BitSlice`.
+fn deleted_mmap_size(num: usize) -> usize {
+    let unit_size = mem::size_of::<usize>();
+    let num_bytes = div_ceil(num, 8);
+    let num_usizes = div_ceil(num_bytes, unit_size);
+    let data_size = num_usizes * unit_size;
+    deleted_mmap_data_start() + data_size
+}
+
+#[inline]
+pub fn deleted_mmap_bitslice(deleted_mmap: &MmapMut) -> &BitSlice {
+    let data_start = deleted_mmap_data_start();
+    let data_slice: &[u8] = &deleted_mmap.deref()[data_start..];
+
+    // Transmute: &[u8] -> &[usize] -> &BitSlice
+    debug_assert_eq!(data_slice.len() % mem::size_of::<usize>(), 0);
+    unsafe {
+        BitSlice::from_slice_unchecked(std::slice::from_raw_parts(
+            data_slice.as_ptr() as *mut usize,
+            data_slice.len() / mem::size_of::<usize>(),
+        ))
+    }
+}
+
+#[inline]
+pub fn deleted_mmap_bitslice_mut(deleted_mmap: &mut MmapMut) -> &mut BitSlice {
+    let data_start = deleted_mmap_data_start();
+    let data_slice: &mut [u8] = &mut deleted_mmap.deref_mut()[data_start..];
+
+    // Transmute: &mut [u8] -> &mut [usize] -> &mut BitSlice
+    debug_assert_eq!(data_slice.len() % mem::size_of::<usize>(), 0);
+    unsafe {
+        BitSlice::from_slice_unchecked_mut(std::slice::from_raw_parts_mut(
+            data_slice.as_ptr() as *mut usize,
+            data_slice.len() / mem::size_of::<usize>(),
+        ))
     }
 }
