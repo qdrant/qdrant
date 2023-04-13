@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use bitvec::slice::BitSlice;
 use ordered_float::OrderedFloat;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
@@ -81,6 +82,12 @@ pub trait VectorStorage {
 
     /// Check whether the vector at the given key is flagged as deleted.
     fn is_deleted(&self, key: PointOffsetType) -> bool;
+
+    /// Get [`BitSlice`] representation with deletion flags.
+    ///
+    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
+    /// vectors in this segment.
+    fn deleted_bitslice(&self) -> &BitSlice;
 }
 
 pub enum VectorStorageEnum {
@@ -190,6 +197,13 @@ impl VectorStorage for VectorStorageEnum {
         match self {
             VectorStorageEnum::Simple(v) => v.is_deleted(key),
             VectorStorageEnum::Memmap(v) => v.is_deleted(key),
+        }
+    }
+
+    fn deleted_bitslice(&self) -> &BitSlice {
+        match self {
+            VectorStorageEnum::Simple(v) => v.deleted_bitslice(),
+            VectorStorageEnum::Memmap(v) => v.deleted_bitslice(),
         }
     }
 }

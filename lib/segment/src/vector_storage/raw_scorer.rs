@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use bitvec::slice::BitSlice;
 use bitvec::vec::BitVec;
 
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
@@ -38,6 +39,7 @@ pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
     pub query: Vec<VectorElementType>,
     pub vector_storage: &'a TVectorStorage,
     pub deleted: &'a BitVec,
+    pub vec_deleted: &'a BitSlice,
     pub metric: PhantomData<TMetric>,
 }
 
@@ -62,12 +64,14 @@ fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     deleted: &'a BitVec,
 ) -> Box<dyn RawScorer + 'a> {
     let points_count = vector_storage.total_vector_count() as PointOffsetType;
+    let vec_deleted = vector_storage.deleted_bitslice();
     match vector_storage.distance() {
         Distance::Cosine => Box::new(RawScorerImpl::<'a, CosineMetric, TVectorStorage> {
             points_count,
             query: CosineMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
             deleted,
+            vec_deleted,
             metric: PhantomData,
         }),
         Distance::Euclid => Box::new(RawScorerImpl::<'a, EuclidMetric, TVectorStorage> {
@@ -75,6 +79,7 @@ fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             query: EuclidMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
             deleted,
+            vec_deleted,
             metric: PhantomData,
         }),
         Distance::Dot => Box::new(RawScorerImpl::<'a, DotProductMetric, TVectorStorage> {
@@ -82,6 +87,7 @@ fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
             deleted,
+            vec_deleted,
             metric: PhantomData,
         }),
     }
@@ -116,6 +122,11 @@ where
         point < self.points_count
             && (point as usize) < self.deleted.len()
             && !self.deleted[point as usize]
+            && !self
+                .vec_deleted
+                .get(point as usize)
+                .map(|b| *b)
+                .unwrap_or(false)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {

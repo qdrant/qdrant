@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use bitvec::slice::BitSlice;
 use bitvec::vec::BitVec;
 use log::debug;
 use parking_lot::RwLock;
@@ -222,11 +223,11 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn is_deleted(&self, key: PointOffsetType) -> bool {
-        self.deleted
-            .get(key as usize)
-            .as_deref()
-            .copied()
-            .unwrap_or(false)
+        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+    }
+
+    fn deleted_bitslice(&self) -> &BitSlice {
+        self.deleted.as_bitslice()
     }
 }
 
