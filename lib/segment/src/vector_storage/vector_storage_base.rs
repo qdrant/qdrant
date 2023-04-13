@@ -83,6 +83,9 @@ pub trait VectorStorage {
     /// Check whether the vector at the given key is flagged as deleted.
     fn is_deleted(&self, key: PointOffsetType) -> bool;
 
+    /// Get number of deleted vectors.
+    fn deleted_count(&self) -> usize;
+
     /// Get [`BitSlice`] representation with deletion flags.
     ///
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
@@ -197,6 +200,13 @@ impl VectorStorage for VectorStorageEnum {
         match self {
             VectorStorageEnum::Simple(v) => v.is_deleted(key),
             VectorStorageEnum::Memmap(v) => v.is_deleted(key),
+        }
+    }
+
+    fn deleted_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.deleted_count(),
+            VectorStorageEnum::Memmap(v) => v.deleted_count(),
         }
     }
 

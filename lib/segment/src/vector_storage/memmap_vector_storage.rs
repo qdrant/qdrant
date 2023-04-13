@@ -163,6 +163,10 @@ impl VectorStorage for MemmapVectorStorage {
         self.mmap_store.as_ref().unwrap().is_deleted(key)
     }
 
+    fn deleted_count(&self) -> usize {
+        self.mmap_store.as_ref().unwrap().deleted_count
+    }
+
     fn deleted_bitslice(&self) -> &BitSlice {
         self.mmap_store.as_ref().unwrap().deleted_bitslice()
     }

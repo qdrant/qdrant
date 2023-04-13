@@ -226,6 +226,10 @@ impl VectorStorage for SimpleVectorStorage {
         self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
     }
 
+    fn deleted_count(&self) -> usize {
+        self.deleted_count
+    }
+
     fn deleted_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
     }
