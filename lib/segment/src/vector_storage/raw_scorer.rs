@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
 use bitvec::slice::BitSlice;
-use bitvec::vec::BitVec;
 
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::VectorElementType;
@@ -38,7 +37,9 @@ pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
     pub points_count: PointOffsetType,
     pub query: Vec<VectorElementType>,
     pub vector_storage: &'a TVectorStorage,
-    pub deleted: &'a BitVec,
+    /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
+    pub point_deleted: &'a BitSlice,
+    /// [`BitSlice`] defining flags for deleted vectors.
     pub vec_deleted: &'a BitSlice,
     pub metric: PhantomData<TMetric>,
 }
@@ -46,22 +47,18 @@ pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
 pub fn new_raw_scorer<'a>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a VectorStorageEnum,
-    deleted: &'a BitVec,
+    point_deleted: &'a BitSlice,
 ) -> Box<dyn RawScorer + 'a> {
     match vector_storage {
-        VectorStorageEnum::Simple(vector_storage) => {
-            raw_scorer_impl(vector, vector_storage, deleted)
-        }
-        VectorStorageEnum::Memmap(vector_storage) => {
-            raw_scorer_impl(vector, vector_storage.as_ref(), deleted)
-        }
+        VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted),
+        VectorStorageEnum::Memmap(vs) => raw_scorer_impl(vector, vs.as_ref(), point_deleted),
     }
 }
 
 fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a TVectorStorage,
-    deleted: &'a BitVec,
+    point_deleted: &'a BitSlice,
 ) -> Box<dyn RawScorer + 'a> {
     let points_count = vector_storage.total_vector_count() as PointOffsetType;
     let vec_deleted = vector_storage.deleted_bitslice();
@@ -70,7 +67,7 @@ fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             points_count,
             query: CosineMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
-            deleted,
+            point_deleted,
             vec_deleted,
             metric: PhantomData,
         }),
@@ -78,7 +75,7 @@ fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             points_count,
             query: EuclidMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
-            deleted,
+            point_deleted,
             vec_deleted,
             metric: PhantomData,
         }),
@@ -86,7 +83,7 @@ fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
             points_count,
             query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
             vector_storage,
-            deleted,
+            point_deleted,
             vec_deleted,
             metric: PhantomData,
         }),
@@ -120,8 +117,11 @@ where
 
     fn check_point(&self, point: PointOffsetType) -> bool {
         point < self.points_count
-            && (point as usize) < self.deleted.len()
-            && !self.deleted[point as usize]
+            && !self
+                .point_deleted
+                .get(point as usize)
+                .map(|b| *b)
+                .unwrap_or(false)
             && !self
                 .vec_deleted
                 .get(point as usize)
