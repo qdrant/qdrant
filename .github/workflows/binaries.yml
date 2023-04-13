@@ -1,0 +1,20 @@
+name: release binaries
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  upload-bins:
+    name: "Upload release binaries"
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: qdrant
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
