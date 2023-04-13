@@ -30,7 +30,7 @@ chrono = { version = "~0.4", features = ["serde"] }
 validator = { version = "0.16", features = ["derive"] }
 
 # Consensus related
-atomicwrites = { version = "0.4.0" }
+atomicwrites = { version = "0.4.1" }
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 prost = { version = "0.11.8" } # version of prost used by raft
 serde_cbor = { version = "0.11.2" }
