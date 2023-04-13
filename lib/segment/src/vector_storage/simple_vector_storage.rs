@@ -240,11 +240,11 @@ impl VectorStorage for SimpleVectorStorage {
 fn bitvec_set_deleted(bitvec: &mut BitVec, point_id: PointOffsetType, deleted: bool) -> bool {
     if bitvec.len() > point_id as usize {
         // Set deleted flag if bitvec is large enough
-        bitvec.replace(point_id as usize, deleted)
+        unsafe { bitvec.replace_unchecked(point_id as usize, deleted) }
     } else if deleted {
         // Bitvec is too small; we only need to grow and set flag if deleting
         bitvec.resize(point_id as usize + 1, false);
-        bitvec.set(point_id as usize, true);
+        unsafe { bitvec.set_unchecked(point_id as usize, true) };
         false
     } else {
         false
