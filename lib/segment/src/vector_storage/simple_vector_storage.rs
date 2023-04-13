@@ -267,11 +267,98 @@ mod tests {
     use crate::vector_storage::{new_raw_scorer, ScoredPointOffset};
 
     #[test]
+    fn test_delete_points() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let points = vec![
+            vec![1.0, 0.0, 1.0, 1.0],
+            vec![1.0, 0.0, 1.0, 0.0],
+            vec![1.0, 1.0, 1.0, 1.0],
+            vec![1.0, 1.0, 0.0, 1.0],
+            vec![1.0, 0.0, 0.0, 0.0],
+        ];
+        let delete_mask = [false, false, true, true, false];
+        let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
+            Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+        let borrowed_id_tracker = id_tracker.borrow_mut();
+        let mut borrowed_storage = storage.borrow_mut();
+
+        for (i, vec) in points.iter().enumerate() {
+            borrowed_storage
+                .insert_vector(i as PointOffsetType, vec)
+                .unwrap();
+        }
+
+        // Delete select number of points
+        delete_mask
+            .into_iter()
+            .enumerate()
+            .filter(|(_, d)| *d)
+            .for_each(|(i, _)| {
+                borrowed_storage.delete(i as PointOffsetType).unwrap();
+            });
+        assert_eq!(
+            borrowed_storage.deleted_count(),
+            2,
+            "2 vectors must be deleted"
+        );
+
+        let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+        let closest = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        )
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
+        assert_eq!(closest[0].idx, 0);
+        assert_eq!(closest[1].idx, 1);
+        assert_eq!(closest[2].idx, 4);
+
+        // Delete 1, redelete 2
+        borrowed_storage.delete(1 as PointOffsetType).unwrap();
+        borrowed_storage.delete(2 as PointOffsetType).unwrap();
+        assert_eq!(
+            borrowed_storage.deleted_count(),
+            3,
+            "3 vectors must be deleted"
+        );
+
+        let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+        let closest = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        )
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
+        assert_eq!(closest[0].idx, 4);
+        assert_eq!(closest[1].idx, 0);
+
+        // Delete all
+        borrowed_storage.delete(0 as PointOffsetType).unwrap();
+        borrowed_storage.delete(4 as PointOffsetType).unwrap();
+        assert_eq!(
+            borrowed_storage.deleted_count(),
+            5,
+            "all vectors must be deleted"
+        );
+
+        let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+        let closest = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        )
+        .peek_top_all(5);
+        assert!(closest.is_empty(), "must have no results, all deleted");
+    }
+
+    #[test]
     fn test_score_points() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let distance = Distance::Dot;
-        let dim = 4;
         let points = vec![
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],
@@ -281,7 +368,7 @@ mod tests {
         ];
         let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
             Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, distance).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
         let mut borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
@@ -305,9 +392,7 @@ mod tests {
                 assert_eq!(scored_point.idx, 2);
                 scored_point.idx
             }
-            None => {
-                panic!("No close vector found!")
-            }
+            None => panic!("No close vector found!"),
         };
 
         borrowed_id_tracker
@@ -338,9 +423,7 @@ mod tests {
                 assert_ne!(scored_point.idx, 2);
                 assert_eq!(&raw_res1[scored_point.idx as usize], scored_point);
             }
-            None => {
-                panic!("No close vector found!")
-            }
+            None => panic!("No close vector found!"),
         };
 
         let all_ids1: Vec<_> = borrowed_id_tracker.iter_ids().collect();
@@ -355,8 +438,6 @@ mod tests {
     fn test_score_quantized_points() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let distance = Distance::Dot;
-        let dim = 4;
         let points = vec![
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],
@@ -365,7 +446,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, distance).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
         let mut borrowed_storage = storage.borrow_mut();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 

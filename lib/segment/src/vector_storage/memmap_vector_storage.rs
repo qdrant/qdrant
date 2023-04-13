@@ -198,7 +198,6 @@ mod tests {
 
     #[test]
     fn test_basic_persistence() {
-        let dist = Distance::Dot;
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = vec![
@@ -209,14 +208,14 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let mut borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.insert_vector(0, &points[0]).unwrap();
@@ -239,7 +238,7 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.insert_vector(3, &points[3]).unwrap();
@@ -274,8 +273,113 @@ mod tests {
     }
 
     #[test]
+    fn test_delete_points() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+        let points = vec![
+            vec![1.0, 0.0, 1.0, 1.0],
+            vec![1.0, 0.0, 1.0, 0.0],
+            vec![1.0, 1.0, 1.0, 1.0],
+            vec![1.0, 1.0, 0.0, 1.0],
+            vec![1.0, 0.0, 0.0, 0.0],
+        ];
+        let delete_mask = [false, false, true, true, false];
+        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let borrowed_id_tracker = id_tracker.borrow_mut();
+        let mut borrowed_storage = storage.borrow_mut();
+
+        {
+            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+            {
+                let mut borrowed_storage2 = storage2.borrow_mut();
+                points.iter().enumerate().for_each(|(i, vec)| {
+                    borrowed_storage2
+                        .insert_vector(i as PointOffsetType, vec)
+                        .unwrap();
+                });
+            }
+            borrowed_storage
+                .update_from(
+                    &storage2.borrow(),
+                    &mut Box::new(0..points.len() as u32),
+                    &Default::default(),
+                )
+                .unwrap();
+        }
+
+        assert_eq!(borrowed_storage.total_vector_count(), 5);
+        assert_eq!(borrowed_storage.deleted_count(), 0);
+
+        // Delete select number of points
+        delete_mask
+            .into_iter()
+            .enumerate()
+            .filter(|(_, d)| *d)
+            .for_each(|(i, _)| {
+                borrowed_storage.delete(i as PointOffsetType).unwrap();
+            });
+        assert_eq!(
+            borrowed_storage.deleted_count(),
+            2,
+            "2 vectors must be deleted"
+        );
+
+        let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+        let closest = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        )
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
+        assert_eq!(closest[0].idx, 0);
+        assert_eq!(closest[1].idx, 1);
+        assert_eq!(closest[2].idx, 4);
+
+        // Delete 1, redelete 2
+        borrowed_storage.delete(1 as PointOffsetType).unwrap();
+        borrowed_storage.delete(2 as PointOffsetType).unwrap();
+        assert_eq!(
+            borrowed_storage.deleted_count(),
+            3,
+            "3 vectors must be deleted"
+        );
+
+        let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+        let closest = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        )
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
+        assert_eq!(closest[0].idx, 4);
+        assert_eq!(closest[1].idx, 0);
+
+        // Delete all
+        borrowed_storage.delete(0 as PointOffsetType).unwrap();
+        borrowed_storage.delete(4 as PointOffsetType).unwrap();
+        assert_eq!(
+            borrowed_storage.deleted_count(),
+            5,
+            "all vectors must be deleted"
+        );
+
+        let query: Vec<VectorElementType> = vec![1.0, 0.0, 0.0, 0.0];
+        let closest = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        )
+        .peek_top_all(5);
+        assert!(closest.is_empty(), "must have no results, all deleted");
+    }
+
+    #[test]
     fn test_mmap_raw_scorer() {
-        let dist = Distance::Dot;
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = vec![
@@ -286,14 +390,14 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 for (i, vec) in points.iter().enumerate() {
@@ -353,7 +457,6 @@ mod tests {
 
     #[test]
     fn test_mmap_quantization() {
-        let dist = Distance::Dot;
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = vec![
@@ -364,14 +467,14 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
+        let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, dist).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 for (i, vec) in points.iter().enumerate() {
