@@ -1,5 +1,5 @@
-use std::fs::{create_dir_all, OpenOptions};
-use std::io::Write;
+use std::fs::{create_dir_all, File, OpenOptions};
+use std::io::{self, Write};
 use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -30,6 +30,7 @@ fn vf_to_u8<T>(v: &[T]) -> &[u8] {
 /// Mem-mapped storage can only be constructed from another storage
 pub struct MemmapVectorStorage {
     vectors_path: PathBuf,
+    deleted_path: PathBuf,
     mmap_store: Option<MmapVectors>,
     distance: Distance,
 }
@@ -42,11 +43,13 @@ pub fn open_memmap_vector_storage(
     create_dir_all(path)?;
 
     let vectors_path = path.join("matrix.dat");
-    let mmap_store = MmapVectors::open(&vectors_path, dim)?;
+    let deleted_path = path.join("deleted.dat");
+    let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
 
     Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Memmap(
         Box::new(MemmapVectorStorage {
             vectors_path,
+            deleted_path,
             mmap_store: Some(mmap_store),
             distance,
         }),
@@ -89,27 +92,31 @@ impl VectorStorage for MemmapVectorStorage {
         let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
 
-        self.mmap_store = None;
+        self.mmap_store.take();
 
-        {
-            let mut file = OpenOptions::new()
-                .read(false)
-                .write(false)
-                .append(true)
-                .create(false)
-                .open(&self.vectors_path)?;
-
-            for id in other_ids {
-                check_process_stopped(stopped)?;
-                let vector = other.get_vector(id);
-                let raw_bites = vf_to_u8(vector);
-                file.write_all(raw_bites)?;
-                end_index += 1;
-            }
-
-            file.flush()?;
+        // Extend vectors file, write other vectors to it
+        let mut vectors_file = open_append(&self.vectors_path)?;
+        for id in other_ids {
+            check_process_stopped(stopped)?;
+            let vector = other.get_vector(id);
+            let raw_bites = vf_to_u8(vector);
+            vectors_file.write_all(raw_bites)?;
+            end_index += 1;
         }
-        self.mmap_store = Some(MmapVectors::open(&self.vectors_path, dim)?);
+        vectors_file.flush()?;
+        drop(vectors_file);
+
+        // Extend deleted file, append same number of deleted flags to it
+        let mut deleted_file = open_append(&self.deleted_path)?;
+        deleted_file.write_all(&vec![0; (end_index - start_index) as usize])?;
+        deleted_file.flush()?;
+        drop(deleted_file);
+
+        self.mmap_store.replace(MmapVectors::open(
+            &self.vectors_path,
+            &self.deleted_path,
+            dim,
+        )?);
 
         Ok(start_index..end_index)
     }
@@ -148,12 +155,22 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        unimplemented!()
+        self.mmap_store.as_mut().unwrap().delete(key)
     }
 
     fn is_deleted(&self, key: PointOffsetType) -> bool {
-        unimplemented!()
+        self.mmap_store.as_ref().unwrap().is_deleted(key)
     }
+}
+
+/// Open a file shortly for appending
+fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
+    OpenOptions::new()
+        .read(false)
+        .write(false)
+        .append(true)
+        .create(false)
+        .open(path)
 }
 
 #[cfg(test)]
