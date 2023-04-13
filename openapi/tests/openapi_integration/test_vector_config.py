@@ -149,19 +149,8 @@ def test_disable_indexing():
     indexed_name = 'test_collection_indexed'
     unindexed_name = 'test_collection_unindexed'
     
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="DELETE",
-        path_params={'collection_name': indexed_name},
-    )
-    assert response.ok
-    
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="DELETE",
-        path_params={'collection_name': unindexed_name},
-    )
-    assert response.ok
+    drop_collection(collection_name=indexed_name)
+    drop_collection(collection_name=unindexed_name)
 
     def create_collection(collection_name, indexing_threshold):
         response = request_with_validation(
@@ -210,11 +199,15 @@ def test_disable_indexing():
     assert response.json()['result']['indexed_vectors_count'] == 0
     assert response.json()['result']['vectors_count'] == amount_of_vectors
     
+    # Cleanup
+    drop_collection(collection_name=indexed_name)
+    drop_collection(collection_name=unindexed_name)
     
-def insert_vectors(collection_name='test_collection', count=2000):
+    
+def insert_vectors(collection_name='test_collection', count=2000, size=256):
 
     ids = [x for x in range(count)]
-    vectors = [[random.random() for _ in range(256)] for _ in range(count)]
+    vectors = [[random.random() for _ in range(size)] for _ in range(count)]
     
     response = request_with_validation(
         api='/collections/{collection_name}/points',
