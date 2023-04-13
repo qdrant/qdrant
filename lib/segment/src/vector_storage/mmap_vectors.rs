@@ -7,6 +7,7 @@ use std::path::Path;
 use bitvec::slice::BitSlice;
 use memmap2::{Mmap, MmapMut, MmapOptions};
 
+use super::div_ceil;
 use crate::common::error_logging::LogError;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
@@ -188,11 +189,6 @@ fn ensure_mmap_file_size(path: &Path, header: &[u8], size: Option<u64>) -> Opera
         }
     }
     Ok(())
-}
-
-#[inline]
-const fn div_ceil(a: usize, b: usize) -> usize {
-    (a / b) + (a % b > 0) as usize
 }
 
 /// Get start position of flags `BitSlice` in deleted mmap.

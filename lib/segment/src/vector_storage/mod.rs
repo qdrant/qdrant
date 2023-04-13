@@ -8,3 +8,9 @@ mod vector_storage_base;
 
 pub use raw_scorer::*;
 pub use vector_storage_base::*;
+
+// We can replace this by `div_ceil` from the standard library once it stabilizes.
+#[inline]
+const fn div_ceil(a: usize, b: usize) -> usize {
+    (a / b) + (a % b > 0) as usize
+}

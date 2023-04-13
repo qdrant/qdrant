@@ -4,6 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::path::Path;
 
+use super::div_ceil;
 use crate::types::PointOffsetType;
 
 // chunk size in bytes
@@ -59,10 +60,8 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) {
         let key = key as usize;
         self.len = max(self.len, key + 1);
-        self.chunks.resize(
-            (self.len + self.chunk_capacity - 1) / self.chunk_capacity,
-            vec![],
-        );
+        self.chunks
+            .resize(div_ceil(self.len, self.chunk_capacity), vec![]);
 
         let chunk_data = &mut self.chunks[key / self.chunk_capacity];
         let idx = (key % self.chunk_capacity) * self.dim;
