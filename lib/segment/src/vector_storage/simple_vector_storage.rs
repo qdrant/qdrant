@@ -96,6 +96,10 @@ impl SimpleVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) {
+        if self.vectors.len() <= key as usize {
+            return;
+        }
+
         let previous = bitvec_set_deleted(&mut self.deleted, key, deleted);
         if !previous && deleted {
             self.deleted_count += 1;
@@ -165,9 +169,10 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
+            let other_deleted = other.is_deleted(point_id);
             let other_vector = other.get_vector(point_id);
             let new_id = self.vectors.push(other_vector);
-            self.set_deleted(new_id, false);
+            self.set_deleted(new_id, other_deleted);
             self.update_stored(new_id, false, Some(other_vector))?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
@@ -246,7 +251,7 @@ fn bitvec_set_deleted(bitvec: &mut BitVec, point_id: PointOffsetType, deleted: b
         // Set deleted flag if bitvec is large enough
         unsafe { bitvec.replace_unchecked(point_id as usize, deleted) }
     } else if deleted {
-        // Bitvec is too small; we only need to grow and set flag if deleting
+        // Bitvec is too small; grow and set the deletion flag
         bitvec.resize(point_id as usize + 1, false);
         unsafe { bitvec.set_unchecked(point_id as usize, true) };
         false
@@ -353,6 +358,78 @@ mod tests {
         )
         .peek_top_all(5);
         assert!(closest.is_empty(), "must have no results, all deleted");
+    }
+
+    /// Test that deleted points are properly transferred when updating from other storage.
+    #[test]
+    fn test_update_from_delete_points() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let points = vec![
+            vec![1.0, 0.0, 1.0, 1.0],
+            vec![1.0, 0.0, 1.0, 0.0],
+            vec![1.0, 1.0, 1.0, 1.0],
+            vec![1.0, 1.0, 0.0, 1.0],
+            vec![1.0, 0.0, 0.0, 0.0],
+        ];
+        let delete_mask = [false, false, true, true, false];
+        let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
+            Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+        let borrowed_id_tracker = id_tracker.borrow_mut();
+        let mut borrowed_storage = storage.borrow_mut();
+
+        {
+            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
+            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
+            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+            {
+                let mut borrowed_storage2 = storage2.borrow_mut();
+                points.iter().enumerate().for_each(|(i, vec)| {
+                    borrowed_storage2
+                        .insert_vector(i as PointOffsetType, vec)
+                        .unwrap();
+                    if delete_mask[i] {
+                        borrowed_storage2.delete(i as PointOffsetType).unwrap();
+                    }
+                });
+            }
+            borrowed_storage
+                .update_from(
+                    &storage2.borrow(),
+                    &mut Box::new(0..points.len() as u32),
+                    &Default::default(),
+                )
+                .unwrap();
+        }
+
+        assert_eq!(
+            borrowed_storage.deleted_count(),
+            2,
+            "2 vectors must be deleted from other storage"
+        );
+
+        let query: Vec<VectorElementType> = vec![0.0, 1.0, 1.1, 1.0];
+        let closest = new_raw_scorer(
+            query,
+            &borrowed_storage,
+            borrowed_id_tracker.deleted_bitvec(),
+        )
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
+        assert_eq!(closest[0].idx, 0);
+        assert_eq!(closest[1].idx, 1);
+        assert_eq!(closest[2].idx, 4);
+
+        // Delete all
+        borrowed_storage.delete(0 as PointOffsetType).unwrap();
+        borrowed_storage.delete(1 as PointOffsetType).unwrap();
+        borrowed_storage.delete(4 as PointOffsetType).unwrap();
+        assert_eq!(
+            borrowed_storage.deleted_count(),
+            5,
+            "all vectors must be deleted"
+        );
     }
 
     #[test]
