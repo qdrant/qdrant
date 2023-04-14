@@ -19,9 +19,8 @@ use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::VectorStorage;
 
-fn vf_to_u8<T>(v: &[T]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
-}
+pub const VECTORS_PATH: &str = "matrix.dat";
+pub const DELETED_PATH: &str = "deleted.dat";
 
 /// Stores all vectors in mem-mapped file
 ///
@@ -43,8 +42,8 @@ pub fn open_memmap_vector_storage(
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     create_dir_all(path)?;
 
-    let vectors_path = path.join("matrix.dat");
-    let deleted_path = path.join("deleted.dat");
+    let vectors_path = path.join(VECTORS_PATH);
+    let deleted_path = path.join(DELETED_PATH);
     let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
 
     Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Memmap(
@@ -190,6 +189,10 @@ fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
         .append(true)
         .create(false)
         .open(path)
+}
+
+fn vf_to_u8<T>(v: &[T]) -> &[u8] {
+    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
 }
 
 #[cfg(test)]

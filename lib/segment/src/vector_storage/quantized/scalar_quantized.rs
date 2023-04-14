@@ -18,7 +18,9 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     query: TEncodedQuery,
-    deleted: &'a BitSlice,
+    /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
+    point_deleted: &'a BitSlice,
+    /// [`BitSlice`] defining flags for deleted vectors in this segment.
     vec_deleted: &'a BitSlice,
     // Total number of vectors including deleted ones
     quantized_data: &'a TEncodedVectors,
@@ -49,7 +51,7 @@ where
 
     fn check_point(&self, point: PointOffsetType) -> bool {
         !self
-            .deleted
+            .point_deleted
             .get(point as usize)
             .map(|b| *b)
             .unwrap_or(false)
@@ -81,7 +83,7 @@ where
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
-        let scores = (0..self.deleted.len() as PointOffsetType)
+        let scores = (0..self.point_deleted.len() as PointOffsetType)
             .filter(|idx| self.check_point(*idx))
             .map(|idx| {
                 let score = self.score_point(idx);
@@ -109,7 +111,7 @@ where
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitSlice,
+        point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a> {
         let query = self
@@ -119,7 +121,7 @@ where
         let query = self.storage.encode_query(&query);
         Box::new(ScalarQuantizedRawScorer {
             query,
-            deleted,
+            point_deleted,
             vec_deleted,
             quantized_data: &self.storage,
         })

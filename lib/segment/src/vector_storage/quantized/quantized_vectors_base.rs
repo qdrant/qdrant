@@ -40,7 +40,7 @@ pub trait QuantizedVectors: Send + Sync {
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitSlice,
+        point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a>;
 
@@ -54,15 +54,15 @@ impl QuantizedVectors for QuantizedVectorsStorage {
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitSlice,
+        point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a> {
         match &self.storage_impl {
             QuantizedVectorStorageImpl::ScalarRam(storage) => {
-                storage.raw_scorer(query, deleted, vec_deleted)
+                storage.raw_scorer(query, point_deleted, vec_deleted)
             }
             QuantizedVectorStorageImpl::ScalarMmap(storage) => {
-                storage.raw_scorer(query, deleted, vec_deleted)
+                storage.raw_scorer(query, point_deleted, vec_deleted)
             }
         }
     }

@@ -49,8 +49,7 @@ pub fn open_simple_vector_storage(
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let mut vectors = ChunkedVectors::new(dim);
-    let mut deleted = BitVec::new();
-    let mut deleted_count = 0;
+    let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
 
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
     for (key, value) in db_wrapper.lock_db().iter()? {
@@ -59,7 +58,7 @@ pub fn open_simple_vector_storage(
         let stored_record: StoredRecord = bincode::deserialize(&value)
             .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
 
-        // Set deleted flag
+        // Propagate deleted flag
         if stored_record.deleted {
             deleted_count += 1;
             bitvec_set_deleted(&mut deleted, point_id, true);
@@ -98,7 +97,6 @@ impl SimpleVectorStorage {
         if self.vectors.len() <= key as usize {
             return;
         }
-
         let previous = bitvec_set_deleted(&mut self.deleted, key, deleted);
         if !previous && deleted {
             self.deleted_count += 1;
@@ -241,22 +239,22 @@ impl VectorStorage for SimpleVectorStorage {
 
 /// Set deleted state in given bitvec.
 ///
-/// Grows bitvec if it is not big enough.
+/// Grows bitvec automatically if it is not big enough.
 ///
-/// Returns the previous state.
+/// Returns previous deleted state of the given point.
 #[inline]
 fn bitvec_set_deleted(bitvec: &mut BitVec, point_id: PointOffsetType, deleted: bool) -> bool {
-    if bitvec.len() > point_id as usize {
-        // Set deleted flag if bitvec is large enough
-        unsafe { bitvec.replace_unchecked(point_id as usize, deleted) }
-    } else if deleted {
-        // Bitvec is too small; grow and set the deletion flag
+    // Set deleted flag if bitvec is large enough, no need to check bounds
+    if (point_id as usize) < bitvec.len() {
+        return unsafe { bitvec.replace_unchecked(point_id as usize, deleted) };
+    }
+
+    // Bitvec is too small; grow and set the deletion flag, no need to check bounds
+    if deleted {
         bitvec.resize(point_id as usize + 1, false);
         unsafe { bitvec.set_unchecked(point_id as usize, true) };
-        false
-    } else {
-        false
     }
+    false
 }
 
 #[cfg(test)]

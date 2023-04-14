@@ -39,7 +39,7 @@ pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
     pub vector_storage: &'a TVectorStorage,
     /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
     pub point_deleted: &'a BitSlice,
-    /// [`BitSlice`] defining flags for deleted vectors.
+    /// [`BitSlice`] defining flags for deleted vectors in this segment.
     pub vec_deleted: &'a BitSlice,
     pub metric: PhantomData<TMetric>,
 }

@@ -28,7 +28,6 @@ pub struct MmapVectors {
     ///
     /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Mmap,
-    pub quantized_vectors: Option<QuantizedVectorsStorage>,
     /// Memory mapped file for deletion flags
     ///
     /// Has an exact size to fit a header and an aligned `BitSlice` for `num_vectors` of vectors.
@@ -40,8 +39,9 @@ pub struct MmapVectors {
     /// A convenient [`BitSlice`] view into the deleted memory map file.
     ///
     /// This has the same lifetime as this struct.
-    deleted_bitslice: &'static mut BitSlice,
+    deleted: &'static mut BitSlice,
     pub deleted_count: usize,
+    pub quantized_vectors: Option<QuantizedVectorsStorage>,
 }
 
 impl MmapVectors {
@@ -62,21 +62,21 @@ impl MmapVectors {
         // Advice kernel that we'll need this page soon so the kernel can prepare
         #[cfg(unix)]
         if let Err(err) = deleted_mmap.advise(memmap2::Advice::WillNeed) {
-            log::error!("Failed to advice WillNeed for deleted flags: {}", err,);
+            log::error!("Failed to advice MADV_WILLNEED for deleted flags: {}", err,);
         }
 
         // Create convenient BitSlice view over it
-        let deleted_bitslice = unsafe { mmap_to_bitslice(&mut deleted_mmap) };
-        let deleted_count = deleted_bitslice.count_ones();
+        let deleted = unsafe { mmap_to_bitslice(&mut deleted_mmap) };
+        let deleted_count = deleted.count_ones();
 
         Ok(MmapVectors {
             dim,
             num_vectors,
             mmap,
-            quantized_vectors: None,
             _deleted_mmap: deleted_mmap,
-            deleted_bitslice,
+            deleted,
             deleted_count,
+            quantized_vectors: None,
         })
     }
 
@@ -145,17 +145,17 @@ impl MmapVectors {
         if self.num_vectors <= key as usize {
             return;
         }
-        if !self.deleted_bitslice.replace(key as usize, true) {
+        if !self.deleted.replace(key as usize, true) {
             self.deleted_count += 1;
         }
     }
 
     pub fn is_deleted(&self, key: PointOffsetType) -> bool {
-        self.deleted_bitslice[key as usize]
+        self.deleted[key as usize]
     }
 
     pub fn deleted_bitslice(&self) -> &BitSlice {
-        self.deleted_bitslice
+        self.deleted
     }
 
     /// Lock memory map of deleted flags into RAM for optimal access performance
