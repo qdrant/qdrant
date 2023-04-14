@@ -75,6 +75,7 @@ mod tests {
                         always_ram: None,
                     }
                     .into(),
+                    1,
                 )
                 .unwrap();
         });
