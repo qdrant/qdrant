@@ -245,7 +245,10 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     ),
                     max_segment_size: config.optimizer_config.max_segment_size.map(|x| x as u64),
                     memmap_threshold: config.optimizer_config.memmap_threshold.map(|x| x as u64),
-                    indexing_threshold: Some(config.optimizer_config.indexing_threshold as u64),
+                    indexing_threshold: config
+                        .optimizer_config
+                        .indexing_threshold
+                        .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
                     max_optimization_threads: Some(
                         config.optimizer_config.max_optimization_threads as u64,
@@ -301,7 +304,7 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
                 as usize,
             max_segment_size: optimizer_config.max_segment_size.map(|x| x as usize),
             memmap_threshold: optimizer_config.memmap_threshold.map(|x| x as usize),
-            indexing_threshold: optimizer_config.indexing_threshold.unwrap_or_default() as usize,
+            indexing_threshold: optimizer_config.indexing_threshold.map(|x| x as usize),
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
             max_optimization_threads: optimizer_config
                 .max_optimization_threads
