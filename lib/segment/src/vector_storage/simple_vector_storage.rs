@@ -142,6 +142,7 @@ impl VectorStorage for SimpleVectorStorage {
         &mut self,
         path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
     ) -> OperationResult<()> {
         let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
         self.quantized_vectors = Some(QuantizedVectors::create(
@@ -152,6 +153,7 @@ impl VectorStorage for SimpleVectorStorage {
             self.vectors.len(),
             path,
             false,
+            max_threads,
         )?);
         Ok(())
     }
@@ -303,7 +305,7 @@ mod tests {
         }
         .into();
 
-        borrowed_storage.quantize(dir.path(), &config).unwrap();
+        borrowed_storage.quantize(dir.path(), &config, 1).unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];
 

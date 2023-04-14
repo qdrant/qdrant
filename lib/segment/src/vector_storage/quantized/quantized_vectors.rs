@@ -105,6 +105,7 @@ impl QuantizedVectors {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create<'a>(
         vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
         quantization_config: &QuantizationConfig,
@@ -113,6 +114,7 @@ impl QuantizedVectors {
         count: usize,
         path: &Path,
         on_disk_vector_storage: bool,
+        max_threads: usize,
     ) -> OperationResult<Self> {
         let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
@@ -133,6 +135,7 @@ impl QuantizedVectors {
                     pq_config,
                     path,
                     on_disk_vector_storage,
+                    max_threads,
                 )?
             }
         };
@@ -252,6 +255,7 @@ impl QuantizedVectors {
         pq_config: &crate::types::ProductQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
+        max_threads: usize,
     ) -> OperationResult<QuantizedVectorStorage> {
         let quantized_vector_size =
             EncodedVectorsPQ::<QuantizedMmapStorage>::get_quantized_vector_size(
@@ -266,6 +270,7 @@ impl QuantizedVectors {
                 storage_builder,
                 vector_parameters,
                 pq_config.bucket_size,
+                max_threads,
             )?))
         } else {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
@@ -279,6 +284,7 @@ impl QuantizedVectors {
                 storage_builder,
                 vector_parameters,
                 pq_config.bucket_size,
+                max_threads,
             )?))
         }
     }

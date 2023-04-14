@@ -67,6 +67,7 @@ pub trait VectorStorage {
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
     ) -> OperationResult<()>;
 
     // Load quantized vectors from disk
@@ -145,10 +146,11 @@ impl VectorStorage for VectorStorageEnum {
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
     ) -> OperationResult<()> {
         match self {
-            VectorStorageEnum::Simple(v) => v.quantize(data_path, quantization_config),
-            VectorStorageEnum::Memmap(v) => v.quantize(data_path, quantization_config),
+            VectorStorageEnum::Simple(v) => v.quantize(data_path, quantization_config, max_threads),
+            VectorStorageEnum::Memmap(v) => v.quantize(data_path, quantization_config, max_threads),
         }
     }
 

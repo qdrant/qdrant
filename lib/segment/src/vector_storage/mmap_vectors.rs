@@ -65,6 +65,7 @@ impl MmapVectors {
         distance: Distance,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
     ) -> OperationResult<()> {
         let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
@@ -78,6 +79,7 @@ impl MmapVectors {
             self.num_vectors,
             data_path,
             true,
+            max_threads,
         )?);
         Ok(())
     }
