@@ -136,6 +136,29 @@
         "discriminator": {
           "propertyName": "status"
         }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "object",
+            "nullable": true
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "description": "Description of the occurred error."
+              }
+            }
+          },
+          "time": {
+            "type": "number",
+            "format": "float",
+            "description": "Time spent to process this request"
+          }
+        }
       }
     }
   },
