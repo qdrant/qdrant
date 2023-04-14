@@ -125,7 +125,7 @@ impl VectorStorage for MemmapVectorStorage {
         let store = self.mmap_store.as_mut().unwrap();
         for id in deleted_ids {
             check_process_stopped(stopped)?;
-            store.delete(id)?;
+            store.delete(id);
         }
 
         Ok(start_index..end_index)
@@ -165,7 +165,8 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        self.mmap_store.as_mut().unwrap().delete(key)
+        self.mmap_store.as_mut().unwrap().delete(key);
+        Ok(())
     }
 
     fn is_deleted(&self, key: PointOffsetType) -> bool {

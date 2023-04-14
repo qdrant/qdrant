@@ -141,22 +141,20 @@ impl MmapVectors {
         self.raw_vector_offset(offset)
     }
 
-    pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        if !self.deleted_bitslice_mut().replace(key as usize, true) {
+    pub fn delete(&mut self, key: PointOffsetType) {
+        if self.num_vectors <= key as usize {
+            return;
+        }
+        if !self.deleted_bitslice.replace(key as usize, true) {
             self.deleted_count += 1;
         }
-        Ok(())
     }
 
     pub fn is_deleted(&self, key: PointOffsetType) -> bool {
-        self.deleted_bitslice()[key as usize]
+        self.deleted_bitslice[key as usize]
     }
 
     pub fn deleted_bitslice(&self) -> &BitSlice {
-        self.deleted_bitslice
-    }
-
-    pub fn deleted_bitslice_mut(&mut self) -> &mut BitSlice {
         self.deleted_bitslice
     }
 
