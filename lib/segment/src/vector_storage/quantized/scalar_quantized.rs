@@ -19,6 +19,7 @@ where
 {
     query: TEncodedQuery,
     deleted: &'a BitSlice,
+    vec_deleted: &'a BitSlice,
     // Total number of vectors including deleted ones
     quantized_data: &'a TEncodedVectors,
 }
@@ -47,7 +48,16 @@ where
     }
 
     fn check_point(&self, point: PointOffsetType) -> bool {
-        (point as usize) < self.deleted.len() && !self.deleted[point as usize]
+        !self
+            .deleted
+            .get(point as usize)
+            .map(|b| *b)
+            .unwrap_or(false)
+            && !self
+                .vec_deleted
+                .get(point as usize)
+                .map(|b| *b)
+                .unwrap_or(false)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
@@ -100,6 +110,7 @@ where
         &'a self,
         query: &[VectorElementType],
         deleted: &'a BitSlice,
+        vec_deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a> {
         let query = self
             .distance
@@ -109,6 +120,7 @@ where
         Box::new(ScalarQuantizedRawScorer {
             query,
             deleted,
+            vec_deleted,
             quantized_data: &self.storage,
         })
     }

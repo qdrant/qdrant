@@ -167,7 +167,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     let vector = vector_storage.get_vector(block_point_id).to_vec();
                     let raw_scorer =
                         if let Some(quantized_storage) = vector_storage.quantized_storage() {
-                            quantized_storage.raw_scorer(&vector, id_tracker.deleted_bitslice())
+                            quantized_storage.raw_scorer(
+                                &vector,
+                                id_tracker.deleted_bitslice(),
+                                vector_storage.deleted_bitslice(),
+                            )
                         } else {
                             new_raw_scorer(
                                 vector.to_owned(),
@@ -220,7 +224,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             )
         } else if let Some(quantized_storage) = vector_storage.quantized_storage() {
             (
-                quantized_storage.raw_scorer(vector, id_tracker.deleted_bitslice()),
+                quantized_storage.raw_scorer(
+                    vector,
+                    id_tracker.deleted_bitslice(),
+                    vector_storage.deleted_bitslice(),
+                ),
                 true,
             )
         } else {
@@ -309,7 +317,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 .map(|vector| {
                     if let Some(quantized_storage) = vector_storage.quantized_storage() {
                         quantized_storage
-                            .raw_scorer(vector, id_tracker.deleted_bitslice())
+                            .raw_scorer(
+                                vector,
+                                id_tracker.deleted_bitslice(),
+                                vector_storage.deleted_bitslice(),
+                            )
                             .peek_top_iter(filtered_iter.as_mut(), top)
                     } else {
                         new_raw_scorer(
@@ -469,7 +481,11 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     let vector = vector_storage.get_vector(vector_id).to_vec();
                     let raw_scorer =
                         if let Some(quantized_storage) = vector_storage.quantized_storage() {
-                            quantized_storage.raw_scorer(&vector, id_tracker.deleted_bitslice())
+                            quantized_storage.raw_scorer(
+                                &vector,
+                                id_tracker.deleted_bitslice(),
+                                vector_storage.deleted_bitslice(),
+                            )
                         } else {
                             new_raw_scorer(
                                 vector.to_owned(),

@@ -584,10 +584,11 @@ mod tests {
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
         {
-            let scorer_quant = borrowed_storage
-                .quantized_storage()
-                .unwrap()
-                .raw_scorer(&query, borrowed_id_tracker.deleted_bitslice());
+            let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
+                &query,
+                borrowed_id_tracker.deleted_bitslice(),
+                borrowed_storage.deleted_bitslice(),
+            );
             let scorer_orig = new_raw_scorer(
                 query.clone(),
                 &borrowed_storage,
@@ -607,10 +608,11 @@ mod tests {
         // test save-load
         borrowed_storage.load_quantization(dir.path()).unwrap();
 
-        let scorer_quant = borrowed_storage
-            .quantized_storage()
-            .unwrap()
-            .raw_scorer(&query, borrowed_id_tracker.deleted_bitslice());
+        let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
+            &query,
+            borrowed_id_tracker.deleted_bitslice(),
+            borrowed_storage.deleted_bitslice(),
+        );
         let scorer_orig = new_raw_scorer(
             query,
             &borrowed_storage,
