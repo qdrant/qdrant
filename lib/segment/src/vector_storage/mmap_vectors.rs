@@ -3,7 +3,6 @@ use std::io::Write;
 use std::mem::{self, size_of, transmute};
 use std::ops::DerefMut;
 use std::path::Path;
-use std::pin::Pin;
 use std::slice;
 
 use bitvec::prelude::BitSlice;
@@ -37,7 +36,7 @@ pub struct MmapVectors {
     /// This should never be accessed directly, because it shares a mutable reference with
     /// [`deleted_bitslice`]. Use that instead. The sole purpouse of this is to keep ownership of
     /// the mmap, and to properly clean it up when this struct is dropped.
-    _deleted_mmap: Pin<MmapMut>,
+    _deleted_mmap: MmapMut,
     /// A convenient [`BitSlice`] view into the deleted memory map file.
     ///
     /// This has the same lifetime as this struct.
@@ -57,11 +56,11 @@ impl MmapVectors {
         let deleted_mmap_size = deleted_mmap_size(num_vectors);
         ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
             .describe("Create mmap deleted file")?;
-        let deleted_mmap = open_write(deleted_path).describe("Open mmap deleted for writing")?;
+        let mut deleted_mmap =
+            open_write(deleted_path).describe("Open mmap deleted for writing")?;
 
-        // Pin deleted mmap, create convenient BitSlice view over it
-        let mut deleted_mmap = Pin::new(deleted_mmap);
-        let deleted_bitslice = unsafe { pinned_mmap_to_bitslice(&mut deleted_mmap) };
+        // Create convenient BitSlice view over it
+        let deleted_bitslice = unsafe { mmap_to_bitslice(&mut deleted_mmap) };
         let deleted_count = deleted_bitslice.count_ones();
 
         Ok(MmapVectors {
@@ -224,15 +223,17 @@ fn deleted_mmap_size(num: usize) -> usize {
     deleted_mmap_data_start() + data_size
 }
 
-/// Create a convenient [`BitSlice`] view over a pinned [`MmapMut`].
+/// Create a convenient [`BitSlice`] view over a [`MmapMut`].
+///
+/// This works because the internal memory mapped slice is pinned and doesn't move in memory.
 ///
 /// This is unsafe because we create a shared mutable refrence with lifetime `'a`.
 ///
 /// - The mmap and BitSlice should never be mutated together.
-/// - The bitslice reference should never outlive the pinned mmap.
+/// - The bitslice reference should never outlive the mmap.
 /// - The caller is responsible for handling this with care.
-unsafe fn pinned_mmap_to_bitslice<'a>(mmap: &mut Pin<MmapMut>) -> &'a mut BitSlice {
-    // Obtain static slice into pinned mmap
+unsafe fn mmap_to_bitslice<'a>(mmap: &mut MmapMut) -> &'a mut BitSlice {
+    // Obtain static slice into mmap
     let slice: &'static mut [u8] = {
         let slice = mmap.deref_mut();
         slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())
@@ -244,6 +245,7 @@ unsafe fn pinned_mmap_to_bitslice<'a>(mmap: &mut Pin<MmapMut>) -> &'a mut BitSli
 
     // Create BitSlice view over data slice
     // Transmute: &mut [u8] -> &mut [usize] -> &mut BitSlice
+    debug_assert_eq!(slice.as_ptr() as usize % mem::align_of::<usize>(), 0);
     debug_assert_eq!(slice.len() % mem::size_of::<usize>(), 0);
     BitSlice::from_slice_unchecked_mut(slice::from_raw_parts_mut(
         slice.as_ptr() as *mut usize,
