@@ -37,7 +37,7 @@ fn test_alias_operation() {
             default_segment_number: 2,
             max_segment_size: None,
             memmap_threshold: Some(100),
-            indexing_threshold: 100,
+            indexing_threshold: Some(100),
             flush_interval_sec: 2,
             max_optimization_threads: 2,
         },

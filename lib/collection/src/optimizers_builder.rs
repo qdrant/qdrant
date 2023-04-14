@@ -58,7 +58,7 @@ pub struct OptimizersConfig {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
     #[validate(range(min = 1000))]
-    pub indexing_threshold: usize,
+    pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
     /// Maximum available threads for optimization workers
@@ -74,7 +74,7 @@ impl OptimizersConfig {
             default_segment_number: 0,
             max_segment_size: None,
             memmap_threshold: None,
-            indexing_threshold: 100_000,
+            indexing_threshold: Some(100_000),
             flush_interval_sec: 60,
             max_optimization_threads: 0,
         }
@@ -113,7 +113,7 @@ pub fn build_optimizers(
 
     let threshold_config = OptimizerThresholds {
         memmap_threshold: optimizers_config.memmap_threshold.unwrap_or(usize::MAX),
-        indexing_threshold: optimizers_config.indexing_threshold,
+        indexing_threshold: optimizers_config.indexing_threshold.unwrap_or(usize::MAX),
         max_segment_size: optimizers_config.get_max_segment_size(),
     };
 

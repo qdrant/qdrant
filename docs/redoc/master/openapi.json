@@ -4008,7 +4008,6 @@
           "default_segment_number",
           "deleted_threshold",
           "flush_interval_sec",
-          "indexing_threshold",
           "max_optimization_threads",
           "vacuum_min_vector_number"
         ],
@@ -4052,7 +4051,8 @@
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 1000
+            "minimum": 1000,
+            "nullable": true
           },
           "flush_interval_sec": {
             "description": "Minimum interval between forced flushes.",

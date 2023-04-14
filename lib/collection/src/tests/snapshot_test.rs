@@ -20,7 +20,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     default_segment_number: 2,
     max_segment_size: None,
     memmap_threshold: None,
-    indexing_threshold: 50_000,
+    indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
     max_optimization_threads: 2,
 };

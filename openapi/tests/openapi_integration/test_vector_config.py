@@ -1,3 +1,4 @@
+import random
 import pytest
 
 from .helpers.helpers import request_with_validation
@@ -142,3 +143,85 @@ def test_retrieve_vector_specific_quantization():
     assert vectors['text']['quantization_config']['scalar']['always_ram']
     assert config['quantization_config']['scalar']['type'] == "int8"
     assert config['quantization_config']['scalar']['quantile'] == 0.5
+
+@pytest.mark.skip(reason="Takes too long for a sanity test")
+def test_disable_indexing():
+    indexed_name = 'test_collection_indexed'
+    unindexed_name = 'test_collection_unindexed'
+    
+    drop_collection(collection_name=indexed_name)
+    drop_collection(collection_name=unindexed_name)
+
+    def create_collection(collection_name, indexing_threshold):
+        response = request_with_validation(
+            api='/collections/{collection_name}',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            body={
+                "vectors": {
+                    "size": 256,
+                    "distance": "Dot",
+                },
+                "optimizers_config": {
+                    "indexing_threshold": indexing_threshold
+                }
+            }
+        )
+        assert response.ok
+        
+    amount_of_vectors = 3000
+    
+    # Collection with indexing enabled
+    create_collection(indexed_name, 1000)
+    insert_vectors(indexed_name, amount_of_vectors)
+    
+    # Collection with indexing disabled
+    create_collection(unindexed_name, None)
+    insert_vectors(unindexed_name, amount_of_vectors)
+    
+    # Get info
+    response = request_with_validation(
+        method='GET',
+        api='/collections/{collection_name}',
+        path_params={'collection_name': indexed_name},
+    )
+    assert response.ok
+    assert response.json()['result']['indexed_vectors_count'] > 0
+    assert response.json()['result']['vectors_count'] == amount_of_vectors
+    
+    # Get info
+    response = request_with_validation(
+        method='GET',
+        api='/collections/{collection_name}',
+        path_params={'collection_name': unindexed_name},
+    )
+    assert response.ok
+    assert response.json()['result']['indexed_vectors_count'] == 0
+    assert response.json()['result']['vectors_count'] == amount_of_vectors
+    
+    # Cleanup
+    drop_collection(collection_name=indexed_name)
+    drop_collection(collection_name=unindexed_name)
+    
+    
+def insert_vectors(collection_name='test_collection', count=2000, size=256):
+
+    ids = [x for x in range(count)]
+    vectors = [[random.random() for _ in range(size)] for _ in range(count)]
+    
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method='PUT',
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "batch": {
+                "ids": ids,
+                "vectors": vectors,
+            }
+        }
+    )
+    assert response.ok
+    
+    
+    
