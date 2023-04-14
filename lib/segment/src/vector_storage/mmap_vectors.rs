@@ -1,8 +1,10 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{self, size_of, transmute};
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 use std::path::Path;
+use std::pin::Pin;
+use std::slice;
 
 use bitvec::slice::BitSlice;
 use memmap2::{Mmap, MmapMut, MmapOptions};
@@ -31,7 +33,15 @@ pub struct MmapVectors {
     /// Memory mapped file for deletion flags
     ///
     /// Has an exact size to fit a header and an aligned `BitSlice` for `num_vectors` of vectors.
-    deleted_mmap: MmapMut,
+    ///
+    /// This should never be accessed directly, because it shares a mutable reference with
+    /// [`deleted_bitslice`]. Use that instead. The sole purpouse of this is to keep ownership of
+    /// the mmap, and to properly clean it up when this struct is dropped.
+    _deleted_mmap: Pin<MmapMut>,
+    /// A convenient [`BitSlice`] view into the deleted memory map file.
+    ///
+    /// This has the same lifetime as this struct.
+    deleted_bitslice: &'static mut BitSlice,
     pub deleted_count: usize,
 }
 
@@ -48,14 +58,19 @@ impl MmapVectors {
         ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
             .describe("Create mmap deleted file")?;
         let deleted_mmap = open_write(deleted_path).describe("Open mmap deleted for writing")?;
-        let deleted_count = deleted_mmap_bitslice(&deleted_mmap).count_ones();
+
+        // Pin deleted mmap, create convenient BitSlice view over it
+        let mut deleted_mmap = Pin::new(deleted_mmap);
+        let deleted_bitslice = unsafe { pinned_mmap_to_bitslice(&mut deleted_mmap) };
+        let deleted_count = deleted_bitslice.count_ones();
 
         Ok(MmapVectors {
             dim,
             num_vectors,
             mmap,
             quantized_vectors: None,
-            deleted_mmap,
+            _deleted_mmap: deleted_mmap,
+            deleted_bitslice,
             deleted_count,
         })
     }
@@ -131,11 +146,11 @@ impl MmapVectors {
     }
 
     pub fn deleted_bitslice(&self) -> &BitSlice {
-        deleted_mmap_bitslice(&self.deleted_mmap)
+        self.deleted_bitslice
     }
 
     pub fn deleted_bitslice_mut(&mut self) -> &mut BitSlice {
-        deleted_mmap_bitslice_mut(&mut self.deleted_mmap)
+        self.deleted_bitslice
     }
 }
 
@@ -209,32 +224,29 @@ fn deleted_mmap_size(num: usize) -> usize {
     deleted_mmap_data_start() + data_size
 }
 
-#[inline]
-pub fn deleted_mmap_bitslice(deleted_mmap: &MmapMut) -> &BitSlice {
+/// Create a convenient [`BitSlice`] view over a pinned [`MmapMut`].
+///
+/// This is unsafe because we create a shared mutable refrence with lifetime `'a`.
+///
+/// - The mmap and BitSlice should never be mutated together.
+/// - The bitslice reference should never outlive the pinned mmap.
+/// - The caller is responsible for handling this with care.
+unsafe fn pinned_mmap_to_bitslice<'a>(mmap: &mut Pin<MmapMut>) -> &'a mut BitSlice {
+    // Obtain static slice into pinned mmap
+    let slice: &'static mut [u8] = {
+        let slice = mmap.deref_mut();
+        slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())
+    };
+
+    // Reslice to aligned data portion
     let data_start = deleted_mmap_data_start();
-    let data_slice: &[u8] = &deleted_mmap.deref()[data_start..];
+    let slice: &mut [u8] = &mut slice[data_start..];
 
-    // Transmute: &[u8] -> &[usize] -> &BitSlice
-    debug_assert_eq!(data_slice.len() % mem::size_of::<usize>(), 0);
-    unsafe {
-        BitSlice::from_slice_unchecked(std::slice::from_raw_parts(
-            data_slice.as_ptr() as *mut usize,
-            data_slice.len() / mem::size_of::<usize>(),
-        ))
-    }
-}
-
-#[inline]
-pub fn deleted_mmap_bitslice_mut(deleted_mmap: &mut MmapMut) -> &mut BitSlice {
-    let data_start = deleted_mmap_data_start();
-    let data_slice: &mut [u8] = &mut deleted_mmap.deref_mut()[data_start..];
-
+    // Create BitSlice view over data slice
     // Transmute: &mut [u8] -> &mut [usize] -> &mut BitSlice
-    debug_assert_eq!(data_slice.len() % mem::size_of::<usize>(), 0);
-    unsafe {
-        BitSlice::from_slice_unchecked_mut(std::slice::from_raw_parts_mut(
-            data_slice.as_ptr() as *mut usize,
-            data_slice.len() / mem::size_of::<usize>(),
-        ))
-    }
+    debug_assert_eq!(slice.len() % mem::size_of::<usize>(), 0);
+    BitSlice::from_slice_unchecked_mut(slice::from_raw_parts_mut(
+        slice.as_ptr() as *mut usize,
+        slice.len() / mem::size_of::<usize>(),
+    ))
 }
