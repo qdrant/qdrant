@@ -1,4 +1,4 @@
-use bitvec::vec::BitVec;
+use bitvec::prelude::BitSlice;
 use rand::Rng;
 
 use crate::common::Flusher;
@@ -62,7 +62,7 @@ pub trait IdTracker {
     /// Flush points versions to disk
     fn versions_flusher(&self) -> Flusher;
 
-    fn deleted_bitvec(&self) -> &BitVec;
+    fn deleted_bitslice(&self) -> &BitSlice;
 
     fn is_deleted(&self, internal_id: PointOffsetType) -> bool;
 

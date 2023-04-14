@@ -64,7 +64,7 @@ fn benchmark_naive(c: &mut Criterion) {
             new_raw_scorer(
                 vector,
                 &borrowed_storage,
-                borrowed_id_tracker.deleted_bitvec(),
+                borrowed_id_tracker.deleted_bitslice(),
             )
             .peek_top_all(10)
         })
@@ -85,7 +85,7 @@ fn random_access_benchmark(c: &mut Criterion) {
     let scorer = new_raw_scorer(
         vector,
         &borrowed_storage,
-        borrowed_id_tracker.deleted_bitvec(),
+        borrowed_id_tracker.deleted_bitslice(),
     );
 
     let mut total_score = 0.;

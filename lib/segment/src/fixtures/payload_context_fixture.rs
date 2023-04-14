@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use bitvec::vec::BitVec;
+use bitvec::prelude::{BitSlice, BitVec};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
@@ -30,11 +30,9 @@ pub struct FixtureIdTracker {
 
 impl FixtureIdTracker {
     pub fn new(num_points: usize) -> Self {
-        let mut deleted = BitVec::with_capacity(num_points);
-        deleted.resize(num_points, false);
         Self {
             ids: (0..num_points).map(|x| x as PointOffsetType).collect(),
-            deleted,
+            deleted: BitVec::repeat(false, num_points),
         }
     }
 }
@@ -148,7 +146,7 @@ impl IdTracker for FixtureIdTracker {
         self.deleted[key]
     }
 
-    fn deleted_bitvec(&self) -> &BitVec {
+    fn deleted_bitslice(&self) -> &BitSlice {
         &self.deleted
     }
 }

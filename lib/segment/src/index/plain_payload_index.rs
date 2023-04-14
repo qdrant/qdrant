@@ -238,7 +238,7 @@ impl VectorIndex for PlainIndex {
                         new_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
-                            id_tracker.deleted_bitvec(),
+                            id_tracker.deleted_bitslice(),
                         )
                         .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
                     })
@@ -254,7 +254,7 @@ impl VectorIndex for PlainIndex {
                         new_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
-                            id_tracker.deleted_bitvec(),
+                            id_tracker.deleted_bitslice(),
                         )
                         .peek_top_all(top)
                     })

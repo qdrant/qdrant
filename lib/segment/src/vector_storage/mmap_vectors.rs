@@ -6,7 +6,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::slice;
 
-use bitvec::slice::BitSlice;
+use bitvec::prelude::BitSlice;
 use memmap2::{Mmap, MmapMut, MmapOptions};
 
 use super::div_ceil;

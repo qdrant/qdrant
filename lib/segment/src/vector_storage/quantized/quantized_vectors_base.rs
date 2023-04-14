@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitVec;
+use bitvec::prelude::BitSlice;
 use serde::{Deserialize, Serialize};
 
 use crate::common::file_operations::{atomic_save_json, read_json};
@@ -40,7 +40,7 @@ pub trait QuantizedVectors: Send + Sync {
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitVec,
+        deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a>;
 
     fn save_to(&self, path: &Path) -> OperationResult<()>;
@@ -53,7 +53,7 @@ impl QuantizedVectors for QuantizedVectorsStorage {
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitVec,
+        deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a> {
         match &self.storage_impl {
             QuantizedVectorStorageImpl::ScalarRam(storage) => storage.raw_scorer(query, deleted),

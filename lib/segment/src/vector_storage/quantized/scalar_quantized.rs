@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitVec;
+use bitvec::prelude::BitSlice;
 use quantization::EncodedVectors;
 
 use crate::data_types::vectors::VectorElementType;
@@ -18,7 +18,7 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     query: TEncodedQuery,
-    deleted: &'a BitVec,
+    deleted: &'a BitSlice,
     // Total number of vectors including deleted ones
     quantized_data: &'a TEncodedVectors,
 }
@@ -99,7 +99,7 @@ where
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitVec,
+        deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a> {
         let query = self
             .distance

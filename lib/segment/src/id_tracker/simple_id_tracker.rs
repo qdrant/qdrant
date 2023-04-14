@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use bincode;
-use bitvec::vec::BitVec;
+use bitvec::prelude::{BitSlice, BitVec};
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -353,7 +353,7 @@ impl IdTracker for SimpleIdTracker {
         self.deleted[key]
     }
 
-    fn deleted_bitvec(&self) -> &BitVec {
+    fn deleted_bitslice(&self) -> &BitSlice {
         &self.deleted
     }
 }

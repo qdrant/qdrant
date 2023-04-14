@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use bitvec::slice::BitSlice;
+use bitvec::prelude::BitSlice;
 use ordered_float::OrderedFloat;
 
 use super::memmap_vector_storage::MemmapVectorStorage;

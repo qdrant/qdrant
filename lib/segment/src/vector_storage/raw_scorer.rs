@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use bitvec::slice::BitSlice;
+use bitvec::prelude::BitSlice;
 
 use super::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
 use crate::data_types::vectors::VectorElementType;

@@ -5,8 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use bitvec::slice::BitSlice;
-use bitvec::vec::BitVec;
+use bitvec::prelude::{BitSlice, BitVec};
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -313,7 +312,7 @@ mod tests {
         let closest = new_raw_scorer(
             query,
             &borrowed_storage,
-            borrowed_id_tracker.deleted_bitvec(),
+            borrowed_id_tracker.deleted_bitslice(),
         )
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
@@ -334,7 +333,7 @@ mod tests {
         let closest = new_raw_scorer(
             query,
             &borrowed_storage,
-            borrowed_id_tracker.deleted_bitvec(),
+            borrowed_id_tracker.deleted_bitslice(),
         )
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
         assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
@@ -354,7 +353,7 @@ mod tests {
         let closest = new_raw_scorer(
             query,
             &borrowed_storage,
-            borrowed_id_tracker.deleted_bitvec(),
+            borrowed_id_tracker.deleted_bitslice(),
         )
         .peek_top_all(5);
         assert!(closest.is_empty(), "must have no results, all deleted");
@@ -413,7 +412,7 @@ mod tests {
         let closest = new_raw_scorer(
             query,
             &borrowed_storage,
-            borrowed_id_tracker.deleted_bitvec(),
+            borrowed_id_tracker.deleted_bitslice(),
         )
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
@@ -460,7 +459,7 @@ mod tests {
         let closest = new_raw_scorer(
             query.clone(),
             &borrowed_storage,
-            borrowed_id_tracker.deleted_bitvec(),
+            borrowed_id_tracker.deleted_bitslice(),
         )
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
@@ -479,7 +478,7 @@ mod tests {
         let raw_scorer = new_raw_scorer(
             query,
             &borrowed_storage,
-            borrowed_id_tracker.deleted_bitvec(),
+            borrowed_id_tracker.deleted_bitslice(),
         );
         let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
@@ -548,11 +547,11 @@ mod tests {
             let scorer_quant = borrowed_storage
                 .quantized_storage()
                 .unwrap()
-                .raw_scorer(&query, borrowed_id_tracker.deleted_bitvec());
+                .raw_scorer(&query, borrowed_id_tracker.deleted_bitslice());
             let scorer_orig = new_raw_scorer(
                 query.clone(),
                 &borrowed_storage,
-                borrowed_id_tracker.deleted_bitvec(),
+                borrowed_id_tracker.deleted_bitslice(),
             );
             for i in 0..5 {
                 let quant = scorer_quant.score_point(i);
@@ -571,11 +570,11 @@ mod tests {
         let scorer_quant = borrowed_storage
             .quantized_storage()
             .unwrap()
-            .raw_scorer(&query, borrowed_id_tracker.deleted_bitvec());
+            .raw_scorer(&query, borrowed_id_tracker.deleted_bitslice());
         let scorer_orig = new_raw_scorer(
             query.clone(),
             &borrowed_storage,
-            borrowed_id_tracker.deleted_bitvec(),
+            borrowed_id_tracker.deleted_bitslice(),
         );
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
