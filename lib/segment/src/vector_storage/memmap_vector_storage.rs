@@ -89,15 +89,13 @@ impl VectorStorage for MemmapVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
-
         let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
-
         self.mmap_store.take();
 
-        // Extend vectors file, write other vectors to it
+        // Extend vectors file, write other vectors into it
         let mut vectors_file = open_append(&self.vectors_path)?;
-        let mut delete_ids = vec![];
+        let mut deleted_ids = vec![];
         for id in other_ids {
             check_process_stopped(stopped)?;
             let vector = other.get_vector(id);
@@ -105,23 +103,31 @@ impl VectorStorage for MemmapVectorStorage {
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 
+            // Remember deleted IDs so we can flush these later
             if other.is_deleted(id) {
-                delete_ids.push((start_index + id) as PointOffsetType);
+                deleted_ids.push((start_index + id) as PointOffsetType);
             }
         }
         vectors_file.flush()?;
         drop(vectors_file);
 
-        // Load updated store
-        let mut store = MmapVectors::open(&self.vectors_path, &self.deleted_path, dim)?;
+        // Load store with updated files
+        self.mmap_store.replace(MmapVectors::open(
+            &self.vectors_path,
+            &self.deleted_path,
+            dim,
+        )?);
 
-        // Update deletes
-        // TODO: this is naive, find a better way to do this in the loop above
-        for id in delete_ids {
+        // Flush deleted flags into store
+        // We must do that in the updated store, and cannot do it in the previous loop. That is
+        // because the file backing delete storage must be resized, and for that we'd need to know
+        // the exact number of vectors beforehand. When opening the store it is done automatically.
+        let store = self.mmap_store.as_mut().unwrap();
+        for id in deleted_ids {
+            check_process_stopped(stopped)?;
             store.delete(id)?;
         }
 
-        self.mmap_store.replace(store);
         Ok(start_index..end_index)
     }
 
