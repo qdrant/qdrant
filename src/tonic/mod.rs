@@ -1,4 +1,5 @@
 mod api;
+mod logging;
 mod tonic_telemetry;
 
 use std::io;
@@ -72,10 +73,16 @@ pub fn init(
                 .map_err(helpers::tonic_error_to_io_error)?;
         };
 
-        server
+        // The stack of middleware that our service will be wrapped in
+        let middleware_layer = tower::ServiceBuilder::new()
+            .layer(logging::LoggingMiddlewareLayer::new())
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
             ))
+            .into_inner();
+
+        server
+            .layer(middleware_layer)
             .add_service(
                 QdrantServer::new(qdrant_service)
                     .send_compressed(CompressionEncoding::Gzip)
@@ -143,10 +150,16 @@ pub fn init_internal(
                 server = server.tls_config(config)?;
             };
 
-            server
+            // The stack of middleware that our service will be wrapped in
+            let middleware_layer = tower::ServiceBuilder::new()
+                .layer(logging::LoggingMiddlewareLayer::new())
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
+                .into_inner();
+
+            server
+                .layer(middleware_layer)
                 .add_service(
                     QdrantServer::new(qdrant_service)
                         .send_compressed(CompressionEncoding::Gzip)
