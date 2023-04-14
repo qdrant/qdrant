@@ -80,6 +80,7 @@ impl MmapVectors {
         data_path: &Path,
         quantization_config: &QuantizationConfig,
     ) -> OperationResult<()> {
+        self.lock_deleted_flags();
         let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
             self.raw_vector_offset(offset)
@@ -101,6 +102,7 @@ impl MmapVectors {
         data_path: &Path,
         distance: Distance,
     ) -> OperationResult<()> {
+        self.lock_deleted_flags();
         if QuantizedVectorsStorage::check_exists(data_path) {
             self.quantized_vectors =
                 Some(QuantizedVectorsStorage::load(data_path, true, distance)?);
@@ -150,6 +152,23 @@ impl MmapVectors {
 
     pub fn deleted_bitslice_mut(&mut self) -> &mut BitSlice {
         self.deleted_bitslice
+    }
+
+    /// Lock memory map of deleted flags into RAM for optimal access performance
+    ///
+    /// Because the deleted flags are backed by a memory mapped file, its pages may be swapped out
+    /// to disk. This will hurt performance in case of quantization because the access times may be
+    /// huge. Calling this will lock the deleted flags in memory to prevent this.
+    ///
+    /// This is only supported on Unix.
+    fn lock_deleted_flags(&mut self) {
+        #[cfg(unix)]
+        if let Err(err) = self._deleted_mmap.lock() {
+            log::error!(
+                "Failed to lock deleted flags for quantized mmap segment in memory: {}",
+                err,
+            );
+        }
     }
 }
 
