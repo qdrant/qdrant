@@ -6,8 +6,10 @@ use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::types::ClusterStatus;
 use validator::Validate;
 
+use crate::actix::api_doc::Responses;
 use crate::actix::helpers::process_response;
 
 #[derive(Debug, Deserialize, Validate)]
@@ -19,6 +21,13 @@ struct QueryParams {
     timeout: Option<u64>,
 }
 
+/// Get cluster status info
+///
+/// Get information about the current state and composition of the cluster
+#[utoipa::path(
+    tag = "cluster",
+    responses(Responses::<ClusterStatus>)
+)]
 #[get("/cluster")]
 async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     let timing = Instant::now();

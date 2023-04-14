@@ -3,6 +3,8 @@ use std::fmt::Debug;
 use schemars::JsonSchema;
 use serde;
 use serde::{Deserialize, Serialize};
+use utoipa::openapi::response;
+use utoipa::{IntoResponses, ToSchema};
 
 #[derive(Serialize, Deserialize)]
 pub struct VersionInfo {
@@ -27,7 +29,7 @@ pub enum ApiStatus {
     Accepted,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct ApiResponse<D: Serialize + Debug> {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -42,7 +44,7 @@ pub struct CollectionDescription {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionsResponse {
     pub collections: Vec<CollectionDescription>,

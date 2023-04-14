@@ -17,6 +17,7 @@ use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
 use storage::types::ClusterStatus;
+use utoipa::OpenApi;
 
 use crate::common::helpers::LocksOption;
 use crate::common::points::CreateFieldIndex;
@@ -66,11 +67,15 @@ struct AllDefinitions {
 }
 
 fn save_schema<T: JsonSchema>() {
-    let settings = SchemaSettings::draft07();
-    let gen = settings.into_generator();
-    let schema = gen.into_root_schema_for::<T>();
-    let schema_str = serde_json::to_string_pretty(&schema).unwrap();
-    println!("{schema_str}")
+    // let settings = SchemaSettings::draft07();
+    // let gen = settings.into_generator();
+    // let schema = gen.into_root_schema_for::<T>();
+    // let schema_str = serde_json::to_string_pretty(&schema).unwrap();
+    // println!("{schema_str}")
+
+    let openapi = crate::actix::api_doc::ApiDoc::openapi();
+    let openapi_str = openapi.to_pretty_json().unwrap();
+    println!("{openapi_str}");
 }
 
 fn main() {

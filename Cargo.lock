@@ -444,6 +444,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tower",
+ "utoipa",
  "uuid",
  "validator",
 ]
@@ -982,6 +983,7 @@ dependencies = [
  "tonic",
  "tower",
  "url",
+ "utoipa",
  "uuid",
  "validator",
  "wal",
@@ -3029,6 +3031,7 @@ dependencies = [
  "tonic",
  "tower",
  "tower-layer",
+ "utoipa",
  "uuid",
  "validator",
 ]
@@ -3935,6 +3938,7 @@ dependencies = [
  "tokio",
  "tonic",
  "url",
+ "utoipa",
  "uuid",
  "validator",
  "wal",
@@ -4493,6 +4497,32 @@ name = "utf8parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
+
+[[package]]
+name = "utoipa"
+version = "3.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24e7ee17c9ef094b86e1e04170d90765bd76cb381921dacb4d3e175a267bdae6"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_json",
+ "utoipa-gen",
+]
+
+[[package]]
+name = "utoipa-gen"
+version = "3.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df6f458e5abc811d44aca28455efc4163fb7565a7af2aa32d17611f3d1d9794d"
+dependencies = [
+ "lazy_static",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "syn 2.0.11",
+]
 
 [[package]]
 name = "uuid"
