@@ -6,7 +6,7 @@ use std::path::Path;
 use std::slice;
 
 use bitvec::prelude::BitSlice;
-use memmap2::{Mmap, MmapMut, MmapOptions};
+use memmap2::{Advice, Mmap, MmapMut, MmapOptions};
 
 use super::div_ceil;
 use crate::common::error_logging::LogError;
@@ -58,6 +58,12 @@ impl MmapVectors {
             .describe("Create mmap deleted file")?;
         let mut deleted_mmap =
             open_write(deleted_path).describe("Open mmap deleted for writing")?;
+
+        // Advice kernel that we'll need this page soon so the kernel can prepare
+        #[cfg(unix)]
+        if let Err(err) = deleted_mmap.advise(Advice::WillNeed) {
+            log::error!("Failed to advice WillNeed for deleted flags: {}", err,);
+        }
 
         // Create convenient BitSlice view over it
         let deleted_bitslice = unsafe { mmap_to_bitslice(&mut deleted_mmap) };
