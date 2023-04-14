@@ -19,7 +19,7 @@ use utoipa::{schema, IntoResponses, OpenApi, PartialSchema, ToResponse, ToSchema
         ),
         components(
             schemas(
-                // ErrorResponse,
+                ErrorResponse,
                 ClusterStatus,
             ),
         ),
