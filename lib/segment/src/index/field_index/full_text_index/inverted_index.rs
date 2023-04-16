@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use patricia_tree::PatriciaMap;
 use serde::{Deserialize, Serialize};
@@ -50,11 +50,10 @@ impl InvertedIndex {
         Default::default()
     }
 
-    pub fn document_from_tokens(&mut self, tokens: HashSet<String>) -> Document {
+    pub fn document_from_tokens(&mut self, tokens: BTreeSet<String>) -> Document {
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab
-            //
             let vocab_idx = match self.vocab.get(&token) {
                 Some(&idx) => idx,
                 None => {
@@ -72,22 +71,10 @@ impl InvertedIndex {
         }
     }
 
-    pub fn get_document_tokens(&self, document: &Document) -> HashSet<String> {
-        let mut document_idx = 0;
+    pub fn get_document_tokens(&self, document: &Document) -> BTreeSet<String> {
         self.vocab
             .iter()
-            .filter(|(_token, &idx)| {
-                // if we found all document tokens
-                if document_idx >= document.tokens.len() {
-                    return false;
-                }
-                if document.tokens.contains(&idx) {
-                    document_idx += 1;
-                    true
-                } else {
-                    false
-                }
-            })
+            .filter(|(_token, &idx)| document.tokens.contains(&idx))
             .map(|(token, _idx)| {
                 std::string::String::from_utf8(token).expect("token not valid utf-8")
             })

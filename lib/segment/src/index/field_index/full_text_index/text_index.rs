@@ -1,8 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rocksdb::DB;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -35,17 +36,28 @@ impl FullTextIndex {
     }
 
     fn serialize_document(&self, document: &Document) -> OperationResult<Vec<u8>> {
-        serde_cbor::to_vec(&self.inverted_index.get_document_tokens(document)).map_err(|e| {
+        #[derive(Serialize)]
+        struct StoredDocument {
+            tokens: BTreeSet<String>,
+        }
+        let doc = StoredDocument {
+            tokens: self.inverted_index.get_document_tokens(document),
+        };
+        serde_cbor::to_vec(&doc).map_err(|e| {
             OperationError::service_error(format!("Failed to serialize document: {e}"))
         })
     }
 
     fn deserialize_document(data: &[u8], index: &mut InvertedIndex) -> OperationResult<Document> {
-        serde_cbor::from_slice(data)
+        #[derive(Deserialize)]
+        struct StoredDocument {
+            tokens: BTreeSet<String>,
+        }
+        serde_cbor::from_slice::<StoredDocument>(data)
             .map_err(|e| {
                 OperationError::service_error(format!("Failed to deserialize document: {e}"))
             })
-            .map(|tokens| index.document_from_tokens(tokens))
+            .map(|doc| index.document_from_tokens(doc.tokens))
     }
 
     fn storage_cf_name(field: &str) -> String {
@@ -99,7 +111,7 @@ impl ValueIndexer<String> for FullTextIndex {
             return Ok(());
         }
 
-        let mut tokens: HashSet<String> = HashSet::new();
+        let mut tokens: BTreeSet<String> = BTreeSet::new();
 
         for value in values {
             Tokenizer::tokenize_doc(&value, &self.config, |token| {
