@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use patricia_tree::PatriciaMap;
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,7 @@ impl ParsedQuery {
 pub struct InvertedIndex {
     postings: Vec<Option<PostingList>>,
     pub vocab: PatriciaMap<usize>,
+    rev_vocab: HashMap<usize, String>,
     vocab_count: usize,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
@@ -59,7 +60,8 @@ impl InvertedIndex {
                 None => {
                     let len = self.vocab_count;
                     self.vocab_count += 1;
-                    self.vocab.insert(token, len);
+                    self.vocab.insert(&token, len);
+                    self.rev_vocab.insert(len, token);
                     len
                 }
             };
@@ -72,12 +74,10 @@ impl InvertedIndex {
     }
 
     pub fn get_document_tokens(&self, document: &Document) -> BTreeSet<String> {
-        self.vocab
+        document
+            .tokens
             .iter()
-            .filter(|(_token, &idx)| document.tokens.contains(&idx))
-            .map(|(token, _idx)| {
-                std::string::String::from_utf8(token).expect("token not valid utf-8")
-            })
+            .map(|token| self.rev_vocab.get(token).unwrap().to_string())
             .collect()
     }
 
@@ -224,7 +224,7 @@ impl InvertedIndex {
                 })
                 .map(|(token, &posting_idx)| {
                     (
-                        std::string::String::from_utf8(token).expect("token is not valid utf-8"),
+                        std::string::String::from_utf8(token).expect("token not a valid utf-8"),
                         // same as the above case
                         self.postings[posting_idx].as_ref().unwrap(),
                     )
