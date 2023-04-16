@@ -332,10 +332,12 @@ impl From<segment::types::WithPayloadInterface> for WithPayloadSelector {
 impl From<QuantizationSearchParams> for segment::types::QuantizationSearchParams {
     fn from(params: QuantizationSearchParams) -> Self {
         Self {
-            ignore: params.ignore.unwrap_or(default_quantization_ignore_value()),
+            ignore: params
+                .ignore
+                .unwrap_or_else(default_quantization_ignore_value),
             rescore: params
                 .rescore
-                .unwrap_or(default_quantization_rescore_value()),
+                .unwrap_or_else(default_quantization_rescore_value),
         }
     }
 }
