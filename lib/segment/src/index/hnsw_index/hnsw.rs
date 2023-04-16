@@ -207,7 +207,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
-            .unwrap_or_else(default_quantization_ignore_value);
+            .unwrap_or(default_quantization_ignore_value());
 
         let (raw_scorer, quantized) = if ignore_quantization {
             (
@@ -244,7 +244,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let if_rescore = params
                 .and_then(|p| p.quantization)
                 .map(|q| q.rescore)
-                .unwrap_or_else(default_quantization_rescore_value);
+                .unwrap_or(default_quantization_rescore_value());
             if quantized && if_rescore {
                 let raw_scorer = new_raw_scorer(
                     vector.to_owned(),
@@ -290,7 +290,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
-            .unwrap_or_else(default_quantization_ignore_value);
+            .unwrap_or(default_quantization_ignore_value());
         if ignore_quantization {
             vectors
                 .iter()
