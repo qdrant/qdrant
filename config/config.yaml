@@ -133,6 +133,13 @@ service:
   # Check user HTTPS client certificate against CA file specified in tls config
   verify_https_client_certificate: false
 
+  # Set an api-key.
+  # If set, all requests must include a header with the api-key.
+  # example header: `api-key: <API-KEY>`
+  #
+  # Uncomment to enable.
+  # api_key: your_secret_api_key_here
+
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false
