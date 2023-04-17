@@ -35,6 +35,11 @@ async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     process_response(Ok(response), timing)
 }
 
+/// Tries to recover current peer Raft state.
+#[utoipa::path(
+    tag = "cluster",
+    responses(Responses::<bool>)
+)]
 #[post("/cluster/recover")]
 async fn recover_current_peer(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();

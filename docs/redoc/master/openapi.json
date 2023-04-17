@@ -90,6 +90,64 @@
           }
         }
       }
+    },
+    "/cluster/recover": {
+      "post": {
+        "tags": [
+          "cluster"
+        ],
+        "summary": "Tries to recover current peer Raft state.",
+        "description": "Tries to recover current peer Raft state.",
+        "operationId": "recover_current_peer",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/Boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -111,31 +169,119 @@
             }
           },
           {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ClusterInfo"
-              },
-              {
-                "type": "object",
-                "required": [
-                  "status"
-                ],
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "enabled"
-                    ]
+            "type": "object",
+            "description": "Description of enabled cluster",
+            "required": [
+              "consensus_thread_status",
+              "message_send_failures",
+              "peer_id",
+              "peers",
+              "raft_info",
+              "status"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ConsensusThreadStatus"
                   }
+                ],
+                "description": "Status of the thread that executes raft consensus"
+              },
+              "message_send_failures": {
+                "type": "object",
+                "description": "Consequent failures of message send operations in consensus by peer address. On the first success to send to that peer - entry is removed from this hashmap.",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/MessageSendErrors"
                 }
+              },
+              "peer_id": {
+                "type": "integer",
+                "format": "uint64",
+                "description": "ID of this peer",
+                "minimum": 0.0
+              },
+              "peers": {
+                "type": "object",
+                "description": "Peers composition of the cluster with main information",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/PeerInfo"
+                }
+              },
+              "raft_info": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RaftInfo"
+                  }
+                ],
+                "description": "Status of the Raft consensus"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "enabled"
+                ]
               }
-            ]
+            }
           }
         ],
-        "description": "Information about current cluster status and structure",
-        "discriminator": {
-          "propertyName": "status"
-        }
+        "description": "Information about current cluster status and structure"
+      },
+      "ConsensusThreadStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "consensus_thread_status",
+              "last_update"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "type": "string",
+                "enum": [
+                  "working"
+                ]
+              },
+              "last_update": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "consensus_thread_status"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "type": "string",
+                "enum": [
+                  "stopped"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "consensus_thread_status",
+              "err"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "type": "string",
+                "enum": [
+                  "stopped_with_err"
+                ]
+              },
+              "err": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "Information about current consensus thread status"
       },
       "ErrorResponse": {
         "type": "object",
@@ -159,6 +305,96 @@
             "description": "Time spent to process this request"
           }
         }
+      },
+      "MessageSendErrors": {
+        "type": "object",
+        "description": "Message send failures for a particular peer",
+        "required": [
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "latest_error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PeerInfo": {
+        "type": "object",
+        "description": "Information of a peer in the cluster",
+        "required": [
+          "uri"
+        ],
+        "properties": {
+          "uri": {
+            "type": "string"
+          }
+        }
+      },
+      "RaftInfo": {
+        "type": "object",
+        "description": "Summary information about the current raft state",
+        "required": [
+          "commit",
+          "is_voter",
+          "pending_operations",
+          "term"
+        ],
+        "properties": {
+          "commit": {
+            "type": "integer",
+            "format": "uint64",
+            "description": "The index of the latest committed (finalized) operation that this peer is aware of.",
+            "minimum": 0.0
+          },
+          "is_voter": {
+            "type": "boolean",
+            "description": "Is this peer a voter or a learner"
+          },
+          "leader": {
+            "type": "integer",
+            "format": "uint64",
+            "description": "Leader of the current term",
+            "nullable": true,
+            "minimum": 0.0
+          },
+          "pending_operations": {
+            "type": "integer",
+            "format": "uint",
+            "description": "Number of consensus operations pending to be applied on this peer",
+            "minimum": 0.0
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StateRole"
+              }
+            ],
+            "description": "Role of this peer in the current term",
+            "nullable": true
+          },
+          "term": {
+            "type": "integer",
+            "format": "uint64",
+            "description": "Raft divides time into terms of arbitrary length, each beginning with an election. If a candidate wins the election, it remains the leader for the rest of the term. The term number increases monotonically. Each server stores the current term number which is also exchanged in every communication.",
+            "minimum": 0.0
+          }
+        }
+      },
+      "StateRole": {
+        "type": "string",
+        "description": "Role of the peer in the consensus",
+        "enum": [
+          "Follower",
+          "Candidate",
+          "Leader",
+          "PreCandidate"
+        ]
       }
     }
   },

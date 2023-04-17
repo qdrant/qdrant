@@ -1,26 +1,22 @@
 use std::collections::BTreeMap;
-use std::fmt::Debug;
 
-use api::grpc::models::ApiResponse;
-use serde;
-use serde::{Deserialize, Serialize};
-use storage::types::ClusterStatus;
+use schemars::JsonSchema;
 use utoipa::openapi::response::ResponseExt;
 use utoipa::openapi::{
-    schema, ContentBuilder, KnownFormat, Object, ObjectBuilder, Ref, RefOr, ResponseBuilder,
-    ResponsesBuilder, Schema, SchemaFormat, SchemaType,
+    ContentBuilder, KnownFormat, ObjectBuilder, Ref, RefOr, ResponseBuilder, ResponsesBuilder,
+    Schema, SchemaFormat, SchemaType,
 };
-use utoipa::{schema, IntoResponses, OpenApi, PartialSchema, ToResponse, ToSchema};
+use utoipa::{schema, IntoResponses, OpenApi, ToSchema};
 
 #[derive(OpenApi)]
 #[openapi(
         paths(
             super::api::cluster_api::cluster_status,
+            super::api::cluster_api::recover_current_peer,
         ),
         components(
             schemas(
                 ErrorResponse,
-                ClusterStatus,
             ),
         ),
         info(
@@ -280,9 +276,9 @@ Expected response:
     )]
 pub(crate) struct ApiDoc;
 
-pub struct Responses<'__s, T: ToSchema<'__s>>(pub &'__s T);
+pub struct Responses<T: JsonSchema>(pub T);
 
-impl<'__s, T: ToSchema<'__s>> IntoResponses for Responses<'__s, T> {
+impl<T: JsonSchema> IntoResponses for Responses<T> {
     fn responses() -> BTreeMap<String, RefOr<utoipa::openapi::response::Response>> {
         let time = ObjectBuilder::new()
             .description(Some("Time spent to process this request"))
@@ -292,7 +288,7 @@ impl<'__s, T: ToSchema<'__s>> IntoResponses for Responses<'__s, T> {
         let success_content = ContentBuilder::new()
             .schema(Schema::Object(
                 ObjectBuilder::new()
-                    .property("result", Ref::from_schema_name(T::schema().0))
+                    .property("result", Ref::from_schema_name(T::schema_name()))
                     .property("status", SuccessfulStatus::schema().1)
                     .property("time", time)
                     .build(),

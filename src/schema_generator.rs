@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use api::grpc::models::CollectionsResponse;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
@@ -17,8 +19,10 @@ use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
 use storage::types::ClusterStatus;
+use utoipa::openapi::{RefOr, Schema};
 use utoipa::OpenApi;
 
+use crate::actix::api_doc::ApiDoc;
 use crate::common::helpers::LocksOption;
 use crate::common::points::CreateFieldIndex;
 use crate::common::telemetry::TelemetryData;
@@ -29,55 +33,75 @@ mod settings;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 struct AllDefinitions {
-    a1: CollectionsResponse,
-    a2: CollectionInfo,
-    // a3: CollectionMetaOperations,
-    a4: PointRequest,
-    a5: Record,
-    a6: SearchRequest,
-    a7: ScoredPoint,
-    a8: UpdateResult,
-    // a9: CollectionUpdateOperations,
-    aa: RecommendRequest,
-    ab: ScrollRequest,
-    ac: ScrollResult,
-    ad: CreateCollection,
-    ae: UpdateCollection,
-    af: ChangeAliasesOperation,
-    ag: CreateFieldIndex,
-    ah: PointsSelector,
-    ai: PointInsertOperations,
-    aj: SetPayload,
-    ak: DeletePayload,
+    // a1: CollectionsResponse,
+    // a2: CollectionInfo,
+    // // a3: CollectionMetaOperations,
+    // a4: PointRequest,
+    // a5: Record,
+    // a6: SearchRequest,
+    // a7: ScoredPoint,
+    // a8: UpdateResult,
+    // // a9: CollectionUpdateOperations,
+    // aa: RecommendRequest,
+    // ab: ScrollRequest,
+    // ac: ScrollResult,
+    // ad: CreateCollection,
+    // ae: UpdateCollection,
+    // af: ChangeAliasesOperation,
+    // ag: CreateFieldIndex,
+    // ah: PointsSelector,
+    // ai: PointInsertOperations,
+    // aj: SetPayload,
+    // ak: DeletePayload,
     al: ClusterStatus,
-    am: SnapshotDescription,
-    an: CountRequest,
-    ao: CountResult,
-    ap: CollectionClusterInfo,
-    aq: TelemetryData,
-    ar: ClusterOperations,
-    at: SearchRequestBatch,
-    au: RecommendRequestBatch,
-    av: LocksOption,
-    aw: SnapshotRecover,
-    ax: CollectionsAliasesResponse,
-    ay: AliasDescription,
-    az: WriteOrdering,
-    b1: ReadConsistency,
+    // am: SnapshotDescription,
+    // an: CountRequest,
+    // ao: CountResult,
+    // ap: CollectionClusterInfo,
+    // aq: TelemetryData,
+    // ar: ClusterOperations,
+    // at: SearchRequestBatch,
+    // au: RecommendRequestBatch,
+    // av: LocksOption,
+    // aw: SnapshotRecover,
+    // ax: CollectionsAliasesResponse,
+    // ay: AliasDescription,
+    // az: WriteOrdering,
+    // b1: ReadConsistency,
+    b2: bool,
 }
 
-fn save_schema<T: JsonSchema>() {
-    // let settings = SchemaSettings::draft07();
-    // let gen = settings.into_generator();
-    // let schema = gen.into_root_schema_for::<T>();
-    // let schema_str = serde_json::to_string_pretty(&schema).unwrap();
-    // println!("{schema_str}")
+#[derive(Deserialize)]
+struct AllDefinitionsSchema {
+    definitions: BTreeMap<String, RefOr<Schema>>,
+}
 
-    let openapi = crate::actix::api_doc::ApiDoc::openapi();
-    let openapi_str = openapi.to_pretty_json().unwrap();
-    println!("{openapi_str}");
+fn schema<T: JsonSchema>() -> Result<String, serde_json::Error> {
+    let settings = SchemaSettings::openapi3();
+    let gen = settings.into_generator();
+    let schema = gen.into_root_schema_for::<T>();
+    serde_json::to_string_pretty(&schema)
+}
+
+fn generate_openapi<T: JsonSchema>() -> Result<String, serde_json::Error> {
+    let schema_str = schema::<T>()?;
+
+    let wrapper: AllDefinitionsSchema = serde_json::from_str(&schema_str)?;
+
+    let mut components = utoipa::openapi::schema::Components::default();
+    components.schemas = wrapper.definitions;
+
+    let mut schemars_openapi = utoipa::openapi::OpenApi::default();
+    schemars_openapi.components = Some(components);
+
+    let mut openapi = ApiDoc::openapi();
+    openapi.merge(schemars_openapi);
+
+    openapi.to_pretty_json()
 }
 
 fn main() {
-    save_schema::<AllDefinitions>();
+    // TODO: Update scripts to make this the only openapi generator
+    let openapi_str = generate_openapi::<AllDefinitions>().unwrap();
+    println!("{openapi_str}");
 }

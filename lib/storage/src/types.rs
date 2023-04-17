@@ -151,7 +151,7 @@ pub struct ClusterInfo {
 }
 
 /// Information about current cluster status and structure
-#[derive(Debug, Deserialize, Serialize, JsonSchema, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(tag = "status")]
 #[serde(rename_all = "snake_case")]
 pub enum ClusterStatus {
