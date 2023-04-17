@@ -93,7 +93,8 @@ impl InvertedIndex {
         for token_idx in document.tokens() {
             let token_idx_usize = *token_idx as usize;
             if self.postings.len() <= token_idx_usize {
-                self.postings.resize(token_idx_usize + 1, Default::default());
+                self.postings
+                    .resize(token_idx_usize + 1, Default::default());
             }
             let posting = self
                 .postings
