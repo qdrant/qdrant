@@ -42,7 +42,6 @@ uuid = { version = "1.3", features = ["v4", "serde"] }
 url = { version = "2", features = ["serde"] }
 validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"
-utoipa = "3.2.1"
 
 segment = {path = "../segment"}
 api = {path = "../api"}

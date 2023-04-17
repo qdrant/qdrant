@@ -28,7 +28,6 @@ parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
 tar = "0.4.38"
 chrono = { version = "~0.4", features = ["serde"] }
 validator = { version = "0.16", features = ["derive"] }
-utoipa = "3.2.1"
 
 # Consensus related
 atomicwrites = { version = "0.4.0" }

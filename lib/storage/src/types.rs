@@ -12,7 +12,6 @@ use segment::madvise;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
-use utoipa::ToSchema;
 use validator::Validate;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
@@ -135,7 +134,7 @@ pub struct MessageSendErrors {
 }
 
 /// Description of enabled cluster
-#[derive(Debug, Deserialize, Serialize, JsonSchema, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct ClusterInfo {
     /// ID of this peer
     pub peer_id: PeerId,

@@ -444,7 +444,6 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tower",
- "utoipa",
  "uuid",
  "validator",
 ]
@@ -983,7 +982,6 @@ dependencies = [
  "tonic",
  "tower",
  "url",
- "utoipa",
  "uuid",
  "validator",
  "wal",
@@ -3938,7 +3936,6 @@ dependencies = [
  "tokio",
  "tonic",
  "url",
- "utoipa",
  "uuid",
  "validator",
  "wal",
