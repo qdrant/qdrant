@@ -408,6 +408,12 @@ impl From<ScalarQuantizationConfig> for QuantizationConfig {
     }
 }
 
+impl From<ProductQuantizationConfig> for QuantizationConfig {
+    fn from(config: ProductQuantizationConfig) -> Self {
+        QuantizationConfig::Product(ProductQuantization { product: config })
+    }
+}
+
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
 
 impl Default for HnswConfig {
