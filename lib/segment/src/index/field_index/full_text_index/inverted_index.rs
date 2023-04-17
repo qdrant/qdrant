@@ -8,17 +8,31 @@ use super::postings_iterator::intersect_postings_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
-#[derive(Default, Serialize, Deserialize, Clone)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Document {
-    pub tokens: Vec<usize>,
+    tokens: Vec<usize>,
 }
 
 impl Document {
+    pub fn new(mut tokens: Vec<usize>) -> Self {
+        tokens.sort_unstable();
+        Self { tokens }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
     }
+
+    pub fn tokens(&self) -> &[usize] {
+        &self.tokens
+    }
+
+    pub fn check(&self, token: usize) -> bool {
+        self.tokens.binary_search(&token).is_ok()
+    }
 }
 
+#[derive(Debug)]
 pub struct ParsedQuery {
     pub tokens: Vec<Option<usize>>,
 }
@@ -32,7 +46,7 @@ impl ParsedQuery {
         self.tokens
             .iter()
             // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
-            .all(|query_token| document.tokens.binary_search(&query_token.unwrap()).is_ok())
+            .all(|query_token| document.check(query_token.unwrap()))
     }
 }
 
@@ -66,9 +80,7 @@ impl InvertedIndex {
             document_tokens.push(vocab_idx);
         }
 
-        Document {
-            tokens: document_tokens,
-        }
+        Document::new(document_tokens)
     }
 
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
@@ -78,7 +90,8 @@ impl InvertedIndex {
                 .resize(idx as usize + 1, Default::default());
         }
 
-        for &token_idx in &document.tokens {
+        for token_idx in document.tokens() {
+            let token_idx = *token_idx;
             if self.postings.len() <= token_idx {
                 self.postings.resize(token_idx + 1, Default::default());
             }
@@ -106,7 +119,7 @@ impl InvertedIndex {
 
         self.points_count -= 1;
 
-        for removed_token in &removed_doc.tokens {
+        for removed_token in removed_doc.tokens() {
             // unwrap safety: posting list exists and contains the document id
             let posting = self.postings.get_mut(*removed_token).unwrap();
             if let Some(vec) = posting {

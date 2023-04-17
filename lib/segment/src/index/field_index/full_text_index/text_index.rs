@@ -101,6 +101,12 @@ impl FullTextIndex {
             tokens: tokens.into_iter().collect(),
         }
     }
+
+    #[cfg(test)]
+    pub fn query(&self, query: &str) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let parsed_query = self.parse_query(query);
+        self.inverted_index.filter(&parsed_query)
+    }
 }
 
 impl ValueIndexer<String> for FullTextIndex {

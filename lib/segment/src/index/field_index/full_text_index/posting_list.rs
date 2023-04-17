@@ -2,7 +2,7 @@ use bitvec::prelude::*;
 
 use crate::types::PointOffsetType;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum PostingList {
     FullVec(Vec<PointOffsetType>),
     BitVec(BitVec),
