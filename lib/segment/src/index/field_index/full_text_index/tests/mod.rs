@@ -187,7 +187,7 @@ fn test_prefix_search() {
 
     let query = index.parse_query("q231");
 
-    for idx in a[1, 2, 3] {
+    for idx in [1, 2, 3] {
         let doc = index.get_doc(idx).unwrap();
         assert!(!query.check_match(doc));
     }
