@@ -80,10 +80,7 @@ impl VacuumOptimizer {
                 let is_not_special = read_segment.segment_type() != SegmentType::Special;
                 let is_littered = littered_ratio > self.deleted_threshold;
 
-                match is_big && is_not_special && is_littered {
-                    true => Some((*idx, littered_ratio)),
-                    false => None,
-                }
+                (is_big && is_not_special && is_littered).then_some((*idx, littered_ratio))
             })
             .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
             .map(|(idx, _)| (idx, segments_read_guard.get(idx).unwrap().clone()))
