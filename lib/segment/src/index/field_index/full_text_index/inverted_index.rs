@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
+
 use serde::{Deserialize, Serialize};
 
 use super::posting_list::PostingList;
@@ -234,7 +235,9 @@ impl InvertedIndex {
                 .map(move |(token, posting)| PayloadBlockCondition {
                     condition: FieldCondition {
                         key: key.clone(),
-                        r#match: Some(Match::Text(MatchText { text: token.clone() })),
+                        r#match: Some(Match::Text(MatchText {
+                            text: token.clone(),
+                        })),
                         range: None,
                         geo_bounding_box: None,
                         geo_radius: None,
