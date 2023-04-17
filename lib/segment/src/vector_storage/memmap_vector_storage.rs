@@ -1,6 +1,6 @@
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{self, Write};
-use std::mem::size_of;
+use std::mem;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -195,7 +195,7 @@ fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
 }
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
+    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, mem::size_of_val(v)) }
 }
 
 #[cfg(test)]
