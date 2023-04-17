@@ -35,14 +35,12 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    fn serialize_document(&self, document: &Document) -> OperationResult<Vec<u8>> {
+    fn serialize_document_tokens(&self, tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
         }
-        let doc = StoredDocument {
-            tokens: self.inverted_index.get_document_tokens(document),
-        };
+        let doc = StoredDocument { tokens };
         serde_cbor::to_vec(&doc).map_err(|e| {
             OperationError::service_error(format!("Failed to serialize document: {e}"))
         })
@@ -57,7 +55,7 @@ impl FullTextIndex {
             .map_err(|e| {
                 OperationError::service_error(format!("Failed to deserialize document: {e}"))
             })
-            .map(|doc| index.document_from_tokens(doc.tokens))
+            .map(|doc| index.document_from_tokens(&doc.tokens))
     }
 
     fn storage_cf_name(field: &str) -> String {
@@ -119,15 +117,11 @@ impl ValueIndexer<String> for FullTextIndex {
             });
         }
 
-        let document = self.inverted_index.document_from_tokens(tokens);
+        let document = self.inverted_index.document_from_tokens(&tokens);
         self.inverted_index.index_document(idx, document);
 
         let db_idx = Self::store_key(&idx);
-        let db_document = self.serialize_document(
-            self.inverted_index.point_to_docs[idx as usize]
-                .as_ref()
-                .unwrap(),
-        )?;
+        let db_document = self.serialize_document_tokens(tokens)?;
 
         self.db_wrapper.put(db_idx, db_document)?;
 

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use patricia_tree::PatriciaMap;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,6 @@ impl ParsedQuery {
 pub struct InvertedIndex {
     postings: Vec<Option<PostingList>>,
     pub vocab: PatriciaMap<usize>,
-    rev_vocab: HashMap<usize, String>,
     vocab_count: usize,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
@@ -51,17 +50,16 @@ impl InvertedIndex {
         Default::default()
     }
 
-    pub fn document_from_tokens(&mut self, tokens: BTreeSet<String>) -> Document {
+    pub fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab
-            let vocab_idx = match self.vocab.get(&token) {
+            let vocab_idx = match self.vocab.get(token) {
                 Some(&idx) => idx,
                 None => {
                     let len = self.vocab_count;
                     self.vocab_count += 1;
-                    self.vocab.insert(&token, len);
-                    self.rev_vocab.insert(len, token);
+                    self.vocab.insert(token, len);
                     len
                 }
             };
@@ -71,14 +69,6 @@ impl InvertedIndex {
         Document {
             tokens: document_tokens,
         }
-    }
-
-    pub fn get_document_tokens(&self, document: &Document) -> BTreeSet<String> {
-        document
-            .tokens
-            .iter()
-            .map(|token| self.rev_vocab.get(token).unwrap().to_string())
-            .collect()
     }
 
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
