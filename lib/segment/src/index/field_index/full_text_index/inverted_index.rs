@@ -8,7 +8,7 @@ use super::postings_iterator::intersect_postings_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
-pub type TokenId = usize;
+pub type TokenId = u32;
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Document {
@@ -91,13 +91,13 @@ impl InvertedIndex {
         }
 
         for token_idx in document.tokens() {
-            let token_idx = *token_idx;
-            if self.postings.len() <= token_idx {
-                self.postings.resize(token_idx + 1, Default::default());
+            let token_idx_usize = *token_idx as usize;
+            if self.postings.len() <= token_idx_usize {
+                self.postings.resize(token_idx_usize + 1, Default::default());
             }
             let posting = self
                 .postings
-                .get_mut(token_idx)
+                .get_mut(token_idx_usize)
                 .expect("posting must exist even if with None");
             match posting {
                 None => *posting = Some(PostingList::new(idx)),
@@ -121,7 +121,7 @@ impl InvertedIndex {
 
         for removed_token in removed_doc.tokens() {
             // unwrap safety: posting list exists and contains the document id
-            let posting = self.postings.get_mut(*removed_token).unwrap();
+            let posting = self.postings.get_mut(*removed_token as usize).unwrap();
             if let Some(vec) = posting {
                 vec.remove(idx, self.point_to_docs.len());
             }
@@ -137,7 +137,7 @@ impl InvertedIndex {
                 None => None,
                 // if a ParsedQuery token was given an index, then it must exist in the vocabulary
                 // dictionary. Posting list entry can be None but it exists.
-                Some(idx) => self.postings.get(idx).unwrap().as_ref(),
+                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
             })
             .collect();
         if postings_opt.is_none() {
@@ -163,7 +163,7 @@ impl InvertedIndex {
             .map(|&vocab_idx| match vocab_idx {
                 None => None,
                 // unwrap safety: same as in filter()
-                Some(idx) => self.postings.get(idx).unwrap().as_ref(),
+                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
             })
             .collect();
         if postings_opt.is_none() {
@@ -220,16 +220,16 @@ impl InvertedIndex {
         Box::new(
             self.vocab
                 .iter()
-                .filter(|(_token, &posting_idx)| self.postings[posting_idx].is_some())
+                .filter(|(_token, &posting_idx)| self.postings[posting_idx as usize].is_some())
                 .filter(move |(_token, &posting_idx)| {
                     // unwrap crash safety: all tokens that passes the first filter should have postings
-                    self.postings[posting_idx].as_ref().unwrap().len() >= threshold
+                    self.postings[posting_idx as usize].as_ref().unwrap().len() >= threshold
                 })
                 .map(|(token, &posting_idx)| {
                     (
                         std::string::String::from_utf8(token).expect("token not a valid utf-8"),
                         // same as the above case
-                        self.postings[posting_idx].as_ref().unwrap(),
+                        self.postings[posting_idx as usize].as_ref().unwrap(),
                     )
                 })
                 .map(move |(token, posting)| PayloadBlockCondition {
