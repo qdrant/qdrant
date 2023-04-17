@@ -1,6 +1,4 @@
-use std::collections::BTreeSet;
-
-use patricia_tree::PatriciaMap;
+use std::collections::{BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
 
 use super::posting_list::PostingList;
@@ -55,7 +53,7 @@ impl ParsedQuery {
 #[derive(Default)]
 pub struct InvertedIndex {
     postings: Vec<Option<PostingList>>,
-    pub vocab: PatriciaMap<TokenId>,
+    pub vocab: HashMap<String, TokenId>,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
@@ -73,7 +71,7 @@ impl InvertedIndex {
                 Some(&idx) => idx,
                 None => {
                     let next_token_id = self.vocab.len() as TokenId;
-                    self.vocab.insert(token, next_token_id);
+                    self.vocab.insert(token.to_string(), next_token_id);
                     next_token_id
                 }
             };
@@ -228,7 +226,7 @@ impl InvertedIndex {
                 })
                 .map(|(token, &posting_idx)| {
                     (
-                        std::string::String::from_utf8(token).expect("token not a valid utf-8"),
+                        token,
                         // same as the above case
                         self.postings[posting_idx as usize].as_ref().unwrap(),
                     )
@@ -236,7 +234,7 @@ impl InvertedIndex {
                 .map(move |(token, posting)| PayloadBlockCondition {
                     condition: FieldCondition {
                         key: key.clone(),
-                        r#match: Some(Match::Text(MatchText { text: token })),
+                        r#match: Some(Match::Text(MatchText { text: token.clone() })),
                         range: None,
                         geo_bounding_box: None,
                         geo_radius: None,

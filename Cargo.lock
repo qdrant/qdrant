@@ -2648,15 +2648,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8835116a5c179084a830efb3adc117ab007512b535bc1a21c991d3b32a6b44dd"
 
 [[package]]
-name = "patricia_tree"
-version = "0.5.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "062a6297f2cd3969a780156ccb288eafb34bb5ed0f3c9a2b4500dbde869d4b86"
-dependencies = [
- "bitflags",
-]
-
-[[package]]
 name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3659,7 +3650,6 @@ dependencies = [
  "num_cpus",
  "ordered-float 3.6.0",
  "parking_lot",
- "patricia_tree",
  "pprof",
  "quantization",
  "rand 0.8.5",
