@@ -123,12 +123,14 @@ where
             && !self
                 .point_deleted
                 .get(point as usize)
-                .map(|b| *b)
+                .as_deref()
+                .copied()
                 .unwrap_or(false)
             && !self
                 .vec_deleted
                 .get(point as usize)
-                .map(|b| *b)
+                .as_deref()
+                .copied()
                 .unwrap_or(false)
     }
 
