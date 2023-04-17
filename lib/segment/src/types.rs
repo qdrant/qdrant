@@ -269,11 +269,11 @@ pub struct QuantizationSearchParams {
     pub rescore: bool,
 }
 
-pub fn default_quantization_ignore_value() -> bool {
+pub const fn default_quantization_ignore_value() -> bool {
     false
 }
 
-pub fn default_quantization_rescore_value() -> bool {
+pub const fn default_quantization_rescore_value() -> bool {
     false
 }
 

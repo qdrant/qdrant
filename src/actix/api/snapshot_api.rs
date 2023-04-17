@@ -64,7 +64,9 @@ pub fn do_save_uploaded_snapshot(
     collection_name: &str,
     snapshot: TempFile,
 ) -> std::result::Result<Url, StorageError> {
-    let filename = snapshot.file_name.unwrap_or(Uuid::new_v4().to_string());
+    let filename = snapshot
+        .file_name
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     let path = StdPath::new(toc.snapshots_path())
         .join(collection_name)
         .join(filename);
