@@ -345,7 +345,7 @@ impl IdTracker for SimpleIdTracker {
         self.versions_db_wrapper.flusher()
     }
 
-    fn is_deleted(&self, key: PointOffsetType) -> bool {
+    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
         let key = key as usize;
         if key >= self.deleted.len() {
             return true;
@@ -353,7 +353,7 @@ impl IdTracker for SimpleIdTracker {
         self.deleted[key]
     }
 
-    fn deleted_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self) -> &BitSlice {
         &self.deleted
     }
 }

@@ -533,8 +533,8 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
-    fn deleted_count(&self) -> usize {
-        self.write_segment.get().read().deleted_count()
+    fn deleted_point_count(&self) -> usize {
+        self.write_segment.get().read().deleted_point_count()
     }
 
     fn segment_type(&self) -> SegmentType {

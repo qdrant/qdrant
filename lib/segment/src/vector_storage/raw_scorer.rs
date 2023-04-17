@@ -61,7 +61,7 @@ fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     point_deleted: &'a BitSlice,
 ) -> Box<dyn RawScorer + 'a> {
     let points_count = vector_storage.total_vector_count() as PointOffsetType;
-    let vec_deleted = vector_storage.deleted_bitslice();
+    let vec_deleted = vector_storage.deleted_vec_bitslice();
     match vector_storage.distance() {
         Distance::Cosine => Box::new(RawScorerImpl::<'a, CosineMetric, TVectorStorage> {
             points_count,

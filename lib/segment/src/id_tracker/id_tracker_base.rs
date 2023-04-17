@@ -62,12 +62,16 @@ pub trait IdTracker {
     /// Flush points versions to disk
     fn versions_flusher(&self) -> Flusher;
 
-    fn deleted_bitslice(&self) -> &BitSlice;
+    /// Get [`BitSlice`] representation for deleted points with deletion flags
+    ///
+    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
+    /// vectors in this segment.
+    fn deleted_point_bitslice(&self) -> &BitSlice;
 
-    fn is_deleted(&self, internal_id: PointOffsetType) -> bool;
+    fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
 
-    // Number of deleted points
-    fn deleted_count(&self) -> usize {
+    /// Number of deleted points
+    fn deleted_point_count(&self) -> usize {
         self.internal_size() - self.points_count()
     }
 
@@ -78,7 +82,7 @@ pub trait IdTracker {
         Box::new(
             (0..total)
                 .map(move |_| rng.gen_range(0..total))
-                .filter(move |x| !self.is_deleted(*x)),
+                .filter(move |x| !self.is_deleted_point(*x)),
         )
     }
 }

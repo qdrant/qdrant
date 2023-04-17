@@ -150,11 +150,15 @@ impl MmapVectors {
         }
     }
 
-    pub fn is_deleted(&self, key: PointOffsetType) -> bool {
+    pub fn is_deleted_vec(&self, key: PointOffsetType) -> bool {
         self.deleted[key as usize]
     }
 
-    pub fn deleted_bitslice(&self) -> &BitSlice {
+    /// Get [`BitSlice`] representation for deleted vectors with deletion flags
+    ///
+    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
+    /// vectors in this segment.
+    pub fn deleted_vec_bitslice(&self) -> &BitSlice {
         self.deleted
     }
 

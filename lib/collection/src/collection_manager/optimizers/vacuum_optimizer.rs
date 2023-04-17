@@ -17,7 +17,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::config::CollectionParams;
 
-/// Optimizer which looks for segments with hig amount of soft-deleted points.
+/// Optimizer which looks for segments with high amount of soft-deleted points.
 /// Used to free up space.
 pub struct VacuumOptimizer {
     deleted_threshold: f64,
@@ -74,7 +74,7 @@ impl VacuumOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let littered_ratio =
-                    read_segment.deleted_count() as f64 / read_segment.points_count() as f64;
+                    read_segment.deleted_point_count() as f64 / read_segment.points_count() as f64;
 
                 let is_big = read_segment.points_count() >= self.min_vectors_number;
                 let is_not_special = read_segment.segment_type() != SegmentType::Special;
