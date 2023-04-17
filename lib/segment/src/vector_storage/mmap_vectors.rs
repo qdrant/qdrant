@@ -4,12 +4,15 @@ use std::mem::{self, size_of, transmute};
 use std::ops::DerefMut;
 use std::path::Path;
 use std::slice;
+use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::{Mmap, MmapMut, MmapOptions};
+use parking_lot::Mutex;
 
 use super::div_ceil;
 use crate::common::error_logging::LogError;
+use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::madvise;
@@ -35,10 +38,10 @@ pub struct MmapVectors {
     /// This should never be accessed directly, because it shares a mutable reference with
     /// [`deleted_bitslice`]. Use that instead. The sole purpouse of this is to keep ownership of
     /// the mmap, and to properly clean it up when this struct is dropped.
-    _deleted_mmap: MmapMut,
+    _deleted_mmap: Arc<Mutex<MmapMut>>,
     /// A convenient [`BitSlice`] view into the deleted memory map file.
     ///
-    /// This has the same lifetime as this struct.
+    /// This has the same lifetime as this struct, a borrow must never be leased out for longer.
     deleted: &'static mut BitSlice,
     pub deleted_count: usize,
     pub quantized_vectors: Option<QuantizedVectorsStorage>,
@@ -73,10 +76,20 @@ impl MmapVectors {
             dim,
             num_vectors,
             mmap,
-            _deleted_mmap: deleted_mmap,
+            _deleted_mmap: Arc::new(Mutex::new(deleted_mmap)),
             deleted,
             deleted_count,
             quantized_vectors: None,
+        })
+    }
+
+    pub fn flusher(&self) -> Flusher {
+        Box::new({
+            let mmap = self._deleted_mmap.clone();
+            move || {
+                mmap.lock().flush()?;
+                Ok(())
+            }
         })
     }
 
@@ -171,7 +184,7 @@ impl MmapVectors {
     /// This is only supported on Unix.
     fn lock_deleted_flags(&mut self) {
         #[cfg(unix)]
-        if let Err(err) = self._deleted_mmap.lock() {
+        if let Err(err) = self._deleted_mmap.lock().lock() {
             log::error!(
                 "Failed to lock deleted flags for quantized mmap segment in memory: {}",
                 err,

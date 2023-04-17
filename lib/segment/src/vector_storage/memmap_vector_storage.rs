@@ -131,7 +131,10 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
+        match &self.mmap_store {
+            Some(mmap_store) => mmap_store.flusher(),
+            None => Box::new(|| Ok(())),
+        }
     }
 
     fn quantize(
