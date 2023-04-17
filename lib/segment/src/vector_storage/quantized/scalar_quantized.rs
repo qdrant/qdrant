@@ -34,7 +34,7 @@ where
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         let mut size: usize = 0;
         for point_id in points.iter().copied() {
-            if !self.check_point(point_id) {
+            if !self.check_vec(point_id) {
                 continue;
             }
             scores[size] = ScoredPointOffset {
@@ -49,7 +49,7 @@ where
         size
     }
 
-    fn check_point(&self, point: PointOffsetType) -> bool {
+    fn check_vec(&self, point: PointOffsetType) -> bool {
         !self
             .point_deleted
             .get(point as usize)
@@ -75,7 +75,7 @@ where
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let scores = points.filter(|idx| self.check_point(*idx)).map(|idx| {
+        let scores = points.filter(|idx| self.check_vec(*idx)).map(|idx| {
             let score = self.score_point(idx);
             ScoredPointOffset { idx, score }
         });
@@ -84,7 +84,7 @@ where
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
         let scores = (0..self.point_deleted.len() as PointOffsetType)
-            .filter(|idx| self.check_point(*idx))
+            .filter(|idx| self.check_vec(*idx))
             .map(|idx| {
                 let score = self.score_point(idx);
                 ScoredPointOffset { idx, score }

@@ -59,7 +59,7 @@ where
         size
     }
 
-    fn check_point(&self, point: PointOffsetType) -> bool {
+    fn check_vec(&self, point: PointOffsetType) -> bool {
         point < self.points_count && !self.data.deleted[point as usize]
     }
 
@@ -93,7 +93,7 @@ where
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
         let scores = (0..self.points_count)
-            .filter(|point_id| self.check_point(*point_id))
+            .filter(|point_id| self.check_vec(*point_id))
             .map(|point_id| {
                 let point_id = point_id as PointOffsetType;
                 let other_vector = &self.data.vectors.get(point_id);

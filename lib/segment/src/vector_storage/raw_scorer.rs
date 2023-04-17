@@ -14,13 +14,16 @@ use crate::types::{Distance, PointOffsetType, ScoreType};
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize;
 
-    /// Return true if point satisfies current search context (exists and not deleted)
-    fn check_point(&self, point: PointOffsetType) -> bool;
+    /// Return true if vector satisfies current search context for given point (exists and not deleted)
+    fn check_vec(&self, point: PointOffsetType) -> bool;
 
     /// Score stored vector with vector under the given index
     fn score_point(&self, point: PointOffsetType) -> ScoreType;
 
-    /// Return distance between stored points selected by ids
+    /// Return distance between stored points selected by IDs
+    ///
+    /// # Panics
+    ///
     /// Panics if any id is out of range
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 
@@ -98,7 +101,7 @@ where
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         let mut size: usize = 0;
         for point_id in points.iter().copied() {
-            if !self.check_point(point_id) {
+            if !self.check_vec(point_id) {
                 continue;
             }
             let other_vector = self.vector_storage.get_vector(point_id);
@@ -115,7 +118,7 @@ where
         size
     }
 
-    fn check_point(&self, point: PointOffsetType) -> bool {
+    fn check_vec(&self, point: PointOffsetType) -> bool {
         point < self.points_count
             && !self
                 .point_deleted
@@ -146,7 +149,7 @@ where
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let scores = points
-            .filter(|point_id| self.check_point(*point_id))
+            .filter(|point_id| self.check_vec(*point_id))
             .map(|point_id| {
                 let other_vector = self.vector_storage.get_vector(point_id);
                 ScoredPointOffset {
@@ -159,7 +162,7 @@ where
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
         let scores = (0..self.points_count)
-            .filter(|point_id| self.check_point(*point_id))
+            .filter(|point_id| self.check_vec(*point_id))
             .map(|point_id| {
                 let point_id = point_id as PointOffsetType;
                 let other_vector = &self.vector_storage.get_vector(point_id);
