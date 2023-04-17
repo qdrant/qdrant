@@ -8,13 +8,15 @@ use super::postings_iterator::intersect_postings_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
+pub type TokenId = usize;
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Document {
-    tokens: Vec<usize>,
+    tokens: Vec<TokenId>,
 }
 
 impl Document {
-    pub fn new(mut tokens: Vec<usize>) -> Self {
+    pub fn new(mut tokens: Vec<TokenId>) -> Self {
         tokens.sort_unstable();
         Self { tokens }
     }
@@ -23,18 +25,18 @@ impl Document {
         self.tokens.is_empty()
     }
 
-    pub fn tokens(&self) -> &[usize] {
+    pub fn tokens(&self) -> &[TokenId] {
         &self.tokens
     }
 
-    pub fn check(&self, token: usize) -> bool {
+    pub fn check(&self, token: TokenId) -> bool {
         self.tokens.binary_search(&token).is_ok()
     }
 }
 
 #[derive(Debug)]
 pub struct ParsedQuery {
-    pub tokens: Vec<Option<usize>>,
+    pub tokens: Vec<Option<TokenId>>,
 }
 
 impl ParsedQuery {
@@ -53,8 +55,7 @@ impl ParsedQuery {
 #[derive(Default)]
 pub struct InvertedIndex {
     postings: Vec<Option<PostingList>>,
-    pub vocab: PatriciaMap<usize>,
-    vocab_count: usize,
+    pub vocab: PatriciaMap<TokenId>,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
@@ -71,10 +72,9 @@ impl InvertedIndex {
             let vocab_idx = match self.vocab.get(token) {
                 Some(&idx) => idx,
                 None => {
-                    let len = self.vocab_count;
-                    self.vocab_count += 1;
-                    self.vocab.insert(token, len);
-                    len
+                    let next_token_id = self.vocab.len() as TokenId;
+                    self.vocab.insert(token, next_token_id);
+                    next_token_id
                 }
             };
             document_tokens.push(vocab_idx);
