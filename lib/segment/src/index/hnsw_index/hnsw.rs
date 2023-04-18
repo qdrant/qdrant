@@ -50,7 +50,8 @@ pub struct HNSWIndex<TGraphLinks: GraphLinks> {
 }
 
 struct SearchesTelemetry {
-    unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
+    unfiltered_plain: Arc<Mutex<OperationDurationsAggregator>>,
+    unfiltered_hnsw: Arc<Mutex<OperationDurationsAggregator>>,
     small_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     large_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     exact_filtered: Arc<Mutex<OperationDurationsAggregator>>,
@@ -99,7 +100,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             path: path.to_owned(),
             graph,
             searches_telemetry: SearchesTelemetry {
-                unfiltered: OperationDurationsAggregator::new(),
+                unfiltered_hnsw: OperationDurationsAggregator::new(),
+                unfiltered_plain: OperationDurationsAggregator::new(),
                 small_cardinality: OperationDurationsAggregator::new(),
                 large_cardinality: OperationDurationsAggregator::new(),
                 exact_filtered: OperationDurationsAggregator::new(),
@@ -350,9 +352,25 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
         match filter {
             None => {
-                if exact {
-                    let _timer =
-                        ScopeDurationMeasurer::new(&self.searches_telemetry.exact_unfiltered);
+                // Determine whether to a plain or graph search, pick search timer aggregator
+                // Because an HNSW graph is built, we'd normally always assume to search the graph.
+                // But because a lot of points may be deleted in this graph, it may just be faster
+                // to do a plain search instead.
+                let plain_search = exact || {
+                    let vector_storage = self.vector_storage.borrow();
+                    vector_storage.available_vector_count() < self.config.indexing_threshold
+                };
+                let duration_aggregator = if exact {
+                    &self.searches_telemetry.exact_unfiltered
+                } else if plain_search {
+                    &self.searches_telemetry.unfiltered_plain
+                } else {
+                    &self.searches_telemetry.unfiltered_hnsw
+                };
+
+                // Do plain or graph search
+                if plain_search {
+                    let _timer = ScopeDurationMeasurer::new(duration_aggregator);
                     let vector_storage = self.vector_storage.borrow();
                     let id_tracker = self.id_tracker.borrow();
                     vectors
@@ -367,7 +385,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         })
                         .collect()
                 } else {
-                    let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered);
+                    let _timer = ScopeDurationMeasurer::new(duration_aggregator);
                     self.search_vectors_with_graph(vectors, None, top, params)
                 }
             }
@@ -571,9 +589,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
         VectorIndexSearchesTelemetry {
             index_name: None,
-            unfiltered_plain: Default::default(),
+            unfiltered_plain: tm.unfiltered_plain.lock().get_statistics(),
             filtered_plain: Default::default(),
-            unfiltered_hnsw: tm.unfiltered.lock().get_statistics(),
+            unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(),
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
             filtered_exact: tm.exact_filtered.lock().get_statistics(),
