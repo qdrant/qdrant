@@ -440,10 +440,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
                 let id_tracker = self.id_tracker.borrow();
                 if sample_check_cardinality(
-                    id_tracker.sample_ids(),
+                    id_tracker.sample_ids(Some(vector_storage.deleted_vec_bitslice())),
                     |idx| filter_context.check(idx),
                     self.config.indexing_threshold,
-                    id_tracker.points_count(),
+                    vector_storage.available_vector_count(),
                 ) {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
