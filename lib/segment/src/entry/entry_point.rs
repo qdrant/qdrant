@@ -261,6 +261,8 @@ pub trait SegmentEntry {
     fn has_point(&self, point_id: PointIdType) -> bool;
 
     /// Return number of vectors in this segment
+    ///
+    /// - Includes soft deleted points
     fn points_count(&self) -> usize;
 
     /// Estimate points count in this segment for given filter.
