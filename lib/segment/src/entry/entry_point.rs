@@ -150,8 +150,9 @@ pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> 
 }
 
 /// Define all operations which can be performed with Segment or Segment-like entity.
-/// Assume, that all operations are idempotent - which means that
-///     no matter how much time they will consequently executed - storage state will be the same.
+///
+/// Assume all operations are idempotent - which means that no matter how many times an operation
+/// is executed - the storage state will be the same.
 pub trait SegmentEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;

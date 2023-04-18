@@ -50,7 +50,9 @@ pub trait IdTracker {
     /// Number of unique records in the segment
     fn points_count(&self) -> usize;
 
-    /// Iterate over all non-removed internal ids (offsets)
+    /// Iterate over internal IDs (offsets)
+    ///
+    /// - excludes removed points
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
     /// Iterate over internal IDs (offsets)
