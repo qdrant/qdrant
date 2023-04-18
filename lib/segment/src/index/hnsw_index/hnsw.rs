@@ -144,7 +144,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
 
-        let points_to_index: Vec<_> = payload_index.query_points(&filter).collect();
+        let points_to_index: Vec<_> = payload_index
+            .query_points(&filter, Some(&vector_storage))
+            .collect();
 
         for block_point_id in points_to_index.iter().copied() {
             block_filter_list.check_and_update_visited(block_point_id);
@@ -294,7 +296,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
-        let mut filtered_iter = payload_index.query_points(filter);
+        let mut filtered_iter = payload_index.query_points(filter, Some(&vector_storage));
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -395,7 +397,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 }
 
                 let payload_index = self.payload_index.borrow();
-                let query_cardinality = payload_index.estimate_cardinality(query_filter);
+                let vector_storage = self.vector_storage.borrow();
+                let query_cardinality =
+                    payload_index.estimate_cardinality(query_filter, Some(&vector_storage));
 
                 // debug!("query_cardinality: {:#?}", query_cardinality);
 
