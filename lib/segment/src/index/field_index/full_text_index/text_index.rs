@@ -1,8 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rocksdb::DB;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -34,16 +35,27 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    fn serialize_document(document: &Document) -> OperationResult<Vec<u8>> {
-        serde_cbor::to_vec(document).map_err(|e| {
+    fn serialize_document_tokens(&self, tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+        #[derive(Serialize)]
+        struct StoredDocument {
+            tokens: BTreeSet<String>,
+        }
+        let doc = StoredDocument { tokens };
+        serde_cbor::to_vec(&doc).map_err(|e| {
             OperationError::service_error(format!("Failed to serialize document: {e}"))
         })
     }
 
-    fn deserialize_document(data: &[u8]) -> OperationResult<Document> {
-        serde_cbor::from_slice(data).map_err(|e| {
-            OperationError::service_error(format!("Failed to deserialize document: {e}"))
-        })
+    fn deserialize_document(data: &[u8], index: &mut InvertedIndex) -> OperationResult<Document> {
+        #[derive(Deserialize)]
+        struct StoredDocument {
+            tokens: BTreeSet<String>,
+        }
+        serde_cbor::from_slice::<StoredDocument>(data)
+            .map_err(|e| {
+                OperationError::service_error(format!("Failed to deserialize document: {e}"))
+            })
+            .map(|doc| index.document_from_tokens(&doc.tokens))
     }
 
     fn storage_cf_name(field: &str) -> String {
@@ -81,13 +93,19 @@ impl FullTextIndex {
     }
 
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
-        let mut tokens = vec![];
+        let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, &self.config, |token| {
-            tokens.push(token.to_owned());
+            tokens.insert(self.inverted_index.vocab.get(token).copied());
         });
         ParsedQuery {
             tokens: tokens.into_iter().collect(),
         }
+    }
+
+    #[cfg(test)]
+    pub fn query(&self, query: &str) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let parsed_query = self.parse_query(query);
+        self.inverted_index.filter(&parsed_query)
     }
 }
 
@@ -97,7 +115,7 @@ impl ValueIndexer<String> for FullTextIndex {
             return Ok(());
         }
 
-        let mut tokens: HashSet<String> = HashSet::new();
+        let mut tokens: BTreeSet<String> = BTreeSet::new();
 
         for value in values {
             Tokenizer::tokenize_doc(&value, &self.config, |token| {
@@ -105,18 +123,11 @@ impl ValueIndexer<String> for FullTextIndex {
             });
         }
 
-        let document = Document {
-            tokens: tokens.into_iter().collect(),
-        };
-
+        let document = self.inverted_index.document_from_tokens(&tokens);
         self.inverted_index.index_document(idx, document);
 
         let db_idx = Self::store_key(&idx);
-        let db_document = Self::serialize_document(
-            self.inverted_index.point_to_docs[idx as usize]
-                .as_ref()
-                .unwrap(),
-        )?;
+        let db_document = self.serialize_document_tokens(tokens)?;
 
         self.db_wrapper.put(db_idx, db_document)?;
 
@@ -156,7 +167,7 @@ impl PayloadFieldIndex for FullTextIndex {
 
         for (key, value) in self.db_wrapper.lock_db().iter()? {
             let idx = Self::restore_key(&key);
-            let document = Self::deserialize_document(&value)?;
+            let document = Self::deserialize_document(&value, &mut self.inverted_index)?;
             self.inverted_index.index_document(idx, document);
         }
         Ok(true)

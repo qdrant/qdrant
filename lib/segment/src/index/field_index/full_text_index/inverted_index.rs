@@ -1,66 +1,109 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::index::field_index::full_text_index::postings_iterator::intersect_btree_iterator;
+use super::posting_list::PostingList;
+use super::postings_iterator::intersect_postings_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
-type PostingList = BTreeSet<PointOffsetType>;
+pub type TokenId = u32;
 
-#[derive(Default, Serialize, Deserialize, Clone)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Document {
-    pub tokens: BTreeSet<String>,
+    tokens: Vec<TokenId>,
 }
 
 impl Document {
+    pub fn new(mut tokens: Vec<TokenId>) -> Self {
+        tokens.sort_unstable();
+        Self { tokens }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
     }
+
+    pub fn tokens(&self) -> &[TokenId] {
+        &self.tokens
+    }
+
+    pub fn check(&self, token: TokenId) -> bool {
+        self.tokens.binary_search(&token).is_ok()
+    }
 }
 
+#[derive(Debug)]
 pub struct ParsedQuery {
-    pub tokens: BTreeSet<String>,
+    pub tokens: Vec<Option<TokenId>>,
 }
 
 impl ParsedQuery {
     pub fn check_match(&self, document: &Document) -> bool {
+        if self.tokens.contains(&None) {
+            return false;
+        }
         // Check that all tokens are in document
         self.tokens
             .iter()
-            .all(|query_token| document.tokens.contains(query_token))
+            // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
+            .all(|query_token| document.check(query_token.unwrap()))
     }
 }
 
+#[derive(Default)]
 pub struct InvertedIndex {
-    postings: BTreeMap<String, PostingList>,
+    postings: Vec<Option<PostingList>>,
+    pub vocab: HashMap<String, TokenId>,
     pub point_to_docs: Vec<Option<Document>>,
     pub points_count: usize,
 }
 
 impl InvertedIndex {
     pub fn new() -> InvertedIndex {
-        InvertedIndex {
-            postings: BTreeMap::new(),
-            point_to_docs: Vec::new(),
-            points_count: 0,
+        Default::default()
+    }
+
+    pub fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
+        let mut document_tokens = vec![];
+        for token in tokens {
+            // check if in vocab
+            let vocab_idx = match self.vocab.get(token) {
+                Some(&idx) => idx,
+                None => {
+                    let next_token_id = self.vocab.len() as TokenId;
+                    self.vocab.insert(token.to_string(), next_token_id);
+                    next_token_id
+                }
+            };
+            document_tokens.push(vocab_idx);
         }
+
+        Document::new(document_tokens)
     }
 
     pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
-        for token in &document.tokens {
-            let posting = self
-                .postings
-                .entry(token.to_owned())
-                .or_insert_with(BTreeSet::new);
-            posting.insert(idx);
-        }
         self.points_count += 1;
         if self.point_to_docs.len() <= idx as usize {
             self.point_to_docs
                 .resize(idx as usize + 1, Default::default());
         }
 
+        for token_idx in document.tokens() {
+            let token_idx_usize = *token_idx as usize;
+            if self.postings.len() <= token_idx_usize {
+                self.postings
+                    .resize(token_idx_usize + 1, Default::default());
+            }
+            let posting = self
+                .postings
+                .get_mut(token_idx_usize)
+                .expect("posting must exist even if with None");
+            match posting {
+                None => *posting = Some(PostingList::new(idx)),
+                Some(vec) => vec.insert(idx),
+            }
+        }
         self.point_to_docs[idx as usize] = Some(document);
     }
 
@@ -76,13 +119,11 @@ impl InvertedIndex {
 
         self.points_count -= 1;
 
-        for removed_token in &removed_doc.tokens {
-            let posting = self.postings.get_mut(removed_token);
-            if let Some(posting) = posting {
-                posting.remove(&idx);
-                if posting.is_empty() {
-                    self.postings.remove(removed_token);
-                }
+        for removed_token in removed_doc.tokens() {
+            // unwrap safety: posting list exists and contains the document id
+            let posting = self.postings.get_mut(*removed_token as usize).unwrap();
+            if let Some(vec) = posting {
+                vec.remove(idx);
             }
         }
         Some(removed_doc)
@@ -92,7 +133,12 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| self.postings.get(token))
+            .map(|&vocab_idx| match vocab_idx {
+                None => None,
+                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
+                // dictionary. Posting list entry can be None but it exists.
+                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
+            })
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -103,7 +149,7 @@ impl InvertedIndex {
             // Empty request -> no matches
             return Box::new(vec![].into_iter());
         }
-        intersect_btree_iterator(postings)
+        intersect_postings_iterator(postings)
     }
 
     pub fn estimate_cardinality(
@@ -114,7 +160,11 @@ impl InvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|token| self.postings.get(token))
+            .map(|&vocab_idx| match vocab_idx {
+                None => None,
+                // unwrap safety: same as in filter()
+                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
+            })
             .collect();
         if postings_opt.is_none() {
             // There are unseen tokens -> no matches
@@ -168,14 +218,25 @@ impl InvertedIndex {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
         Box::new(
-            self.postings
+            self.vocab
                 .iter()
-                .filter(move |(_token, posting)| posting.len() >= threshold)
+                .filter(|(_token, &posting_idx)| self.postings[posting_idx as usize].is_some())
+                .filter(move |(_token, &posting_idx)| {
+                    // unwrap crash safety: all tokens that passes the first filter should have postings
+                    self.postings[posting_idx as usize].as_ref().unwrap().len() >= threshold
+                })
+                .map(|(token, &posting_idx)| {
+                    (
+                        token,
+                        // same as the above case
+                        self.postings[posting_idx as usize].as_ref().unwrap(),
+                    )
+                })
                 .map(move |(token, posting)| PayloadBlockCondition {
                     condition: FieldCondition {
                         key: key.clone(),
                         r#match: Some(Match::Text(MatchText {
-                            text: token.to_owned(),
+                            text: token.clone(),
                         })),
                         range: None,
                         geo_bounding_box: None,
