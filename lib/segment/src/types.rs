@@ -498,6 +498,20 @@ impl SegmentConfig {
             .and_then(|v| v.quantization_config.as_ref())
             .or(self.quantization_config.as_ref())
     }
+
+    pub fn is_vector_indexed(&self) -> bool {
+        match self.index {
+            Indexes::Plain {} => false,
+            Indexes::Hnsw(_) => true,
+        }
+    }
+
+    pub fn is_memmaped(&self) -> bool {
+        match self.storage_type {
+            StorageType::InMemory => false,
+            StorageType::Mmap => true,
+        }
+    }
 }
 
 /// Config of single vector data storage

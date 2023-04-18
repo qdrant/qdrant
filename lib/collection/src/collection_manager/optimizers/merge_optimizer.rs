@@ -111,20 +111,17 @@ impl SegmentOptimizer for MergeOptimizer {
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                match read_segment.segment_type() != SegmentType::Special {
-                    true => Some((
-                        *idx,
-                        read_segment.points_count()
-                            * read_segment
-                                .vector_dims()
-                                .values()
-                                .max()
-                                .copied()
-                                .unwrap_or(0)
-                            * VECTOR_ELEMENT_SIZE,
-                    )),
-                    false => None,
-                }
+                (read_segment.segment_type() != SegmentType::Special).then_some((
+                    *idx,
+                    read_segment.points_count()
+                        * read_segment
+                            .vector_dims()
+                            .values()
+                            .max()
+                            .copied()
+                            .unwrap_or(0)
+                        * VECTOR_ELEMENT_SIZE,
+                ))
             })
             .sorted_by_key(|(_, size)| *size)
             .scan(0, |size_sum, (sid, size)| {
