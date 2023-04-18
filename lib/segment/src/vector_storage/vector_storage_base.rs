@@ -45,6 +45,14 @@ pub trait VectorStorage {
     /// Number of vectors, marked as deleted but still stored
     fn total_vector_count(&self) -> usize;
 
+    /// Number of available vectors
+    ///
+    /// - excludes soft deleted vectors, which are still stored
+    fn available_vector_count(&self) -> usize {
+        debug_assert!(self.deleted_vec_count() <= self.total_vector_count());
+        self.total_vector_count() - self.deleted_vec_count()
+    }
+
     /// Number of all stored vectors including deleted
     fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType];
 
