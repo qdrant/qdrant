@@ -13,7 +13,7 @@ pub fn intersect_postings_iterator<'a>(
     let smallest_posting = postings.remove(smallest_posting_idx);
 
     let and_iter = smallest_posting
-        .into_iter()
+        .iter()
         .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)));
 
     Box::new(and_iter)
@@ -26,22 +26,22 @@ mod tests {
     #[test]
     fn test_postings_iterator() {
         let mut p1 = PostingList::default();
-        p1.insert(1, 8);
-        p1.insert(2, 8);
-        p1.insert(3, 8);
-        p1.insert(4, 8);
-        p1.insert(5, 8);
+        p1.insert(1);
+        p1.insert(2);
+        p1.insert(3);
+        p1.insert(4);
+        p1.insert(5);
         let mut p2 = PostingList::default();
-        p2.insert(2, 8);
-        p2.insert(4, 8);
-        p2.insert(5, 8);
-        p2.insert(5, 8);
+        p2.insert(2);
+        p2.insert(4);
+        p2.insert(5);
+        p2.insert(5);
         let mut p3 = PostingList::default();
-        p3.insert(1, 8);
-        p3.insert(2, 8);
-        p3.insert(5, 8);
-        p3.insert(6, 8);
-        p3.insert(7, 8);
+        p3.insert(1);
+        p3.insert(2);
+        p3.insert(5);
+        p3.insert(6);
+        p3.insert(7);
 
         let postings = vec![&p1, &p2, &p3];
         let merged = intersect_postings_iterator(postings);

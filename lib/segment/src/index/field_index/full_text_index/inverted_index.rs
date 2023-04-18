@@ -101,7 +101,7 @@ impl InvertedIndex {
                 .expect("posting must exist even if with None");
             match posting {
                 None => *posting = Some(PostingList::new(idx)),
-                Some(vec) => vec.insert(idx, self.point_to_docs.len()),
+                Some(vec) => vec.insert(idx),
             }
         }
         self.point_to_docs[idx as usize] = Some(document);
@@ -123,7 +123,7 @@ impl InvertedIndex {
             // unwrap safety: posting list exists and contains the document id
             let posting = self.postings.get_mut(*removed_token as usize).unwrap();
             if let Some(vec) = posting {
-                vec.remove(idx, self.point_to_docs.len());
+                vec.remove(idx);
             }
         }
         Some(removed_doc)
