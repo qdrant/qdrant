@@ -55,6 +55,23 @@ pub trait IdTracker {
     /// - excludes removed points
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
+    /// Iterate over internal IDs (offsets)
+    ///
+    /// - excludes removed points
+    /// - excludes flagged items from `deleted_bitslice`
+    fn iter_ids_exluding<'a>(
+        &'a self,
+        exclude_bitslice: &'a BitSlice,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        Box::new(self.iter_ids().filter(|point| {
+            !exclude_bitslice
+                .get(*point as usize)
+                .as_deref()
+                .copied()
+                .unwrap_or(false)
+        }))
+    }
+
     /// Total number of internal ids (offsets), including removed ones
     fn internal_size(&self) -> usize;
 
