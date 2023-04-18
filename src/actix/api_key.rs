@@ -3,6 +3,7 @@ use std::future::{ready, Ready};
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::{Error, HttpResponse};
+use constant_time_eq::constant_time_eq;
 use futures_util::future::LocalBoxFuture;
 
 pub struct ApiKey {
@@ -57,7 +58,7 @@ where
     fn call(&self, req: ServiceRequest) -> Self::Future {
         if let Some(key) = req.headers().get("api-key") {
             if let Ok(key) = key.to_str() {
-                if self.api_key == key {
+                if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
                     return Box::pin(self.service.call(req));
                 }
             }

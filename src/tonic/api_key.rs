@@ -1,5 +1,6 @@
 use std::task::{Context, Poll};
 
+use constant_time_eq::constant_time_eq;
 use futures_util::future::BoxFuture;
 use reqwest::header::HeaderValue;
 use reqwest::StatusCode;
@@ -60,7 +61,7 @@ where
         if let Some(api_key) = &self.api_key {
             if let Some(key) = request.headers().get("api-key") {
                 if let Ok(key) = key.to_str() {
-                    if key == api_key {
+                    if constant_time_eq(api_key.as_bytes(), key.as_bytes()) {
                         return self.do_call(request);
                     }
                 }
