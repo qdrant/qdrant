@@ -443,17 +443,18 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let mut rng = thread_rng();
 
-        let total_points = vector_storage.total_vector_count();
+        let vec_count = vector_storage.available_vector_count();
+        let deleted_bitslice = vector_storage.deleted_vec_bitslice();
 
-        debug!("building hnsw for {}", total_points);
+        debug!("building HNSW for {} vectors", vec_count);
         let mut graph_layers_builder = GraphLayersBuilder::new(
-            total_points,
+            vec_count,
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
             max(
                 1,
-                total_points
+                vec_count
                     .checked_div(self.config.indexing_threshold)
                     .unwrap_or(0)
                     * 10,
@@ -466,14 +467,14 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .num_threads(self.config.max_rayon_threads())
             .build()?;
 
-        for vector_id in id_tracker.iter_ids() {
+        for vector_id in id_tracker.iter_ids_exluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(vector_id, level);
         }
 
         if self.config.m > 0 {
-            let ids: Vec<_> = id_tracker.iter_ids().collect();
+            let ids: Vec<_> = id_tracker.iter_ids_exluding(deleted_bitslice).collect();
 
             pool.install(|| {
                 ids.into_par_iter().try_for_each(|vector_id| {
@@ -505,11 +506,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             debug!("skip building main HNSW graph");
         }
 
-        let total_vectors_count = vector_storage.total_vector_count();
-        let mut block_filter_list = VisitedList::new(total_vectors_count);
-
+        let mut block_filter_list = VisitedList::new(vec_count);
         let payload_index = self.payload_index.borrow();
-
         let payload_m = self.config.payload_m.unwrap_or(self.config.m);
 
         if payload_m > 0 {
@@ -522,7 +520,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // We add multiplier for the extra safety.
                 let percolation_multiplier = 2;
                 let max_block_size = if self.config.m > 0 {
-                    total_points / self.config.m * percolation_multiplier
+                    vec_count / self.config.m * percolation_multiplier
                 } else {
                     usize::MAX
                 };
@@ -535,7 +533,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     }
                     // ToDo: re-use graph layer for same payload
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
-                        self.vector_storage.borrow().total_vector_count(),
+                        vec_count,
                         payload_m,
                         self.config.payload_m0.unwrap_or(self.config.m0),
                         self.config.ef_construct,
