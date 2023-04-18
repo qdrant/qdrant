@@ -201,11 +201,11 @@ impl PartialEq for ScoredPoint {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
-    // There are no index built for the segment, all operations are available
+    /// There are no index built for the segment, all operations are available
     Plain,
-    // Segment with some sort of index built. Optimized for search, appending new points will require reindexing
+    /// Segment with some sort of index built. Optimized for search, appending new points will require reindexing
     Indexed,
-    // Some index which you better don't touch
+    /// Some index which you better don't touch
     Special,
 }
 
@@ -497,6 +497,20 @@ impl SegmentConfig {
             .get(vector_name)
             .and_then(|v| v.quantization_config.as_ref())
             .or(self.quantization_config.as_ref())
+    }
+
+    pub fn is_vector_indexed(&self) -> bool {
+        match self.index {
+            Indexes::Plain {} => false,
+            Indexes::Hnsw(_) => true,
+        }
+    }
+
+    pub fn is_memmaped(&self) -> bool {
+        match self.storage_type {
+            StorageType::InMemory => false,
+            StorageType::Mmap => true,
+        }
     }
 }
 

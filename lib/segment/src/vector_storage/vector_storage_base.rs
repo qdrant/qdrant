@@ -42,7 +42,9 @@ pub trait VectorStorage {
 
     fn distance(&self) -> Distance;
 
-    /// Number of vectors, marked as deleted but still stored
+    /// Number of vectors
+    ///
+    /// - includes soft deleted vectors, as they are still stored
     fn total_vector_count(&self) -> usize;
 
     /// Number of all stored vectors including deleted
