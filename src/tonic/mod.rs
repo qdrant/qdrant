@@ -80,9 +80,12 @@ pub fn init(
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
             ))
-            .layer(api_key::ApiKeyMiddlewareLayer::new(
-                settings.service.api_key,
-            ))
+            .option_layer(
+                settings
+                    .service
+                    .api_key
+                    .map(api_key::ApiKeyMiddlewareLayer::new),
+            )
             .into_inner();
 
         server

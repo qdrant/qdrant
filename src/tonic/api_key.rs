@@ -12,30 +12,12 @@ use tower_layer::Layer;
 #[derive(Clone)]
 pub struct ApiKeyMiddleware<T> {
     service: T,
-    api_key: Option<String>,
+    api_key: String,
 }
 
 #[derive(Clone)]
 pub struct ApiKeyMiddlewareLayer {
-    api_key: Option<String>,
-}
-
-impl<S> ApiKeyMiddleware<S>
-where
-    S: Service<tonic::codegen::http::Request<tonic::transport::Body>>,
-    S::Future: Send + 'static,
-{
-    fn do_call(
-        &mut self,
-        request: tonic::codegen::http::Request<tonic::transport::Body>,
-    ) -> BoxFuture<'static, Result<S::Response, S::Error>> {
-        let future = self.service.call(request);
-
-        Box::pin(async move {
-            let response = future.await?;
-            Ok(response)
-        })
-    }
+    api_key: String,
 }
 
 impl<S> Service<tonic::codegen::http::Request<tonic::transport::Body>> for ApiKeyMiddleware<S>
@@ -58,34 +40,35 @@ where
         &mut self,
         request: tonic::codegen::http::Request<tonic::transport::Body>,
     ) -> Self::Future {
-        if let Some(api_key) = &self.api_key {
-            if let Some(key) = request.headers().get("api-key") {
-                if let Ok(key) = key.to_str() {
-                    if constant_time_eq(api_key.as_bytes(), key.as_bytes()) {
-                        return self.do_call(request);
-                    }
+        if let Some(key) = request.headers().get("api-key") {
+            if let Ok(key) = key.to_str() {
+                if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
+                    let future = self.service.call(request);
+
+                    return Box::pin(async move {
+                        let response = future.await?;
+                        Ok(response)
+                    });
                 }
             }
-
-            let mut response = Self::Response::new(BoxBody::default());
-            *response.status_mut() = StatusCode::FORBIDDEN;
-            response.headers_mut().append(
-                "grpc-status",
-                HeaderValue::from(Code::PermissionDenied as i32),
-            );
-            response
-                .headers_mut()
-                .append("grpc-message", HeaderValue::from_static("Invalid api-key"));
-
-            Box::pin(async move { Ok(response) })
-        } else {
-            self.do_call(request)
         }
+
+        let mut response = Self::Response::new(BoxBody::default());
+        *response.status_mut() = StatusCode::FORBIDDEN;
+        response.headers_mut().append(
+            "grpc-status",
+            HeaderValue::from(Code::PermissionDenied as i32),
+        );
+        response
+            .headers_mut()
+            .append("grpc-message", HeaderValue::from_static("Invalid api-key"));
+
+        Box::pin(async move { Ok(response) })
     }
 }
 
 impl ApiKeyMiddlewareLayer {
-    pub fn new(api_key: Option<String>) -> Self {
+    pub fn new(api_key: String) -> Self {
         Self { api_key }
     }
 }
