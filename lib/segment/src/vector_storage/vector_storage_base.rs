@@ -47,17 +47,6 @@ pub trait VectorStorage {
     /// - includes soft deleted vectors, as they are still stored
     fn total_vector_count(&self) -> usize;
 
-    /// Number of available vectors
-    ///
-    /// - excludes soft deleted vectors, which are still stored
-    /// - this does not consider deleted points
-    fn available_vector_count(&self) -> usize {
-        let total = self.total_vector_count();
-        let deleted_vecs = self.deleted_vec_count();
-        debug_assert!(deleted_vecs <= total);
-        total - deleted_vecs
-    }
-
     /// Estimate number of available vectors, considering deleted points and vectors
     ///
     /// We don't know the true number of available vectors. Vectors can be soft deleted in two
