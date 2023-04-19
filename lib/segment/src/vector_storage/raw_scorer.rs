@@ -58,7 +58,7 @@ pub fn new_raw_scorer<'a>(
     }
 }
 
-fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
+pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
