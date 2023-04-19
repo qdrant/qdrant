@@ -110,7 +110,10 @@ impl PayloadIndex for PlainPayloadIndex {
         vector_storage: Option<&VectorStorageEnum>,
     ) -> CardinalityEstimation {
         let available_points = vector_storage
-            .map(|vs| vs.available_vector_count())
+            .map(|vs| {
+                let id_tracker = self.id_tracker.borrow();
+                vs.estimate_available_vector_count(id_tracker.deleted_point_count())
+            })
             .unwrap_or_else(|| self.id_tracker.borrow().points_count());
         CardinalityEstimation {
             primary_clauses: vec![],
