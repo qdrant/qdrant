@@ -363,7 +363,10 @@ impl PayloadIndex for StructPayloadIndex {
     ) -> CardinalityEstimation {
         // Prefer available points versus total, because we can only search available points
         let available_points = vector_storage
-            .map(|vs| vs.available_vector_count())
+            .map(|vs| {
+                let id_tracker = self.id_tracker.borrow();
+                vs.estimate_available_vector_count(id_tracker.deleted_point_count())
+            })
             .unwrap_or_else(|| self.total_points());
 
         let estimator = |condition: &Condition| self.condition_cardinality(condition);

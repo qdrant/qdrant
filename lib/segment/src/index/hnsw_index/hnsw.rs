@@ -142,9 +142,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let filter = Filter::new_must(Field(condition));
 
+        let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let id_tracker = self.id_tracker.borrow();
 
         let points_to_index: Vec<_> = payload_index
             .query_points(&filter, Some(&vector_storage))
@@ -210,8 +210,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         // ef should always be bigger that required top
         let ef = max(req_ef, top);
 
-        let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -295,9 +295,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         top: usize,
         params: Option<&SearchParams>,
     ) -> Vec<Vec<ScoredPointOffset>> {
+        let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let id_tracker = self.id_tracker.borrow();
         let mut filtered_iter = payload_index.query_points(filter, Some(&vector_storage));
         let ignore_quantization = params
             .and_then(|p| p.quantization)
@@ -352,13 +352,17 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
         match filter {
             None => {
+                let id_tracker = self.id_tracker.borrow();
+                let vector_storage = self.vector_storage.borrow();
+
                 // Determine whether to a plain or graph search, pick search timer aggregator
                 // Because an HNSW graph is built, we'd normally always assume to search the graph.
                 // But because a lot of points may be deleted in this graph, it may just be faster
                 // to do a plain search instead.
                 let plain_search = exact || {
-                    let vector_storage = self.vector_storage.borrow();
-                    vector_storage.available_vector_count() < self.config.indexing_threshold
+                    let vector_count = vector_storage
+                        .estimate_available_vector_count(id_tracker.deleted_point_count());
+                    vector_count < self.config.indexing_threshold
                 };
                 let duration_aggregator = if exact {
                     &self.searches_telemetry.exact_unfiltered
@@ -371,8 +375,6 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // Do plain or graph search
                 if plain_search {
                     let _timer = ScopeDurationMeasurer::new(duration_aggregator);
-                    let vector_storage = self.vector_storage.borrow();
-                    let id_tracker = self.id_tracker.borrow();
                     vectors
                         .iter()
                         .map(|vector| {
@@ -439,11 +441,13 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
                 let id_tracker = self.id_tracker.borrow();
+                let vector_count = vector_storage
+                    .estimate_available_vector_count(id_tracker.deleted_point_count());
                 if sample_check_cardinality(
                     id_tracker.sample_ids(Some(vector_storage.deleted_vec_bitslice())),
                     |idx| filter_context.check(idx),
                     self.config.indexing_threshold,
-                    vector_storage.available_vector_count(),
+                    vector_count,
                 ) {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
@@ -461,22 +465,23 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
-        let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
         let mut rng = thread_rng();
 
-        let vec_count = vector_storage.available_vector_count();
+        let vector_count =
+            vector_storage.estimate_available_vector_count(id_tracker.deleted_point_count());
         let deleted_bitslice = vector_storage.deleted_vec_bitslice();
 
-        debug!("building HNSW for {} vectors", vec_count);
+        debug!("building HNSW for {} vectors", vector_count);
         let mut graph_layers_builder = GraphLayersBuilder::new(
-            vec_count,
+            vector_count,
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
             max(
                 1,
-                vec_count
+                vector_count
                     .checked_div(self.config.indexing_threshold)
                     .unwrap_or(0)
                     * 10,
@@ -528,7 +533,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             debug!("skip building main HNSW graph");
         }
 
-        let mut block_filter_list = VisitedList::new(vec_count);
+        let mut block_filter_list = VisitedList::new(vector_count);
         let payload_index = self.payload_index.borrow();
         let payload_m = self.config.payload_m.unwrap_or(self.config.m);
 
@@ -542,7 +547,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // We add multiplier for the extra safety.
                 let percolation_multiplier = 2;
                 let max_block_size = if self.config.m > 0 {
-                    vec_count / self.config.m * percolation_multiplier
+                    vector_count / self.config.m * percolation_multiplier
                 } else {
                     usize::MAX
                 };
@@ -555,7 +560,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     }
                     // ToDo: re-use graph layer for same payload
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
-                        vec_count,
+                        vector_count,
                         payload_m,
                         self.config.payload_m0.unwrap_or(self.config.m0),
                         self.config.ef_construct,
