@@ -72,7 +72,7 @@ pub struct TableOfContent {
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
-    alias_persistence: RwLock<AliasPersistence>,
+    alias_persistence: Arc<RwLock<AliasPersistence>>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
     /// Backlink to the consensus, if none - single node mode
@@ -181,7 +181,7 @@ impl TableOfContent {
             search_runtime,
             update_runtime,
             general_runtime,
-            alias_persistence: RwLock::new(alias_persistence),
+            alias_persistence: Arc::new(RwLock::new(alias_persistence)),
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
@@ -745,6 +745,7 @@ impl TableOfContent {
                 .join(collection_name)
                 .with_extension(uuid);
             tokio::fs::rename(path, &deleted_path).await?;
+
             // At this point collection is removed from memory and moved to ".deleted" folder.
             // Next time we load service the collection will not appear in the list of collections.
             // We can take our time to delete the collection from disk.
