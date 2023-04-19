@@ -10,6 +10,7 @@ const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
 pub struct SharedStorageConfig {
     pub update_queue_size: usize,
     pub node_type: NodeType,
+    pub handle_collection_load_errors: bool,
 }
 
 impl Default for SharedStorageConfig {
@@ -17,12 +18,17 @@ impl Default for SharedStorageConfig {
         Self {
             update_queue_size: DEFAULT_UPDATE_QUEUE_SIZE,
             node_type: Default::default(),
+            handle_collection_load_errors: false,
         }
     }
 }
 
 impl SharedStorageConfig {
-    pub fn new(update_queue_size: Option<usize>, node_type: NodeType) -> Self {
+    pub fn new(
+        update_queue_size: Option<usize>,
+        node_type: NodeType,
+        handle_collection_load_errors: bool,
+    ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
             NodeType::Listener => DEFAULT_UPDATE_QUEUE_SIZE_LISTENER,
@@ -31,6 +37,7 @@ impl SharedStorageConfig {
         Self {
             update_queue_size,
             node_type,
+            handle_collection_load_errors,
         }
     }
 }

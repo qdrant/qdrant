@@ -36,8 +36,9 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
+use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
-use crate::shards::shard::Shard::{ForwardProxy, Local};
+use crate::shards::shard::Shard::{Dummy, ForwardProxy, Local};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
@@ -473,7 +474,7 @@ impl ShardReplicaSet {
         );
 
         let local = if replica_state.read().is_local {
-            let shard = LocalShard::load(
+            let res = LocalShard::load(
                 shard_id,
                 collection_id.clone(),
                 shard_path,
@@ -481,12 +482,28 @@ impl ShardReplicaSet {
                 shared_storage_config.clone(),
                 update_runtime.clone(),
             )
-            .await
-            .map_err(|e| {
-                panic!("Failed to load local shard {shard_path:?}: {e}");
-            })
-            .unwrap();
-            Some(Local(shard))
+            .await;
+
+            let shard = match res {
+                Ok(shard) => Local(shard),
+                Err(err) => {
+                    if !shared_storage_config.handle_collection_load_errors {
+                        panic!("Failed to load local shard {shard_path:?}: {err}")
+                    }
+
+                    log::error!(
+                        "Failed to load local shard {shard_path:?}, \
+                         initializing \"dummy\" shard instead: \
+                         {err}"
+                    );
+
+                    Dummy(DummyShard::new(format!(
+                        "Failed to load local shard {shard_path:?}: {err}"
+                    )))
+                }
+            };
+
+            Some(shard)
         } else {
             None
         };
