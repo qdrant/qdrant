@@ -65,7 +65,7 @@ mod tests {
             let payload: Payload = json!({int_key:int_payload,}).into();
 
             segment
-                .upsert_vector(n as SeqNumberType, idx, &only_default_vector(&vector))
+                .upsert_point(n as SeqNumberType, idx, &only_default_vector(&vector))
                 .unwrap();
             segment
                 .set_full_payload(n as SeqNumberType, idx, &payload)

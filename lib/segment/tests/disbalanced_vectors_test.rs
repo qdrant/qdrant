@@ -30,7 +30,7 @@ mod tests {
 
         for i in 0..NUM_VECTORS_1 {
             segment1
-                .upsert_vector(
+                .upsert_point(
                     1,
                     i.into(),
                     &NamedVectors::from([
@@ -52,7 +52,7 @@ mod tests {
             };
 
             segment2
-                .upsert_vector(1, (NUM_VECTORS_1 + i).into(), &vectors)
+                .upsert_point(1, (NUM_VECTORS_1 + i).into(), &vectors)
                 .unwrap();
         }
 

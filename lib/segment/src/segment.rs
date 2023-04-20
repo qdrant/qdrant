@@ -683,7 +683,7 @@ impl SegmentEntry for Segment {
         res
     }
 
-    fn upsert_vector(
+    fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -1447,11 +1447,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
@@ -1517,7 +1517,7 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment
-            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1608,7 +1608,7 @@ mod tests {
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
 
         segment
-            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         segment
@@ -1686,7 +1686,7 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
         segment
-            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1720,11 +1720,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
 
         // first pass on consistent data

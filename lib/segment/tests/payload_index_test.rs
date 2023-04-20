@@ -65,10 +65,10 @@ mod tests {
             let payload: Payload = generate_diverse_payload(&mut rnd);
 
             plain_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             struct_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             plain_segment
                 .set_full_payload(opnum, idx, &payload)
@@ -194,10 +194,10 @@ mod tests {
             let payload: Payload = generate_diverse_nested_payload(&mut rnd);
 
             plain_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             struct_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             plain_segment
                 .set_full_payload(opnum, idx, &payload)
