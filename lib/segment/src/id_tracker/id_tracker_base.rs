@@ -73,10 +73,6 @@ pub trait IdTracker {
         }))
     }
 
-    /// Total number of internal ids (offsets), including removed ones
-    #[deprecated(note = "use `total_point_count` instead")]
-    fn internal_size(&self) -> usize;
-
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
 
@@ -115,7 +111,7 @@ pub trait IdTracker {
         &'a self,
         deleted_vec_bitslice: Option<&'a BitSlice>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let total = self.internal_size() as PointOffsetType;
+        let total = self.total_point_count() as PointOffsetType;
         let mut rng = rand::thread_rng();
         Box::new(
             (0..total)

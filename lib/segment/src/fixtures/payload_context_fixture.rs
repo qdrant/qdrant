@@ -138,10 +138,6 @@ impl IdTracker for FixtureIdTracker {
         )
     }
 
-    fn internal_size(&self) -> usize {
-        self.ids.len()
-    }
-
     fn mapping_flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }
