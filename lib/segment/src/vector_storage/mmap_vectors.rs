@@ -43,7 +43,10 @@ pub struct MmapVectors {
     ///
     /// This has the same lifetime as this struct, a borrow must never be leased out for longer.
     deleted: &'static mut BitSlice,
+    /// Current number of deleted vectors.
     pub deleted_count: usize,
+    /// Number of deleted vectors when this storage was created.
+    pub create_deleted_count: usize,
     pub quantized_vectors: Option<QuantizedVectorsStorage>,
 }
 
@@ -79,6 +82,7 @@ impl MmapVectors {
             _deleted_mmap: Arc::new(Mutex::new(deleted_mmap)),
             deleted,
             deleted_count,
+            create_deleted_count: deleted_count,
             quantized_vectors: None,
         })
     }

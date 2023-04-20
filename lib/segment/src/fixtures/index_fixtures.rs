@@ -106,6 +106,10 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         self.deleted_vectors.count_ones()
     }
 
+    fn create_deleted_vec_count(&self) -> usize {
+        0
+    }
+
     fn deleted_vec_bitslice(&self) -> &BitSlice {
         &self.deleted_vectors
     }
