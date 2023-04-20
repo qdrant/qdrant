@@ -124,7 +124,7 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
-        let new_index = self.id_tracker.borrow().internal_size() as PointOffsetType;
+        let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
         check_vectors_set(&vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);

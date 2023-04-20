@@ -393,8 +393,10 @@ impl PayloadIndex for StructPayloadIndex {
             let struct_filtered_context = self.struct_filtered_context(query);
 
             // CPU-optimized strategy here: points are made unique before applying other filters.
-            // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
-            let mut visited_list = self.visited_pool.get(points_iterator_ref.internal_size());
+            // TODO: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
+            let mut visited_list = self
+                .visited_pool
+                .get(points_iterator_ref.total_point_count());
 
             #[allow(clippy::needless_collect)]
                 let preselected: Vec<PointOffsetType> = query_cardinality

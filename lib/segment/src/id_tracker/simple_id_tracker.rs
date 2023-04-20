@@ -341,10 +341,6 @@ impl IdTracker for SimpleIdTracker {
         self.iter_internal()
     }
 
-    fn internal_size(&self) -> usize {
-        self.internal_to_external.len()
-    }
-
     fn mapping_flusher(&self) -> Flusher {
         self.mapping_db_wrapper.flusher()
     }
