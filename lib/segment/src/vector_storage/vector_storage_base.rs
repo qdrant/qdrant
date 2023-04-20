@@ -104,6 +104,8 @@ pub trait VectorStorage {
     /// propagate to deleting the vectors. That means that the deleted vector count includes the
     /// number of deleted points as well.
     ///
+    /// This includes any vectors that was deleted at creation, see [`create_deleted_vec_count`].
+    ///
     /// # Warning
     ///
     /// In some very exceptional cases it is possible for this count not to include some deleted
@@ -111,6 +113,9 @@ pub trait VectorStorage {
     /// when loading/recovering the segment, but that isn't guaranteed. You should therefore use
     /// the deleted count with care.
     fn deleted_vec_count(&self) -> usize;
+
+    /// Get number of deleted vectors at creation
+    fn create_deleted_vec_count(&self) -> usize;
 
     /// Get [`BitSlice`] representation for deleted vectors with deletion flags
     ///
@@ -233,6 +238,13 @@ impl VectorStorage for VectorStorageEnum {
         match self {
             VectorStorageEnum::Simple(v) => v.deleted_vec_count(),
             VectorStorageEnum::Memmap(v) => v.deleted_vec_count(),
+        }
+    }
+
+    fn create_deleted_vec_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.create_deleted_vec_count(),
+            VectorStorageEnum::Memmap(v) => v.create_deleted_vec_count(),
         }
     }
 

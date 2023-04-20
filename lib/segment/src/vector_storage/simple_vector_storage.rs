@@ -33,7 +33,10 @@ pub struct SimpleVectorStorage {
     update_buffer: StoredRecord,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
     deleted: BitVec,
+    /// Current number of deleted vectors.
     deleted_count: usize,
+    /// Number of deleted vectors at creation.
+    create_deleted_count: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -86,6 +89,7 @@ pub fn open_simple_vector_storage(
             },
             deleted,
             deleted_count,
+            create_deleted_count: deleted_count,
         },
     ))))
 }
@@ -233,6 +237,10 @@ impl VectorStorage for SimpleVectorStorage {
 
     fn deleted_vec_count(&self) -> usize {
         self.deleted_count
+    }
+
+    fn create_deleted_vec_count(&self) -> usize {
+        self.create_deleted_count
     }
 
     fn deleted_vec_bitslice(&self) -> &BitSlice {
