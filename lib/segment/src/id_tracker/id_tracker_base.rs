@@ -35,10 +35,14 @@ pub trait IdTracker {
     /// Drop mapping
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()>;
 
-    /// Iterate over all external ids
+    /// Iterate over all external IDs
+    ///
+    /// Count should match `available_point_count`.
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
-    /// Iterate over all internal ids
+    /// Iterate over all internal IDs
+    ///
+    /// Count should match `total_point_count`.
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
     /// Iterate starting from a given ID
@@ -46,9 +50,6 @@ pub trait IdTracker {
         &self,
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
-
-    /// Number of unique records in the segment
-    fn points_count(&self) -> usize;
 
     /// Iterate over internal IDs (offsets)
     ///
@@ -73,6 +74,7 @@ pub trait IdTracker {
     }
 
     /// Total number of internal ids (offsets), including removed ones
+    #[deprecated(note = "use `total_point_count` instead")]
     fn internal_size(&self) -> usize;
 
     /// Flush id mapping to disk
@@ -81,18 +83,29 @@ pub trait IdTracker {
     /// Flush points versions to disk
     fn versions_flusher(&self) -> Flusher;
 
+    /// Number of total points
+    ///
+    /// - includes soft deleted points
+    fn total_point_count(&self) -> usize;
+
+    /// Number of available points
+    ///
+    /// - excludes soft deleted points
+    fn available_point_count(&self) -> usize {
+        self.total_point_count() - self.deleted_point_count()
+    }
+
+    /// Number of deleted points
+    fn deleted_point_count(&self) -> usize;
+
     /// Get [`BitSlice`] representation for deleted points with deletion flags
     ///
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
     fn deleted_point_bitslice(&self) -> &BitSlice;
 
+    /// Check whether the given point is soft deleted
     fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
-
-    /// Number of deleted points
-    fn deleted_point_count(&self) -> usize {
-        self.internal_size() - self.points_count()
-    }
 
     /// Iterator over `n` random IDs which are not deleted
     ///

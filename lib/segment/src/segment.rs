@@ -929,12 +929,12 @@ impl SegmentEntry for Segment {
                 //  - point filter prob = 10 / 10000 = 0.001
                 //  - expected_checks = 10 / 0.001  = 10000
 
-                let total_points = self.points_count() + 1 /* + 1 for division-by-zero */;
+                let available_points = self.available_point_count() + 1 /* + 1 for division-by-zero */;
                 // Expected number of successful checks per point
                 let check_probability = (query_cardinality.exp as f64 + 1.0/* protect from zero */)
-                    / total_points as f64;
+                    / available_points as f64;
                 let exp_stream_checks =
-                    (limit.unwrap_or(total_points) as f64 / check_probability) as usize;
+                    (limit.unwrap_or(available_points) as f64 / check_probability) as usize;
 
                 // Assume it would require about `query cardinality` checks.
                 // We are interested in approximate number of checks, so we can
@@ -963,19 +963,27 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().internal_id(point_id).is_some()
     }
 
-    fn points_count(&self) -> usize {
-        self.id_tracker.borrow().points_count()
+    fn total_point_count(&self) -> usize {
+        self.id_tracker.borrow().total_point_count()
     }
 
-    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+    fn available_point_count(&self) -> usize {
+        self.id_tracker.borrow().available_point_count()
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        self.id_tracker.borrow().deleted_point_count()
+    }
+
+    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
         match filter {
             None => {
-                let total_count = self.points_count();
+                let available = self.available_point_count();
                 CardinalityEstimation {
                     primary_clauses: vec![],
-                    min: total_count,
-                    exp: total_count,
-                    max: total_count,
+                    min: available,
+                    exp: available,
+                    max: available,
                 }
             }
             Some(filter) => {
@@ -983,10 +991,6 @@ impl SegmentEntry for Segment {
                 payload_index.estimate_cardinality(filter, None)
             }
         }
-    }
-
-    fn deleted_point_count(&self) -> usize {
-        self.id_tracker.borrow().deleted_point_count()
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -1006,8 +1010,8 @@ impl SegmentEntry for Segment {
 
         SegmentInfo {
             segment_type: self.segment_type,
-            num_vectors: self.points_count() * self.vector_data.len(),
-            num_points: self.points_count(),
+            num_vectors: self.total_point_count() * self.vector_data.len(),
+            num_points: self.total_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
@@ -1642,8 +1646,18 @@ mod tests {
 
         // validate restored snapshot is the same as original segment
         assert_eq!(segment.vector_dims(), restored_segment.vector_dims());
-
-        assert_eq!(segment.points_count(), restored_segment.points_count());
+        assert_eq!(
+            segment.total_point_count(),
+            restored_segment.total_point_count(),
+        );
+        assert_eq!(
+            segment.available_point_count(),
+            restored_segment.available_point_count(),
+        );
+        assert_eq!(
+            segment.deleted_point_count(),
+            restored_segment.deleted_point_count(),
+        );
 
         for id in segment.iter_points() {
             let vectors = segment.all_vectors(id).unwrap();

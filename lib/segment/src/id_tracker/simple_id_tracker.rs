@@ -325,8 +325,16 @@ impl IdTracker for SimpleIdTracker {
         }
     }
 
-    fn points_count(&self) -> usize {
+    fn total_point_count(&self) -> usize {
+        self.internal_to_external.len()
+    }
+
+    fn available_point_count(&self) -> usize {
         self.external_to_internal_num.len() + self.external_to_internal_uuid.len()
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        self.total_point_count() - self.available_point_count()
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {

@@ -202,8 +202,11 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    pub fn total_points(&self) -> usize {
-        self.id_tracker.borrow().points_count()
+    /// Number of available points
+    ///
+    /// - excludes soft deleted points
+    pub fn available_point_count(&self) -> usize {
+        self.id_tracker.borrow().available_point_count()
     }
 
     fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
@@ -216,7 +219,7 @@ impl StructPayloadIndex {
             payload_provider,
             &self.field_indexes,
             &estimator,
-            self.total_points(),
+            self.available_point_count(),
         )
     }
 
@@ -224,7 +227,7 @@ impl StructPayloadIndex {
         match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
-                let total_points = self.total_points();
+                let available_points = self.available_point_count();
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&field.key) {
@@ -236,8 +239,8 @@ impl StructPayloadIndex {
                             is_empty: field.to_owned(),
                         })],
                         min: 0, // It is possible, that some non-empty payloads are not indexed
-                        exp: total_points.saturating_sub(indexed_points), // Expect field type consistency
-                        max: total_points.saturating_sub(indexed_points),
+                        exp: available_points.saturating_sub(indexed_points), // Expect field type consistency
+                        max: available_points.saturating_sub(indexed_points),
                     }
                 } else {
                     CardinalityEstimation {
@@ -245,13 +248,13 @@ impl StructPayloadIndex {
                             is_empty: field.to_owned(),
                         })],
                         min: 0,
-                        exp: total_points / 2,
-                        max: total_points,
+                        exp: available_points / 2,
+                        max: available_points,
                     }
                 }
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
-                let total_points = self.total_points();
+                let available_points = self.available_point_count();
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&field.key) {
@@ -263,8 +266,8 @@ impl StructPayloadIndex {
                             is_null: field.to_owned(),
                         })],
                         min: 0,
-                        exp: total_points.saturating_sub(indexed_points),
-                        max: total_points.saturating_sub(indexed_points),
+                        exp: available_points.saturating_sub(indexed_points),
+                        max: available_points.saturating_sub(indexed_points),
                     }
                 } else {
                     CardinalityEstimation {
@@ -272,8 +275,8 @@ impl StructPayloadIndex {
                             is_null: field.to_owned(),
                         })],
                         min: 0,
-                        exp: total_points / 2,
-                        max: total_points,
+                        exp: available_points / 2,
+                        max: available_points,
                     }
                 }
             }
@@ -294,7 +297,7 @@ impl StructPayloadIndex {
             }
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition)
-                .unwrap_or_else(|| CardinalityEstimation::unknown(self.total_points())),
+                .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
         }
     }
 
@@ -361,7 +364,7 @@ impl PayloadIndex for StructPayloadIndex {
         available_points: Option<usize>,
     ) -> CardinalityEstimation {
         let estimator = |condition: &Condition| self.condition_cardinality(condition);
-        let available_points = available_points.unwrap_or_else(|| self.total_points());
+        let available_points = available_points.unwrap_or_else(|| self.available_point_count());
         estimate_filter(&estimator, query, available_points)
     }
 

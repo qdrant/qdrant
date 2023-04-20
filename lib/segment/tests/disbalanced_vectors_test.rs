@@ -96,7 +96,7 @@ mod tests {
 
         let merged_segment: Segment = builder.build(&stopped).unwrap();
 
-        let merged_points_count = merged_segment.points_count();
+        let merged_points_count = merged_segment.available_point_count();
 
         assert_eq!(
             merged_points_count,
