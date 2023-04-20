@@ -101,7 +101,7 @@ pub trait SegmentOptimizer {
             .map(|s| {
                 let segment = s.get();
                 let locked_segment = segment.read();
-                locked_segment.points_count()
+                locked_segment.available_point_count()
                     * locked_segment
                         .vector_dims()
                         .values()

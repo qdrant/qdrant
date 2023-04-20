@@ -269,8 +269,16 @@ pub trait SegmentEntry {
 
     fn vector_dims(&self) -> HashMap<String, usize>;
 
-    /// Number of vectors, marked as deleted
+    /// Number of points, marked as deleted
     fn deleted_point_count(&self) -> usize;
+
+    /// Get number of available points
+    ///
+    /// The number of points excluding soft deleted points.
+    fn available_point_count(&self) -> usize {
+        self.points_count()
+            .saturating_sub(self.deleted_point_count())
+    }
 
     /// Get segment type
     fn segment_type(&self) -> SegmentType;
