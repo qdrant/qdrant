@@ -1,6 +1,7 @@
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
 pub mod api;
+pub mod api_key;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
@@ -28,6 +29,7 @@ use crate::actix::api::search_api::config_search_api;
 use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
+use crate::actix::api_key::ApiKey;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
@@ -51,6 +53,7 @@ pub fn init(
             .actix_telemetry_collector
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
+        let api_key = settings.service.api_key.clone();
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -66,6 +69,12 @@ pub fn init(
 
             App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
+                // api_key middleware
+                // note: the last call to `wrap()` or `wrap_fn()` is executed first
+                .wrap(Condition::new(
+                    api_key.is_some(),
+                    ApiKey::new(&api_key.clone().unwrap_or_default()),
+                ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default().exclude("/")) // Avoid logging healthcheck requests
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(

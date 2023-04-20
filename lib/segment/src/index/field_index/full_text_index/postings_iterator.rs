@@ -1,8 +1,9 @@
-use std::collections::BTreeSet;
+use super::posting_list::PostingList;
+use crate::types::PointOffsetType;
 
-pub fn intersect_btree_iterator<'a, T: Ord + Copy>(
-    mut postings: Vec<&'a BTreeSet<T>>,
-) -> Box<dyn Iterator<Item = T> + 'a> {
+pub fn intersect_postings_iterator<'a>(
+    mut postings: Vec<&'a PostingList>,
+) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings
         .iter()
         .enumerate()
@@ -13,8 +14,7 @@ pub fn intersect_btree_iterator<'a, T: Ord + Copy>(
 
     let and_iter = smallest_posting
         .iter()
-        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)))
-        .copied();
+        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)));
 
     Box::new(and_iter)
 }
@@ -25,12 +25,26 @@ mod tests {
 
     #[test]
     fn test_postings_iterator() {
-        let v1: BTreeSet<_> = vec![1, 2, 3, 4, 5].into_iter().collect();
-        let v2: BTreeSet<_> = vec![2, 4, 5, 5].into_iter().collect();
-        let v3: BTreeSet<_> = vec![1, 2, 5, 6, 7].into_iter().collect();
+        let mut p1 = PostingList::default();
+        p1.insert(1);
+        p1.insert(2);
+        p1.insert(3);
+        p1.insert(4);
+        p1.insert(5);
+        let mut p2 = PostingList::default();
+        p2.insert(2);
+        p2.insert(4);
+        p2.insert(5);
+        p2.insert(5);
+        let mut p3 = PostingList::default();
+        p3.insert(1);
+        p3.insert(2);
+        p3.insert(5);
+        p3.insert(6);
+        p3.insert(7);
 
-        let postings = vec![&v1, &v2, &v3];
-        let merged = intersect_btree_iterator(postings);
+        let postings = vec![&p1, &p2, &p3];
+        let merged = intersect_postings_iterator(postings);
 
         let res = merged.collect::<Vec<_>>();
 
