@@ -67,8 +67,8 @@ impl IndexingOptimizer {
 
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                let vector_count = read_segment.points_count();
-                let vector_size = vector_count
+                let point_count = read_segment.available_point_count();
+                let vector_size = point_count
                     * read_segment
                         .vector_dims()
                         .values()
@@ -111,8 +111,8 @@ impl IndexingOptimizer {
 
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                let vector_count = read_segment.points_count();
-                let vector_size = vector_count
+                let point_count = read_segment.available_point_count();
+                let vector_size = point_count
                     * read_segment
                         .vector_dims()
                         .values()
