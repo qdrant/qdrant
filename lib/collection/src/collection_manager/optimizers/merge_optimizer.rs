@@ -113,7 +113,7 @@ impl SegmentOptimizer for MergeOptimizer {
                 let read_segment = segment_entry.read();
                 (read_segment.segment_type() != SegmentType::Special).then_some((
                     *idx,
-                    read_segment.points_count()
+                    read_segment.available_point_count()
                         * read_segment
                             .vector_dims()
                             .values()
@@ -268,7 +268,7 @@ mod tests {
             if !other_segment_ids.contains(&segment_id) {
                 let holder_guard = locked_holder.read();
                 let new_segment = holder_guard.get(segment_id).unwrap();
-                assert_eq!(new_segment.get().read().points_count(), 3 * 3 + 10);
+                assert_eq!(new_segment.get().read().available_point_count(), 3 * 3 + 10);
             }
         }
 

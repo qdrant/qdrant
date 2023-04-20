@@ -61,12 +61,16 @@ mod tests {
         assert_eq!(new_segment_count, 3);
 
         assert_eq!(
-            merged_segment.points_count(),
+            merged_segment.iter_points().count(),
+            merged_segment.available_point_count(),
+        );
+        assert_eq!(
+            merged_segment.available_point_count(),
             segment1
                 .iter_points()
                 .chain(segment2.iter_points())
                 .unique()
-                .count()
+                .count(),
         );
 
         assert_eq!(merged_segment.point_version(3.into()), Some(100));

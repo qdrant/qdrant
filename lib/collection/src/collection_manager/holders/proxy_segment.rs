@@ -494,38 +494,42 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
-    fn points_count(&self) -> usize {
-        let mut count = 0;
-        let deleted_points_count = self.deleted_points.read().len();
-        let wrapped_segment_count = self.wrapped_segment.get().read().points_count();
-        let write_segment_count = self.write_segment.get().read().points_count();
-        count += wrapped_segment_count;
-        count += write_segment_count;
-        count = count.saturating_sub(deleted_points_count);
-        count
+    fn total_point_count(&self) -> usize {
+        self.wrapped_segment.get().read().total_point_count()
+            + self.write_segment.get().read().total_point_count()
     }
 
-    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
-        let deleted_points_count = self.deleted_points.read().len();
+    fn available_point_count(&self) -> usize {
+        self.wrapped_segment.get().read().available_point_count()
+            + self.write_segment.get().read().available_point_count()
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        // May not be entirely accurate, this has multiple segments which may have overlap
+        max(
+            self.wrapped_segment.get().read().deleted_point_count()
+                + self.deleted_points.read().len(),
+            self.write_segment.get().read().deleted_point_count(),
+        )
+    }
+
+    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+        let deleted_point_count = self.deleted_point_count();
 
         let (wrapped_segment_est, total_wrapped_size) = {
             let wrapped_segment = self.wrapped_segment.get();
             let wrapped_segment_guard = wrapped_segment.read();
             (
-                wrapped_segment_guard.estimate_points_count(filter),
-                wrapped_segment_guard.points_count(),
+                wrapped_segment_guard.estimate_point_count(filter),
+                wrapped_segment_guard.available_point_count(),
             )
         };
 
-        let write_segment_est = self
-            .write_segment
-            .get()
-            .read()
-            .estimate_points_count(filter);
+        let write_segment_est = self.write_segment.get().read().estimate_point_count(filter);
 
         let expected_deleted_count = if total_wrapped_size > 0 {
             (wrapped_segment_est.exp as f64
-                * (deleted_points_count as f64 / total_wrapped_size as f64)) as usize
+                * (deleted_point_count as f64 / total_wrapped_size as f64)) as usize
         } else {
             0
         };
@@ -539,16 +543,12 @@ impl SegmentEntry for ProxySegment {
 
         CardinalityEstimation {
             primary_clauses,
-            min: wrapped_segment_est.min.saturating_sub(deleted_points_count)
+            min: wrapped_segment_est.min.saturating_sub(deleted_point_count)
                 + write_segment_est.min,
             exp: (wrapped_segment_est.exp + write_segment_est.exp)
                 .saturating_sub(expected_deleted_count),
             max: wrapped_segment_est.max + write_segment_est.max,
         }
-    }
-
-    fn deleted_point_count(&self) -> usize {
-        self.write_segment.get().read().deleted_point_count()
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -562,8 +562,8 @@ impl SegmentEntry for ProxySegment {
 
         SegmentInfo {
             segment_type: SegmentType::Special,
-            num_vectors: self.points_count() * num_vectors, // ToDo: account number of vector storages
-            num_points: self.points_count(),
+            num_vectors: self.total_point_count() * num_vectors, // TODO: account number of vector storages
+            num_points: self.total_point_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,

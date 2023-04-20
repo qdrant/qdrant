@@ -156,7 +156,6 @@ impl SegmentsSearcher {
             let segments = segments.read();
 
             let some_segment = segments.iter().next();
-
             if some_segment.is_none() {
                 return Ok(vec![]);
             }
@@ -168,11 +167,12 @@ impl SegmentsSearcher {
             // - sampling is enabled
             // - more than 1 segment
             // - segments are not empty
-            let total_points_segments = segments
+            let available_points_segments = segments
                 .iter()
-                .map(|(_, segment)| segment.get().read().points_count())
+                .map(|(_, segment)| segment.get().read().available_point_count())
                 .sum();
-            let use_sampling = sampling_enabled && segments.len() > 1 && total_points_segments > 0;
+            let use_sampling =
+                sampling_enabled && segments.len() > 1 && available_points_segments > 0;
 
             segments
                 .iter()
@@ -182,7 +182,7 @@ impl SegmentsSearcher {
                         search_in_segment(
                             segment.clone(),
                             batch_request.clone(),
-                            total_points_segments,
+                            available_points_segments,
                             use_sampling,
                         ),
                     )
@@ -372,7 +372,7 @@ async fn search_in_segment(
     let batch_size = request.searches.len();
 
     let mut result: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
-    let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // true if segment have more points to return
+    let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // if segment have more points to return
     let mut vectors_batch: Vec<&[VectorElementType]> = vec![];
     let mut prev_params = BatchSearchParams::default();
 
@@ -400,7 +400,7 @@ async fn search_in_segment(
             if !vectors_batch.is_empty() {
                 let locked_segment = segment.get();
                 let read_segment = locked_segment.read();
-                let segment_points = read_segment.points_count();
+                let segment_points = read_segment.available_point_count();
                 let top = if use_sampling {
                     let ef_limit = prev_params.params.and_then(|p| p.hnsw_ef).or_else(|| {
                         get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name)
@@ -436,7 +436,7 @@ async fn search_in_segment(
     if !vectors_batch.is_empty() {
         let locked_segment = segment.get();
         let read_segment = locked_segment.read();
-        let segment_points = read_segment.points_count();
+        let segment_points = read_segment.available_point_count();
         let top = if use_sampling {
             let ef_limit = prev_params
                 .params

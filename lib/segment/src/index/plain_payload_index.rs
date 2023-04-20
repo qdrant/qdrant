@@ -110,7 +110,7 @@ impl PayloadIndex for PlainPayloadIndex {
         available_points: Option<usize>,
     ) -> CardinalityEstimation {
         let available_points =
-            available_points.unwrap_or_else(|| self.id_tracker.borrow().points_count());
+            available_points.unwrap_or_else(|| self.id_tracker.borrow().available_point_count());
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,

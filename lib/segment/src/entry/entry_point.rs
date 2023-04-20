@@ -257,28 +257,25 @@ pub trait SegmentEntry {
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
 
-    /// Return number of vectors in this segment
-    ///
-    /// - Includes soft deleted points
-    fn points_count(&self) -> usize;
-
-    /// Estimate points count in this segment for given filter.
-    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
+    /// Estimate available point count in this segment for given filter.
+    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize>;
 
     fn vector_dims(&self) -> HashMap<String, usize>;
 
-    /// Number of points, marked as deleted
-    fn deleted_point_count(&self) -> usize;
-
-    /// Get number of available points
+    /// Total number of points
     ///
-    /// The number of points excluding soft deleted points.
-    fn available_point_count(&self) -> usize {
-        self.points_count()
-            .saturating_sub(self.deleted_point_count())
-    }
+    /// - includes soft deleted points
+    fn total_point_count(&self) -> usize;
+
+    /// Number of available points
+    ///
+    /// - excludes soft deleted points
+    fn available_point_count(&self) -> usize;
+
+    /// Number of deleted points
+    fn deleted_point_count(&self) -> usize;
 
     /// Get segment type
     fn segment_type(&self) -> SegmentType;

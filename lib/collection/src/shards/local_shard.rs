@@ -602,7 +602,7 @@ impl LocalShard {
         }
         let cardinality = segments
             .iter()
-            .map(|(_id, segment)| segment.get().read().estimate_points_count(filter))
+            .map(|(_id, segment)| segment.get().read().estimate_point_count(filter))
             .fold(CardinalityEstimation::exact(0), |acc, x| {
                 CardinalityEstimation {
                     primary_clauses: vec![],

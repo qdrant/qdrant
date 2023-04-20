@@ -213,9 +213,8 @@ pub trait SegmentOptimizer {
     /// # Result
     ///
     /// Rolls back back optimization state.
-    /// All processed changes will still be there, but the collection should be returned
-    /// into state before optimization.
-    ///
+    /// All processed changes will still be there, but the collection should be returned into state
+    /// before optimization.
     fn handle_cancellation(
         &self,
         segments: &LockedSegmentHolder,
@@ -223,7 +222,7 @@ pub trait SegmentOptimizer {
         temp_segment: &LockedSegment,
     ) {
         self.unwrap_proxy(segments, proxy_ids);
-        if temp_segment.get().read().points_count() > 0 {
+        if temp_segment.get().read().available_point_count() > 0 {
             let mut write_segments = segments.write();
             write_segments.add_locked(temp_segment.clone());
         }
@@ -481,7 +480,7 @@ pub trait SegmentOptimizer {
             // Release reference counter of the optimized segments
             drop(optimizing_segments);
             // Append a temp segment to a collection if it is not empty or there is no other appendable segment
-            if tmp_segment.get().read().points_count() > 0 || !has_appendable_segments {
+            if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
                 write_segments_guard.add_locked(tmp_segment);
 
                 // unlock collection for search and updates
