@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitVec;
+use bitvec::prelude::BitSlice;
 use quantization::EncodedVectors;
 
 use crate::data_types::vectors::VectorElementType;
@@ -18,7 +18,10 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     query: TEncodedQuery,
-    deleted: &'a BitVec,
+    /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
+    point_deleted: &'a BitSlice,
+    /// [`BitSlice`] defining flags for deleted vectors in this segment.
+    vec_deleted: &'a BitSlice,
     // Total number of vectors including deleted ones
     quantized_data: &'a TEncodedVectors,
 }
@@ -31,7 +34,7 @@ where
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         let mut size: usize = 0;
         for point_id in points.iter().copied() {
-            if !self.check_point(point_id) {
+            if !self.check_vec(point_id) {
                 continue;
             }
             scores[size] = ScoredPointOffset {
@@ -46,8 +49,19 @@ where
         size
     }
 
-    fn check_point(&self, point: PointOffsetType) -> bool {
-        (point as usize) < self.deleted.len() && !self.deleted[point as usize]
+    fn check_vec(&self, point: PointOffsetType) -> bool {
+        !self
+            .point_deleted
+            .get(point as usize)
+            .as_deref()
+            .copied()
+            .unwrap_or(false)
+            && !self
+                .vec_deleted
+                .get(point as usize)
+                .as_deref()
+                .copied()
+                .unwrap_or(false)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
@@ -63,7 +77,7 @@ where
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let scores = points.filter(|idx| self.check_point(*idx)).map(|idx| {
+        let scores = points.filter(|idx| self.check_vec(*idx)).map(|idx| {
             let score = self.score_point(idx);
             ScoredPointOffset { idx, score }
         });
@@ -71,8 +85,8 @@ where
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
-        let scores = (0..self.deleted.len() as PointOffsetType)
-            .filter(|idx| self.check_point(*idx))
+        let scores = (0..self.point_deleted.len() as PointOffsetType)
+            .filter(|idx| self.check_vec(*idx))
             .map(|idx| {
                 let score = self.score_point(idx);
                 ScoredPointOffset { idx, score }
@@ -99,7 +113,8 @@ where
     fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitVec,
+        point_deleted: &'a BitSlice,
+        vec_deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a> {
         let query = self
             .distance
@@ -108,7 +123,8 @@ where
         let query = self.storage.encode_query(&query);
         Box::new(ScalarQuantizedRawScorer {
             query,
-            deleted,
+            point_deleted,
+            vec_deleted,
             quantized_data: &self.storage,
         })
     }

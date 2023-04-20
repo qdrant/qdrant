@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use bitvec::prelude::BitSlice;
 use ordered_float::OrderedFloat;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
@@ -75,6 +76,21 @@ pub trait VectorStorage {
     fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage>;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    /// Flag the vector by the given key as deleted
+    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<()>;
+
+    /// Check whether the vector at the given key is flagged as deleted
+    fn is_deleted_vec(&self, key: PointOffsetType) -> bool;
+
+    /// Get number of deleted vectors
+    fn deleted_vec_count(&self) -> usize;
+
+    /// Get [`BitSlice`] representation for deleted vectors with deletion flags
+    ///
+    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
+    /// vectors in this segment.
+    fn deleted_vec_bitslice(&self) -> &BitSlice;
 }
 
 pub enum VectorStorageEnum {
@@ -170,6 +186,34 @@ impl VectorStorage for VectorStorageEnum {
         match self {
             VectorStorageEnum::Simple(v) => v.files(),
             VectorStorageEnum::Memmap(v) => v.files(),
+        }
+    }
+
+    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.delete_vec(key),
+            VectorStorageEnum::Memmap(v) => v.delete_vec(key),
+        }
+    }
+
+    fn is_deleted_vec(&self, key: PointOffsetType) -> bool {
+        match self {
+            VectorStorageEnum::Simple(v) => v.is_deleted_vec(key),
+            VectorStorageEnum::Memmap(v) => v.is_deleted_vec(key),
+        }
+    }
+
+    fn deleted_vec_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.deleted_vec_count(),
+            VectorStorageEnum::Memmap(v) => v.deleted_vec_count(),
+        }
+    }
+
+    fn deleted_vec_bitslice(&self) -> &BitSlice {
+        match self {
+            VectorStorageEnum::Simple(v) => v.deleted_vec_bitslice(),
+            VectorStorageEnum::Memmap(v) => v.deleted_vec_bitslice(),
         }
     }
 }

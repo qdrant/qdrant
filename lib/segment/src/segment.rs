@@ -266,7 +266,7 @@ impl Segment {
     ) -> OperationResult<Option<Vec<VectorElementType>>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        if !self.id_tracker.borrow().is_deleted(point_offset) {
+        if !self.id_tracker.borrow().is_deleted_point(point_offset) {
             Ok(Some(
                 vector_data
                     .vector_storage
@@ -911,8 +911,8 @@ impl SegmentEntry for Segment {
         }
     }
 
-    fn deleted_count(&self) -> usize {
-        self.id_tracker.borrow().deleted_count()
+    fn deleted_point_count(&self) -> usize {
+        self.id_tracker.borrow().deleted_point_count()
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -934,7 +934,7 @@ impl SegmentEntry for Segment {
             segment_type: self.segment_type,
             num_vectors: self.points_count() * self.vector_data.len(),
             num_points: self.points_count(),
-            num_deleted_vectors: self.deleted_count(),
+            num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,

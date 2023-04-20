@@ -270,7 +270,7 @@ pub trait SegmentEntry {
     fn vector_dims(&self) -> HashMap<String, usize>;
 
     /// Number of vectors, marked as deleted
-    fn deleted_count(&self) -> usize;
+    fn deleted_point_count(&self) -> usize;
 
     /// Get segment type
     fn segment_type(&self) -> SegmentType;
