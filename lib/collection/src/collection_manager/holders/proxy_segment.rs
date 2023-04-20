@@ -303,8 +303,7 @@ impl SegmentEntry for ProxySegment {
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
         if self.wrapped_segment.get().read().has_point(point_id) {
-            self.deleted_points.write().insert(point_id);
-            was_deleted = true;
+            was_deleted = self.deleted_points.write().insert(point_id);
         }
         let was_deleted_in_writable = self
             .write_segment
