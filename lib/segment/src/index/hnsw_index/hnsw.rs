@@ -146,8 +146,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
 
+        let available_points =
+            vector_storage.estimate_available_vector_count(id_tracker.deleted_point_count());
         let points_to_index: Vec<_> = payload_index
-            .query_points(&filter, Some(&vector_storage))
+            .query_points(&filter, Some(available_points))
             .collect();
 
         for block_point_id in points_to_index.iter().copied() {
@@ -298,7 +300,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let mut filtered_iter = payload_index.query_points(filter, Some(&vector_storage));
+        let available_points =
+            vector_storage.estimate_available_vector_count(id_tracker.deleted_point_count());
+        let mut filtered_iter = payload_index.query_points(filter, Some(available_points));
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -414,10 +418,13 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     );
                 }
 
+                let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
+                let available_points = vector_storage
+                    .estimate_available_vector_count(id_tracker.deleted_point_count());
                 let query_cardinality =
-                    payload_index.estimate_cardinality(query_filter, Some(&vector_storage));
+                    payload_index.estimate_cardinality(query_filter, Some(available_points));
 
                 // debug!("query_cardinality: {:#?}", query_cardinality);
 

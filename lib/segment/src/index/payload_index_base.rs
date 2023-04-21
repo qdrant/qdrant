@@ -11,7 +11,6 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType,
 };
-use crate::vector_storage::VectorStorageEnum;
 
 pub trait PayloadIndex {
     /// Get indexed fields
@@ -29,22 +28,20 @@ pub trait PayloadIndex {
 
     /// Estimate amount of points (min, max) which satisfies filtering condition.
     ///
-    /// The vector storage that is searched must be provided to properly estimate the number of
-    /// points with deletions in this context.
+    /// A best estimation of the number of available points should be given.
     fn estimate_cardinality(
         &self,
         query: &Filter,
-        vector_storage: Option<&VectorStorageEnum>,
+        available_points: Option<usize>,
     ) -> CardinalityEstimation;
 
     /// Return list of all point ids, which satisfy filtering criteria
     ///
-    /// The vector storage that is searched must be provided to properly estimate the number of
-    /// points with deletions in this context.
+    /// A best estimation of the number of available points should be given.
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-        vector_storage: Option<&VectorStorageEnum>,
+        available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
     /// Return number of points, indexed by this field

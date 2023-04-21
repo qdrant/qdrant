@@ -35,7 +35,6 @@ use crate::types::{
     IsEmptyCondition, IsNullCondition, Payload, PayloadFieldSchema, PayloadKeyType,
     PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -359,29 +358,21 @@ impl PayloadIndex for StructPayloadIndex {
     fn estimate_cardinality(
         &self,
         query: &Filter,
-        vector_storage: Option<&VectorStorageEnum>,
+        available_points: Option<usize>,
     ) -> CardinalityEstimation {
-        // Prefer available points versus total, because we can only search available points
-        let available_points = vector_storage
-            .map(|vs| {
-                let id_tracker = self.id_tracker.borrow();
-                vs.estimate_available_vector_count(id_tracker.deleted_point_count())
-            })
-            .unwrap_or_else(|| self.total_points());
-
         let estimator = |condition: &Condition| self.condition_cardinality(condition);
-
+        let available_points = available_points.unwrap_or_else(|| self.total_points());
         estimate_filter(&estimator, query, available_points)
     }
 
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-        vector_storage: Option<&VectorStorageEnum>,
+        available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
 
-        let query_cardinality = self.estimate_cardinality(query, vector_storage);
+        let query_cardinality = self.estimate_cardinality(query, available_points);
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator =
                 ArcAtomicRefCellIterator::new(self.id_tracker.clone(), |points_iterator| {
