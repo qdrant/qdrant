@@ -62,7 +62,7 @@ async fn remove_peer(
                 .await
         }
         None => Err(StorageError::BadRequest {
-            description: "Distributed deployment is disabled.".to_string(),
+            description: "Distributed mode disabled.".to_string(),
         }),
     };
     process_response(response, timing)
