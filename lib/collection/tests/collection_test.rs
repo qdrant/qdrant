@@ -491,3 +491,199 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
     collection.before_drop().await;
 }
+
+mod grouping {
+    use std::path::Path;
+
+    use collection::collection::Collection;
+    use collection::grouping::{group_by, GroupBy, MainRequest};
+    use collection::operations::consistency_params::ReadConsistency;
+    use rand::distributions::Standard;
+    use rand::rngs::ThreadRng;
+    use rand::Rng;
+    use segment::data_types::vectors::VectorType;
+    use serde_json::json;
+
+    use super::*;
+
+    struct Resources {
+        group_by: GroupBy,
+        collection: Collection,
+        read_consistency: Option<ReadConsistency>,
+    }
+
+    fn rand_vector(rng: &mut ThreadRng, size: usize) -> VectorType {
+        rng.sample_iter(&Standard).take(size).collect()
+    }
+
+    async fn setup() -> Resources {
+        let request = MainRequest::Search(SearchRequest {
+            vector: vec![0.0, 0.0, 0.0, 1.0].into(),
+            filter: None,
+            params: None,
+            limit: 3,
+            offset: 0,
+            with_payload: None,
+            with_vector: None,
+            score_threshold: None,
+        });
+
+        let group_by = GroupBy::new(request, "docId".to_string(), 10);
+
+        let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+
+        let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+        let mut rng = rand::thread_rng();
+
+        let (docs, chunks) = (8, 4);
+
+        let insert_points = CollectionUpdateOperations::PointOperation(
+            Batch {
+                ids: (0..docs * chunks).map(|x| x.into()).collect_vec(),
+                vectors: (0..docs * chunks)
+                    .map(|_| rand_vector(&mut rng, 4))
+                    .collect_vec()
+                    .into(),
+                payloads: (0..docs)
+                    .flat_map(|x| (0..chunks).map(move |_| Some(Payload::from(json!({ "docId": x })))))
+                    .collect_vec()
+                    .into(),
+            }
+            .into(),
+        );
+
+        let insert_result = collection
+            .update_from_client(insert_points, true, WriteOrdering::default())
+            .await
+            .expect("insert failed");
+
+        assert_eq!(insert_result.status, UpdateStatus::Completed);
+
+        Resources {
+            group_by,
+            collection,
+            read_consistency: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn searching() {
+        let resources = setup().await;
+
+        let result = group_by(
+            resources.group_by.clone(),
+            &resources.collection,
+            |_name| async { unreachable!() },
+            resources.read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+        let group_req = resources.group_by;
+
+        assert_eq!(result.len(), group_req.groups);
+        assert_eq!(result[0].hits.len(), group_req.top);
+
+        // is sorted?
+        let mut last_group_best_score = f32::MAX;
+        for group in result {
+            assert!(group.hits[0].score <= last_group_best_score);
+            last_group_best_score = group.hits[0].score;
+
+            let mut last_score = f32::MAX;
+            for hit in group.hits {
+                assert!(hit.score <= last_score);
+                last_score = hit.score;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn recommending() {
+        let mut resources = setup().await;
+
+        resources.group_by.request = MainRequest::Recommend(RecommendRequest {
+            filter: None,
+            params: None,
+            limit: 3,
+            offset: 0,
+            with_payload: None,
+            with_vector: None,
+            score_threshold: None,
+            positive: vec![1.into(), 2.into(), 3.into()],
+            negative: Vec::new(),
+            using: None,
+            lookup_from: None,
+        });
+
+        let result = group_by(
+            resources.group_by.clone(),
+            &resources.collection,
+            |_name| async { unreachable!() },
+            resources.read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+        let group_req = resources.group_by;
+
+        assert_eq!(result.len(), group_req.groups);
+        assert_eq!(result[0].hits.len(), group_req.top);
+
+        // is sorted?
+        let mut last_group_best_score = f32::MAX;
+        for group in result {
+            assert!(group.hits[0].score <= last_group_best_score);
+            last_group_best_score = group.hits[0].score;
+
+            let mut last_score = f32::MAX;
+            for hit in group.hits {
+                assert!(hit.score <= last_score);
+                last_score = hit.score;
+            }
+        }
+    }
+
+    fn with_filter() {
+        todo!();
+    }
+
+    fn with_payload_and_vectors() {
+        todo!();
+    }
+
+    #[test]
+    fn group_by_string_payload() {
+        todo!();
+    }
+
+    #[test]
+    fn group_by_int_payload() {
+        todo!();
+    }
+
+    #[test]
+    fn zero_top_groups() {
+        todo!();
+    }
+
+    #[test]
+    fn zero_limit_groups() {
+        todo!();
+    }
+
+    #[test]
+    fn big_limit_groups() {
+        todo!();
+    }
+
+    #[test]
+    fn big_top_groups() {
+        todo!();
+    }
+}

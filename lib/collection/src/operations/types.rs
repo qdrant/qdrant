@@ -291,7 +291,7 @@ pub struct LookupLocation {
 /// Service should look for the points which are closer to positive examples and at the same time
 /// further to negative examples. The concrete way of how to compare negative and positive distances
 /// is up to implementation in `segment` crate.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
     /// Look for vectors closest to those

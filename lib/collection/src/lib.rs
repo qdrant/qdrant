@@ -5,6 +5,7 @@ pub mod collection_manager;
 pub mod collection_state;
 pub mod common;
 pub mod config;
+pub mod grouping;
 pub mod hash_ring;
 pub mod operations;
 pub mod optimizers_builder;

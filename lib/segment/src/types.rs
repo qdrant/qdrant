@@ -886,6 +886,12 @@ pub enum Match {
     Any(MatchAny),
 }
 
+impl From<AnyVariants> for Match {
+    fn from(any: AnyVariants) -> Self {
+        Self::Any(MatchAny { any })
+    }
+}
+
 impl From<MatchInterface> for Match {
     fn from(value: MatchInterface) -> Self {
         match value {
@@ -1122,6 +1128,14 @@ pub struct IsNullCondition {
     pub is_null: PayloadField,
 }
 
+impl From<String> for IsNullCondition {
+    fn from(key: String) -> Self {
+        IsNullCondition {
+            is_null: PayloadField { key },
+        }
+    }
+}
+
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
@@ -1317,7 +1331,7 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
@@ -1351,6 +1365,36 @@ impl Filter {
             should: None,
             must: None,
             must_not: Some(vec![condition]),
+        }
+    }
+
+    pub fn merge(&self, other: &Filter) -> Filter {
+        let mut should = self.should.clone().unwrap_or_default();
+        let mut must = self.must.clone().unwrap_or_default();
+        let mut must_not = self.must_not.clone().unwrap_or_default();
+
+        if let Some(other_should) = &other.should {
+            should.extend(other_should.clone());
+        }
+        if let Some(other_must) = &other.must {
+            must.extend(other_must.clone());
+        }
+        if let Some(other_must_not) = &other.must_not {
+            must_not.extend(other_must_not.clone());
+        }
+
+        Filter {
+            should: if should.is_empty() {
+                None
+            } else {
+                Some(should)
+            },
+            must: if must.is_empty() { None } else { Some(must) },
+            must_not: if must_not.is_empty() {
+                None
+            } else {
+                Some(must_not)
+            },
         }
     }
 }
