@@ -74,12 +74,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         } else {
             let full_scan_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
                 / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
-            let indexing_threshold = full_scan_threshold;
 
             HnswGraphConfig::new(
                 hnsw_config.m,
                 hnsw_config.ef_construct,
-                indexing_threshold,
                 full_scan_threshold,
                 hnsw_config.max_indexing_threads,
                 hnsw_config.payload_m,
@@ -432,7 +430,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     return self.search_vectors_plain(vectors, query_filter, top, params);
                 }
 
-                if query_cardinality.min > self.config.indexing_threshold {
+                if query_cardinality.min > self.config.full_scan_threshold {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
@@ -448,7 +446,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 if sample_check_cardinality(
                     id_tracker.sample_ids(Some(vector_storage.deleted_vec_bitslice())),
                     |idx| filter_context.check(idx),
-                    self.config.indexing_threshold,
+                    self.config.full_scan_threshold,
                     vector_count,
                 ) {
                     // if cardinality is high enough - use HNSW index
@@ -476,18 +474,13 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let deleted_bitslice = vector_storage.deleted_vec_bitslice();
 
         debug!("building HNSW for {} vectors", vector_count);
+        let indexing_threshold = self.config.full_scan_threshold;
         let mut graph_layers_builder = GraphLayersBuilder::new(
             vector_count,
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
-            max(
-                1,
-                vector_count
-                    .checked_div(self.config.indexing_threshold)
-                    .unwrap_or(0)
-                    * 10,
-            ),
+            (vector_count.checked_div(indexing_threshold).unwrap_or(0) * 10).max(1),
             HNSW_USE_HEURISTIC,
         );
 
@@ -553,7 +546,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 } else {
                     usize::MAX
                 };
-                let min_block_size = self.config.indexing_threshold;
+                let min_block_size = indexing_threshold;
 
                 for payload_block in payload_index.payload_blocks(&field, min_block_size) {
                     check_process_stopped(stopped)?;
