@@ -41,6 +41,6 @@ def test_telemetry():
     assert endpoint['200']['count'] > 0
     
     last_queried = endpoint['200']['last_responded']
-    last_queried = datetime.strptime(last_queried, "%Y-%m-%dT%H:%M:%S.%f%z")
+    last_queried = datetime.fromisoformat(last_queried)
     # Assert today
     assert last_queried.date() == datetime.now().date()
