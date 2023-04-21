@@ -546,7 +546,9 @@ mod grouping {
                     .collect_vec()
                     .into(),
                 payloads: (0..docs)
-                    .flat_map(|x| (0..chunks).map(move |_| Some(Payload::from(json!({ "docId": x })))))
+                    .flat_map(|x| {
+                        (0..chunks).map(move |_| Some(Payload::from(json!({ "docId": x }))))
+                    })
                     .collect_vec()
                     .into(),
             }

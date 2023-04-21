@@ -1,22 +1,17 @@
 use std::cell::{RefCell, RefMut};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::future::Future;
 
-
 use itertools::Itertools;
-
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match,
-    ScoredPoint, WithPayloadInterface, WithVector, IsNullCondition,
+    AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, ScoredPoint,
+    WithPayloadInterface, WithVector,
 };
-
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::types::{
-    CollectionResult, RecommendRequest, SearchRequest,
-};
+use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest};
 use crate::recommendations::recommend_by;
 
 #[derive(Clone)]
@@ -39,16 +34,16 @@ impl MainRequest {
     {
         let only_group_by_key = Some(WithPayloadInterface::Fields(vec![include_key.clone()]));
 
-        let key_not_null = Filter::new_must_not(
-            Condition::IsNull(IsNullCondition::from(include_key.clone()))
-        );
+        let key_not_null = Filter::new_must_not(Condition::IsNull(IsNullCondition::from(
+            include_key.clone(),
+        )));
 
         match self {
             MainRequest::Search(request) => {
                 let mut request = request.clone();
 
                 request.limit *= top;
-                
+
                 request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
 
                 // We're enriching the final results at the end, so we'll keep this minimal
@@ -271,7 +266,7 @@ where
         .map(|(key, hits)| {
             let mut group = Group::new(key.parse().unwrap());
 
-            std::mem::swap(&mut group.hits,  hits);
+            std::mem::swap(&mut group.hits, hits);
 
             group
         })
@@ -296,18 +291,16 @@ fn bucket_points(
             .unwrap()
             .get_value(&request.key.clone())
             .values()
-            .first() {
+            .first()
+        {
             Some(value) => value.to_string(),
             _ => continue, // TO FIX: there should not be payloads without the key, but something is allowing it
         };
 
-        let g = groups
-            .entry(group_key)
-            .or_insert(Hits::new());
+        let g = groups.entry(group_key).or_insert(Hits::new());
 
         if g.len() < request.top {
             g.push(point.clone());
         }
     }
 }
-
