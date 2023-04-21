@@ -50,18 +50,20 @@ where
     }
 
     fn check_vec(&self, point: PointOffsetType) -> bool {
+        // Deleted points propagate to vectors; check vector deletion for possible early return
         !self
+            .vec_deleted
+            .get(point as usize)
+            .as_deref()
+            .copied()
+            .unwrap_or(false)
+        // Additionally check point deletion for integrity if delete propagation to vector failed
+        && !self
             .point_deleted
             .get(point as usize)
             .as_deref()
             .copied()
             .unwrap_or(false)
-            && !self
-                .vec_deleted
-                .get(point as usize)
-                .as_deref()
-                .copied()
-                .unwrap_or(false)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
