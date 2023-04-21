@@ -72,13 +72,15 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
-            let indexing_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
+            let full_scan_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
                 / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
+            let indexing_threshold = full_scan_threshold;
 
             HnswGraphConfig::new(
                 hnsw_config.m,
                 hnsw_config.ef_construct,
                 indexing_threshold,
+                full_scan_threshold,
                 hnsw_config.max_indexing_threads,
                 hnsw_config.payload_m,
             )
@@ -362,7 +364,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 let plain_search = exact || {
                     let vector_count = vector_storage
                         .estimate_available_vector_count(id_tracker.deleted_point_count());
-                    vector_count < self.config.indexing_threshold
+                    vector_count < self.config.full_scan_threshold
                 };
                 let duration_aggregator = if exact {
                     &self.searches_telemetry.exact_unfiltered
@@ -423,7 +425,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
                 // debug!("query_cardinality: {:#?}", query_cardinality);
 
-                if query_cardinality.max < self.config.indexing_threshold {
+                if query_cardinality.max < self.config.full_scan_threshold {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
