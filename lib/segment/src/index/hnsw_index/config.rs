@@ -17,11 +17,7 @@ pub struct HnswGraphConfig {
     pub ef_construct: usize,
     /// Number of neighbours to search on construction
     pub ef: usize,
-    /// Minimal number of vectors to perform indexing
-    ///
-    /// Note: this is number of vectors, not KiloBytes.
-    pub indexing_threshold: usize,
-    /// We prefer a full scan search upto this number of vectors.
+    /// We prefer a full scan search upto (excluding) this number of vectors.
     ///
     /// Note: this is number of vectors, not KiloBytes.
     #[serde(alias = "indexing_threshold")]
@@ -38,7 +34,6 @@ impl HnswGraphConfig {
     pub fn new(
         m: usize,
         ef_construct: usize,
-        indexing_threshold: usize,
         full_scan_threshold: usize,
         max_indexing_threads: usize,
         payload_m: Option<usize>,
@@ -48,7 +43,6 @@ impl HnswGraphConfig {
             m0: m * 2,
             ef_construct,
             ef: ef_construct,
-            indexing_threshold,
             full_scan_threshold,
             max_indexing_threads,
             payload_m,
