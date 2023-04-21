@@ -120,13 +120,15 @@ where
 
     fn check_vec(&self, point: PointOffsetType) -> bool {
         point < self.points_count
+            // Deleted points propagate to vectors; check vector deletion for possible early return
             && !self
-                .point_deleted
+                .vec_deleted
                 .get(point as usize)
                 .map(|x| *x)
                 .unwrap_or(false)
+            // Additionally check point deletion for integrity if delete propagation to vector failed
             && !self
-                .vec_deleted
+                .point_deleted
                 .get(point as usize)
                 .map(|x| *x)
                 .unwrap_or(false)
