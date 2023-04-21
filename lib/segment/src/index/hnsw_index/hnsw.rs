@@ -364,17 +364,14 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         .estimate_available_vector_count(id_tracker.deleted_point_count());
                     vector_count < self.config.full_scan_threshold
                 };
-                let duration_aggregator = if exact {
-                    &self.searches_telemetry.exact_unfiltered
-                } else if plain_search {
-                    &self.searches_telemetry.unfiltered_plain
-                } else {
-                    &self.searches_telemetry.unfiltered_hnsw
-                };
 
                 // Do plain or graph search
                 if plain_search {
-                    let _timer = ScopeDurationMeasurer::new(duration_aggregator);
+                    let _timer = ScopeDurationMeasurer::new(if plain_search {
+                        &self.searches_telemetry.unfiltered_plain
+                    } else {
+                        &self.searches_telemetry.exact_unfiltered
+                    });
                     vectors
                         .iter()
                         .map(|vector| {
@@ -387,7 +384,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         })
                         .collect()
                 } else {
-                    let _timer = ScopeDurationMeasurer::new(duration_aggregator);
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
                     self.search_vectors_with_graph(vectors, None, top, params)
                 }
             }
