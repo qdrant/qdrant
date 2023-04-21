@@ -689,11 +689,20 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
-            None => Ok(false), // Point already not exists
+            // Point does already not exist anymore
+            None => Ok(false),
             Some(internal_id) => {
                 self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
+                    // Mark point as deleted, drop mapping
                     segment.payload_index.borrow_mut().drop(internal_id)?;
                     segment.id_tracker.borrow_mut().drop(point_id)?;
+
+                    // Propagate point deletion to all its vectors
+                    for vector_data in segment.vector_data.values() {
+                        let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                        vector_storage.delete_vec(internal_id)?;
+                    }
+
                     Ok((true, Some(internal_id)))
                 })
             }
