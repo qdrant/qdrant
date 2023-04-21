@@ -107,14 +107,10 @@ impl PayloadIndex for PlainPayloadIndex {
     fn estimate_cardinality(
         &self,
         _query: &Filter,
-        vector_storage: Option<&VectorStorageEnum>,
+        available_points: Option<usize>,
     ) -> CardinalityEstimation {
-        let available_points = vector_storage
-            .map(|vs| {
-                let id_tracker = self.id_tracker.borrow();
-                vs.estimate_available_vector_count(id_tracker.deleted_point_count())
-            })
-            .unwrap_or_else(|| self.id_tracker.borrow().points_count());
+        let available_points =
+            available_points.unwrap_or_else(|| self.id_tracker.borrow().points_count());
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
@@ -126,7 +122,7 @@ impl PayloadIndex for PlainPayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-        _vector_storage: Option<&VectorStorageEnum>,
+        _available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let filter_context = self.filter_context(query);
         Box::new(ArcAtomicRefCellIterator::new(
@@ -238,11 +234,13 @@ impl VectorIndex for PlainIndex {
         match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
+                let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let id_tracker = self.id_tracker.borrow();
+                let available_points = vector_storage
+                    .estimate_available_vector_count(id_tracker.deleted_point_count());
                 let filtered_ids_vec: Vec<_> = payload_index
-                    .query_points(filter, Some(&vector_storage))
+                    .query_points(filter, Some(available_points))
                     .collect();
                 vectors
                     .iter()
