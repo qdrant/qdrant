@@ -190,6 +190,36 @@ def is_null_condition():
 
     ids = [x['id'] for x in json['result']]
     assert 7 in ids
+    
+    # With must_not (as recommended in docs)
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST", 
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 5,
+            "filter": {
+                "must_not": [
+                    {
+                        "is_null": {
+                            "key": "city"
+                        }
+                    }
+                ]
+            },
+            "with_payload": True
+        }
+    )
+    assert response.ok
+    
+    json = response.json()
+    assert len(json['result']) == 5
+
+    ids = [x['id'] for x in json['result']]
+    assert 5 not in ids
+    assert 6 not in ids
+    assert 7 not in ids
 
 
 def test_recommendation():
