@@ -138,6 +138,7 @@ pub fn build_optimizers(
         )),
         Arc::new(SparseIndexOptimizer::new(
             optimizers_config.deleted_threshold,
+            optimizers_config.vacuum_min_vector_number,
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),

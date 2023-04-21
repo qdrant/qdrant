@@ -28,7 +28,10 @@ use crate::config::CollectionParams;
 /// The process of index creation is slow and CPU-bounded, so it is convenient to perform
 /// index building in a same way as segment re-creation.
 pub struct SparseIndexOptimizer {
+    /// Required minimum ratio of deleted / total vectors in a vector storage index to start reindexing.
     deleted_threshold: f64,
+    /// Required minimum number of deleted vectors in a vector storage index to start reindexing.
+    min_vectors_number: usize,
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
@@ -39,8 +42,10 @@ pub struct SparseIndexOptimizer {
 }
 
 impl SparseIndexOptimizer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         deleted_threshold: f64,
+        min_vectors_number: usize,
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         collection_temp_dir: PathBuf,
@@ -50,6 +55,7 @@ impl SparseIndexOptimizer {
     ) -> Self {
         SparseIndexOptimizer {
             deleted_threshold,
+            min_vectors_number,
             thresholds_config,
             segments_path,
             collection_temp_dir,
@@ -114,7 +120,9 @@ impl SparseIndexOptimizer {
                             0.0
                         };
 
-                        (deleted_ratio > self.deleted_threshold).then_some(deleted_index_count)
+                        let reached_minimum = deleted_index_count >= self.min_vectors_number;
+                        let reached_ratio = deleted_ratio > self.deleted_threshold;
+                        (reached_minimum && reached_ratio).then_some(deleted_index_count)
                     })
                     .sum::<usize>();
 
