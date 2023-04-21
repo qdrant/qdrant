@@ -55,12 +55,13 @@ impl MainRequest {
             MainRequest::Recommend(request) => {
                 let mut request = request.clone();
 
-                // TODO: make sure we're not overwriting the user's wish
-                request.with_payload = only_group_by_key;
-                request.with_vector = None;
                 request.limit *= top;
 
                 request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
+
+                // We're enriching the final results at the end, so we'll keep this minimal
+                request.with_payload = only_group_by_key;
+                request.with_vector = None;
 
                 recommend_by(request, collection, collection_by_name, None).await
             }
