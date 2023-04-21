@@ -149,11 +149,18 @@ impl SegmentBuilder {
                                 let existing_version =
                                     id_tracker.internal_version(existing_internal_id).unwrap();
                                 if existing_version < other_version {
-                                    // Other version is the newest, remove the existing one and replace
+                                    // Other version is the newest, reassign point to new internal ID
                                     id_tracker.drop(external_id)?;
                                     id_tracker.set_link(external_id, new_internal_id)?;
                                     id_tracker
                                         .set_internal_version(new_internal_id, other_version)?;
+
+                                    // Propagate deletes, delete all vectors for old internal ID
+                                    for vector_storage in vector_storages.values_mut() {
+                                        vector_storage.delete_vec(old_internal_id)?;
+                                    }
+
+                                    // Reassign payload point to new internal ID
                                     payload_index.drop(existing_internal_id)?;
                                     payload_index.assign(
                                         new_internal_id,
