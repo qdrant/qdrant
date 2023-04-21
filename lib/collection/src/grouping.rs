@@ -1,4 +1,3 @@
-use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::future::Future;
 
@@ -151,19 +150,17 @@ where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
-    let groups: RefCell<HashMap<String, Hits>> =
-        RefCell::from(HashMap::with_capacity(request.groups));
+    let mut groups: HashMap<String, Hits> = HashMap::with_capacity(request.groups);
 
     // Try to complete amount of groups
     for _ in 0..3 {
-        let missing_groups = request.groups - groups.borrow().len();
-        if missing_groups == 0 {
+        let enough_groups = (request.groups - groups.len()) == 0;
+        if enough_groups {
             break;
         }
 
         // construct filter to exclude already found groups
         let full_groups: Vec<String> = groups
-            .borrow()
             .iter()
             .filter_map(|(key, g)| {
                 if g.len() == request.top {
@@ -193,13 +190,12 @@ where
             )
             .await?;
 
-        bucket_points(&mut groups.borrow_mut(), points, &request);
+        bucket_points(&mut groups, points, &request);
     }
 
     // Try to fill up groups
     for _ in 0..3 {
         let unsatisfied_groups: Vec<_> = groups
-            .borrow()
             .iter()
             .filter_map(|(key, g)| {
                 if g.len() < request.top {
@@ -232,18 +228,14 @@ where
             )
             .await?;
 
-        bucket_points(&mut groups.borrow_mut(), points, &request);
+        bucket_points(&mut groups, points, &request);
     }
 
     // flatten results
-    let without_payload_result =
-        groups
-            .borrow_mut()
-            .iter_mut()
-            .fold(Vec::new(), |mut acc, (_, g)| {
-                acc.append(g);
-                acc
-            });
+    let without_payload_result = groups.iter_mut().fold(Vec::new(), |mut acc, (_, g)| {
+        acc.append(g);
+        acc
+    });
 
     // enrich with payload and vector
     let flat_result = collection
@@ -257,12 +249,11 @@ where
         .await?;
 
     // re-group
-    let groups = RefCell::from(HashMap::with_capacity(request.groups));
-    bucket_points(&mut groups.borrow_mut(), flat_result, &request);
+    let mut groups = HashMap::with_capacity(request.groups);
+    bucket_points(&mut groups, flat_result, &request);
 
     // turn to output form
     let result: Vec<_> = groups
-        .borrow_mut()
         .iter_mut()
         .map(|(key, hits)| {
             let mut group = Group::new(key.parse().unwrap());
@@ -276,11 +267,7 @@ where
     Ok(result)
 }
 
-fn bucket_points(
-    groups: &mut RefMut<HashMap<String, Hits>>,
-    points: Vec<ScoredPoint>,
-    request: &GroupBy,
-) {
+fn bucket_points(groups: &mut HashMap<String, Hits>, points: Vec<ScoredPoint>, request: &GroupBy) {
     for point in points.iter() {
         if groups.len() >= request.groups {
             break;
