@@ -175,7 +175,12 @@ pub struct ShardReplicaSet {
 impl ShardReplicaSet {
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
-        matches!(*local_read, Some(Local(_)))
+        matches!(*local_read, Some(Local(_) | Dummy(_)))
+    }
+
+    pub async fn is_dummy(&self) -> bool {
+        let local_read = self.local.read().await;
+        matches!(*local_read, Some(Dummy(_)))
     }
 
     pub async fn has_local_shard(&self) -> bool {
