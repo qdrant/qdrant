@@ -35,6 +35,16 @@ pub enum VectorIndexEnum {
     HnswMmap(HNSWIndex<GraphLinksMmap>),
 }
 
+impl VectorIndexEnum {
+    pub fn is_index(&self) -> bool {
+        match self {
+            Self::Plain(_) => false,
+            Self::HnswRam(_) => true,
+            Self::HnswMmap(_) => true,
+        }
+    }
+}
+
 impl VectorIndex for VectorIndexEnum {
     fn search(
         &self,
