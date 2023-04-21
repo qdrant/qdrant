@@ -56,7 +56,7 @@ pub trait IdTracker {
     /// Iterate over internal IDs (offsets)
     ///
     /// - excludes removed points
-    /// - excludes flagged items from `deleted_bitslice`
+    /// - excludes flagged items from `exclude_bitslice`
     fn iter_ids_exluding<'a>(
         &'a self,
         exclude_bitslice: &'a BitSlice,
