@@ -79,6 +79,15 @@ impl Validate for crate::grpc::qdrant::vectors_config::Config {
     }
 }
 
+impl Validate for crate::grpc::qdrant::quantization_config::Quantization {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use crate::grpc::qdrant::quantization_config::Quantization;
+        match self {
+            Quantization::Scalar(scalar) => scalar.validate(),
+        }
+    }
+}
+
 /// Validate that `value` is a non-empty string or `None`.
 pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError> {
     match value {
@@ -115,6 +124,11 @@ pub fn validate_u64_range_min_4(value: &Option<u64>) -> Result<(), ValidationErr
 /// Validate the value is in `[4, 10000]` or `None`.
 pub fn validate_u64_range_min_4_max_10000(value: &Option<u64>) -> Result<(), ValidationError> {
     validate_range_generic(value, Some(4), Some(10_000))
+}
+
+/// Validate the value is in `[0.5, 1.0]` or `None`.
+pub fn validate_f32_range_min_0_5_max_1(value: &Option<f32>) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(0.5), Some(1.0))
 }
 
 /// Validate the value is in `[0.0, 1.0]` or `None`.

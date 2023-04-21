@@ -11,9 +11,11 @@ pub struct VectorParams {
     pub distance: i32,
     /// Configuration of vector HNSW graph. If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of vector quantization config. If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "4")]
+    #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[derive(validator::Validate)]
@@ -193,6 +195,7 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "8")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScalarQuantization {
@@ -201,15 +204,18 @@ pub struct ScalarQuantization {
     pub r#type: i32,
     /// Number of bits to use for quantization
     #[prost(float, optional, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_f32_range_min_0_5_max_1")]
     pub quantile: ::core::option::Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "3")]
     pub always_ram: ::core::option::Option<bool>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
     #[prost(oneof = "quantization_config::Quantization", tags = "1")]
+    #[validate]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
 /// Nested message and enum types in `QuantizationConfig`.
@@ -265,6 +271,7 @@ pub struct CreateCollection {
     pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
     /// Quantization configuration of vector
     #[prost(message, optional, tag = "14")]
+    #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[derive(validator::Validate)]
@@ -311,6 +318,7 @@ pub struct CollectionOperationResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
@@ -322,6 +330,7 @@ pub struct CollectionParams {
     pub on_disk_payload: bool,
     /// Configuration for vectors
     #[prost(message, optional, tag = "5")]
+    #[validate]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
     /// Number of replicas of each shard that network tries to maintain
     #[prost(uint32, optional, tag = "6")]
@@ -341,14 +350,17 @@ pub struct CollectionParamsDiff {
     #[prost(uint32, optional, tag = "2")]
     pub write_consistency_factor: ::core::option::Option<u32>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
     /// Collection parameters
     #[prost(message, optional, tag = "1")]
+    #[validate]
     pub params: ::core::option::Option<CollectionParams>,
     /// Configuration of vector index
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of the optimizers
     #[prost(message, optional, tag = "3")]
@@ -358,6 +370,7 @@ pub struct CollectionConfig {
     pub wal_config: ::core::option::Option<WalConfigDiff>,
     /// Configuration of the vector quantization
     #[prost(message, optional, tag = "5")]
+    #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
