@@ -4531,6 +4531,7 @@
         "required": [
           "key"
         ],
+        "additionalProperties": false,
         "properties": {
           "key": {
             "description": "Payload key",
