@@ -3651,9 +3651,11 @@
         ],
         "properties": {
           "status": {
+            "description": "Status of the collection",
             "$ref": "#/components/schemas/CollectionStatus"
           },
           "optimizer_status": {
+            "description": "Status of optimizers",
             "$ref": "#/components/schemas/OptimizersStatus"
           },
           "vectors_count": {
@@ -3681,6 +3683,7 @@
             "minimum": 0
           },
           "config": {
+            "description": "Collection settings",
             "$ref": "#/components/schemas/CollectionConfig"
           },
           "payload_schema": {
@@ -3749,14 +3752,8 @@
           },
           "quantization_config": {
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationConfig",
+            "nullable": true
           }
         }
       },
@@ -3767,6 +3764,7 @@
         ],
         "properties": {
           "vectors": {
+            "description": "Configuration of the vector storage",
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
@@ -3826,29 +3824,18 @@
             "minimum": 1
           },
           "distance": {
+            "description": "Type of distance function used for measuring distance between vectors",
             "$ref": "#/components/schemas/Distance"
           },
           "hnsw_config": {
             "description": "Custom params for HNSW index. If none - values from collection configuration are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HnswConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/HnswConfigDiff",
+            "nullable": true
           },
           "quantization_config": {
             "description": "Custom params for quantization. If none - values from collection configuration are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationConfig",
+            "nullable": true
           }
         }
       },
@@ -3932,6 +3919,7 @@
         ],
         "properties": {
           "type": {
+            "description": "Type of quantization to use If `int8` - 8 bit quantization will be used",
             "$ref": "#/components/schemas/ScalarType"
           },
           "quantile": {
@@ -4103,14 +4091,8 @@
             "$ref": "#/components/schemas/PayloadSchemaType"
           },
           "params": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayloadSchemaParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/PayloadSchemaParams",
+            "nullable": true
           },
           "points": {
             "description": "Number of points indexed with this index",
@@ -4149,6 +4131,7 @@
             "$ref": "#/components/schemas/TextIndexType"
           },
           "tokenizer": {
+            "default": "word",
             "$ref": "#/components/schemas/TokenizerType"
           },
           "min_token_len": {
@@ -4199,16 +4182,12 @@
           },
           "with_payload": {
             "description": "Select which payload to return with the response. Default: All",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithPayloadInterface",
+            "nullable": true
           },
           "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "default": false,
             "$ref": "#/components/schemas/WithVector"
           }
         }
@@ -4242,6 +4221,7 @@
             }
           },
           {
+            "description": "Specify included or excluded fields",
             "$ref": "#/components/schemas/PayloadSelector"
           }
         ]
@@ -4250,9 +4230,11 @@
         "description": "Specifies how to treat payload selector",
         "anyOf": [
           {
+            "description": "Include only this fields into response payload",
             "$ref": "#/components/schemas/PayloadSelectorInclude"
           },
           {
+            "description": "Exclude this fields from result payload. Keep all other fields.",
             "$ref": "#/components/schemas/PayloadSelectorExclude"
           }
         ]
@@ -4313,29 +4295,18 @@
         ],
         "properties": {
           "id": {
+            "description": "Id of the point",
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
             "description": "Payload - values assigned to the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Payload"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Payload",
+            "nullable": true
           },
           "vector": {
             "description": "Vector of the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorStruct"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/VectorStruct",
+            "nullable": true
           }
         }
       },
@@ -4374,26 +4345,18 @@
         ],
         "properties": {
           "vector": {
+            "description": "Look for vectors closest to this",
             "$ref": "#/components/schemas/NamedVectorStruct"
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              }
-            ]
+            "$ref": "#/components/schemas/Filter",
+            "nullable": true
           },
           "params": {
             "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SearchParams",
+            "nullable": true
           },
           "limit": {
             "description": "Max number of result to return",
@@ -4410,26 +4373,14 @@
           },
           "with_payload": {
             "description": "Select which payload to return with the response. Default: None",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithPayloadInterface",
+            "nullable": true
           },
           "with_vector": {
             "description": "Whether to return the point vector with the result?",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithVector",
+            "nullable": true
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
@@ -4509,18 +4460,23 @@
       "Condition": {
         "anyOf": [
           {
+            "description": "Check if field satisfies provided condition",
             "$ref": "#/components/schemas/FieldCondition"
           },
           {
+            "description": "Check if payload field is empty: equals to empty array, or does not exists",
             "$ref": "#/components/schemas/IsEmptyCondition"
           },
           {
+            "description": "Check if payload field equals `NULL`",
             "$ref": "#/components/schemas/IsNullCondition"
           },
           {
+            "description": "Check if points id is in a given set",
             "$ref": "#/components/schemas/HasIdCondition"
           },
           {
+            "description": "Nested filter",
             "$ref": "#/components/schemas/Filter"
           }
         ]
@@ -4531,7 +4487,6 @@
         "required": [
           "key"
         ],
-        "additionalProperties": false,
         "properties": {
           "key": {
             "description": "Payload key",
@@ -4539,58 +4494,28 @@
           },
           "match": {
             "description": "Check if point has field with a given value",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Match"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Match",
+            "nullable": true
           },
           "range": {
             "description": "Check if points value lies in a given range",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Range"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Range",
+            "nullable": true
           },
           "geo_bounding_box": {
             "description": "Check if points geo location lies in a given area",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GeoBoundingBox"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/GeoBoundingBox",
+            "nullable": true
           },
           "geo_radius": {
             "description": "Check if geo point is within a given radius",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GeoRadius"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/GeoRadius",
+            "nullable": true
           },
           "values_count": {
             "description": "Check number of values of the field",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ValuesCount"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ValuesCount",
+            "nullable": true
           }
         }
       },
@@ -4714,9 +4639,11 @@
         ],
         "properties": {
           "top_left": {
+            "description": "Coordinates of the top left point of the area rectangle",
             "$ref": "#/components/schemas/GeoPoint"
           },
           "bottom_right": {
+            "description": "Coordinates of the bottom right point of the area rectangle",
             "$ref": "#/components/schemas/GeoPoint"
           }
         }
@@ -4748,6 +4675,7 @@
         ],
         "properties": {
           "center": {
+            "description": "Coordinates of the top left point of the area rectangle",
             "$ref": "#/components/schemas/GeoPoint"
           },
           "radius": {
@@ -4863,14 +4791,8 @@
           "quantization": {
             "description": "Quantization params",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationSearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationSearchParams",
+            "nullable": true
           }
         }
       },
@@ -4900,6 +4822,7 @@
         ],
         "properties": {
           "id": {
+            "description": "Point id",
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "version": {
@@ -4915,25 +4838,13 @@
           },
           "payload": {
             "description": "Payload - values assigned to the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Payload"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Payload",
+            "nullable": true
           },
           "vector": {
             "description": "Vector of the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorStruct"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/VectorStruct",
+            "nullable": true
           }
         }
       },
@@ -4951,6 +4862,7 @@
             "minimum": 0
           },
           "status": {
+            "description": "Update status",
             "$ref": "#/components/schemas/UpdateStatus"
           }
         }
@@ -4988,25 +4900,13 @@
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter",
+            "nullable": true
           },
           "params": {
             "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SearchParams",
+            "nullable": true
           },
           "limit": {
             "description": "Max number of result to return",
@@ -5023,26 +4923,14 @@
           },
           "with_payload": {
             "description": "Select which payload to return with the response. Default: None",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithPayloadInterface",
+            "nullable": true
           },
           "with_vector": {
             "description": "Whether to return the point vector with the result?",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithVector",
+            "nullable": true
           },
           "score_threshold": {
             "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
@@ -5053,26 +4941,14 @@
           "using": {
             "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UsingVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/UsingVector",
+            "nullable": true
           },
           "lookup_from": {
             "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LookupLocation"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/LookupLocation",
+            "nullable": true
           }
         }
       },
@@ -5108,14 +4984,8 @@
         "properties": {
           "offset": {
             "description": "Start ID to read points from.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ExtendedPointId"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ExtendedPointId",
+            "nullable": true
           },
           "limit": {
             "description": "Page size. Default: 10",
@@ -5126,27 +4996,17 @@
           },
           "filter": {
             "description": "Look only for points which satisfies this conditions. If not provided - all points.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter",
+            "nullable": true
           },
           "with_payload": {
             "description": "Select which payload to return with the response. Default: All",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WithPayloadInterface",
+            "nullable": true
           },
           "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "default": false,
             "$ref": "#/components/schemas/WithVector"
           }
         }
@@ -5167,14 +5027,8 @@
           },
           "next_page_offset": {
             "description": "Offset which should be used to retrieve a next page result",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ExtendedPointId"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ExtendedPointId",
+            "nullable": true
           }
         }
       },
@@ -5186,6 +5040,7 @@
         ],
         "properties": {
           "vectors": {
+            "description": "Vector data config. It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.",
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
@@ -5220,60 +5075,30 @@
           },
           "hnsw_config": {
             "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HnswConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/HnswConfigDiff",
+            "nullable": true
           },
           "wal_config": {
             "description": "Custom params for WAL. If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WalConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/WalConfigDiff",
+            "nullable": true
           },
           "optimizers_config": {
             "description": "Custom params for Optimizers.  If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/OptimizersConfigDiff",
+            "nullable": true
           },
           "init_from": {
             "description": "Specify other collection to copy data from.",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/InitFrom"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/InitFrom",
+            "nullable": true
           },
           "quantization_config": {
             "description": "Quantization parameters. If none - quantization is disabled.",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationConfig",
+            "nullable": true
           }
         }
       },
@@ -5374,25 +5199,13 @@
         "properties": {
           "optimizers_config": {
             "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/OptimizersConfigDiff",
+            "nullable": true
           },
           "params": {
             "description": "Collection base params.  If none - values from service configuration file are used.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CollectionParamsDiff"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/CollectionParamsDiff",
+            "nullable": true
           }
         }
       },
@@ -5533,14 +5346,8 @@
             "type": "string"
           },
           "field_schema": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayloadFieldSchema"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/PayloadFieldSchema",
+            "nullable": true
           }
         }
       },
@@ -5557,9 +5364,11 @@
       "PointsSelector": {
         "anyOf": [
           {
+            "description": "Select points by list of IDs",
             "$ref": "#/components/schemas/PointIdsList"
           },
           {
+            "description": "Select points by filtering condition",
             "$ref": "#/components/schemas/FilterSelector"
           }
         ]
@@ -5634,21 +5443,17 @@
         ],
         "properties": {
           "id": {
+            "description": "Point id",
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "vector": {
+            "description": "Vectors",
             "$ref": "#/components/schemas/VectorStruct"
           },
           "payload": {
             "description": "Payload values (optional)",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Payload"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Payload",
+            "nullable": true
           }
         }
       },
@@ -5671,14 +5476,8 @@
           "payloads": {
             "type": "array",
             "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/Payload"
-                },
-                {
-                  "nullable": true
-                }
-              ]
+              "$ref": "#/components/schemas/Payload",
+              "nullable": true
             },
             "nullable": true
           }
@@ -5727,14 +5526,8 @@
           },
           "filter": {
             "description": "Assigns payload to each point that satisfy this filter condition",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter",
+            "nullable": true
           }
         }
       },
@@ -5761,14 +5554,8 @@
           },
           "filter": {
             "description": "Deletes values from points that satisfy this filter condition",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter",
+            "nullable": true
           }
         }
       },
@@ -5821,9 +5608,11 @@
                 }
               },
               "raft_info": {
+                "description": "Status of the Raft consensus",
                 "$ref": "#/components/schemas/RaftInfo"
               },
               "consensus_thread_status": {
+                "description": "Status of the thread that executes raft consensus",
                 "$ref": "#/components/schemas/ConsensusThreadStatus"
               },
               "message_send_failures": {
@@ -5886,14 +5675,8 @@
           },
           "role": {
             "description": "Role of this peer in the current term",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/StateRole"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/StateRole",
+            "nullable": true
           },
           "is_voter": {
             "description": "Is this peer a voter or a learner",
@@ -6013,14 +5796,8 @@
         "properties": {
           "filter": {
             "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/Filter",
+            "nullable": true
           },
           "exact": {
             "description": "If true, count exact number of points. If false, count approximate number of points faster. Approximate count might be unreliable during the indexing process. Default: true",
@@ -6110,6 +5887,7 @@
             "minimum": 0
           },
           "state": {
+            "description": "Is replica active",
             "$ref": "#/components/schemas/ReplicaState"
           }
         }
@@ -6146,6 +5924,7 @@
             "minimum": 0
           },
           "state": {
+            "description": "Is replica active",
             "$ref": "#/components/schemas/ReplicaState"
           }
         }
@@ -6222,24 +6001,12 @@
             "type": "string"
           },
           "features": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AppFeaturesTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/AppFeaturesTelemetry",
+            "nullable": true
           },
           "system": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/RunningEnvironmentTelemetry",
+            "nullable": true
           },
           "startup": {
             "type": "string",
@@ -6386,14 +6153,8 @@
             "minimum": 0
           },
           "local": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LocalShardTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/LocalShardTelemetry",
+            "nullable": true
           },
           "remote": {
             "type": "array",
@@ -6537,25 +6298,25 @@
             }
           },
           "index": {
+            "description": "Type of index used for search",
             "$ref": "#/components/schemas/Indexes"
           },
           "storage_type": {
+            "description": "Type of vector storage",
             "$ref": "#/components/schemas/StorageType"
           },
           "payload_storage_type": {
+            "description": "Defines payload storage type",
+            "default": {
+              "type": "in_memory"
+            },
             "$ref": "#/components/schemas/PayloadStorageType"
           },
           "quantization_config": {
             "description": "Quantization parameters. If none - quantization is disabled.",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationConfig",
+            "nullable": true
           }
         }
       },
@@ -6574,31 +6335,20 @@
             "minimum": 0
           },
           "distance": {
+            "description": "Type of distance function used for measuring distance between vectors",
             "$ref": "#/components/schemas/Distance"
           },
           "hnsw_config": {
             "description": "Vector specific HNSW config that overrides collection config",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HnswConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/HnswConfig",
+            "nullable": true
           },
           "quantization_config": {
             "description": "Vector specific quantization config that overrides collection config",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/QuantizationConfig",
+            "nullable": true
           }
         }
       },
@@ -6890,24 +6640,12 @@
             "type": "boolean"
           },
           "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ClusterStatusTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ClusterStatusTelemetry",
+            "nullable": true
           },
           "config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ClusterConfigTelemetry"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ClusterConfigTelemetry",
+            "nullable": true
           }
         }
       },
@@ -6943,14 +6681,8 @@
             "minimum": 0
           },
           "role": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/StateRole"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/StateRole",
+            "nullable": true
           },
           "is_voter": {
             "type": "boolean"
@@ -7074,15 +6806,19 @@
       "ClusterOperations": {
         "anyOf": [
           {
+            "description": "Move shard to a different peer",
             "$ref": "#/components/schemas/MoveShardOperation"
           },
           {
+            "description": "Replicate shard to a different peer",
             "$ref": "#/components/schemas/ReplicateShardOperation"
           },
           {
+            "description": "Abort currently running shard moving operation",
             "$ref": "#/components/schemas/AbortTransferOperation"
           },
           {
+            "description": "Drop replica of a shard from a peer",
             "$ref": "#/components/schemas/DropReplicaOperation"
           }
         ]
@@ -7232,14 +6968,8 @@
           "priority": {
             "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.",
             "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SnapshotPriority"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/SnapshotPriority",
+            "nullable": true
           }
         }
       },
