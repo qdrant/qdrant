@@ -905,7 +905,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             ef_construct: hnsw_config.ef_construct.unwrap_or_default() as usize,
             full_scan_threshold: hnsw_config.full_scan_threshold.unwrap_or_default() as usize,
             max_indexing_threads: hnsw_config.max_indexing_threads.unwrap_or_default() as usize,
-            on_disk: hnsw_config.on_disk,
+            on_disk: hnsw_config.on_disk.unwrap_or_default(),
             payload_m: hnsw_config.payload_m.map(|x| x as usize),
         }
     }

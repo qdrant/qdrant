@@ -29,9 +29,20 @@ fn default_max_optimization_threads() -> usize {
     1
 }
 
+impl Default for PerformanceConfig {
+    fn default() -> Self {
+        Self {
+            max_search_threads: usize::default(),
+            max_optimization_threads: default_max_optimization_threads(),
+            update_rate_limit: Option::default(),
+        }
+    }
+}
+
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
 #[derive(Clone, Debug, Deserialize, Validate)]
 pub struct StorageConfig {
+    #[serde(default = "default_storage_path")]
     #[validate(length(min = 1))]
     pub storage_path: String,
     #[serde(default = "default_snapshots_path")]
@@ -48,12 +59,30 @@ pub struct StorageConfig {
     pub hnsw_index: HnswConfig,
     #[validate]
     pub quantization: Option<QuantizationConfig>,
-    #[serde(default = "default_mmap_advice")]
+    #[serde(default)]
     pub mmap_advice: madvise::Advice,
     #[serde(default)]
     pub node_type: NodeType,
     #[serde(default)]
     pub update_queue_size: Option<usize>,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            storage_path: default_storage_path(),
+            snapshots_path: default_snapshots_path(),
+            on_disk_payload: default_on_disk_payload(),
+            optimizers: OptimizersConfig::default(),
+            wal: WalConfig::default(),
+            performance: PerformanceConfig::default(),
+            hnsw_index: HnswConfig::default(),
+            quantization: Option::default(),
+            mmap_advice: madvise::Advice::default(),
+            node_type: NodeType::default(),
+            update_queue_size: Option::default(),
+        }
+    }
 }
 
 impl StorageConfig {
@@ -62,16 +91,16 @@ impl StorageConfig {
     }
 }
 
+fn default_storage_path() -> String {
+    "./storage".to_string()
+}
+
 fn default_snapshots_path() -> String {
     "./snapshots".to_string()
 }
 
 fn default_on_disk_payload() -> bool {
-    false
-}
-
-fn default_mmap_advice() -> madvise::Advice {
-    madvise::Advice::Random
+    true
 }
 
 /// Information of a peer in the cluster

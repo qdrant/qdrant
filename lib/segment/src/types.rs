@@ -312,9 +312,11 @@ pub enum Indexes {
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    #[serde(default = "default_m")]
     #[validate(range(min = 4, max = 10_000))]
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    #[serde(default = "default_ef_construct")]
     #[validate(range(min = 4))]
     pub ef_construct: usize,
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
@@ -322,18 +324,30 @@ pub struct HnswConfig {
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "full_scan_threshold_kb")]
+    #[serde(default = "default_full_scan_threshold")]
     pub full_scan_threshold: usize,
     /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[serde(default = "default_max_indexing_threads")]
     pub max_indexing_threads: usize,
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
-    pub on_disk: Option<bool>,
+    pub on_disk: bool,
     /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub payload_m: Option<usize>,
+}
+
+fn default_m() -> usize {
+    16
+}
+
+fn default_ef_construct() -> usize {
+    DEFAULT_HNSW_EF_CONSTRUCT
+}
+
+fn default_full_scan_threshold() -> usize {
+    DEFAULT_FULL_SCAN_THRESHOLD
 }
 
 fn default_max_indexing_threads() -> usize {
@@ -411,12 +425,12 @@ pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
 impl Default for HnswConfig {
     fn default() -> Self {
         HnswConfig {
-            m: 16,
-            ef_construct: DEFAULT_HNSW_EF_CONSTRUCT,
-            full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
-            max_indexing_threads: 0,
-            on_disk: Some(false),
-            payload_m: None,
+            m: default_m(),
+            ef_construct: default_ef_construct(),
+            full_scan_threshold: default_full_scan_threshold(),
+            max_indexing_threads: default_max_indexing_threads(),
+            on_disk: bool::default(),
+            payload_m: Option::default(),
         }
     }
 }

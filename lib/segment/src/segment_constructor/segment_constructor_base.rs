@@ -125,7 +125,7 @@ fn create_segment(
             ))),
             Indexes::Hnsw(collection_hnsw_config) => {
                 let hnsw_config = vector_config.hnsw_config.unwrap_or(collection_hnsw_config);
-                sp(if hnsw_config.on_disk == Some(true) {
+                sp(if hnsw_config.on_disk {
                     VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
                         &vector_index_path,
                         id_tracker.clone(),

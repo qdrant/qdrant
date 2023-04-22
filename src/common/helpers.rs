@@ -83,7 +83,7 @@ pub fn create_general_purpose_runtime() -> io::Result<Runtime> {
 /// Load client TLS configuration.
 pub fn load_tls_client_config(settings: &Settings) -> io::Result<Option<ClientTlsConfig>> {
     if settings.cluster.p2p.enable_tls {
-        let tls_config = &settings.tls()?;
+        let tls_config = &settings.tls;
         Ok(Some(
             ClientTlsConfig::new()
                 .identity(load_identity(tls_config)?)

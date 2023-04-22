@@ -24,9 +24,11 @@ pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 pub struct WalConfig {
     /// Size of a single WAL segment in MB
+    #[serde(default = "default_wal_capacity_mb")]
     #[validate(range(min = 1))]
     pub wal_capacity_mb: usize,
     /// Number of WAL segments to create ahead of actually used ones
+    #[serde(default = "default_wal_segments_ahead")]
     pub wal_segments_ahead: usize,
 }
 
@@ -42,10 +44,18 @@ impl From<&WalConfig> for WalOptions {
 impl Default for WalConfig {
     fn default() -> Self {
         WalConfig {
-            wal_capacity_mb: 32,
-            wal_segments_ahead: 0,
+            wal_capacity_mb: default_wal_capacity_mb(),
+            wal_segments_ahead: default_wal_segments_ahead(),
         }
     }
+}
+
+fn default_wal_capacity_mb() -> usize {
+    32
+}
+
+fn default_wal_segments_ahead() -> usize {
+    0
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]

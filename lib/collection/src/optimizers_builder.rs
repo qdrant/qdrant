@@ -19,9 +19,11 @@ const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 200_000;
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    #[serde(default = "default_deleted_threshold")]
     #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: f64,
     /// The minimal number of vectors in a segment, required to perform segment optimization
+    #[serde(default = "default_vacuum_min_vector_number")]
     #[validate(range(min = 100))]
     pub vacuum_min_vector_number: usize,
     /// Target amount of segments optimizer will try to keep.
@@ -32,6 +34,7 @@ pub struct OptimizersConfig {
     /// It is recommended to select default number of segments as a factor of the number of search threads,
     /// so that each segment would be handled evenly by one of the threads.
     /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs.
+    #[serde(default = "default_default_segment_number")]
     pub default_segment_number: usize,
     /// Do not create segments larger this size (in KiloBytes).
     /// Large segments might require disproportionately long indexation times,
@@ -57,12 +60,54 @@ pub struct OptimizersConfig {
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
+    #[serde(default = "default_indexing_threshold")]
     #[validate(range(min = 1000))]
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
+    #[serde(default = "default_flush_interval_sec")]
     pub flush_interval_sec: u64,
     /// Maximum available threads for optimization workers
+    #[serde(default = "default_max_optimization_threads")]
     pub max_optimization_threads: usize,
+}
+
+impl Default for OptimizersConfig {
+    fn default() -> Self {
+        Self {
+            deleted_threshold: default_deleted_threshold(),
+            vacuum_min_vector_number: default_vacuum_min_vector_number(),
+            default_segment_number: default_default_segment_number(),
+            max_segment_size: Option::default(),
+            memmap_threshold: Option::default(),
+            indexing_threshold: default_indexing_threshold(),
+            flush_interval_sec: default_flush_interval_sec(),
+            max_optimization_threads: default_max_optimization_threads(),
+        }
+    }
+}
+
+fn default_deleted_threshold() -> f64 {
+    0.2
+}
+
+fn default_vacuum_min_vector_number() -> usize {
+    1000
+}
+
+fn default_default_segment_number() -> usize {
+    0
+}
+
+fn default_indexing_threshold() -> Option<usize> {
+    Some(20000)
+}
+
+fn default_flush_interval_sec() -> u64 {
+    5
+}
+
+fn default_max_optimization_threads() -> usize {
+    1
 }
 
 impl OptimizersConfig {

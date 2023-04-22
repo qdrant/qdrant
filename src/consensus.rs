@@ -120,9 +120,7 @@ impl Consensus {
             })?;
 
         let server_tls = if settings.cluster.p2p.enable_tls {
-            let tls_config = settings
-                .tls
-                .ok_or_else(Settings::tls_config_is_undefined_error)?;
+            let tls_config = settings.tls;
 
             Some(helpers::load_tls_internal_server_config(&tls_config)?)
         } else {

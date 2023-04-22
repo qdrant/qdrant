@@ -37,13 +37,14 @@ pub fn get_global() -> Advice {
 /// See [`memmap2::Advice`] and [madvise()] man page.
 ///
 /// [madvice()]: https://man7.org/linux/man-pages/man2/madvise.2.html
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Advice {
     /// See [`memmap2::Advice::Normal`].
     Normal,
 
     /// See [`memmap2::Advice::Random`].
+    #[default]
     Random,
 
     /// See [`memmap2::Advice::Sequential`].

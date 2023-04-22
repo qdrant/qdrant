@@ -232,7 +232,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     ef_construct: Some(config.hnsw_config.ef_construct as u64),
                     full_scan_threshold: Some(config.hnsw_config.full_scan_threshold as u64),
                     max_indexing_threads: Some(config.hnsw_config.max_indexing_threads as u64),
-                    on_disk: config.hnsw_config.on_disk,
+                    on_disk: Some(config.hnsw_config.on_disk),
                     payload_m: config.hnsw_config.payload_m.map(|v| v as u64),
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {

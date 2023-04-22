@@ -108,9 +108,7 @@ pub fn init(
         server = if settings.service.enable_tls {
             let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls())?;
 
-            let tls_config = settings
-                .tls
-                .ok_or_else(Settings::tls_config_is_undefined_error)?;
+            let tls_config = settings.tls;
 
             // Server side TLS configuration
             acceptor.set_private_key_file(&tls_config.key, SslFiletype::PEM)?;
