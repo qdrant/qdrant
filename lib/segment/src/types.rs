@@ -172,8 +172,10 @@ pub struct ScoredPoint {
     /// Points vector distance to the query vector
     pub score: ScoreType,
     /// Payload - values assigned to the point
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<Payload>,
     /// Vector of the point
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vector: Option<VectorStruct>,
 }
 
@@ -1035,14 +1037,19 @@ pub struct FieldCondition {
     /// Payload key
     pub key: PayloadKeyType,
     /// Check if point has field with a given value
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<Range>,
     /// Check if points geo location lies in a given area
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo_radius: Option<GeoRadius>,
     /// Check number of values of the field
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub values_count: Option<ValuesCount>,
 }
 
@@ -1322,10 +1329,13 @@ pub struct WithPayload {
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub should: Option<Vec<Condition>>,
     /// All conditions must match
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub must_not: Option<Vec<Condition>>,
 }
 

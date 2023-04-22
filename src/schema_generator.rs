@@ -66,7 +66,9 @@ struct AllDefinitions {
 }
 
 fn save_schema<T: JsonSchema>() {
-    let settings = SchemaSettings::draft07();
+    let mut settings = SchemaSettings::draft2019_09();
+    settings.option_add_null_type = false;
+    settings.option_nullable = true;
     let gen = settings.into_generator();
     let schema = gen.into_root_schema_for::<T>();
     let schema_str = serde_json::to_string_pretty(&schema).unwrap();

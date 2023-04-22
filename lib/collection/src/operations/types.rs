@@ -217,6 +217,7 @@ pub struct SearchRequest {
     /// Look for vectors closest to this
     pub vector: NamedVectorStruct,
     /// Look only for points which satisfies this conditions
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Filter>,
     /// Additional search params
     pub params: Option<SearchParams>,
