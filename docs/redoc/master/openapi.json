@@ -4381,9 +4381,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
               }
             ]
           },
