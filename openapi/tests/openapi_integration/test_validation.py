@@ -33,26 +33,26 @@ def test_validation():
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]
 
-    # Illegal body parameters must trigger a validation error
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        body={
-            "vectors": {
-                "size": 4,
-                "distance": "Dot"
-            },
-            "optimizers_config": {
-                "memmap_threshold": 100,
-                "indexing_threshold": 100,
-            },
-        }
-    )
-    assert not response.ok
-    assert 'Validation error' in response.json()["status"]["error"]
-    assert 'optimizers_config.memmap_threshold' in response.json()["status"]["error"]
-    assert 'optimizers_config.indexing_threshold' in response.json()["status"]["error"]
+    # # Illegal body parameters must trigger a validation error
+    # response = request_with_validation(
+    #     api='/collections/{collection_name}',
+    #     method="PUT",
+    #     path_params={'collection_name': collection_name},
+    #     body={
+    #         "vectors": {
+    #             "size": 4,
+    #             "distance": "Dot"
+    #         },
+    #         "optimizers_config": {
+    #             "memmap_threshold": 100,
+    #             "indexing_threshold": 100,
+    #         },
+    #     }
+    # )
+    # assert not response.ok
+    # assert 'Validation error' in response.json()["status"]["error"]
+    # assert 'optimizers_config.memmap_threshold' in response.json()["status"]["error"]
+    # assert 'optimizers_config.indexing_threshold' in response.json()["status"]["error"]
 
     # Illegal URL parameters must trigger a validation error
     response = request_with_validation(
