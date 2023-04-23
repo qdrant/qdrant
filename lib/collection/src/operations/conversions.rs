@@ -10,6 +10,7 @@ use segment::types::{
 };
 use tonic::Status;
 
+use super::cluster_ops;
 use super::config_diff::CollectionParamsDiff;
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -752,6 +753,16 @@ impl From<AliasDescription> for api::grpc::qdrant::AliasDescription {
         api::grpc::qdrant::AliasDescription {
             alias_name: value.alias_name,
             collection_name: value.collection_name,
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::MoveShard> for cluster_ops::MoveShard {
+    fn from(value: api::grpc::qdrant::MoveShard) -> Self {
+        cluster_ops::MoveShard {
+            shard_id: value.shard_id,
+            from_peer_id: value.from_peer_id,
+            to_peer_id: value.to_peer_id,
         }
     }
 }

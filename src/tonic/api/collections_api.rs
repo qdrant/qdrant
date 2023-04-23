@@ -2,12 +2,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use api::grpc::qdrant::collections_server::Collections;
+use api::grpc::qdrant::update_collection_cluster_setup_request::Operation;
 use api::grpc::qdrant::{
-    AliasDescription, ChangeAliases, CollectionOperationResponse, CreateCollection,
-    DeleteCollection, GetCollectionInfoRequest, GetCollectionInfoResponse, ListAliasesRequest,
-    ListAliasesResponse, ListCollectionAliasesRequest, ListCollectionsRequest,
-    ListCollectionsResponse, UpdateCollection,
+    AliasDescription, ChangeAliases, CollectionClusterInfoRequest, CollectionClusterInfoResponse,
+    CollectionOperationResponse, CreateCollection, DeleteCollection, GetCollectionInfoRequest,
+    GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
+    ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse, LocalShardInfo,
+    RemoteShardInfo, ShardTransferInfo, UpdateCollection, UpdateCollectionClusterSetupRequest,
+    UpdateCollectionClusterSetupResponse,
 };
+use collection::operations::cluster_ops;
 use storage::content_manager::conversions::error_to_status;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
@@ -166,6 +170,102 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         self.list_aliases(request).await
     }
+
+    async fn collection_cluster_info(
+        &self,
+        request: Request<CollectionClusterInfoRequest>,
+    ) -> Result<Response<CollectionClusterInfoResponse>, Status> {
+        validate(request.get_ref())?;
+        let cluster_info = do_get_collection_cluster(
+            self.dispatcher.toc(),
+            request.into_inner().collection_name.as_str(),
+        )
+        .await
+        .map_err(|e| Status::new(tonic::Code::Unknown, e.to_string()))?;
+
+        let response = CollectionClusterInfoResponse {
+            peer_id: cluster_info.peer_id,
+            shard_count: cluster_info.shard_count as u64,
+            local_shards: cluster_info
+                .local_shards
+                .iter()
+                .map(|shard| LocalShardInfo {
+                    shard_id: shard.shard_id,
+                    points_count: shard.points_count as u64,
+                    state: shard.state as i32,
+                })
+                .collect(),
+            remote_shards: cluster_info
+                .remote_shards
+                .iter()
+                .map(|shard| RemoteShardInfo {
+                    shard_id: shard.shard_id,
+                    peer_id: shard.peer_id,
+                    state: shard.state as i32,
+                })
+                .collect(),
+            shard_transfers: cluster_info
+                .shard_transfers
+                .iter()
+                .map(|shard| ShardTransferInfo {
+                    shard_id: shard.shard_id,
+                    from: shard.from,
+                    to: shard.to,
+                    sync: shard.sync,
+                })
+                .collect(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn update_collection_cluster_setup(
+        &self,
+        request: Request<UpdateCollectionClusterSetupRequest>,
+    ) -> Result<Response<UpdateCollectionClusterSetupResponse>, Status> {
+        validate(request.get_ref())?;
+        let UpdateCollectionClusterSetupRequest {
+            collection_name,
+            operation,
+            timeout,
+            ..
+        } = request.into_inner();
+        let result = do_update_collection_cluster(
+            self.dispatcher.toc(),
+            collection_name,
+            match operation.ok_or(Status::new(tonic::Code::Unknown, "empty operation"))? {
+                Operation::MoveShard(op) => {
+                    cluster_ops::ClusterOperations::MoveShard(cluster_ops::MoveShardOperation {
+                        move_shard: op.into(),
+                    })
+                }
+                Operation::ReplicateShard(op) => cluster_ops::ClusterOperations::ReplicateShard(
+                    cluster_ops::ReplicateShardOperation {
+                        replicate_shard: op.into(),
+                    },
+                ),
+                Operation::AbortTransfer(op) => cluster_ops::ClusterOperations::AbortTransfer(
+                    cluster_ops::AbortTransferOperation {
+                        abort_transfer: op.into(),
+                    },
+                ),
+                Operation::DropReplica(op) => {
+                    cluster_ops::ClusterOperations::DropReplica(cluster_ops::DropReplicaOperation {
+                        drop_replica: cluster_ops::Replica {
+                            shard_id: op.shard_id,
+                            peer_id: op.peer_id,
+                        },
+                    })
+                }
+            },
+            self.dispatcher.as_ref(),
+            timeout.map(std::time::Duration::from_secs),
+        )
+        .await
+        .map_err(|e| Status::new(tonic::Code::Unknown, e.to_string()))?;
+        Ok(Response::new(UpdateCollectionClusterSetupResponse {
+            result,
+        }))
+    }
 }
 
 trait WithTimeout {
@@ -186,3 +286,4 @@ impl_with_timeout!(CreateCollection);
 impl_with_timeout!(UpdateCollection);
 impl_with_timeout!(DeleteCollection);
 impl_with_timeout!(ChangeAliases);
+impl_with_timeout!(UpdateCollectionClusterSetupRequest);
