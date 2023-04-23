@@ -86,7 +86,7 @@ mod tests {
             ef_construct,
             full_scan_threshold: usize::MAX,
             max_indexing_threads: 2,
-            on_disk: Some(false),
+            on_disk: false,
             payload_m: None,
         };
 
