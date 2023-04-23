@@ -72,7 +72,7 @@ pub struct TableOfContent {
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
-    alias_persistence: Arc<RwLock<AliasPersistence>>,
+    alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
     /// Backlink to the consensus, if none - single node mode
@@ -181,7 +181,7 @@ impl TableOfContent {
             search_runtime,
             update_runtime,
             general_runtime,
-            alias_persistence: Arc::new(RwLock::new(alias_persistence)),
+            alias_persistence: RwLock::new(alias_persistence),
             this_peer_id,
             channel_service,
             consensus_proposal_sender,

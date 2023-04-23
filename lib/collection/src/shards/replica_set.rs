@@ -697,11 +697,11 @@ impl ShardReplicaSet {
                 match read_operation_res {
                     Ok(_) => return read_operation_res,
                     res @ Err(CollectionError::ServiceError { .. }) => {
-                        log::debug!("Local read op. failed: {:?}", res.as_ref().err());
+                        log::debug!("Local read op. failed: {}", res.as_ref().err().unwrap());
                         local_result = Some(res);
                     }
                     res @ Err(CollectionError::Cancelled { .. }) => {
-                        log::debug!("Local read op. cancelled: {:?}", res.as_ref().err());
+                        log::debug!("Local read op. cancelled: {}", res.as_ref().err().unwrap());
                         local_result = Some(res);
                     }
                     res @ Err(_) => {
@@ -749,11 +749,11 @@ impl ShardReplicaSet {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
                 err @ Err(CollectionError::ServiceError { .. }) => {
-                    log::debug!("Remote read op. failed: {:?}", err.as_ref().err());
+                    log::debug!("Remote read op. failed: {}", err.as_ref().err().unwrap());
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(CollectionError::Cancelled { .. }) => {
-                    log::debug!("Remote read op. cancelled: {:?}", err.as_ref().err());
+                    log::debug!("Remote read op. cancelled: {}", err.as_ref().err().unwrap());
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(_) => return err, // Validation or user errors reported immediately
@@ -776,13 +776,16 @@ impl ShardReplicaSet {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
                 err @ Err(CollectionError::ServiceError { .. }) => {
-                    log::debug!("Remote fallback read op. failed: {:?}", err.as_ref().err());
+                    log::debug!(
+                        "Remote fallback read op. failed: {}",
+                        err.as_ref().err().unwrap()
+                    );
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(CollectionError::Cancelled { .. }) => {
                     log::debug!(
-                        "Remote fallback read op. cancelled: {:?}",
-                        err.as_ref().err()
+                        "Remote fallback read op. cancelled: {}",
+                        err.as_ref().err().unwrap()
                     );
                     captured_error = Some(err)
                 } // capture error for possible error reporting
@@ -870,6 +873,7 @@ impl ShardReplicaSet {
             operations.by_ref().take(required_reads).collect();
 
         let mut responses = Vec::new();
+        let mut errors = Vec::new();
 
         while let Some(result) = pending_operations.next().await {
             match result {
@@ -883,6 +887,7 @@ impl ShardReplicaSet {
 
                     if is_transient {
                         log::debug!("Read operation failed: {err}");
+                        errors.push(err);
                     } else {
                         return Err(err);
                     }
@@ -912,9 +917,19 @@ impl ShardReplicaSet {
                 Ok(Res::resolve(responses, condition))
             }
         } else {
-            Err(CollectionError::service_error(
-                "Failed to complete read operation: too many replicas returned an error".into(),
-            ))
+            let success_count = responses.len();
+            let error_count = errors.len();
+
+            Err(CollectionError::service_error(format!(
+                "{} of {} shards failed with: {}",
+                error_count,
+                success_count + error_count,
+                errors
+                    .into_iter()
+                    .map(|err| format!("{}", err))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )))
         }
     }
 
