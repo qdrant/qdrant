@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let key = "RUN_MODE";
-        env::set_var(key, "TEST");
+        env::set_var(key, "development");
 
         // Read config
         let config = Settings::new(None).unwrap();
