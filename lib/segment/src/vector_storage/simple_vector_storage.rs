@@ -170,7 +170,7 @@ impl VectorStorage for SimpleVectorStorage {
             let other_vector = other.get_vector(point_id);
             let new_id = self.vectors.push(other_vector);
             self.set_deleted(new_id, other_deleted);
-            self.update_stored(new_id, false, Some(other_vector))?;
+            self.update_stored(new_id, other_deleted, Some(other_vector))?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
         Ok(start_index..end_index)
