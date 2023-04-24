@@ -102,7 +102,7 @@ impl VectorStorage for MemmapVectorStorage {
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 
-            // Remember deleted IDs so we can flush these later
+            // Remember deleted IDs so we can propagate deletions later
             if other.is_deleted_vec(id) {
                 deleted_ids.push((start_index + id) as PointOffsetType);
             }
