@@ -493,7 +493,6 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 }
 
 mod grouping {
-    use std::path::Path;
 
     use collection::collection::Collection;
     use collection::grouping::{group_by, GroupBy, MainRequest};
@@ -517,8 +516,12 @@ mod grouping {
     }
 
     async fn setup() -> Resources {
+        let mut rng = rand::thread_rng();
+
+        let vector = rand_vector(&mut rng, 4);
+
         let request = MainRequest::Search(SearchRequest {
-            vector: vec![0.0, 0.0, 0.0, 1.0].into(),
+            vector: vector.clone().into(),
             filter: None,
             params: None,
             limit: 3,
@@ -528,18 +531,17 @@ mod grouping {
             score_threshold: None,
         });
 
-        let group_by = GroupBy::new(request, "docId".to_string(), 10);
+        let group_by = GroupBy::new(request, "docId".to_string(), 3);
 
         let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
-        let mut rng = rand::thread_rng();
-
         let (docs, chunks) = (8, 4);
 
         let insert_points = CollectionUpdateOperations::PointOperation(
             Batch {
+                // 8 docs, 4 chunks per doc
                 ids: (0..docs * chunks).map(|x| x.into()).collect_vec(),
                 vectors: (0..docs * chunks)
                     .map(|_| rand_vector(&mut rng, 4))
@@ -547,7 +549,8 @@ mod grouping {
                     .into(),
                 payloads: (0..docs)
                     .flat_map(|x| {
-                        (0..chunks).map(move |_| Some(Payload::from(json!({ "docId": x }))))
+                        (0..chunks)
+                            .map(move |_| Some(Payload::from(json!({ "docId": x.to_string() }))))
                     })
                     .collect_vec()
                     .into(),
@@ -584,6 +587,7 @@ mod grouping {
         assert!(result.is_ok());
 
         let result = result.unwrap();
+        println!("{:#?}", result);
         let group_req = resources.group_by;
 
         assert_eq!(result.len(), group_req.groups);

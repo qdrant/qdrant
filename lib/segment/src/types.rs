@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
+use std::hash::Hash;
 use std::mem::size_of;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -194,6 +195,13 @@ impl PartialOrd for ScoredPoint {
 impl PartialEq for ScoredPoint {
     fn eq(&self, other: &Self) -> bool {
         (self.id, &self.score) == (other.id, &other.score)
+    }
+}
+
+impl Hash for ScoredPoint {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.version.hash(state);
     }
 }
 
@@ -886,6 +894,20 @@ pub enum Match {
     Any(MatchAny),
 }
 
+impl Match {
+    fn new_value(value: ValueVariants) -> Self {
+        Self::Value(MatchValue { value })
+    }
+
+    fn new_text(text: &str) -> Self {
+        Self::Text(MatchText { text: text.into() })
+    }
+
+    fn new_any(any: AnyVariants) -> Self {
+        Self::Any(MatchAny { any })
+    }
+}
+
 impl From<AnyVariants> for Match {
     fn from(any: AnyVariants) -> Self {
         Self::Any(MatchAny { any })
@@ -1369,32 +1391,24 @@ impl Filter {
     }
 
     pub fn merge(&self, other: &Filter) -> Filter {
-        let mut should = self.should.clone().unwrap_or_default();
-        let mut must = self.must.clone().unwrap_or_default();
-        let mut must_not = self.must_not.clone().unwrap_or_default();
-
-        if let Some(other_should) = &other.should {
-            should.extend(other_should.clone());
+        fn merge_component(
+            this: Option<Vec<Condition>>,
+            other: Option<Vec<Condition>>,
+        ) -> Option<Vec<Condition>> {
+            match (this, other) {
+                (None, None) => None,
+                (Some(this), None) => Some(this),
+                (None, Some(other)) => Some(other),
+                (Some(mut this), Some(other)) => {
+                    this.extend(other);
+                    Some(this)
+                }
+            }
         }
-        if let Some(other_must) = &other.must {
-            must.extend(other_must.clone());
-        }
-        if let Some(other_must_not) = &other.must_not {
-            must_not.extend(other_must_not.clone());
-        }
-
         Filter {
-            should: if should.is_empty() {
-                None
-            } else {
-                Some(should)
-            },
-            must: if must.is_empty() { None } else { Some(must) },
-            must_not: if must_not.is_empty() {
-                None
-            } else {
-                Some(must_not)
-            },
+            should: merge_component(self.should.clone(), other.should.clone()),
+            must: merge_component(self.must.clone(), other.must.clone()),
+            must_not: merge_component(self.must_not.clone(), other.must_not.clone()),
         }
     }
 }
@@ -1520,7 +1534,6 @@ mod tests {
         "#;
 
         let filter: Filter = serde_json::from_str(query).unwrap();
-        println!("{filter:?}");
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
@@ -1885,6 +1898,34 @@ mod tests {
         let query = r#""keyword""#;
         let field_type: PayloadSchemaType = serde_json::from_str(query).unwrap();
         eprintln!("field_type = {field_type:?}");
+    }
+
+    #[test]
+    fn merge_filters() {
+        let condition1 = Condition::Field(FieldCondition::new_match(
+            "summary".into(),
+            Match::new_text("Berlin"),
+        ));
+        let mut this = Filter::new_must(condition1.clone());
+        this.should = Some(vec![condition1.clone()]);
+
+        let condition2 = Condition::Field(FieldCondition::new_match(
+            "city".into(),
+            Match::new_value(ValueVariants::Keyword("Osaka".into())),
+        ));
+        let other = Filter::new_must(condition2.clone());
+
+        let merged = this.merge(&other);
+
+        assert!(merged.must.is_some());
+        assert!(merged.must.as_ref().unwrap().len() == 2);
+        assert!(merged.must_not.is_none());
+        assert!(merged.should.is_some());
+        assert!(merged.should.as_ref().unwrap().len() == 1);
+
+        assert!(merged.must.as_ref().unwrap().contains(&condition1));
+        assert!(merged.must.as_ref().unwrap().contains(&condition2));
+        assert!(merged.should.as_ref().unwrap().contains(&condition1));
     }
 }
 
