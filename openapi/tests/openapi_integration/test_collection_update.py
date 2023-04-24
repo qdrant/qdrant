@@ -31,7 +31,7 @@ def test_collection_update():
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [
                 {

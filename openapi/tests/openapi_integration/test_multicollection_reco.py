@@ -41,7 +41,7 @@ def test_recommend_with_wrong_vector_size():
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name2},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [
                 {
@@ -105,7 +105,7 @@ def test_recommend_from_another_collection():
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name2},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [
                 {

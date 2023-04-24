@@ -19,7 +19,7 @@ def test_payload_operations():
         api='/collections/{collection_name}/points/payload',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "payload": {"test_payload": "keyword"},
             "points": [6]
@@ -41,7 +41,7 @@ def test_payload_operations():
         api='/collections/{collection_name}/points/payload/clear',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "filter": {
                 "must": [
@@ -66,7 +66,7 @@ def test_payload_operations():
         api='/collections/{collection_name}/points/payload',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "payload": {"test_payload": "keyword"},
             "points": [6]
@@ -79,7 +79,7 @@ def test_payload_operations():
         api='/collections/{collection_name}/points/payload/delete',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "keys": ["test_payload"],
             "points": [6]

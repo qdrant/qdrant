@@ -223,7 +223,7 @@ def query_nested():
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [
                 {
@@ -273,7 +273,7 @@ def test_with_vectors_alias_of_with_vector():
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [
                 {

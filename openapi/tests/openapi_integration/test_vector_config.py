@@ -78,7 +78,7 @@ def multivec_collection_setup(collection_name='test_collection', on_disk_payload
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [
                 {
@@ -213,7 +213,7 @@ def insert_vectors(collection_name='test_collection', count=2000, size=256):
         api='/collections/{collection_name}/points',
         method='PUT',
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "batch": {
                 "ids": ids,

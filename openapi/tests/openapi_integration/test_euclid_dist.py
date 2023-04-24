@@ -46,7 +46,7 @@ def basic_collection_setup(collection_name='test_collection'):
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [
                 {

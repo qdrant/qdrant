@@ -29,7 +29,7 @@ def test_snapshot_operations():
         api='/collections/{collection_name}/snapshots',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
     )
     assert response.ok
     snapshot_name = response.json()['result']['name']
@@ -50,7 +50,7 @@ def test_snapshot_operations():
         method="DELETE",
         path_params={'collection_name': collection_name,
                      'snapshot_name': snapshot_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
     )
     assert response.ok
 
@@ -93,7 +93,7 @@ def test_snapshot_operations():
         api='/snapshots/{snapshot_name}',
         path_params={'snapshot_name': snapshot_name},
         method="DELETE",
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
     )
     assert response.ok
 
@@ -120,7 +120,7 @@ def test_test_snapshot_operations_non_wait():
         api='/collections/{collection_name}/snapshots',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'false'},
+        query_params={'wait': False},
     )
     assert response.status_code == 202
 
@@ -143,7 +143,7 @@ def test_test_snapshot_operations_non_wait():
         method="DELETE",
         path_params={'collection_name': collection_name,
                      'snapshot_name': snapshot_name},
-        query_params={'wait': 'false'},
+        query_params={'wait': False},
     )
     assert response.status_code == 202
     # wait for snapshot to be deleted
@@ -170,7 +170,7 @@ def test_test_snapshot_operations_non_wait():
     response = request_with_validation(
         api='/snapshots',
         method="POST",
-        query_params={'wait': 'false'},
+        query_params={'wait': False},
     )
     assert response.status_code == 202
     # wait for snapshot to be created
@@ -190,7 +190,7 @@ def test_test_snapshot_operations_non_wait():
         api='/snapshots/{snapshot_name}',
         path_params={'snapshot_name': snapshot_name},
         method="DELETE",
-        query_params={'wait': 'false'},
+        query_params={'wait': False},
     )
     assert response.status_code == 202
 

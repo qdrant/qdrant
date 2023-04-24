@@ -19,7 +19,7 @@ def test_payload_indexing_operations():
         api='/collections/{collection_name}/points/payload',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "payload": {"test_payload": "keyword"},
             "points": [6]
@@ -39,7 +39,7 @@ def test_payload_indexing_operations():
         api='/collections/{collection_name}/index',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "field_name": "test_payload",
             "field_schema": "keyword"
@@ -60,7 +60,7 @@ def test_payload_indexing_operations():
         api='/collections/{collection_name}/index/{field_name}',
         method="DELETE",
         path_params={'collection_name': collection_name, 'field_name': 'test_payload'},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
     )
     assert response.ok
 

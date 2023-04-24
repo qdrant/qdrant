@@ -19,7 +19,7 @@ def test_delete_points():
         api='/collections/{collection_name}/points/delete',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "filter": {
                 "must": [
@@ -43,7 +43,7 @@ def test_delete_points():
         api='/collections/{collection_name}/points/delete',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [1, 2, 3, 4]
         }

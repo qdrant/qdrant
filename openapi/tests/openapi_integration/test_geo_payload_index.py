@@ -19,7 +19,7 @@ def test_payload_operations():
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "points": [
                 {
@@ -59,7 +59,7 @@ def test_payload_operations():
         api='/collections/{collection_name}/index',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "field_name": "location",
             "field_schema": "geo"
@@ -73,7 +73,7 @@ def test_payload_operations():
         api='/collections/{collection_name}/points/delete',
         method="POST",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
+        query_params={'wait': True},
         body={
             "filter": {
                 "must": [
