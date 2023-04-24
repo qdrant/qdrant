@@ -157,7 +157,7 @@ impl SegmentBuilder {
 
                                     // Propagate deletes, delete all vectors for old internal ID
                                     for vector_storage in vector_storages.values_mut() {
-                                        vector_storage.delete_vec(old_internal_id)?;
+                                        vector_storage.delete_vector(old_internal_id)?;
                                     }
 
                                     // Reassign payload point to new internal ID

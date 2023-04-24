@@ -109,7 +109,7 @@ pub trait IdTracker {
     /// vectors.
     fn sample_ids<'a>(
         &'a self,
-        deleted_vec_bitslice: Option<&'a BitSlice>,
+        deleted_vector_bitslice: Option<&'a BitSlice>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let total = self.total_point_count() as PointOffsetType;
         let mut rng = rand::thread_rng();
@@ -118,7 +118,7 @@ pub trait IdTracker {
                 .map(move |_| rng.gen_range(0..total))
                 .filter(move |x| {
                     // Check for deleted vector first, as that is more likely
-                    !deleted_vec_bitslice
+                    !deleted_vector_bitslice
                         .and_then(|d| d.get(*x as usize).as_deref().copied())
                         .unwrap_or(false)
                     // Also check point deletion for integrity

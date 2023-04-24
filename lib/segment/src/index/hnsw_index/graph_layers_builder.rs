@@ -306,7 +306,7 @@ impl GraphLayersBuilder {
             .entry_points
             .lock()
             .new_point(point_id, level, |point_id| {
-                points_scorer.check_vec(point_id)
+                points_scorer.check_vector(point_id)
             });
         match entry_point_opt {
             // New point is a new empty entry (for this filter, at least)

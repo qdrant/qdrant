@@ -201,7 +201,7 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
     ) -> Vec<ScoredPointOffset> {
         let entry_point = match self
             .entry_points
-            .get_entry_point(|point_id| points_scorer.check_vec(point_id))
+            .get_entry_point(|point_id| points_scorer.check_vector(point_id))
         {
             None => return vec![],
             Some(ep) => ep,

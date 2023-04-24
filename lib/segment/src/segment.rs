@@ -106,7 +106,7 @@ impl Segment {
                 None => {
                     // No vector provided, so we remove it
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.delete_vec(internal_id)?;
+                    vector_storage.delete_vector(internal_id)?;
                 }
             }
         }
@@ -133,7 +133,7 @@ impl Segment {
                 None => {
                     let dim = vector_storage.vector_dim();
                     vector_storage.insert_vector(new_index, &vec![1.0; dim])?;
-                    vector_storage.delete_vec(new_index)?;
+                    vector_storage.delete_vector(new_index)?;
                 }
                 Some(vec) => {
                     vector_storage.insert_vector(new_index, vec)?;
@@ -308,7 +308,7 @@ impl Segment {
         let is_vector_deleted = vector_data
             .vector_storage
             .borrow()
-            .is_deleted_vec(point_offset);
+            .is_deleted_vector(point_offset);
         if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
             Ok(Some(
                 vector_data
@@ -331,7 +331,7 @@ impl Segment {
             let is_vector_deleted = vector_data
                 .vector_storage
                 .borrow()
-                .is_deleted_vec(point_offset);
+                .is_deleted_vector(point_offset);
             if !is_vector_deleted {
                 vectors.insert(
                     vector_name.clone(),
@@ -584,7 +584,7 @@ impl Segment {
                 // Drop removed points from vector storage
                 for vector_data in self.vector_data.values() {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.delete_vec(*internal_id)?;
+                    vector_storage.delete_vector(*internal_id)?;
                 }
             }
 
@@ -745,7 +745,7 @@ impl SegmentEntry for Segment {
                     // Propagate point deletion to all its vectors
                     for vector_data in segment.vector_data.values() {
                         let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                        vector_storage.delete_vec(internal_id)?;
+                        vector_storage.delete_vector(internal_id)?;
                     }
 
                     Ok((true, Some(internal_id)))
@@ -772,7 +772,7 @@ impl SegmentEntry for Segment {
                         },
                     )?;
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    let is_deleted = vector_storage.delete_vec(internal_id)?;
+                    let is_deleted = vector_storage.delete_vector(internal_id)?;
                     Ok((is_deleted, Some(internal_id)))
                 })
             }

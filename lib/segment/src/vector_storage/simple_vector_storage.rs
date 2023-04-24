@@ -171,7 +171,7 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_deleted = other.is_deleted_vec(point_id);
+            let other_deleted = other.is_deleted_vector(point_id);
             let other_vector = other.get_vector(point_id);
             let new_id = self.vectors.push(other_vector);
             self.set_deleted(new_id, other_deleted);
@@ -223,7 +223,7 @@ impl VectorStorage for SimpleVectorStorage {
         }
     }
 
-    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
             self.update_stored(key, true, None)?;
@@ -231,19 +231,19 @@ impl VectorStorage for SimpleVectorStorage {
         Ok(is_deleted)
     }
 
-    fn is_deleted_vec(&self, key: PointOffsetType) -> bool {
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
         self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
     }
 
-    fn deleted_vec_count(&self) -> usize {
+    fn deleted_vector_count(&self) -> usize {
         self.deleted_count
     }
 
-    fn create_deleted_vec_count(&self) -> usize {
+    fn create_deleted_vector_count(&self) -> usize {
         self.create_deleted_count
     }
 
-    fn deleted_vec_bitslice(&self) -> &BitSlice {
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
     }
 }
@@ -309,10 +309,12 @@ mod tests {
             .enumerate()
             .filter(|(_, d)| *d)
             .for_each(|(i, _)| {
-                borrowed_storage.delete_vec(i as PointOffsetType).unwrap();
+                borrowed_storage
+                    .delete_vector(i as PointOffsetType)
+                    .unwrap();
             });
         assert_eq!(
-            borrowed_storage.deleted_vec_count(),
+            borrowed_storage.deleted_vector_count(),
             2,
             "2 vectors must be deleted"
         );
@@ -330,10 +332,14 @@ mod tests {
         assert_eq!(closest[2].idx, 4);
 
         // Delete 1, redelete 2
-        borrowed_storage.delete_vec(1 as PointOffsetType).unwrap();
-        borrowed_storage.delete_vec(2 as PointOffsetType).unwrap();
+        borrowed_storage
+            .delete_vector(1 as PointOffsetType)
+            .unwrap();
+        borrowed_storage
+            .delete_vector(2 as PointOffsetType)
+            .unwrap();
         assert_eq!(
-            borrowed_storage.deleted_vec_count(),
+            borrowed_storage.deleted_vector_count(),
             3,
             "3 vectors must be deleted"
         );
@@ -350,10 +356,14 @@ mod tests {
         assert_eq!(closest[1].idx, 0);
 
         // Delete all
-        borrowed_storage.delete_vec(0 as PointOffsetType).unwrap();
-        borrowed_storage.delete_vec(4 as PointOffsetType).unwrap();
+        borrowed_storage
+            .delete_vector(0 as PointOffsetType)
+            .unwrap();
+        borrowed_storage
+            .delete_vector(4 as PointOffsetType)
+            .unwrap();
         assert_eq!(
-            borrowed_storage.deleted_vec_count(),
+            borrowed_storage.deleted_vector_count(),
             5,
             "all vectors must be deleted"
         );
@@ -398,7 +408,9 @@ mod tests {
                         .insert_vector(i as PointOffsetType, vec)
                         .unwrap();
                     if delete_mask[i] {
-                        borrowed_storage2.delete_vec(i as PointOffsetType).unwrap();
+                        borrowed_storage2
+                            .delete_vector(i as PointOffsetType)
+                            .unwrap();
                     }
                 });
             }
@@ -412,7 +424,7 @@ mod tests {
         }
 
         assert_eq!(
-            borrowed_storage.deleted_vec_count(),
+            borrowed_storage.deleted_vector_count(),
             2,
             "2 vectors must be deleted from other storage"
         );
@@ -430,11 +442,17 @@ mod tests {
         assert_eq!(closest[2].idx, 4);
 
         // Delete all
-        borrowed_storage.delete_vec(0 as PointOffsetType).unwrap();
-        borrowed_storage.delete_vec(1 as PointOffsetType).unwrap();
-        borrowed_storage.delete_vec(4 as PointOffsetType).unwrap();
+        borrowed_storage
+            .delete_vector(0 as PointOffsetType)
+            .unwrap();
+        borrowed_storage
+            .delete_vector(1 as PointOffsetType)
+            .unwrap();
+        borrowed_storage
+            .delete_vector(4 as PointOffsetType)
+            .unwrap();
         assert_eq!(
-            borrowed_storage.deleted_vec_count(),
+            borrowed_storage.deleted_vector_count(),
             5,
             "all vectors must be deleted"
         );
@@ -556,7 +574,7 @@ mod tests {
             let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
                 &query,
                 borrowed_id_tracker.deleted_point_bitslice(),
-                borrowed_storage.deleted_vec_bitslice(),
+                borrowed_storage.deleted_vector_bitslice(),
             );
             let scorer_orig = new_raw_scorer(
                 query.clone(),
@@ -580,7 +598,7 @@ mod tests {
         let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
             &query,
             borrowed_id_tracker.deleted_point_bitslice(),
-            borrowed_storage.deleted_vec_bitslice(),
+            borrowed_storage.deleted_vector_bitslice(),
         );
         let scorer_orig = new_raw_scorer(
             query.clone(),

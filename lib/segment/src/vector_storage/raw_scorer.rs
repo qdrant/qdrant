@@ -15,7 +15,7 @@ pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize;
 
     /// Return true if vector satisfies current search context for given point (exists and not deleted)
-    fn check_vec(&self, point: PointOffsetType) -> bool;
+    fn check_vector(&self, point: PointOffsetType) -> bool;
 
     /// Score stored vector with vector under the given index
     fn score_point(&self, point: PointOffsetType) -> ScoreType;
@@ -64,7 +64,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: VectorStorage>(
     point_deleted: &'a BitSlice,
 ) -> Box<dyn RawScorer + 'a> {
     let points_count = vector_storage.total_vector_count() as PointOffsetType;
-    let vec_deleted = vector_storage.deleted_vec_bitslice();
+    let vec_deleted = vector_storage.deleted_vector_bitslice();
     match vector_storage.distance() {
         Distance::Cosine => Box::new(RawScorerImpl::<'a, CosineMetric, TVectorStorage> {
             points_count,
@@ -101,7 +101,7 @@ where
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
         let mut size: usize = 0;
         for point_id in points.iter().copied() {
-            if !self.check_vec(point_id) {
+            if !self.check_vector(point_id) {
                 continue;
             }
             let other_vector = self.vector_storage.get_vector(point_id);
@@ -118,7 +118,7 @@ where
         size
     }
 
-    fn check_vec(&self, point: PointOffsetType) -> bool {
+    fn check_vector(&self, point: PointOffsetType) -> bool {
         point < self.points_count
             // Deleted points propagate to vectors; check vector deletion for possible early return
             && !self
@@ -151,7 +151,7 @@ where
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let scores = points
-            .filter(|point_id| self.check_vec(*point_id))
+            .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
                 let other_vector = self.vector_storage.get_vector(point_id);
                 ScoredPointOffset {
@@ -164,7 +164,7 @@ where
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
         let scores = (0..self.points_count)
-            .filter(|point_id| self.check_vec(*point_id))
+            .filter(|point_id| self.check_vector(*point_id))
             .map(|point_id| {
                 let point_id = point_id as PointOffsetType;
                 let other_vector = &self.vector_storage.get_vector(point_id);
