@@ -1,4 +1,4 @@
-use core::cmp;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -58,7 +58,7 @@ impl SegmentBuilder {
                 "Segment building error: created segment not found",
             )),
             Some(self_segment) => {
-                self_segment.version = Some(cmp::max(self_segment.version(), other.version()));
+                self_segment.version = Some(max(self_segment.version(), other.version()));
 
                 let other_id_tracker = other.id_tracker.borrow();
                 let other_vector_storages: HashMap<_, _> = other
@@ -92,16 +92,17 @@ impl SegmentBuilder {
                 let mut new_internal_range = None;
                 for (vector_name, vector_storage) in &mut vector_storages {
                     check_process_stopped(stopped)?;
-                    let other_vector_storage = other_vector_storages.get(vector_name);
-                    if other_vector_storage.is_none() {
-                        return Err(OperationError::service_error(format!(
+                    let other_vector_storage = match other_vector_storages.get(vector_name) {
+                        Some(vector_storage) => vector_storage,
+                        None => return Err(OperationError::service_error(format!(
                             "Cannot update from other segment because if missing vector name {vector_name}"
-                        )));
-                    }
-                    let other_vector_storage = other_vector_storage.unwrap();
+                        ))),
+                    };
+                    let mut other_ids = other_id_tracker
+                        .iter_ids_exluding(other_vector_storage.deleted_vec_bitslice());
                     let internal_range = vector_storage.update_from(
                         other_vector_storage,
-                        &mut other_id_tracker.iter_ids(),
+                        &mut other_ids,
                         stopped,
                     )?;
                     match new_internal_range.clone() {
