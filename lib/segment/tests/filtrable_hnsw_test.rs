@@ -113,15 +113,13 @@ mod tests {
             );
         }
 
-        let id_tracker = segment.id_tracker.borrow();
         let vector_storage = vector_storage.borrow();
         let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
+        let px = payload_index_ptr.borrow();
+        let available_vecs = vector_storage.available_vec_count();
         for block in &blocks {
-            let px = payload_index_ptr.borrow();
             let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-            let available_points =
-                vector_storage.estimate_available_vector_count(id_tracker.deleted_point_count());
-            let points = px.query_points(&filter, Some(available_points));
+            let points = px.query_points(&filter, Some(available_vecs));
             for point in points {
                 coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
             }
