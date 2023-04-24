@@ -315,6 +315,19 @@ impl SegmentEntry for ProxySegment {
         Ok(was_deleted || was_deleted_in_writable)
     }
 
+    fn delete_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector_name: &str,
+    ) -> OperationResult<bool> {
+        self.move_if_exists(op_num, point_id)?;
+        self.write_segment
+            .get()
+            .write()
+            .delete_vector(op_num, point_id, vector_name)
+    }
+
     fn set_full_payload(
         &mut self,
         op_num: SeqNumberType,
@@ -370,7 +383,7 @@ impl SegmentEntry for ProxySegment {
         &self,
         vector_name: &str,
         point_id: PointIdType,
-    ) -> OperationResult<Vec<VectorElementType>> {
+    ) -> OperationResult<Option<Vec<VectorElementType>>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment
                 .get()
@@ -401,7 +414,9 @@ impl SegmentEntry for ProxySegment {
             .vector_data
             .keys()
         {
-            result.insert(vector_name.clone(), self.vector(vector_name, point_id)?);
+            if let Some(vector) = self.vector(vector_name, point_id)? {
+                result.insert(vector_name.clone(), vector);
+            }
         }
         Ok(result)
     }

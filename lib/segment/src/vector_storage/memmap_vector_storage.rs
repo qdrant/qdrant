@@ -166,9 +166,8 @@ impl VectorStorage for MemmapVectorStorage {
         files
     }
 
-    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        self.mmap_store.as_mut().unwrap().delete(key);
-        Ok(())
+    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+        Ok(self.mmap_store.as_mut().unwrap().delete(key))
     }
 
     fn is_deleted_vec(&self, key: PointOffsetType) -> bool {

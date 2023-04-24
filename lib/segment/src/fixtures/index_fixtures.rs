@@ -94,9 +94,8 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         vec![]
     }
 
-    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        self.deleted_vectors.set(key as usize, true);
-        Ok(())
+    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+        Ok(!self.deleted_vectors.replace(key as usize, true))
     }
 
     fn is_deleted_vec(&self, key: PointOffsetType) -> bool {

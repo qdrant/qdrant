@@ -90,7 +90,8 @@ pub trait VectorStorage {
     fn files(&self) -> Vec<PathBuf>;
 
     /// Flag the vector by the given key as deleted
-    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<()>;
+    /// Returns true if the vector was not deleted before and is now deleted
+    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool>;
 
     /// Check whether the vector at the given key is flagged as deleted
     fn is_deleted_vec(&self, key: PointOffsetType) -> bool;
@@ -212,7 +213,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<()> {
+    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         match self {
             VectorStorageEnum::Simple(v) => v.delete_vec(key),
             VectorStorageEnum::Memmap(v) => v.delete_vec(key),

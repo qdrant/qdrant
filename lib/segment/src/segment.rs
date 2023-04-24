@@ -96,13 +96,49 @@ impl Segment {
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         check_vectors_set(&vectors, &self.segment_config)?;
-        for (vector_name, vector) in vectors {
-            let vector_name: &str = &vector_name;
-            let vector_data = &self.vector_data[vector_name];
-            let mut vector_storage = vector_data.vector_storage.borrow_mut();
-            vector_storage.insert_vector(internal_id, &vector)?;
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let vector = vectors.get(vector_name);
+            match vector {
+                Some(vector) => {
+                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                    vector_storage.insert_vector(internal_id, vector)?;
+                }
+                None => {
+                    // No vector provided, so we remove it
+                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                    vector_storage.delete_vec(internal_id)?;
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Insert new vectors into the segment.
+    /// WARN: Available for appendable segments only
+    fn insert_new_vectors(
+        &mut self,
+        point_id: PointIdType,
+        vectors: NamedVectors,
+    ) -> OperationResult<PointOffsetType> {
+        debug_assert!(self.is_appendable());
+        let new_index = self.id_tracker.borrow().internal_size() as PointOffsetType;
+        check_vectors_set(&vectors, &self.segment_config)?;
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let vector_opt = vectors.get(vector_name);
+            let mut vector_storage = vector_data.vector_storage.borrow_mut();
+            match vector_opt {
+                None => {
+                    let dim = vector_storage.vector_dim();
+                    vector_storage.insert_vector(new_index, &vec![1.0; dim])?;
+                    vector_storage.delete_vec(new_index)?;
+                }
+                Some(vec) => {
+                    vector_storage.insert_vector(new_index, vec)?;
+                }
+            }
+        }
+        self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
+        Ok(new_index)
     }
 
     /// Operation wrapped, which handles previous and new errors in the segment,
@@ -266,7 +302,11 @@ impl Segment {
     ) -> OperationResult<Option<Vec<VectorElementType>>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        if !self.id_tracker.borrow().is_deleted_point(point_offset) {
+        let is_vector_deleted = vector_data
+            .vector_storage
+            .borrow()
+            .is_deleted_vec(point_offset);
+        if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
             Ok(Some(
                 vector_data
                     .vector_storage
@@ -285,14 +325,20 @@ impl Segment {
     ) -> OperationResult<NamedVectors> {
         let mut vectors = NamedVectors::default();
         for (vector_name, vector_data) in &self.vector_data {
-            vectors.insert(
-                vector_name.clone(),
-                vector_data
-                    .vector_storage
-                    .borrow()
-                    .get_vector(point_offset)
-                    .to_vec(),
-            );
+            let is_vector_deleted = vector_data
+                .vector_storage
+                .borrow()
+                .is_deleted_vec(point_offset);
+            if !is_vector_deleted {
+                vectors.insert(
+                    vector_name.clone(),
+                    vector_data
+                        .vector_storage
+                        .borrow()
+                        .get_vector(point_offset)
+                        .to_vec(),
+                );
+            }
         }
         Ok(vectors)
     }
@@ -672,19 +718,7 @@ impl SegmentEntry for Segment {
                 segment.update_vector(existing_internal_id, processed_vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let new_index = segment.id_tracker.borrow().internal_size() as PointOffsetType;
-
-                for (vector_name, processed_vector) in processed_vectors {
-                    let vector_name: &str = &vector_name;
-                    segment.vector_data[vector_name]
-                        .vector_storage
-                        .borrow_mut()
-                        .insert_vector(new_index, &processed_vector)?;
-                }
-                segment
-                    .id_tracker
-                    .borrow_mut()
-                    .set_link(point_id, new_index)?;
+                let new_index = segment.insert_new_vectors(point_id, processed_vectors)?;
                 Ok((false, Some(new_index)))
             }
         })
@@ -712,6 +746,31 @@ impl SegmentEntry for Segment {
                     }
 
                     Ok((true, Some(internal_id)))
+                })
+            }
+        }
+    }
+
+    fn delete_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector_name: &str,
+    ) -> OperationResult<bool> {
+        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        match internal_id {
+            // Point does already not exist anymore
+            None => Ok(false),
+            Some(internal_id) => {
+                self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
+                    let vector_data = segment.vector_data.get(vector_name).ok_or(
+                        OperationError::VectorNameNotExists {
+                            received_name: vector_name.to_string(),
+                        },
+                    )?;
+                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                    let is_deleted = vector_storage.delete_vec(internal_id)?;
+                    Ok((is_deleted, Some(internal_id)))
                 })
             }
         }
@@ -801,23 +860,18 @@ impl SegmentEntry for Segment {
         &self,
         vector_name: &str,
         point_id: PointIdType,
-    ) -> OperationResult<Vec<VectorElementType>> {
+    ) -> OperationResult<Option<Vec<VectorElementType>>> {
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
-        if let Some(vector) = vector_opt {
-            Ok(vector)
-        } else {
-            let segment_path = self.current_path.display();
-            Err(OperationError::service_error(format!(
-                "Vector {vector_name} not found at offset {internal_id} for point {point_id}, segment {segment_path}",
-            )))
-        }
+        Ok(vector_opt)
     }
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
         let mut result = NamedVectors::default();
         for vector_name in self.vector_data.keys() {
-            result.insert(vector_name.clone(), self.vector(vector_name, point_id)?);
+            if let Some(vec) = self.vector(vector_name, point_id)? {
+                result.insert(vector_name.clone(), vec);
+            }
         }
         Ok(result)
     }
