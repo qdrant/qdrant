@@ -10,7 +10,6 @@ use validator::Validate;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
-use crate::collection_manager::optimizers::sparse_index_optimizer::SparseIndexOptimizer;
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
@@ -129,16 +128,6 @@ pub fn build_optimizers(
             quantization_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
-            threshold_config.clone(),
-            segments_path.clone(),
-            temp_segments_path.clone(),
-            collection_params.clone(),
-            *hnsw_config,
-            quantization_config.clone(),
-        )),
-        Arc::new(SparseIndexOptimizer::new(
-            optimizers_config.deleted_threshold,
-            optimizers_config.vacuum_min_vector_number,
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),
