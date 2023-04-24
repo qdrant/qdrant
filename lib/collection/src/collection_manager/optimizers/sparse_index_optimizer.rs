@@ -109,11 +109,12 @@ impl SparseIndexOptimizer {
                         // can determine what ratio of points from the index is deleted.
                         // TODO: problem: point/vector deletes overlap
                         let vector_storage = vector_data.vector_storage.borrow();
-                        let create_deleted_vec_count = vector_storage.create_deleted_vec_count();
+                        let create_deleted_vector_count =
+                            vector_storage.create_deleted_vector_count();
                         let full_index_count =
-                            vector_storage.total_vector_count() - create_deleted_vec_count;
+                            vector_storage.total_vector_count() - create_deleted_vector_count;
                         let deleted_index_count =
-                            vector_storage.deleted_vec_count() - create_deleted_vec_count;
+                            vector_storage.deleted_vector_count() - create_deleted_vector_count;
                         let deleted_ratio = if full_index_count != 0 {
                             deleted_index_count as f64 / full_index_count as f64
                         } else {
@@ -340,7 +341,7 @@ mod tests {
                     .collect_vec();
                 for &point_id in &vector1_vecs_to_delete {
                     let id = id_tracker.borrow().internal_id(point_id).unwrap();
-                    vector1_storage.delete_vec(id).unwrap();
+                    vector1_storage.delete_vector(id).unwrap();
                 }
             }
 
@@ -357,7 +358,7 @@ mod tests {
                     .collect_vec();
                 for &point_id in &vector2_vecs_to_delete {
                     let id = id_tracker.borrow().internal_id(point_id).unwrap();
-                    vector2_storage.delete_vec(id).unwrap();
+                    vector2_storage.delete_vector(id).unwrap();
                 }
             }
         }
@@ -378,8 +379,8 @@ mod tests {
                 // Named vector storages should have deletions, but not at creation
                 segment.vector_data.values().for_each(|vector_data| {
                     let vector_storage = vector_data.vector_storage.borrow();
-                    assert_eq!(vector_storage.create_deleted_vec_count(), 0);
-                    assert!(vector_storage.deleted_vec_count() > 0);
+                    assert_eq!(vector_storage.create_deleted_vector_count(), 0);
+                    assert!(vector_storage.deleted_vector_count() > 0);
                 });
             });
 
@@ -408,10 +409,10 @@ mod tests {
                 // Named vector storages should have deletions at creation
                 segment.vector_data.values().for_each(|vector_data| {
                     let vector_storage = vector_data.vector_storage.borrow();
-                    assert!(vector_storage.create_deleted_vec_count() > 0);
+                    assert!(vector_storage.create_deleted_vector_count() > 0);
                     assert_eq!(
-                        vector_storage.create_deleted_vec_count(),
-                        vector_storage.deleted_vec_count()
+                        vector_storage.create_deleted_vector_count(),
+                        vector_storage.deleted_vector_count()
                     );
                 });
             });

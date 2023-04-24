@@ -109,14 +109,14 @@ mod tests {
             .unwrap()
             .vector_storage
             .borrow()
-            .available_vec_count();
+            .available_vector_count();
         let vec2_count = merged_segment
             .vector_data
             .get("vector2")
             .unwrap()
             .vector_storage
             .borrow()
-            .available_vec_count();
+            .available_vector_count();
 
         assert_ne!(vec1_count, vec2_count);
 

@@ -146,7 +146,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
 
-        let available_vecs = vector_storage.available_vec_count();
+        let available_vecs = vector_storage.available_vector_count();
         let points_to_index: Vec<_> = payload_index
             .query_points(&filter, Some(available_vecs))
             .collect();
@@ -175,7 +175,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                             quantized_storage.raw_scorer(
                                 &vector,
                                 id_tracker.deleted_point_bitslice(),
-                                vector_storage.deleted_vec_bitslice(),
+                                vector_storage.deleted_vector_bitslice(),
                             )
                         } else {
                             new_raw_scorer(
@@ -232,7 +232,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 quantized_storage.raw_scorer(
                     vector,
                     id_tracker.deleted_point_bitslice(),
-                    vector_storage.deleted_vec_bitslice(),
+                    vector_storage.deleted_vector_bitslice(),
                 ),
                 true,
             )
@@ -299,7 +299,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let available_vecs = vector_storage.available_vec_count();
+        let available_vecs = vector_storage.available_vector_count();
         let mut filtered_iter = payload_index.query_points(filter, Some(available_vecs));
         let ignore_quantization = params
             .and_then(|p| p.quantization)
@@ -326,7 +326,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                             .raw_scorer(
                                 vector,
                                 id_tracker.deleted_point_bitslice(),
-                                vector_storage.deleted_vec_bitslice(),
+                                vector_storage.deleted_vector_bitslice(),
                             )
                             .peek_top_iter(filtered_iter.as_mut(), top)
                     } else {
@@ -361,8 +361,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // Because an HNSW graph is built, we'd normally always assume to search the graph.
                 // But because a lot of points may be deleted in this graph, it may just be faster
                 // to do a plain search instead.
-                let plain_search =
-                    exact || vector_storage.available_vec_count() < self.config.full_scan_threshold;
+                let plain_search = exact
+                    || vector_storage.available_vector_count() < self.config.full_scan_threshold;
 
                 // Do plain or graph search
                 if plain_search {
@@ -415,7 +415,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let available_vecs = vector_storage.available_vec_count();
+                let available_vecs = vector_storage.available_vector_count();
                 let query_cardinality =
                     payload_index.estimate_cardinality(query_filter, Some(available_vecs));
 
@@ -440,7 +440,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
                 let id_tracker = self.id_tracker.borrow();
                 if sample_check_cardinality(
-                    id_tracker.sample_ids(Some(vector_storage.deleted_vec_bitslice())),
+                    id_tracker.sample_ids(Some(vector_storage.deleted_vector_bitslice())),
                     |idx| filter_context.check(idx),
                     self.config.full_scan_threshold,
                     available_vecs,
@@ -465,8 +465,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let vector_storage = self.vector_storage.borrow();
         let mut rng = thread_rng();
 
-        let available_vecs = vector_storage.available_vec_count();
-        let deleted_bitslice = vector_storage.deleted_vec_bitslice();
+        let available_vecs = vector_storage.available_vector_count();
+        let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
         debug!("building HNSW for {} vectors", available_vecs);
         let indexing_threshold = self.config.full_scan_threshold;
@@ -502,7 +502,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                             quantized_storage.raw_scorer(
                                 &vector,
                                 id_tracker.deleted_point_bitslice(),
-                                vector_storage.deleted_vec_bitslice(),
+                                vector_storage.deleted_vector_bitslice(),
                             )
                         } else {
                             new_raw_scorer(
