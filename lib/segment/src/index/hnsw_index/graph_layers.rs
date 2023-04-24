@@ -236,7 +236,7 @@ where
         let try_self: Result<Self, FileStorageError> = if links_path.exists() {
             read_bin(graph_path)
         } else {
-            Err(FileStorageError::generic_error(&format!(
+            Err(FileStorageError::generic(format!(
                 "Links file does not exists: {links_path:?}"
             )))
         };

@@ -128,15 +128,7 @@ impl From<IoError> for StorageError {
 
 impl From<FileStorageError> for StorageError {
     fn from(err: FileStorageError) -> Self {
-        match err {
-            FileStorageError::IoError { description } => StorageError::service_error(description),
-            FileStorageError::UserAtomicIoError => {
-                StorageError::service_error("Unknown atomic write error")
-            }
-            FileStorageError::GenericError { description } => {
-                StorageError::service_error(description)
-            }
-        }
+        Self::service_error(err.to_string())
     }
 }
 

@@ -54,11 +54,17 @@ pub struct StorageConfig {
     pub node_type: NodeType,
     #[serde(default)]
     pub update_queue_size: Option<usize>,
+    #[serde(default)]
+    pub handle_collection_load_errors: bool,
 }
 
 impl StorageConfig {
     pub fn to_shared_storage_config(&self) -> SharedStorageConfig {
-        SharedStorageConfig::new(self.update_queue_size, self.node_type)
+        SharedStorageConfig::new(
+            self.update_queue_size,
+            self.node_type,
+            self.handle_collection_load_errors,
+        )
     }
 }
 
