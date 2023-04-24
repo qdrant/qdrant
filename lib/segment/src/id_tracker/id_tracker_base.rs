@@ -106,11 +106,12 @@ pub trait IdTracker {
             (0..total)
                 .map(move |_| rng.gen_range(0..total))
                 .filter(move |x| {
-                    // Check if point or vector is deleted
-                    !self.is_deleted_point(*x)
-                        && !deleted_vec_bitslice
-                            .and_then(|d| d.get(*x as usize).as_deref().copied())
-                            .unwrap_or(false)
+                    // Check for deleted vector first, as that is more likely
+                    !deleted_vec_bitslice
+                        .and_then(|d| d.get(*x as usize).as_deref().copied())
+                        .unwrap_or(false)
+                    // Also check point deletion for integrity
+                    && !self.is_deleted_point(*x)
                 }),
         )
     }
