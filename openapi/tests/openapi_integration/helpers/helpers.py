@@ -75,11 +75,13 @@ def request_with_validation(
 
         allowed_query_params = set(p.name for p in operation.query.items)
         # Map of <query param name,schema>
-        query_params_schemas: Dict[str, Any] = dict([(p["name"], p["schema"]) for p in operation.definition.raw.get('parameters', []) if p["in"] == "query"])
+        # query_params_schemas: Dict[str, Any] = dict([(p["name"], p["schema"]) for p in operation.definition.raw.get('parameters', []) if p["in"] == "query"])
         for param in query_params.keys():
             assert param in allowed_query_params
-            value = query_params[param]
-            validate_schema(value, operation.schema, raw_definitions=query_params_schemas[param])
+            # query param validation cannot be turned out right now as boolean values need to be sent as strings ('true' and 'false')
+            # in order for the server to pick them up correctly
+            # value = query_params[param]
+            # validate_schema(value, operation.schema, raw_definitions=query_params_schemas[param])
 
     response = action(
         url=get_api_string(QDRANT_HOST, api, path_params),
