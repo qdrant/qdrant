@@ -16,6 +16,15 @@ def create_snapshot(peer_api_uri):
     return r.json()["result"]["name"]
 
 
+def create_payload_index(peer_api_uri, collection_name, field_name, field_schema):
+    r = requests.put(f"{peer_api_uri}/collections/{COLLECTION_NAME}/index", json={
+        "field_name": field_name,
+        "field_schema": field_schema,
+    })
+    assert_http_ok(r)
+    return r.json()["result"]
+
+
 def get_peer_id(peer_api_uri):
     r = requests.get(f"{peer_api_uri}/cluster")
     assert_http_ok(r)
@@ -55,7 +64,9 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=n_replicas)
-    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris)
+
+    create_payload_index(peer_api_uris[0], COLLECTION_NAME, "city", "keyword")
     upsert_random_points(peer_api_uris[0], 100)
 
     query_city = "London"
@@ -63,6 +74,10 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
 
     search_result = search(peer_api_uris[0], query_vector, query_city)
     assert len(search_result) > 0
+
+    collection_info = get_collection_info(peer_api_uris[0], COLLECTION_NAME)
+    points_with_indexed_payload = collection_info["payload_schema"]["city"]["points"]
+    assert points_with_indexed_payload
 
     snapshot_name = create_snapshot(peer_api_uris[-1])
     assert snapshot_name is not None
@@ -127,6 +142,10 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     assert len(new_search_result) == len(search_result)
     for i in range(len(new_search_result)):
         assert new_search_result[i] == search_result[i]
+
+    new_collection_info = get_collection_info(new_url, COLLECTION_NAME)
+    new_points_with_indexed_payload = new_collection_info["payload_schema"]["city"]["points"]
+    assert new_points_with_indexed_payload == points_with_indexed_payload
 
     peer_0_remote_shards_new = get_remote_shards(peer_api_uris[0])
     for shard in peer_0_remote_shards_new:
