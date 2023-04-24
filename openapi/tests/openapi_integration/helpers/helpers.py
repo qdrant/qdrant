@@ -36,13 +36,14 @@ def request_with_validation(
         method: str,
         path_params: dict = None,
         query_params: dict = None,
-        body: dict = None
+        body: dict = None,
+        skip_client_side_validation: bool = False
 ) -> requests.Response:
     operation: APIOperation = SCHEMA[api][method]
 
     assert isinstance(operation.schema, OpenApi30)
 
-    if body:
+    if body and not skip_client_side_validation:
         validate_schema(
             data=body,
             operation_schema=operation.schema,
@@ -55,19 +56,20 @@ def request_with_validation(
         query_params = {}
     action = getattr(requests, method.lower(), None)
 
-    for param in operation.path_parameters.items:
-        if param.is_required:
-            assert param.name in path_params
+    if not skip_client_side_validation:
+        for param in operation.path_parameters.items:
+            if param.is_required:
+                assert param.name in path_params
 
-    for param in operation.query.items:
-        if param.is_required:
-            assert param.name in query_params
+        for param in operation.query.items:
+            if param.is_required:
+                assert param.name in query_params
 
-    for param in path_params.keys():
-        assert param in set(p.name for p in operation.path_parameters.items)
+        for param in path_params.keys():
+            assert param in set(p.name for p in operation.path_parameters.items)
 
-    for param in query_params.keys():
-        assert param in set(p.name for p in operation.query.items)
+        for param in query_params.keys():
+            assert param in set(p.name for p in operation.query.items)
 
     if not action:
         raise RuntimeError(f"Method {method} does not exists")
