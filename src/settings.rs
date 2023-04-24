@@ -4,11 +4,13 @@ use api::grpc::transport_channel_pool::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::operations::validation;
-use config::{Config, ConfigError, Environment, File};
+use config::{Config, ConfigError, Environment, File, FileFormat};
 use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
 use validator::Validate;
+
+const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
 
 #[derive(Debug, Deserialize, Validate, Clone)]
 pub struct ServiceConfig {
@@ -190,8 +192,10 @@ impl Settings {
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         let s = Config::builder()
-            // Start off by merging in the "default" configuration file
-            .add_source(File::with_name(&config_path))
+            // Start with the default configuration file contents at compile time
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
+            // Then merge in the default configuration file contents at run time
+            .add_source(File::with_name(&config_path).required(false))
             // Add in the current environment file
             // Default to 'development' env
             // Note that this file is _optional_
