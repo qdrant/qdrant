@@ -34,8 +34,8 @@ def validate_schema(data, operation_schema: OpenApi30, raw_definitions):
 def request_with_validation(
         api: str,
         method: str,
-        path_params: dict = None,
-        query_params: dict = None,
+        path_params: dict = {},
+        query_params: dict = {},
         body: dict = None,
         skip_client_side_validation: bool = False
 ) -> requests.Response:
@@ -50,11 +50,10 @@ def request_with_validation(
             raw_definitions=operation.definition.raw['requestBody']['content']['application/json']['schema']
         )
 
-    if path_params is None:
-        path_params = {}
-    if query_params is None:
-        query_params = {}
     action = getattr(requests, method.lower(), None)
+
+    if not action:
+        raise RuntimeError(f"Method {method} does not exists")
 
     if not skip_client_side_validation:
         for param in operation.path_parameters.items:
@@ -65,14 +64,13 @@ def request_with_validation(
             if param.is_required:
                 assert param.name in query_params
 
+        allowed_path_parameters = set(p.name for p in operation.path_parameters.items)
         for param in path_params.keys():
-            assert param in set(p.name for p in operation.path_parameters.items)
+            assert param in allowed_path_parameters
 
+        allowed_query_params = set(p.name for p in operation.query.items)
         for param in query_params.keys():
-            assert param in set(p.name for p in operation.query.items)
-
-    if not action:
-        raise RuntimeError(f"Method {method} does not exists")
+            assert param in allowed_query_params
 
     response = action(
         url=get_api_string(QDRANT_HOST, api, path_params),
