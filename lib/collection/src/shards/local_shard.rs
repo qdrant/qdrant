@@ -753,3 +753,99 @@ impl Drop for LocalShard {
         self.assert_before_drop_called()
     }
 }
+
+#[derive(Debug)]
+enum Mem {
+    #[cfg(target_os = "linux")]
+    Cgroup(cgroups_mem::CgroupsMem),
+    Sysinfo(sysinfo_mem::SysinfoMem),
+}
+
+impl Mem {
+    pub fn new() -> Self {
+        todo!()
+    }
+
+    pub fn total_memory_bytes(&mut self) -> usize {
+        todo!()
+    }
+
+    pub fn available_memory_bytes(&mut self) -> usize {
+        todo!()
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod cgroups_mem {
+    use cgroups_rs::{hierarchies, memory, Subsystem};
+
+    #[derive(Clone, Debug)]
+    pub struct CgroupsMem {
+        mem_controller: memory::MemController,
+        total_memory_bytes: usize,
+        available_memory_bytes: usize,
+    }
+
+    impl CgroupsMem {
+        pub fn new() -> Option<Self> {
+            let cgroup = hierarchies::V2::new().root_control_group();
+            let subsystems = cgroup.subsystems();
+
+            let mem_controller = subsystems.iter().find_map(|ctrl| match ctrl {
+                Subsystem::Mem(mem_controller) => mem_controller.clone(),
+                _ => return None,
+            });
+
+            let max_memory_limit = match mem_controller.get_mem() {
+                Ok(memory::SetMemory {
+                    max: Some(max_memory_limit),
+                }) => max_memory_limit,
+
+                Ok(_) => {
+                    log::warn!("TODO"); // TODO!
+                    return None;
+                }
+
+                Err(err) => {
+                    log::error!("TODO: {err}"); // TODO!
+                    return None;
+                }
+            };
+
+            todo!()
+        }
+
+        pub fn total_memory_bytes(&mut self) -> usize {
+            todo!()
+        }
+
+        pub fn available_memory_bytes(&mut self) -> usize {
+            todo!()
+        }
+    }
+}
+
+mod sysinfo_mem {
+    use sysinfo::{RefreshKind, System, SystemExt as _};
+
+    #[derive(Debug)]
+    pub struct SysinfoMem {
+        system: System,
+    }
+
+    impl SysinfoMem {
+        pub fn new() -> Self {
+            let mut system = System::new_with_specifics(RefreshKind::new().with_memory());
+            system.refresh_memory();
+            Self { system }
+        }
+
+        pub fn total_memory_bytes(&mut self) -> usize {
+            todo!()
+        }
+
+        pub fn available_memory_bytes(&mut self) -> usize {
+            todo!()
+        }
+    }
+}
