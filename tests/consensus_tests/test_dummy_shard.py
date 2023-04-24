@@ -10,18 +10,18 @@ N_PEERS = 3
 COLLECTION_NAME = "test_collection"
 
 
-def test_cluster_all_reads_and_writes_succeed(tmp_path: pathlib.Path):
+def test_dummy_shard_all_reads_and_writes_succeed(tmp_path: pathlib.Path):
     peer_url = start_cluster_with_corrupted_node(N_PEERS, 2, 1, tmp_path)
     read_requests(peer_url, 200)
     write_requests(peer_url, 200, 200)
     collection_snapshot_and_collection_delete(peer_url)
 
-def test_cluster_all_reads_fail(tmp_path: pathlib.Path):
+def test_dummy_shard_all_reads_fail(tmp_path: pathlib.Path):
     peer_url = start_cluster_with_corrupted_node(N_PEERS, 1, 1, tmp_path)
     read_requests(peer_url, 500)
     collection_snapshot_and_collection_delete(peer_url)
 
-def test_cluster_only_first_write_fails(tmp_path: pathlib.Path):
+def test_dummy_shard_only_first_write_fails(tmp_path: pathlib.Path):
     peer_url = start_cluster_with_corrupted_node(1, N_PEERS, N_PEERS, tmp_path)
     write_requests(peer_url, 500, 200)
 
