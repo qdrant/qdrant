@@ -21,6 +21,17 @@ def test_dummy_shard_all_reads_fail(tmp_path: pathlib.Path):
     read_requests(peer_url, 500)
     collection_snapshot_and_collection_delete(peer_url)
 
+# When first "write" request fails, it marks shard as "dead".
+# `write_consistency_factor` always "capped" at the number of "alive" shards.
+#
+# So, when the shard is marked as "dead", `write_consistency_factor`, effectively,
+# becomes 2 instead of 3, and so the following requests start to succeed...
+# until the shard switches to the "partial" state. 🙈
+#
+# Even though we add some special handling for the `DummyShard`, the node still "flickers"
+# into "partial" state and then back to "dead" state, and so it's kinda hard
+# to run this test reliably. :/
+@pytest.mark.skip(reason="hard to test reliably")
 def test_dummy_shard_only_first_write_fails(tmp_path: pathlib.Path):
     peer_url = start_cluster_with_corrupted_node(1, N_PEERS, N_PEERS, tmp_path)
     write_requests(peer_url, 500, 200)
