@@ -49,7 +49,7 @@ impl Shard {
             Shard::Local(local_shard) => local_shard.before_drop().await,
             Shard::Proxy(proxy_shard) => proxy_shard.before_drop().await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.before_drop().await,
-            Shard::Dummy(dummy_shard) => dummy_shard.before_drop().await,
+            Shard::Dummy(_) => (), // `DummyShard` don't need (and don't have) `before_drop`
         }
     }
 

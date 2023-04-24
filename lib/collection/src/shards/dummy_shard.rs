@@ -43,10 +43,6 @@ impl DummyShard {
         }
     }
 
-    pub async fn before_drop(&mut self) {
-        // Do nothing...
-    }
-
     fn dummy<T>(&self) -> CollectionResult<T> {
         Err(CollectionError::service_error(self.message.to_string()))
     }

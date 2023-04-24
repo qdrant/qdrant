@@ -1,6 +1,7 @@
 use std::cmp;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -921,14 +922,17 @@ impl ShardReplicaSet {
             let error_count = errors.len();
 
             Err(CollectionError::service_error(format!(
-                "{} of {} shards failed with: {}",
-                error_count,
+                "{error_count} of {} shards failed with: {}",
                 success_count + error_count,
-                errors
-                    .into_iter()
-                    .map(|err| format!("{}", err))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                errors.into_iter().fold(String::new(), |mut msg, err| {
+                    if msg.is_empty() {
+                        msg = err.to_string();
+                    } else {
+                        write!(&mut msg, ", {err}").unwrap(); // Writing into `String` never fails
+                    }
+
+                    msg
+                })
             )))
         }
     }

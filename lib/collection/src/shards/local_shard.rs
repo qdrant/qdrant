@@ -399,8 +399,8 @@ impl LocalShard {
         // ToDo: Start from minimal applied version
         for (op_num, update) in wal.read_all() {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match CollectionUpdater::update(segments, op_num, update) {
-                Err(CollectionError::ServiceError { error, backtrace }) => {
+            match &CollectionUpdater::update(segments, op_num, update) {
+                Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 
                     log::error!(
@@ -414,8 +414,7 @@ impl LocalShard {
                         log::error!("Backtrace: {}", backtrace);
                     }
 
-                    // TODO: This is ugly AF. "But sTRuCt VaRiaNts ArE pReTTy aND BetTeR CarRy SeMaNtICs!" :/
-                    return Err(CollectionError::ServiceError { error, backtrace });
+                    return Err(err.clone());
                 }
 
                 Err(err) => log::error!("{err}"),
