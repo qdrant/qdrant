@@ -64,23 +64,22 @@ impl VacuumOptimizer {
         let segments_read_guard = segments.read();
         segments_read_guard
             .iter()
-            // .map(|(idx, segment)| (*idx, segment.get().read().info()))
+            .filter(|(idx, _segment)| !excluded_ids.contains(idx))
             .filter_map(|(idx, segment)| {
-                if excluded_ids.contains(idx) {
-                    // This segment is excluded externally. It might already be scheduled for optimization
+                let segment_entry = segment.get();
+                let read_segment = segment_entry.read();
+
+                // Never optimize special segments
+                if read_segment.segment_type() == SegmentType::Special {
                     return None;
                 }
 
-                let segment_entry = segment.get();
-                let read_segment = segment_entry.read();
                 let littered_ratio = read_segment.deleted_point_count() as f64
                     / read_segment.total_point_count() as f64;
-
                 let is_big = read_segment.total_point_count() >= self.min_vectors_number;
-                let is_not_special = read_segment.segment_type() != SegmentType::Special;
                 let is_littered = littered_ratio > self.deleted_threshold;
 
-                (is_big && is_not_special && is_littered).then_some((*idx, littered_ratio))
+                (is_big && is_littered).then_some((*idx, littered_ratio))
             })
             .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
             .map(|(idx, _)| (idx, segments_read_guard.get(idx).unwrap().clone()))
