@@ -586,17 +586,7 @@ impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
 
 impl From<FileStorageError> for CollectionError {
     fn from(err: FileStorageError) -> Self {
-        match err {
-            FileStorageError::IoError { description } => {
-                CollectionError::service_error(description)
-            }
-            FileStorageError::UserAtomicIoError => {
-                CollectionError::service_error("Unknown atomic write error".to_string())
-            }
-            FileStorageError::GenericError { description } => {
-                CollectionError::service_error(description)
-            }
-        }
+        Self::service_error(err.to_string())
     }
 }
 

@@ -98,17 +98,7 @@ impl From<ThreadPoolBuildError> for OperationError {
 
 impl From<FileStorageError> for OperationError {
     fn from(err: FileStorageError) -> Self {
-        match err {
-            FileStorageError::IoError { description } => {
-                OperationError::service_error(format!("IO Error: {description}"))
-            }
-            FileStorageError::UserAtomicIoError => {
-                OperationError::service_error("Unknown atomic write error")
-            }
-            FileStorageError::GenericError { description } => {
-                OperationError::service_error(description)
-            }
-        }
+        Self::service_error(err.to_string())
     }
 }
 
