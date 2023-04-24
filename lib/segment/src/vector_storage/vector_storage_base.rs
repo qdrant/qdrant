@@ -45,26 +45,16 @@ pub trait VectorStorage {
     /// Number of vectors, marked as deleted but still stored
     fn total_vector_count(&self) -> usize;
 
-    /// Estimate number of available vectors, considering deleted points and vectors
+    /// Get the number of available vectors, considering deleted points and vectors
     ///
-    /// We don't know the true number of available vectors. Vectors can be soft deleted in two
-    /// places: as point or as vector. These deletions may overlap. Calculating the true number of
-    /// available vectors is expensive as it would require to iterate over all points.
+    /// This uses [`total_vector_count`] and [`deleted_vec_count`] internally.
     ///
-    /// This estimation assumes that 20% of deleted points and vectors overlap. This percentage is
-    /// arbitrary, but reflects an almost-worst scenario.
+    /// # Warning
     ///
-    /// - excludes soft deleted points, which are still stored
-    /// - excludes soft deleted vectors, which are still stored
-    /// - assumes these deletions have 20% overlap
-    fn estimate_available_vector_count(&self, deleted_points: usize) -> usize {
-        let total = self.total_vector_count();
-        let deleted_vecs = self.deleted_vec_count();
-        debug_assert!(deleted_points <= total);
-        debug_assert!(deleted_vecs <= total);
-        let overlap = deleted_vecs.min(deleted_points) / 5;
-        let deleted = deleted_points + deleted_vecs - overlap;
-        total.saturating_sub(deleted)
+    /// This number may not always be accurate. See warning in [`deleted_vec_count`] documentation.
+    fn available_vec_count(&self) -> usize {
+        self.total_vector_count()
+            .saturating_sub(self.deleted_vec_count())
     }
 
     /// Number of all stored vectors including deleted
@@ -105,7 +95,18 @@ pub trait VectorStorage {
     /// Check whether the vector at the given key is flagged as deleted
     fn is_deleted_vec(&self, key: PointOffsetType) -> bool;
 
-    /// Get number of deleted vectors
+    /// Get the number of deleted vectors, considering deleted points and vectors
+    ///
+    /// Vectors may be deleted at two levels, as point or as vector. Deleted points should
+    /// propagate to deleting the vectors. That means that the deleted vector count includes the
+    /// number of deleted points as well.
+    ///
+    /// # Warning
+    ///
+    /// In some very exceptional cases it is possible for this count not to include some deleted
+    /// points. That may happen when flushing a segment to disk fails. This should be recovered
+    /// when loading/recovering the segment, but that isn't guaranteed. You should therefore use
+    /// the deleted count with care.
     fn deleted_vec_count(&self) -> usize;
 
     /// Get [`BitSlice`] representation for deleted vectors with deletion flags

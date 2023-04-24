@@ -237,10 +237,9 @@ impl VectorIndex for PlainIndex {
                 let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let available_points = vector_storage
-                    .estimate_available_vector_count(id_tracker.deleted_point_count());
+                let available_vecs = vector_storage.available_vec_count();
                 let filtered_ids_vec: Vec<_> = payload_index
-                    .query_points(filter, Some(available_points))
+                    .query_points(filter, Some(available_vecs))
                     .collect();
                 vectors
                     .iter()
