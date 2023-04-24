@@ -1,3 +1,4 @@
+from typing import Any, Dict
 import jsonschema
 import requests
 from schemathesis.models import APIOperation
@@ -64,13 +65,21 @@ def request_with_validation(
             if param.is_required:
                 assert param.name in query_params
 
-        allowed_path_parameters = set(p.name for p in operation.path_parameters.items)
+        allowed_path_params = set(p.name for p in operation.path_parameters.items)
+        # Map of <path param name,schema>
+        path_params_schemas: Dict[str, Any] = dict([(p["name"], p["schema"]) for p in operation.definition.raw.get('parameters',[]) if p["in"] == "path"])
         for param in path_params.keys():
-            assert param in allowed_path_parameters
+            assert param in allowed_path_params
+            value = path_params[param]
+            validate_schema(value, operation.schema, raw_definitions=path_params_schemas[param])
 
         allowed_query_params = set(p.name for p in operation.query.items)
+        # Map of <query param name,schema>
+        query_params_schemas: Dict[str, Any] = dict([(p["name"], p["schema"]) for p in operation.definition.raw.get('parameters', []) if p["in"] == "query"])
         for param in query_params.keys():
             assert param in allowed_query_params
+            value = query_params[param]
+            validate_schema(value, operation.schema, raw_definitions=query_params_schemas[param])
 
     response = action(
         url=get_api_string(QDRANT_HOST, api, path_params),
