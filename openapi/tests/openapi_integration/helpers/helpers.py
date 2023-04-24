@@ -37,25 +37,25 @@ def request_with_validation(
         path_params: dict = {},
         query_params: dict = {},
         body: dict = None,
-        skip_client_side_validation: bool = False
+        validate_request: bool = True # causes client-side request validation
 ) -> requests.Response:
     operation: APIOperation = SCHEMA[api][method]
 
     assert isinstance(operation.schema, OpenApi30)
 
-    if body and not skip_client_side_validation:
+    if body and validate_request:
         validate_schema(
             data=body,
             operation_schema=operation.schema,
             raw_definitions=operation.definition.raw['requestBody']['content']['application/json']['schema']
         )
-
+    
     action = getattr(requests, method.lower(), None)
 
     if not action:
         raise RuntimeError(f"Method {method} does not exists")
 
-    if not skip_client_side_validation:
+    if validate_request:
         for param in operation.path_parameters.items:
             if param.is_required:
                 assert param.name in path_params

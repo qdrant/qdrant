@@ -48,7 +48,7 @@ def test_validation():
                 "indexing_threshold": 100,
             },
         },
-        skip_client_side_validation=True # to cause server-side validation
+        validate_request=False # to cause server-side validation
     )
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]
