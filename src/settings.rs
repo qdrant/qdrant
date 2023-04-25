@@ -116,6 +116,9 @@ pub struct Settings {
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
     pub tls: Option<TlsConfig>,
+    // Can't use `#[serde(skip)]` here. It prevents overriding the value later.
+    #[serde(default)]
+    pub found_config_files: bool,
 }
 
 impl Settings {
@@ -134,6 +137,10 @@ impl Settings {
 
     #[allow(dead_code)]
     pub fn validate_and_warn(&self) {
+        if !self.found_config_files {
+            log::warn!("Configuration files not found. Using default configuration.");
+        }
+
         if let Err(ref errs) = self.validate() {
             validation::warn_validation_errors("Settings configuration file", errs);
         }
@@ -192,11 +199,11 @@ impl Settings {
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         if env::var("RUN_MODE").is_ok()
-        && Config::builder()
-            .add_source(File::with_name(&config_path))
-            .add_source(File::with_name(&format!("config/{env}")))
-            .build()
-            .is_err()
+            && Config::builder()
+                .add_source(File::with_name(&config_path))
+                .add_source(File::with_name(&format!("config/{env}")))
+                .build()
+                .is_err()
         {
             return Err(ConfigError::Message("`RUN_MODE` environment variable is set, but couldn't find matching configuration files".to_string()));
         }
@@ -206,6 +213,11 @@ impl Settings {
             .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml));
 
         if find_config_files {
+            let found_config_files = Config::builder()
+                .add_source(File::with_name(&config_path))
+                .build()
+                .is_ok();
+
             s = s
                 // Then merge in the default configuration file contents at run time
                 .add_source(File::with_name(&config_path).required(false))
@@ -218,7 +230,8 @@ impl Settings {
                 .add_source(File::with_name("config/local").required(false))
                 // Add in settings from the environment (with a prefix of APP)
                 // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
-                .add_source(Environment::with_prefix("QDRANT").separator("__"));
+                .add_source(Environment::with_prefix("QDRANT").separator("__"))
+                .set_override("found_config_files", found_config_files)?;
         }
 
         let s = s.build()?;
