@@ -187,26 +187,31 @@ fn default_message_timeout_tics() -> u64 {
 
 impl Settings {
     #[allow(dead_code)]
-    pub fn new(config_path: Option<String>) -> Result<Self, ConfigError> {
+    pub fn new(config_path: Option<String>, find_config_files: bool) -> Result<Self, ConfigError> {
         let config_path = config_path.unwrap_or_else(|| "config/config".into());
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
-        let s = Config::builder()
+        let mut s = Config::builder()
             // Start with the default configuration file contents at compile time
-            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
-            // Then merge in the default configuration file contents at run time
-            .add_source(File::with_name(&config_path).required(false))
-            // Add in the current environment file
-            // Default to 'development' env
-            // Note that this file is _optional_
-            .add_source(File::with_name(&format!("config/{env}")).required(false))
-            // Add in a local configuration file
-            // This file shouldn't be checked in to git
-            .add_source(File::with_name("config/local").required(false))
-            // Add in settings from the environment (with a prefix of APP)
-            // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
-            .add_source(Environment::with_prefix("QDRANT").separator("__"))
-            .build()?;
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml));
+
+        if find_config_files {
+            s = s
+                // Then merge in the default configuration file contents at run time
+                .add_source(File::with_name(&config_path).required(false))
+                // Add in the current environment file
+                // Default to 'development' env
+                // Note that this file is _optional_
+                .add_source(File::with_name(&format!("config/{env}")).required(false))
+                // Add in a local configuration file
+                // This file shouldn't be checked in to git
+                .add_source(File::with_name("config/local").required(false))
+                // Add in settings from the environment (with a prefix of APP)
+                // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
+                .add_source(Environment::with_prefix("QDRANT").separator("__"));
+        }
+
+        let s = s.build()?;
 
         // You can deserialize (and thus freeze) the entire configuration as
         s.try_deserialize()
@@ -238,7 +243,16 @@ mod tests {
         env::set_var(key, "TEST");
 
         // Read config
-        let config = Settings::new(None).unwrap();
+        let config = Settings::new(None, true).unwrap();
+
+        // Validate
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_no_config_files() {
+        // Read config
+        let config = Settings::new(None, false).unwrap();
 
         // Validate
         config.validate().unwrap();
