@@ -221,7 +221,9 @@ impl VectorStorage for SimpleVectorStorage {
 
     fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
-        self.update_stored(key, true, None)?;
+        if is_deleted {
+            self.update_stored(key, true, None)?;
+        }
         Ok(is_deleted)
     }
 
