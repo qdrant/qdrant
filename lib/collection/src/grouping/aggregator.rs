@@ -1,12 +1,37 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 use segment::types::{ExtendedPointId, ScoredPoint};
+use serde_json::Value;
+
+#[derive(Debug, Eq, PartialEq)]
+struct GroupKey(serde_json::Value);
+
+impl Hash for GroupKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match &self.0 {
+            Value::Null => panic!("Null values should not be used as group keys"),
+            Value::Bool(b) => b.hash(state),
+            Value::Number(n) => n.hash(state),
+            Value::String(s) => s.hash(state),
+            Value::Array(_) => panic!("Array values should not be used as group keys"),
+            Value::Object(_) => panic!("Object values should not be used as group keys"),
+        }
+    }
+}
+
+impl From<&str> for GroupKey {
+    fn from(s: &str) -> Self {
+        Self(serde_json::Value::String(s.to_string()))
+    }
+}
+
 
 type Hits = HashSet<ScoredPoint>;
 
 #[allow(dead_code)] // temporary
 struct GroupsAggregator {
-    groups: HashMap<String, Hits>,
+    groups: HashMap<GroupKey, Hits>,
     max_group_size: usize,
     grouped_by: String,
     max_groups: usize,
@@ -26,30 +51,35 @@ impl GroupsAggregator {
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
     fn add_point(&mut self, point: &ScoredPoint) {
         // if the key contains multiple values, grabs the first one
-        let group_value = point
+        let group_key = *point
             .payload
             .as_ref()
-            .unwrap()
+            .expect("The point should have a payload")
             .get_value(&self.grouped_by)
             .values()
             .first()
-            .unwrap()
-            .to_string()
-            .trim_matches('"')
-            .to_owned();
+            .expect("The payload should have the field we are grouping by");
 
-        println!("point_id: {:?}, group_value: {:#?}", point.id, group_value);
+        // ignore arrays, objects and null values
+        let group_key = match group_key {
+            serde_json::Value::Null
+            | serde_json::Value::Array(_) 
+            | serde_json::Value::Object(_) => return,
+            valid => GroupKey(valid.clone())
+        };
 
-        if !self.groups.contains_key(&group_value) && self.groups.len() >= self.max_groups {
+        println!("point_id: {:?}, group_value: {:#?}", point.id, group_key);
+
+        if !self.groups.contains_key(&group_key) && self.groups.len() >= self.max_groups {
             return;
         }
 
         let group = self
             .groups
-            .entry(group_value)
+            .entry(group_key)
             .or_insert_with(|| HashSet::with_capacity(self.max_group_size));
 
-        if group.len() >= self.max_group_size {
+        if group.len() == self.max_group_size {
             return;
         }
 
@@ -70,20 +100,20 @@ impl GroupsAggregator {
     }
 
     // gets the keys of the groups that have less than the max group size
-    fn keys_of_unfilled_groups(&self) -> Vec<String> {
+    fn keys_of_unfilled_groups(&self) -> Vec<Value> {
         self.groups
             .iter()
             .filter(|(_, hits)| hits.len() < self.max_group_size)
-            .map(|(key, _)| key.clone())
+            .map(|(key, _)| key.0.clone())
             .collect()
     }
 
     // gets the keys of the groups that have reached or exceeded the max group size
-    fn keys_of_filled_groups(&self) -> Vec<String> {
+    fn keys_of_filled_groups(&self) -> Vec<Value> {
         self.groups
             .iter()
             .filter(|(_, hits)| hits.len() >= self.max_group_size)
-            .map(|(key, _)| key.clone())
+            .map(|(key, _)| key.0.clone())
             .collect()
     }
 
@@ -229,6 +259,7 @@ mod unit_tests {
 
             assert_eq!(aggregator.len(), groups);
 
+            let key = &GroupKey::from(key);
             if size > 0 {
                 assert_eq!(aggregator.groups.get(key).unwrap().len(), size);
             } else {
@@ -242,7 +273,7 @@ mod unit_tests {
         let mut aggregator = GroupsAggregator::new(2, 2, "docId".to_string());
 
         aggregator.groups.insert(
-            "a".to_string(),
+            GroupKey::from("a"),
             [
                 ScoredPoint {
                     id: 1.into(),
@@ -263,7 +294,7 @@ mod unit_tests {
         );
 
         aggregator.groups.insert(
-            "b".to_string(),
+            GroupKey::from("b"),
             [
                 ScoredPoint {
                     id: 3.into(),
@@ -320,11 +351,11 @@ mod unit_tests {
         aggregator.hydrate_from(&hydrated);
 
         assert_eq!(aggregator.groups.len(), 2);
-        assert_eq!(aggregator.groups.get("a").unwrap().len(), 2);
-        assert_eq!(aggregator.groups.get("b").unwrap().len(), 2);
+        assert_eq!(aggregator.groups.get(&GroupKey::from("a")).unwrap().len(), 2);
+        assert_eq!(aggregator.groups.get(&GroupKey::from("b")).unwrap().len(), 2);
 
-        let a = aggregator.groups.get("a").unwrap();
-        let b = aggregator.groups.get("b").unwrap();
+        let a = aggregator.groups.get(&GroupKey::from("a")).unwrap();
+        let b = aggregator.groups.get(&GroupKey::from("b")).unwrap();
 
         assert!(a.iter().all(|x| x.payload == Some(payload_a.clone())));
         assert!(b.iter().all(|x| x.payload == Some(payload_b.clone())));
