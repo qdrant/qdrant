@@ -98,8 +98,7 @@ impl SegmentBuilder {
                             "Cannot update from other segment because if missing vector name {vector_name}"
                         ))),
                     };
-                    let mut other_ids = other_id_tracker
-                        .iter_ids_exluding(other_vector_storage.deleted_vec_bitslice());
+                    let mut other_ids = other_id_tracker.iter_ids();
                     let internal_range = vector_storage.update_from(
                         other_vector_storage,
                         &mut other_ids,
