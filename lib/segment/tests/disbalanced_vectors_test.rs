@@ -13,8 +13,8 @@ mod tests {
     use segment::segment_constructor::segment_builder::SegmentBuilder;
     use segment::segment_constructor::simple_segment_constructor::build_multivec_segment;
     use segment::types::Distance;
-    use tempfile::Builder;
     use segment::vector_storage::VectorStorage;
+    use tempfile::Builder;
 
     use super::*;
 
@@ -98,10 +98,25 @@ mod tests {
 
         let merged_points_count = merged_segment.points_count();
 
-        assert_eq!(merged_points_count, (NUM_VECTORS_1 + NUM_VECTORS_2 / 2) as usize);
+        assert_eq!(
+            merged_points_count,
+            (NUM_VECTORS_1 + NUM_VECTORS_2 / 2) as usize
+        );
 
-        let vec1_count = merged_segment.vector_data.get("vector1").unwrap().vector_storage.borrow().available_vec_count();
-        let vec2_count = merged_segment.vector_data.get("vector2").unwrap().vector_storage.borrow().available_vec_count();
+        let vec1_count = merged_segment
+            .vector_data
+            .get("vector1")
+            .unwrap()
+            .vector_storage
+            .borrow()
+            .available_vec_count();
+        let vec2_count = merged_segment
+            .vector_data
+            .get("vector2")
+            .unwrap()
+            .vector_storage
+            .borrow()
+            .available_vec_count();
 
         assert_ne!(vec1_count, vec2_count);
 
