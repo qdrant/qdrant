@@ -26,7 +26,6 @@ impl From<&str> for GroupKey {
     }
 }
 
-
 type Hits = HashSet<ScoredPoint>;
 
 #[allow(dead_code)] // temporary
@@ -63,9 +62,9 @@ impl GroupsAggregator {
         // ignore arrays, objects and null values
         let group_key = match group_key {
             serde_json::Value::Null
-            | serde_json::Value::Array(_) 
+            | serde_json::Value::Array(_)
             | serde_json::Value::Object(_) => return,
-            valid => GroupKey(valid.clone())
+            valid => GroupKey(valid.clone()),
         };
 
         println!("point_id: {:?}, group_value: {:#?}", point.id, group_key);
@@ -351,8 +350,14 @@ mod unit_tests {
         aggregator.hydrate_from(&hydrated);
 
         assert_eq!(aggregator.groups.len(), 2);
-        assert_eq!(aggregator.groups.get(&GroupKey::from("a")).unwrap().len(), 2);
-        assert_eq!(aggregator.groups.get(&GroupKey::from("b")).unwrap().len(), 2);
+        assert_eq!(
+            aggregator.groups.get(&GroupKey::from("a")).unwrap().len(),
+            2
+        );
+        assert_eq!(
+            aggregator.groups.get(&GroupKey::from("b")).unwrap().len(),
+            2
+        );
 
         let a = aggregator.groups.get(&GroupKey::from("a")).unwrap();
         let b = aggregator.groups.get(&GroupKey::from("b")).unwrap();
