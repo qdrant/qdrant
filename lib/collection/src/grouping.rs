@@ -1,17 +1,17 @@
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
+
 
 use itertools::Itertools;
 use segment::types::{
-    AnyVariants, Condition, ExtendedPointId, FieldCondition, Filter, IsNullCondition, Match,
-    ScoredPoint, WithPayloadInterface, WithVector,
+    ExtendedPointId,
+    ScoredPoint,
 };
-use tokio::sync::RwLockReadGuard;
 
-use crate::collection::Collection;
-use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest};
-use crate::recommendations::recommend_by;
+
+
+
+
+
 
 type Hits = HashSet<ScoredPoint>;
 
