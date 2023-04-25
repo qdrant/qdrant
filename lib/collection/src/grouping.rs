@@ -14,12 +14,12 @@ use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest
 use crate::recommendations::recommend_by;
 
 #[derive(Clone, Debug)]
-pub enum MainRequest {
+pub enum SourceRequest {
     Search(SearchRequest),
     Recommend(RecommendRequest),
 }
 
-impl MainRequest {
+impl SourceRequest {
     async fn r#do<'a, F, Fut>(
         &self,
         collection: &Collection,
@@ -38,7 +38,7 @@ impl MainRequest {
         )));
 
         match self {
-            MainRequest::Search(request) => {
+            SourceRequest::Search(request) => {
                 let mut request = request.clone();
 
                 request.limit *= top;
@@ -53,7 +53,7 @@ impl MainRequest {
 
                 collection.search(request, None, None).await
             }
-            MainRequest::Recommend(request) => {
+            SourceRequest::Recommend(request) => {
                 let mut request = request.clone();
 
                 request.limit *= top;
@@ -64,6 +64,8 @@ impl MainRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
+                println!("request: {:#?}", request);
+
                 recommend_by(request, collection, collection_by_name, None).await
             }
         }
@@ -71,10 +73,10 @@ impl MainRequest {
 
     fn merge_filter(&mut self, filter: &Filter) {
         match self {
-            MainRequest::Search(request) => {
+            SourceRequest::Search(request) => {
                 request.filter = Some(request.filter.clone().unwrap_or_default().merge(filter))
             }
-            MainRequest::Recommend(request) => {
+            SourceRequest::Recommend(request) => {
                 request.filter = Some(request.filter.clone().unwrap_or_default().merge(filter))
             }
         }
@@ -82,15 +84,15 @@ impl MainRequest {
 
     fn with_payload(&self) -> Option<WithPayloadInterface> {
         match self {
-            MainRequest::Search(request) => request.with_payload.clone(),
-            MainRequest::Recommend(request) => request.with_payload.clone(),
+            SourceRequest::Search(request) => request.with_payload.clone(),
+            SourceRequest::Recommend(request) => request.with_payload.clone(),
         }
     }
 
     fn with_vector(&self) -> Option<WithVector> {
         match self {
-            MainRequest::Search(request) => request.with_vector.clone(),
-            MainRequest::Recommend(request) => request.with_vector.clone(),
+            SourceRequest::Search(request) => request.with_vector.clone(),
+            SourceRequest::Recommend(request) => request.with_vector.clone(),
         }
     }
 }
@@ -98,7 +100,7 @@ impl MainRequest {
 #[derive(Clone)]
 pub struct GroupBy {
     /// Request to use
-    pub request: MainRequest,
+    pub request: SourceRequest,
     /// Path to the field to group by
     pub path: String,
     /// Limit of points to return per group
@@ -108,10 +110,10 @@ pub struct GroupBy {
 }
 
 impl GroupBy {
-    pub fn new(request: MainRequest, path: String, top: usize) -> Self {
+    pub fn new(request: SourceRequest, path: String, top: usize) -> Self {
         let groups = match &request {
-            MainRequest::Search(request) => request.limit,
-            MainRequest::Recommend(request) => request.limit,
+            SourceRequest::Search(request) => request.limit,
+            SourceRequest::Recommend(request) => request.limit,
         };
         Self {
             request,
@@ -176,10 +178,7 @@ impl GroupsAggregator {
             return;
         }
 
-        let inserted = group.insert(point.clone());
-        if !inserted {
-            println!("already present, couldnt insert: {:#?}", point);
-        }
+        group.insert(point.clone());
     }
 
     /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the group_by field
@@ -235,11 +234,8 @@ impl GroupsAggregator {
         for point in points {
             self.groups.iter_mut().for_each(|(_, ps)| {
                 if ps.contains(point) {
-                    let replaced = ps.replace(point.clone());
-                    assert!(
-                        replaced.is_some(),
-                        "The point was not in the group before replacing it! 😱"
-                    );
+                    ps.replace(point.clone())
+                        .expect("The point should be in the group before replacing it! 😱");
                 }
             });
         }
@@ -291,11 +287,10 @@ where
         }
         println!("COMPLETING AMOUNT OF GROUPS, lap: {i}");
 
-        // construct filter to exclude already found groups
-        let full_groups = groups.keys_of_filled_groups();
-
         let mut req = request.request.clone();
 
+        // construct filter to exclude already found groups
+        let full_groups = groups.keys_of_filled_groups();
         if !full_groups.is_empty() {
             let exclude_groups = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
                 request.path.clone(),
@@ -305,8 +300,11 @@ where
         }
 
         // exclude already aggregated points
-        let exclude_ids = Filter::new_must_not(Condition::HasId(groups.ids().into()));
-        req.merge_filter(&exclude_ids);
+        let ids = groups.ids();
+        if !ids.is_empty() {
+            let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
+            req.merge_filter(&exclude_ids);
+        }
 
         let points = req
             .r#do(
@@ -316,6 +314,10 @@ where
                 request.top,
             )
             .await?;
+
+        if points.is_empty() {
+            break;
+        }
 
         groups.add_points(&points)
     }
@@ -339,8 +341,11 @@ where
         req.merge_filter(&include_groups);
 
         // exclude already aggregated points
-        let exclude_ids = Filter::new_must_not(Condition::HasId(groups.ids().into()));
-        req.merge_filter(&exclude_ids);
+        let ids = groups.ids();
+        if !ids.is_empty() {
+            let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
+            req.merge_filter(&exclude_ids);
+        }
 
         let points = req
             .r#do(
@@ -377,6 +382,8 @@ where
 
     // turn to output form
     let result: Vec<Group> = groups.into();
+
+    println!("RESULT: {:#?}", result);
 
     Ok(result)
 }

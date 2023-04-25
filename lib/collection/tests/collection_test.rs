@@ -495,43 +495,42 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 mod grouping {
 
     use collection::collection::Collection;
-    use collection::grouping::{group_by, GroupBy, MainRequest};
+    use collection::grouping::{group_by, GroupBy, SourceRequest};
     use collection::operations::consistency_params::ReadConsistency;
-    use rand::distributions::Standard;
+    use rand::distributions::Uniform;
     use rand::rngs::ThreadRng;
     use rand::Rng;
     use segment::data_types::vectors::VectorType;
+    use segment::types::WithVector;
     use serde_json::json;
 
     use super::*;
 
     struct Resources {
-        group_by: GroupBy,
+        request: GroupBy,
         collection: Collection,
         read_consistency: Option<ReadConsistency>,
     }
 
     fn rand_vector(rng: &mut ThreadRng, size: usize) -> VectorType {
-        rng.sample_iter(&Standard).take(size).collect()
+        rng.sample_iter(Uniform::new(0.4, 0.6)).take(size).collect()
     }
 
     async fn setup() -> Resources {
         let mut rng = rand::thread_rng();
 
-        let vector = rand_vector(&mut rng, 4);
-
-        let request = MainRequest::Search(SearchRequest {
-            vector: vector.clone().into(),
+        let source = SourceRequest::Search(SearchRequest {
+            vector: vec![0.5, 0.5, 0.5, 0.5].into(),
             filter: None,
             params: None,
-            limit: 3,
+            limit: 4,
             offset: 0,
             with_payload: None,
             with_vector: None,
             score_threshold: None,
         });
 
-        let group_by = GroupBy::new(request, "docId".to_string(), 3);
+        let request = GroupBy::new(source, "docId".to_string(), 3);
 
         let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
@@ -549,8 +548,11 @@ mod grouping {
                     .into(),
                 payloads: (0..docs)
                     .flat_map(|x| {
-                        (0..chunks)
-                            .map(move |_| Some(Payload::from(json!({ "docId": x.to_string() }))))
+                        (0..chunks).map(move |_| {
+                            Some(Payload::from(
+                                json!({ "docId": x , "other_stuff": x.to_string() + "foo" }),
+                            ))
+                        })
                     })
                     .collect_vec()
                     .into(),
@@ -566,7 +568,7 @@ mod grouping {
         assert_eq!(insert_result.status, UpdateStatus::Completed);
 
         Resources {
-            group_by,
+            request,
             collection,
             read_consistency: None,
         }
@@ -577,7 +579,7 @@ mod grouping {
         let resources = setup().await;
 
         let result = group_by(
-            resources.group_by.clone(),
+            resources.request.clone(),
             &resources.collection,
             |_name| async { unreachable!() },
             resources.read_consistency,
@@ -588,7 +590,7 @@ mod grouping {
 
         let result = result.unwrap();
         println!("{:#?}", result);
-        let group_req = resources.group_by;
+        let group_req = resources.request;
 
         assert_eq!(result.len(), group_req.groups);
         assert_eq!(result[0].hits.len(), group_req.top);
@@ -609,24 +611,28 @@ mod grouping {
 
     #[tokio::test]
     async fn recommending() {
-        let mut resources = setup().await;
+        let resources = setup().await;
 
-        resources.group_by.request = MainRequest::Recommend(RecommendRequest {
-            filter: None,
-            params: None,
-            limit: 3,
-            offset: 0,
-            with_payload: None,
-            with_vector: None,
-            score_threshold: None,
-            positive: vec![1.into(), 2.into(), 3.into()],
-            negative: Vec::new(),
-            using: None,
-            lookup_from: None,
-        });
+        let request = GroupBy::new(
+            SourceRequest::Recommend(RecommendRequest {
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+                positive: vec![1.into(), 2.into(), 3.into()],
+                negative: Vec::new(),
+                using: None,
+                lookup_from: None,
+            }),
+            "docId".to_string(),
+            2,
+        );
 
         let result = group_by(
-            resources.group_by.clone(),
+            request.clone(),
             &resources.collection,
             |_name| async { unreachable!() },
             resources.read_consistency,
@@ -636,14 +642,14 @@ mod grouping {
         assert!(result.is_ok());
 
         let result = result.unwrap();
-        let group_req = resources.group_by;
 
-        assert_eq!(result.len(), group_req.groups);
-        assert_eq!(result[0].hits.len(), group_req.top);
+        assert_eq!(result.len(), request.groups);
 
-        // is sorted?
         let mut last_group_best_score = f32::MAX;
         for group in result {
+            assert_eq!(group.hits.len(), request.top);
+
+            // is sorted?
             assert!(group.hits[0].score <= last_group_best_score);
             last_group_best_score = group.hits[0].score;
 
@@ -655,12 +661,91 @@ mod grouping {
         }
     }
 
-    fn with_filter() {
-        todo!();
+    #[tokio::test]
+    async fn with_filter() {
+        let resources = setup().await;
+
+        let filter: Filter = serde_json::from_value(json!({
+            "must": [
+                {
+                    "key": "docId",
+                    "range": {
+                        "gte": 1,
+                        "lte": 2
+                    }
+                }
+            ]
+        }))
+        .unwrap();
+
+        let group_by_request = GroupBy::new(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: Some(filter.clone()),
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request,
+            &resources.collection,
+            |_name| async { unreachable!() },
+            resources.read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 2);
     }
 
-    fn with_payload_and_vectors() {
-        todo!();
+    #[tokio::test]
+    async fn with_payload_and_vectors() {
+        let resources = setup().await;
+
+        let group_by_request = GroupBy::new(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: Some(WithVector::Bool(true)),
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &resources.collection,
+            |_name| async { unreachable!() },
+            resources.read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        // assert_eq!(result.len(), 4);
+
+        for group in result {
+            // assert_eq!(group.hits.len(), group_by_request.top);
+            assert!(group.hits[0].payload.is_some());
+            assert!(group.hits[0].vector.is_some());
+        }
     }
 
     #[test]
