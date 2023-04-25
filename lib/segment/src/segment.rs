@@ -113,8 +113,11 @@ impl Segment {
         Ok(())
     }
 
-    /// Insert new vectors into the segment.
-    /// WARN: Available for appendable segments only
+    /// Insert new vectors into the segment
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only.
     fn insert_new_vectors(
         &mut self,
         point_id: PointIdType,
