@@ -101,14 +101,15 @@ pub trait SegmentOptimizer {
             .map(|s| {
                 let segment = s.get();
                 let locked_segment = segment.read();
-                locked_segment.available_point_count()
-                    * locked_segment
-                        .vector_dims()
-                        .values()
-                        .max()
-                        .copied()
-                        .unwrap_or(0)
-                    * VECTOR_ELEMENT_SIZE
+                locked_segment
+                    .vector_dims()
+                    .into_iter()
+                    .map(|(vector_name, dim)| {
+                        let available_vectors =
+                            locked_segment.available_vector_count(&vector_name).unwrap();
+                        dim * VECTOR_ELEMENT_SIZE * available_vectors
+                    })
+                    .sum::<usize>()
             })
             .sum();
 

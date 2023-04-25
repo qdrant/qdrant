@@ -971,6 +971,14 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().available_point_count()
     }
 
+    fn available_vector_count(&self, vector_name: &str) -> OperationResult<usize> {
+        check_vector_name(vector_name, &self.segment_config)?;
+        Ok(self.vector_data[vector_name]
+            .vector_storage
+            .borrow()
+            .available_vector_count())
+    }
+
     fn deleted_point_count(&self) -> usize {
         self.id_tracker.borrow().deleted_point_count()
     }
