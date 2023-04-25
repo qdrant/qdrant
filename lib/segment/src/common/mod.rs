@@ -35,13 +35,5 @@ pub fn check_vectors_set(
         }
     }
 
-    for vector_name in segment_config.vector_data.keys() {
-        if !vectors.contains_key(vector_name) {
-            return Err(OperationError::MissedVectorName {
-                received_name: vector_name.to_owned(),
-            });
-        }
-    }
-
     Ok(())
 }

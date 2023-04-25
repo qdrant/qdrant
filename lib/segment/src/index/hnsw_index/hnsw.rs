@@ -50,7 +50,8 @@ pub struct HNSWIndex<TGraphLinks: GraphLinks> {
 }
 
 struct SearchesTelemetry {
-    unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
+    unfiltered_plain: Arc<Mutex<OperationDurationsAggregator>>,
+    unfiltered_hnsw: Arc<Mutex<OperationDurationsAggregator>>,
     small_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     large_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     exact_filtered: Arc<Mutex<OperationDurationsAggregator>>,
@@ -71,13 +72,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
-            let indexing_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
+            let full_scan_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
                 / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
 
             HnswGraphConfig::new(
                 hnsw_config.m,
                 hnsw_config.ef_construct,
-                indexing_threshold,
+                full_scan_threshold,
                 hnsw_config.max_indexing_threads,
                 hnsw_config.payload_m,
             )
@@ -99,7 +100,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             path: path.to_owned(),
             graph,
             searches_telemetry: SearchesTelemetry {
-                unfiltered: OperationDurationsAggregator::new(),
+                unfiltered_hnsw: OperationDurationsAggregator::new(),
+                unfiltered_plain: OperationDurationsAggregator::new(),
                 small_cardinality: OperationDurationsAggregator::new(),
                 large_cardinality: OperationDurationsAggregator::new(),
                 exact_filtered: OperationDurationsAggregator::new(),
@@ -140,11 +142,14 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let filter = Filter::new_must(Field(condition));
 
+        let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let id_tracker = self.id_tracker.borrow();
 
-        let points_to_index: Vec<_> = payload_index.query_points(&filter).collect();
+        let available_vecs = vector_storage.available_vec_count();
+        let points_to_index: Vec<_> = payload_index
+            .query_points(&filter, Some(available_vecs))
+            .collect();
 
         for block_point_id in points_to_index.iter().copied() {
             block_filter_list.check_and_update_visited(block_point_id);
@@ -206,8 +211,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         // ef should always be bigger that required top
         let ef = max(req_ef, top);
 
-        let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -291,10 +296,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         top: usize,
         params: Option<&SearchParams>,
     ) -> Vec<Vec<ScoredPointOffset>> {
+        let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let id_tracker = self.id_tracker.borrow();
-        let mut filtered_iter = payload_index.query_points(filter);
+        let available_vecs = vector_storage.available_vec_count();
+        let mut filtered_iter = payload_index.query_points(filter, Some(available_vecs));
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -348,11 +354,23 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
         match filter {
             None => {
-                if exact {
-                    let _timer =
-                        ScopeDurationMeasurer::new(&self.searches_telemetry.exact_unfiltered);
-                    let vector_storage = self.vector_storage.borrow();
-                    let id_tracker = self.id_tracker.borrow();
+                let id_tracker = self.id_tracker.borrow();
+                let vector_storage = self.vector_storage.borrow();
+
+                // Determine whether to a plain or graph search, pick search timer aggregator
+                // Because an HNSW graph is built, we'd normally always assume to search the graph.
+                // But because a lot of points may be deleted in this graph, it may just be faster
+                // to do a plain search instead.
+                let plain_search =
+                    exact || vector_storage.available_vec_count() < self.config.full_scan_threshold;
+
+                // Do plain or graph search
+                if plain_search {
+                    let _timer = ScopeDurationMeasurer::new(if plain_search {
+                        &self.searches_telemetry.unfiltered_plain
+                    } else {
+                        &self.searches_telemetry.exact_unfiltered
+                    });
                     vectors
                         .iter()
                         .map(|vector| {
@@ -365,7 +383,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         })
                         .collect()
                 } else {
-                    let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered);
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
                     self.search_vectors_with_graph(vectors, None, top, params)
                 }
             }
@@ -395,18 +414,21 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 }
 
                 let payload_index = self.payload_index.borrow();
-                let query_cardinality = payload_index.estimate_cardinality(query_filter);
+                let vector_storage = self.vector_storage.borrow();
+                let available_vecs = vector_storage.available_vec_count();
+                let query_cardinality =
+                    payload_index.estimate_cardinality(query_filter, Some(available_vecs));
 
                 // debug!("query_cardinality: {:#?}", query_cardinality);
 
-                if query_cardinality.max < self.config.indexing_threshold {
+                if query_cardinality.max < self.config.full_scan_threshold {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
                     return self.search_vectors_plain(vectors, query_filter, top, params);
                 }
 
-                if query_cardinality.min > self.config.indexing_threshold {
+                if query_cardinality.min > self.config.full_scan_threshold {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
@@ -418,10 +440,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
                 let id_tracker = self.id_tracker.borrow();
                 if sample_check_cardinality(
-                    id_tracker.sample_ids(),
+                    id_tracker.sample_ids(Some(vector_storage.deleted_vec_bitslice())),
                     |idx| filter_context.check(idx),
-                    self.config.indexing_threshold,
-                    id_tracker.points_count(),
+                    self.config.full_scan_threshold,
+                    available_vecs,
                 ) {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
@@ -439,25 +461,21 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
-        let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
         let mut rng = thread_rng();
 
-        let total_points = vector_storage.total_vector_count();
+        let available_vecs = vector_storage.available_vec_count();
+        let deleted_bitslice = vector_storage.deleted_vec_bitslice();
 
-        debug!("building hnsw for {}", total_points);
+        debug!("building HNSW for {} vectors", available_vecs);
+        let indexing_threshold = self.config.full_scan_threshold;
         let mut graph_layers_builder = GraphLayersBuilder::new(
-            total_points,
+            available_vecs,
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
-            max(
-                1,
-                total_points
-                    .checked_div(self.config.indexing_threshold)
-                    .unwrap_or(0)
-                    * 10,
-            ),
+            (available_vecs.checked_div(indexing_threshold).unwrap_or(0) * 10).max(1),
             HNSW_USE_HEURISTIC,
         );
 
@@ -466,14 +484,14 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .num_threads(self.config.max_rayon_threads())
             .build()?;
 
-        for vector_id in id_tracker.iter_ids() {
+        for vector_id in id_tracker.iter_ids_exluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(vector_id, level);
         }
 
         if self.config.m > 0 {
-            let ids: Vec<_> = id_tracker.iter_ids().collect();
+            let ids: Vec<_> = id_tracker.iter_ids_exluding(deleted_bitslice).collect();
 
             pool.install(|| {
                 ids.into_par_iter().try_for_each(|vector_id| {
@@ -505,11 +523,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             debug!("skip building main HNSW graph");
         }
 
-        let total_vectors_count = vector_storage.total_vector_count();
-        let mut block_filter_list = VisitedList::new(total_vectors_count);
-
+        let mut block_filter_list = VisitedList::new(available_vecs);
         let payload_index = self.payload_index.borrow();
-
         let payload_m = self.config.payload_m.unwrap_or(self.config.m);
 
         if payload_m > 0 {
@@ -522,11 +537,11 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // We add multiplier for the extra safety.
                 let percolation_multiplier = 2;
                 let max_block_size = if self.config.m > 0 {
-                    total_points / self.config.m * percolation_multiplier
+                    available_vecs / self.config.m * percolation_multiplier
                 } else {
                     usize::MAX
                 };
-                let min_block_size = self.config.indexing_threshold;
+                let min_block_size = indexing_threshold;
 
                 for payload_block in payload_index.payload_blocks(&field, min_block_size) {
                     check_process_stopped(stopped)?;
@@ -535,7 +550,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     }
                     // ToDo: re-use graph layer for same payload
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
-                        self.vector_storage.borrow().total_vector_count(),
+                        available_vecs,
                         payload_m,
                         self.config.payload_m0.unwrap_or(self.config.m0),
                         self.config.ef_construct,
@@ -569,9 +584,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
         VectorIndexSearchesTelemetry {
             index_name: None,
-            unfiltered_plain: Default::default(),
+            unfiltered_plain: tm.unfiltered_plain.lock().get_statistics(),
             filtered_plain: Default::default(),
-            unfiltered_hnsw: tm.unfiltered.lock().get_statistics(),
+            unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(),
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
             filtered_exact: tm.exact_filtered.lock().get_statistics(),

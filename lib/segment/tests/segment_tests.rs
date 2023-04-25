@@ -133,20 +133,29 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_segment_3(dir.path());
 
-        let result = segment.upsert_vector(
-            6,
-            6.into(),
-            &NamedVectors::from([
-                ("vector2".to_owned(), vec![10.]),
-                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
-            ]),
-        );
+        let exists = segment
+            .upsert_vector(
+                7,
+                1.into(),
+                &NamedVectors::from([
+                    ("vector2".to_owned(), vec![10.]),
+                    ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ]),
+            )
+            .unwrap();
+        assert!(exists, "this partial vector should overwrite existing");
 
-        if let Err(OperationError::MissedVectorName { received_name }) = result {
-            assert!(received_name == "vector1");
-        } else {
-            panic!("wrong upsert result")
-        }
+        let exists = segment
+            .upsert_vector(
+                8,
+                6.into(),
+                &NamedVectors::from([
+                    ("vector2".to_owned(), vec![10.]),
+                    ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ]),
+            )
+            .unwrap();
+        assert!(!exists, "this partial vector should not existing");
     }
 
     #[test]
