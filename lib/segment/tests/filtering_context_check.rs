@@ -26,8 +26,8 @@ mod tests {
         for _ in 0..ATTEMPTS {
             let filter = random_filter(&mut rng, 3);
 
-            let plain_filter_context = plain_index.filter_context(&filter);
-            let struct_filter_context = struct_index.filter_context(&filter);
+            let plain_filter_context = plain_index.filter_context(&filter, None);
+            let struct_filter_context = struct_index.filter_context(&filter, None);
 
             let plain_result = (0..NUM_POINTS)
                 .filter(|point_id| plain_filter_context.check(*point_id as PointOffsetType))

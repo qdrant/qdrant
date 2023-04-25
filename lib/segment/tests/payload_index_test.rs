@@ -312,7 +312,7 @@ mod tests {
             .estimate_cardinality(&filter, None);
 
         let payload_index = struct_segment.payload_index.borrow();
-        let filter_context = payload_index.filter_context(&filter);
+        let filter_context = payload_index.filter_context(&filter, None);
         let exact = struct_segment
             .id_tracker
             .borrow()

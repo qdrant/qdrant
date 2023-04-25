@@ -209,8 +209,13 @@ impl StructPayloadIndex {
         self.id_tracker.borrow().available_point_count()
     }
 
-    fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
-        let estimator = |condition: &Condition| self.condition_cardinality(condition);
+    fn struct_filtered_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        available_points: Option<usize>,
+    ) -> StructFilterContext<'a> {
+        let estimator =
+            |condition: &Condition| self.condition_cardinality(condition, available_points);
         let id_tracker = self.id_tracker.borrow();
         let payload_provider = PayloadProvider::new(self.payload.clone());
         StructFilterContext::new(
@@ -223,11 +228,16 @@ impl StructPayloadIndex {
         )
     }
 
-    fn condition_cardinality(&self, condition: &Condition) -> CardinalityEstimation {
+    fn condition_cardinality(
+        &self,
+        condition: &Condition,
+        available_points: Option<usize>,
+    ) -> CardinalityEstimation {
         match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
-                let available_points = self.available_point_count();
+                let available_points =
+                    available_points.unwrap_or_else(|| self.available_point_count());
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&field.key) {
@@ -363,7 +373,8 @@ impl PayloadIndex for StructPayloadIndex {
         query: &Filter,
         available_points: Option<usize>,
     ) -> CardinalityEstimation {
-        let estimator = |condition: &Condition| self.condition_cardinality(condition);
+        let estimator =
+            |condition: &Condition| self.condition_cardinality(condition, available_points);
         let available_points = available_points.unwrap_or_else(|| self.available_point_count());
         estimate_filter(&estimator, query, available_points)
     }
@@ -382,7 +393,7 @@ impl PayloadIndex for StructPayloadIndex {
                     points_iterator.iter_ids()
                 });
 
-            let struct_filtered_context = self.struct_filtered_context(query);
+            let struct_filtered_context = self.struct_filtered_context(query, available_points);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
                 full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
@@ -390,7 +401,7 @@ impl PayloadIndex for StructPayloadIndex {
             Box::new(matched_points)
         } else {
             let points_iterator_ref = self.id_tracker.borrow();
-            let struct_filtered_context = self.struct_filtered_context(query);
+            let struct_filtered_context = self.struct_filtered_context(query, available_points);
 
             // CPU-optimized strategy here: points are made unique before applying other filters.
             // TODO: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
@@ -438,8 +449,12 @@ impl PayloadIndex for StructPayloadIndex {
         })
     }
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(self.struct_filtered_context(filter))
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        available_points: Option<usize>,
+    ) -> Box<dyn FilterContext + 'a> {
+        Box::new(self.struct_filtered_context(filter, available_points))
     }
 
     fn payload_blocks(

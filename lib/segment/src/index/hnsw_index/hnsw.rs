@@ -213,6 +213,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
+        let available_vecs = vector_storage.available_vector_count();
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -248,7 +249,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         };
         let payload_index = self.payload_index.borrow();
 
-        let filter_context = filter.map(|f| payload_index.filter_context(f));
+        let filter_context = filter.map(|f| payload_index.filter_context(f, Some(available_vecs)));
 
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
@@ -435,7 +436,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     return self.search_vectors_with_graph(vectors, filter, top, params);
                 }
 
-                let filter_context = payload_index.filter_context(query_filter);
+                let filter_context =
+                    payload_index.filter_context(query_filter, Some(available_vecs));
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
                 let id_tracker = self.id_tracker.borrow();

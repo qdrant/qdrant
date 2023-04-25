@@ -551,7 +551,7 @@ impl Segment {
         condition: &Filter,
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
-        let filter_context = payload_index.filter_context(condition);
+        let filter_context = payload_index.filter_context(condition, None);
         self.id_tracker
             .borrow()
             .iter_from(offset)

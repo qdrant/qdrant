@@ -122,9 +122,9 @@ impl PayloadIndex for PlainPayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-        _available_points: Option<usize>,
+        available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let filter_context = self.filter_context(query);
+        let filter_context = self.filter_context(query, available_points);
         Box::new(ArcAtomicRefCellIterator::new(
             self.id_tracker.clone(),
             move |points_iterator| {
@@ -139,7 +139,11 @@ impl PayloadIndex for PlainPayloadIndex {
         0 // No points are indexed in the plain index
     }
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        _available_points: Option<usize>,
+    ) -> Box<dyn FilterContext + 'a> {
         Box::new(PlainFilterContext {
             filter,
             condition_checker: self.condition_checker.clone(),
