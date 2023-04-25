@@ -1,1 +1,1 @@
-pub mod aggregator;
+mod aggregator;

@@ -29,7 +29,7 @@ impl From<&str> for GroupKey {
 type Hits = HashSet<ScoredPoint>;
 
 #[allow(dead_code)] // temporary
-struct GroupsAggregator {
+pub(super) struct GroupsAggregator {
     groups: HashMap<GroupKey, Hits>,
     max_group_size: usize,
     grouped_by: String,
@@ -38,7 +38,7 @@ struct GroupsAggregator {
 
 #[allow(dead_code)] // temporary
 impl GroupsAggregator {
-    fn new(groups: usize, group_size: usize, grouped_by: String) -> Self {
+    pub(super) fn new(groups: usize, group_size: usize, grouped_by: String) -> Self {
         Self {
             groups: HashMap::with_capacity(groups),
             max_group_size: group_size,
@@ -48,7 +48,7 @@ impl GroupsAggregator {
     }
 
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
-    fn add_point(&mut self, point: &ScoredPoint) {
+    pub(super) fn add_point(&mut self, point: &ScoredPoint) {
         // if the key contains multiple values, grabs the first one
         let group_key = *point
             .payload
@@ -86,7 +86,7 @@ impl GroupsAggregator {
     }
 
     /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field
-    fn add_points(&mut self, points: &[ScoredPoint]) {
+    pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
         print_points(points);
         points.iter().for_each(|point| self.add_point(point));
         for group in self.groups.iter() {
@@ -94,12 +94,12 @@ impl GroupsAggregator {
         }
     }
 
-    fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.groups.len()
     }
 
     // gets the keys of the groups that have less than the max group size
-    fn keys_of_unfilled_groups(&self) -> Vec<Value> {
+    pub(super) fn keys_of_unfilled_groups(&self) -> Vec<Value> {
         self.groups
             .iter()
             .filter(|(_, hits)| hits.len() < self.max_group_size)
@@ -108,7 +108,7 @@ impl GroupsAggregator {
     }
 
     // gets the keys of the groups that have reached or exceeded the max group size
-    fn keys_of_filled_groups(&self) -> Vec<Value> {
+    pub(super) fn keys_of_filled_groups(&self) -> Vec<Value> {
         self.groups
             .iter()
             .filter(|(_, hits)| hits.len() >= self.max_group_size)
@@ -117,7 +117,7 @@ impl GroupsAggregator {
     }
 
     /// Gets the ids of the already present points across the groups
-    fn ids(&self) -> HashSet<ExtendedPointId> {
+    pub(super) fn ids(&self) -> HashSet<ExtendedPointId> {
         self.groups
             .iter()
             .flat_map(|(_, hits)| hits.iter())
@@ -125,12 +125,16 @@ impl GroupsAggregator {
             .collect()
     }
 
-    fn flatten(&self) -> Vec<ScoredPoint> {
+    pub(super) fn groups(&self) -> &HashMap<GroupKey, Hits> {
+        &self.groups
+    }
+
+    pub(super) fn flatten(&self) -> Vec<ScoredPoint> {
         self.groups.values().flatten().cloned().collect()
     }
 
     /// Copies the payload and vector from the provided points to the points inside of each of the groups
-    fn hydrate_from(&mut self, points: &[ScoredPoint]) {
+    pub(super) fn hydrate_from(&mut self, points: &[ScoredPoint]) {
         for point in points {
             self.groups.iter_mut().for_each(|(_, ps)| {
                 if ps.contains(point) {
