@@ -5,7 +5,7 @@ use segment::types::{ExtendedPointId, ScoredPoint};
 use serde_json::Value;
 
 #[derive(Debug, Eq, PartialEq)]
-struct GroupKey(serde_json::Value);
+pub(super) struct GroupKey(serde_json::Value);
 
 impl Hash for GroupKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
