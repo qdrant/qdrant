@@ -89,6 +89,10 @@ impl<'a> NamedVectors<'a> {
     pub fn iter(&self) -> impl Iterator<Item = (&str, &[VectorElementType])> {
         self.map.iter().map(|(k, v)| (k.as_ref(), v.as_ref()))
     }
+
+    pub fn get(&self, key: &str) -> Option<&[VectorElementType]> {
+        self.map.get(key).map(|v| v.as_ref())
+    }
 }
 
 impl<'a> IntoIterator for NamedVectors<'a> {

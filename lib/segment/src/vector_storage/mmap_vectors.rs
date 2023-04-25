@@ -154,13 +154,16 @@ impl MmapVectors {
         self.raw_vector_offset(offset)
     }
 
-    pub fn delete(&mut self, key: PointOffsetType) {
+    pub fn delete(&mut self, key: PointOffsetType) -> bool {
         if self.num_vectors <= key as usize {
-            return;
+            return false;
         }
-        if !self.deleted.replace(key as usize, true) {
+
+        let is_deleted = !self.deleted.replace(key as usize, true);
+        if is_deleted {
             self.deleted_count += 1;
         }
+        is_deleted
     }
 
     pub fn is_deleted_vec(&self, key: PointOffsetType) -> bool {
