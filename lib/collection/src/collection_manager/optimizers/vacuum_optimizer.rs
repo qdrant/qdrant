@@ -227,7 +227,6 @@ mod tests {
 
     use itertools::Itertools;
     use parking_lot::RwLock;
-    use rand::Rng;
     use segment::entry::entry_point::SegmentEntry;
     use segment::types::Distance;
     use serde_json::{json, Value};
@@ -253,13 +252,12 @@ mod tests {
             LockedSegment::Proxy(_) => panic!("Not expected"),
         };
 
-        let mut rnd = rand::thread_rng();
-
         let segment_points_to_delete = segment
             .get()
             .read()
             .iter_points()
-            .filter(|_| rnd.gen_bool(0.5))
+            .enumerate()
+            .filter_map(|(i, point_id)| (i % 2 == 0).then_some(point_id))
             .collect_vec();
 
         for &point_id in &segment_points_to_delete {
@@ -270,14 +268,16 @@ mod tests {
             .get()
             .read()
             .iter_points()
-            .filter(|_| rnd.gen_bool(0.05))
+            .enumerate()
+            .filter_map(|(i, point_id)| (i % 20 == 0).then_some(point_id))
             .collect_vec();
 
         let segment_points_to_assign2 = segment
             .get()
             .read()
             .iter_points()
-            .filter(|_| rnd.gen_bool(0.05))
+            .enumerate()
+            .filter_map(|(i, point_id)| (i % 20 == 0).then_some(point_id))
             .collect_vec();
 
         for &point_id in &segment_points_to_assign1 {
@@ -491,7 +491,6 @@ mod tests {
         {
             let holder = locked_holder.write();
             let segment = holder.get(segment_id).unwrap();
-            let mut rnd = rand::thread_rng();
             let mut segment = match segment {
                 LockedSegment::Original(s) => s.write(),
                 LockedSegment::Proxy(_) => unreachable!(),
@@ -500,7 +499,8 @@ mod tests {
             // Delete 15% of points
             let segment_points_to_delete = segment
                 .iter_points()
-                .filter(|_| rnd.gen_bool(0.15))
+                .enumerate()
+                .filter_map(|(i, point_id)| (i % 8 == 0).then_some(point_id))
                 .collect_vec();
             for &point_id in &segment_points_to_delete {
                 segment.delete_point(101, point_id).unwrap();
@@ -515,7 +515,8 @@ mod tests {
                 let vector1_vecs_to_delete = id_tracker
                     .borrow()
                     .iter_external()
-                    .filter(|_| rnd.gen_bool(0.8))
+                    .enumerate()
+                    .filter_map(|(i, point_id)| (i % 5 <= 4).then_some(point_id))
                     .collect_vec();
                 for &point_id in &vector1_vecs_to_delete {
                     let id = id_tracker.borrow().internal_id(point_id).unwrap();
@@ -532,7 +533,8 @@ mod tests {
                 let vector2_vecs_to_delete = id_tracker
                     .borrow()
                     .iter_external()
-                    .filter(|_| rnd.gen_bool(0.1))
+                    .enumerate()
+                    .filter_map(|(i, point_id)| (i % 10 == 0).then_some(point_id))
                     .collect_vec();
                 for &point_id in &vector2_vecs_to_delete {
                     let id = id_tracker.borrow().internal_id(point_id).unwrap();
