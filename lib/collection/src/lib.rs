@@ -17,3 +17,4 @@ pub mod wal;
 
 #[cfg(test)]
 mod tests;
+mod grouping;

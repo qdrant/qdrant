@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
+use std::hash::Hash;
 use std::mem::size_of;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -194,6 +195,13 @@ impl PartialOrd for ScoredPoint {
 impl PartialEq for ScoredPoint {
     fn eq(&self, other: &Self) -> bool {
         (self.id, &self.score) == (other.id, &other.score)
+    }
+}
+
+impl Hash for ScoredPoint {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.version.hash(state);
     }
 }
 
@@ -1476,7 +1484,6 @@ mod tests {
         "#;
 
         let filter: Filter = serde_json::from_str(query).unwrap();
-        println!("{filter:?}");
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);

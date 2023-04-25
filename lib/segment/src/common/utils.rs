@@ -49,7 +49,7 @@ impl<T> MultiValue<T> {
         }
     }
 
-    pub(crate) fn values(self) -> Vec<T> {
+    pub fn values(self) -> Vec<T> {
         match self {
             Self::Single(opt) => opt.into_iter().collect(),
             Self::Multiple(vec) => vec,
