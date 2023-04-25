@@ -18,6 +18,7 @@ mod tests {
         PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType,
         StorageType, VectorDataConfig,
     };
+    use segment::vector_storage::VectorStorage;
     use serde_json::json;
     use tempfile::Builder;
 
@@ -85,12 +86,11 @@ mod tests {
             payload_m: None,
         };
 
+        let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
         let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
             hnsw_dir.path(),
             segment.id_tracker.clone(),
-            segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .clone(),
+            vector_storage.clone(),
             payload_index_ptr.clone(),
             hnsw_config,
         )
@@ -113,11 +113,13 @@ mod tests {
             );
         }
 
+        let vector_storage = vector_storage.borrow();
         let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
+        let px = payload_index_ptr.borrow();
+        let available_vecs = vector_storage.available_vec_count();
         for block in &blocks {
-            let px = payload_index_ptr.borrow();
             let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-            let points = px.query_points(&filter);
+            let points = px.query_points(&filter, Some(available_vecs));
             for point in points {
                 coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
             }

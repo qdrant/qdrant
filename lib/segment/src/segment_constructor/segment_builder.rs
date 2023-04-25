@@ -1,4 +1,4 @@
-use core::cmp;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -58,7 +58,7 @@ impl SegmentBuilder {
                 "Segment building error: created segment not found",
             )),
             Some(self_segment) => {
-                self_segment.version = Some(cmp::max(self_segment.version(), other.version()));
+                self_segment.version = Some(max(self_segment.version(), other.version()));
 
                 let other_id_tracker = other.id_tracker.borrow();
                 let other_vector_storages: HashMap<_, _> = other
@@ -92,16 +92,16 @@ impl SegmentBuilder {
                 let mut new_internal_range = None;
                 for (vector_name, vector_storage) in &mut vector_storages {
                     check_process_stopped(stopped)?;
-                    let other_vector_storage = other_vector_storages.get(vector_name);
-                    if other_vector_storage.is_none() {
-                        return Err(OperationError::service_error(format!(
+                    let other_vector_storage = match other_vector_storages.get(vector_name) {
+                        Some(vector_storage) => vector_storage,
+                        None => return Err(OperationError::service_error(format!(
                             "Cannot update from other segment because if missing vector name {vector_name}"
-                        )));
-                    }
-                    let other_vector_storage = other_vector_storage.unwrap();
+                        ))),
+                    };
+                    let mut other_ids = other_id_tracker.iter_ids();
                     let internal_range = vector_storage.update_from(
                         other_vector_storage,
-                        &mut other_id_tracker.iter_ids(),
+                        &mut other_ids,
                         stopped,
                     )?;
                     match new_internal_range.clone() {
@@ -149,11 +149,18 @@ impl SegmentBuilder {
                                 let existing_version =
                                     id_tracker.internal_version(existing_internal_id).unwrap();
                                 if existing_version < other_version {
-                                    // Other version is the newest, remove the existing one and replace
+                                    // Other version is the newest, reassign point to new internal ID
                                     id_tracker.drop(external_id)?;
                                     id_tracker.set_link(external_id, new_internal_id)?;
                                     id_tracker
                                         .set_internal_version(new_internal_id, other_version)?;
+
+                                    // Propagate deletes, delete all vectors for old internal ID
+                                    for vector_storage in vector_storages.values_mut() {
+                                        vector_storage.delete_vec(old_internal_id)?;
+                                    }
+
+                                    // Reassign payload point to new internal ID
                                     payload_index.drop(existing_internal_id)?;
                                     payload_index.assign(
                                         new_internal_id,

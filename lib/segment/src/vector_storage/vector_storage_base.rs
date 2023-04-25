@@ -45,6 +45,18 @@ pub trait VectorStorage {
     /// Number of vectors, marked as deleted but still stored
     fn total_vector_count(&self) -> usize;
 
+    /// Get the number of available vectors, considering deleted points and vectors
+    ///
+    /// This uses [`total_vector_count`] and [`deleted_vec_count`] internally.
+    ///
+    /// # Warning
+    ///
+    /// This number may not always be accurate. See warning in [`deleted_vec_count`] documentation.
+    fn available_vec_count(&self) -> usize {
+        self.total_vector_count()
+            .saturating_sub(self.deleted_vec_count())
+    }
+
     /// Number of all stored vectors including deleted
     fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType];
 
@@ -78,12 +90,24 @@ pub trait VectorStorage {
     fn files(&self) -> Vec<PathBuf>;
 
     /// Flag the vector by the given key as deleted
-    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<()>;
+    /// Returns true if the vector was not deleted before and is now deleted
+    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool>;
 
     /// Check whether the vector at the given key is flagged as deleted
     fn is_deleted_vec(&self, key: PointOffsetType) -> bool;
 
-    /// Get number of deleted vectors
+    /// Get the number of deleted vectors, considering deleted points and vectors
+    ///
+    /// Vectors may be deleted at two levels, as point or as vector. Deleted points should
+    /// propagate to deleting the vectors. That means that the deleted vector count includes the
+    /// number of deleted points as well.
+    ///
+    /// # Warning
+    ///
+    /// In some very exceptional cases it is possible for this count not to include some deleted
+    /// points. That may happen when flushing a segment to disk fails. This should be recovered
+    /// when loading/recovering the segment, but that isn't guaranteed. You should therefore use
+    /// the deleted count with care.
     fn deleted_vec_count(&self) -> usize;
 
     /// Get [`BitSlice`] representation for deleted vectors with deletion flags
@@ -189,7 +213,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<()> {
+    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         match self {
             VectorStorageEnum::Simple(v) => v.delete_vec(key),
             VectorStorageEnum::Memmap(v) => v.delete_vec(key),

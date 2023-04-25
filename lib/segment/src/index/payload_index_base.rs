@@ -27,12 +27,21 @@ pub trait PayloadIndex {
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()>;
 
     /// Estimate amount of points (min, max) which satisfies filtering condition.
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation;
+    ///
+    /// A best estimation of the number of available points should be given.
+    fn estimate_cardinality(
+        &self,
+        query: &Filter,
+        available_points: Option<usize>,
+    ) -> CardinalityEstimation;
 
     /// Return list of all point ids, which satisfy filtering criteria
+    ///
+    /// A best estimation of the number of available points should be given.
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
+        available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
     /// Return number of points, indexed by this field

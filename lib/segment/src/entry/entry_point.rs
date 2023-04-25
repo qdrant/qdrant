@@ -196,6 +196,13 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<bool>;
 
+    fn delete_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector_name: &str,
+    ) -> OperationResult<bool>;
+
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
@@ -227,7 +234,7 @@ pub trait SegmentEntry {
         &self,
         vector_name: &str,
         point_id: PointIdType,
-    ) -> OperationResult<Vec<VectorElementType>>;
+    ) -> OperationResult<Option<Vec<VectorElementType>>>;
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
 
@@ -250,6 +257,8 @@ pub trait SegmentEntry {
     fn has_point(&self, point_id: PointIdType) -> bool;
 
     /// Return number of vectors in this segment
+    ///
+    /// - Includes soft deleted points
     fn points_count(&self) -> usize;
 
     /// Estimate points count in this segment for given filter.

@@ -355,22 +355,25 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        let total_points = self.total_points();
-
+    fn estimate_cardinality(
+        &self,
+        query: &Filter,
+        available_points: Option<usize>,
+    ) -> CardinalityEstimation {
         let estimator = |condition: &Condition| self.condition_cardinality(condition);
-
-        estimate_filter(&estimator, query, total_points)
+        let available_points = available_points.unwrap_or_else(|| self.total_points());
+        estimate_filter(&estimator, query, available_points)
     }
 
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
+        available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
 
-        let query_cardinality = self.estimate_cardinality(query);
-        return if query_cardinality.primary_clauses.is_empty() {
+        let query_cardinality = self.estimate_cardinality(query, available_points);
+        if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator =
                 ArcAtomicRefCellIterator::new(self.id_tracker.clone(), |points_iterator| {
                     points_iterator.iter_ids()
@@ -414,7 +417,7 @@ impl PayloadIndex for StructPayloadIndex {
 
             let matched_points_iter = preselected.into_iter();
             Box::new(matched_points_iter)
-        };
+        }
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {

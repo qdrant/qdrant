@@ -81,10 +81,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
-        let values_count = match self.map.get(value) {
-            None => 0,
-            Some(points) => points.len(),
-        };
+        let values_count = self.map.get(value).map(|p| p.len()).unwrap_or(0);
 
         CardinalityEstimation {
             primary_clauses: vec![],
