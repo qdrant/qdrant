@@ -1,17 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-
 use itertools::Itertools;
-use segment::types::{
-    ExtendedPointId,
-    ScoredPoint,
-};
-
-
-
-
-
-
+use segment::types::{ExtendedPointId, ScoredPoint};
 
 type Hits = HashSet<ScoredPoint>;
 
@@ -106,11 +96,7 @@ impl GroupsAggregator {
     }
 
     fn flatten(&self) -> Vec<ScoredPoint> {
-        self.groups
-            .values()
-            .flatten()
-            .cloned()
-            .collect()
+        self.groups.values().flatten().cloned().collect()
     }
 
     /// Copies the payload and vector from the provided points to the points inside of each of the groups
@@ -125,7 +111,6 @@ impl GroupsAggregator {
         }
     }
 }
-
 
 fn print_points(points: &[ScoredPoint]) {
     for point in points {
@@ -143,7 +128,6 @@ mod unit_tests {
 
     #[test]
     fn it_adds_single_points() {
-
         let mut aggregator = GroupsAggregator::new(3, 2, "docId".to_string());
 
         // cases
@@ -185,7 +169,7 @@ mod unit_tests {
                     vector: None,
                 },
                 "a",
-                2, 
+                2,
                 1, // add it to same group
             ),
             (
@@ -236,8 +220,8 @@ mod unit_tests {
                 0, // already enough groups
                 3,
             ),
-
-        ].into_iter()
+        ]
+        .into_iter()
         .enumerate()
         .for_each(|(_case_num, (point, key, size, groups))| {
             aggregator.add_point(point);
