@@ -123,6 +123,7 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - [Python client](https://github.com/qdrant/qdrant-client)
 - [Go client](https://github.com/qdrant/go-client)
 - [Rust client](https://github.com/qdrant/rust-client)
+- [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
 
 ## Features
 
