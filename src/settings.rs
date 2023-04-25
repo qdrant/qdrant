@@ -191,6 +191,16 @@ impl Settings {
         let config_path = config_path.unwrap_or_else(|| "config/config".into());
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
+        if env::var("RUN_MODE").is_ok()
+        && Config::builder()
+            .add_source(File::with_name(&config_path))
+            .add_source(File::with_name(&format!("config/{env}")))
+            .build()
+            .is_err()
+        {
+            return Err(ConfigError::Message("`RUN_MODE` environment variable is set, but couldn't find matching configuration files".to_string()));
+        }
+
         let mut s = Config::builder()
             // Start with the default configuration file contents at compile time
             .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml));
@@ -240,7 +250,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let key = "RUN_MODE";
-        env::set_var(key, "TEST");
+        env::set_var(key, "development");
 
         // Read config
         let config = Settings::new(None, true).unwrap();
