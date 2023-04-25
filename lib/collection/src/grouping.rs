@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use itertools::Itertools;
 use segment::types::{ExtendedPointId, ScoredPoint};
 
 type Hits = HashSet<ScoredPoint>;
 
+#[allow(dead_code)] // temporary
 struct GroupsAggregator {
     groups: HashMap<String, Hits>,
     max_group_size: usize,
@@ -12,6 +12,7 @@ struct GroupsAggregator {
     max_groups: usize,
 }
 
+#[allow(dead_code)] // temporary
 impl GroupsAggregator {
     fn new(groups: usize, group_size: usize, grouped_by: String) -> Self {
         Self {
