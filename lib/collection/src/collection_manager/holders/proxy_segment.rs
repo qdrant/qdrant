@@ -576,8 +576,8 @@ impl SegmentEntry for ProxySegment {
 
         SegmentInfo {
             segment_type: SegmentType::Special,
-            num_vectors: self.total_point_count() * num_vectors, // TODO: account number of vector storages
-            num_points: self.total_point_count(),
+            num_vectors: self.available_point_count() * num_vectors, // TODO: account number of vector storages
+            num_points: self.available_point_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,

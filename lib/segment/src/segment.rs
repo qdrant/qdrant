@@ -1018,8 +1018,8 @@ impl SegmentEntry for Segment {
 
         SegmentInfo {
             segment_type: self.segment_type,
-            num_vectors: self.total_point_count() * self.vector_data.len(),
-            num_points: self.total_point_count(),
+            num_vectors: self.available_point_count() * self.vector_data.len(),
+            num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
