@@ -55,7 +55,7 @@ impl GroupsAggregator {
         group.insert(point.clone());
     }
 
-    /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the group_by field
+    /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field
     fn add_points(&mut self, points: &[ScoredPoint]) {
         print_points(points);
         points.iter().for_each(|point| self.add_point(point));
@@ -86,7 +86,7 @@ impl GroupsAggregator {
             .collect()
     }
 
-    /// Gets the ids of the already present points in all of the groups
+    /// Gets the ids of the already present points across the groups
     fn ids(&self) -> HashSet<ExtendedPointId> {
         self.groups
             .iter()
