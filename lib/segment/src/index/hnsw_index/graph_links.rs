@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use memmap2::{Mmap, MmapMut};
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::madvise;
 use crate::types::PointOffsetType;
+use crate::{madvise, utils};
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
 
@@ -399,18 +399,28 @@ pub struct GraphLinksRam {
 }
 
 impl GraphLinksRam {
-    pub fn load_from_memory(data: &[u8]) -> Self {
+    pub fn load_from_memory(data: &[u8]) -> OperationResult<Self> {
         let header = GraphLinksFileHeader::deserialize_bytes_from(data);
+
+        utils::mem::assert_available_memory_during_segment_load(
+            &utils::mem::Mem::new(),
+            header.get_data_size(),
+            10,
+        )?;
+
         let links = links_slice(data, &header).to_vec();
         let offsets = offsets_slice(data, &header).to_vec();
         let level_offsets = level_offsets(data, &header);
         let reindex = reindex_slice(data, &header).to_vec();
-        Self {
+
+        let graph_links = Self {
             links,
             offsets,
             level_offsets,
             reindex,
-        }
+        };
+
+        Ok(graph_links)
     }
 }
 
@@ -424,14 +434,15 @@ impl GraphLinks for GraphLinksRam {
 
         let mmap = unsafe { Mmap::map(&file)? };
 
-        Ok(Self::load_from_memory(&mmap))
+        Self::load_from_memory(&mmap)
     }
 
     fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self> {
         let mut data = vec![0; converter.data_size() as usize];
         converter.serialize_to(&mut data);
         drop(converter);
-        Ok(GraphLinksRam::load_from_memory(&data))
+
+        Self::load_from_memory(&data)
     }
 
     fn offsets_len(&self) -> usize {
