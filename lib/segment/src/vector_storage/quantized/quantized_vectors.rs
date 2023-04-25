@@ -107,7 +107,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     pub fn create<'a>(
-        vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
+        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
         quantization_config: &QuantizationConfig,
         distance: Distance,
         dim: usize,
@@ -250,7 +250,7 @@ impl QuantizedVectors {
     }
 
     fn crate_pq<'a>(
-        vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
+        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
         vector_parameters: &quantization::VectorParameters,
         pq_config: &crate::types::ProductQuantizationConfig,
         path: &Path,
