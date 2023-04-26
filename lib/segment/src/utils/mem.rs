@@ -101,12 +101,13 @@ mod cgroups_mem {
                 }
             };
 
-            let cgroup = Cgroup::load(hierarchies::auto(), memory_cgroup_path);
-
-            let mem_controller: &memory::MemController = cgroup.controller_of()?;
+            let cgroup = Cgroup::load(
+                hierarchies::auto(),
+                memory_cgroup_path.trim_prefix_matches('/'),
+            );
 
             let mut mem = Self {
-                mem_controller: mem_controller.clone(),
+                mem_controller: cgroup.controller_of::<memory::MemController>()?.clone(),
                 memory_limit_bytes: None,
                 used_memory_bytes: 0,
             };
@@ -136,16 +137,20 @@ mod cgroups_mem {
         let cgroups = process.cgroups()?;
 
         for cgroup in cgroups {
-            // TODO: Can a process belong to multiple cgroups v2 hierarchies!?
-            let is_v2_hierarchy = cgroup.controllers.is_empty();
+            // TODO: Can a process belong to multiple v2 cgroups!?
+            let is_v2_cgroup = cgroup.controllers.is_empty()
+                || cgroup
+                    .controllers
+                    .iter()
+                    .all(|controller| controller.is_empty());
 
-            // TODO: Can a process belong to multiple cgroups v1 hierarchies with the same (e.g., memory) controller!?
+            // TODO: Can a process belong to multiple v1 cgroups, with some of these cgroups having the same controllers (e.g., memory)!?
             let is_v1_memory_cgroup = cgroup
                 .controllers
                 .iter()
                 .any(|controller| controller == "memory");
 
-            if is_v2_hierarchy || is_v1_memory_cgroup {
+            if is_v2_cgroup || is_v1_memory_cgroup {
                 return Ok(Some(cgroup.pathname));
             }
         }

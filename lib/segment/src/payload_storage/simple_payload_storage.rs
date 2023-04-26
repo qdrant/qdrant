@@ -26,7 +26,6 @@ impl SimplePayloadStorage {
         for (iter, (key, val)) in db_wrapper.lock_db().iter()?.enumerate() {
             if iter % 25 == 0 {
                 utils::mem::assert_available_memory_during_segment_load(&mem, 0, 10)?;
-                mem.refresh();
             }
 
             let point_id: PointOffsetType = serde_cbor::from_slice(&key)
@@ -35,7 +34,9 @@ impl SimplePayloadStorage {
                 .map_err(|_| OperationError::service_error("cannot deserialize payload"))?;
             payload_map.insert(point_id, payload);
 
-            mem.refresh();
+            if iter % 25 == 0 {
+                mem.refresh();
+            }
         }
 
         Ok(SimplePayloadStorage {

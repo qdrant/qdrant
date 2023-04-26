@@ -58,7 +58,6 @@ pub fn open_simple_vector_storage(
     for (iter, (key, value)) in db_wrapper.lock_db().iter()?.enumerate() {
         if iter % 25 == 0 {
             utils::mem::assert_available_memory_during_segment_load(&mem, 0, 10)?;
-            mem.refresh();
         }
 
         let point_id: PointOffsetType = bincode::deserialize(&key)
@@ -73,6 +72,10 @@ pub fn open_simple_vector_storage(
         }
 
         vectors.insert(point_id, &stored_record.vector);
+
+        if iter % 25 == 0 {
+            mem.refresh();
+        }
     }
 
     debug!("Segment vectors: {}", vectors.len());
