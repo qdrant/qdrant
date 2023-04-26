@@ -4,7 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# docker build ../../ --tag=qdrant_consensus
+docker build ../../ --tag=qdrant_consensus
 
 if [[ ! -e storage ]]
 then
@@ -19,7 +19,7 @@ declare container && container=$(
         -p 127.0.0.1:6334:6334 \
         -v $PWD/storage:/qdrant/storage \
         -e QDRANT__STORAGE__HANDLE_COLLECTION_LOAD_ERRORS=true \
-        qdrant
+        qdrant_consensus
 )
 
 function cleanup {
