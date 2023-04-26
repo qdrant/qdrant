@@ -109,7 +109,8 @@ pub trait SegmentOptimizer {
                             locked_segment.available_vector_count(&vector_name).unwrap();
                         dim * VECTOR_ELEMENT_SIZE * available_vectors
                     })
-                    .sum::<usize>()
+                    .max()
+                    .unwrap_or(0)
             })
             .sum();
 

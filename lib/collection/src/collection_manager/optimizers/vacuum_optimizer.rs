@@ -107,23 +107,25 @@ impl VacuumOptimizer {
     ///
     /// If a segment has multiple named vectors, it checks each one.
     ///
-    /// The ratio is based on the number of deleted vectors in each named vector in which the
-    /// vacuum threshold is reached.
+    /// This finds the maximum deletion ratio for a named vector. The ratio is based on the number
+    /// of deleted vectors versus the number of indexed vector.s
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds for no named vectors.
     fn littered_ratio_vectors(&self, segment: &LockedSegment) -> Option<f64> {
-        let segment_entry = segment.get();
-        let read_segment = segment_entry.read();
+        {
+            let segment_entry = segment.get();
+            let read_segment = segment_entry.read();
 
-        // Never optimize special segments
-        if read_segment.segment_type() == SegmentType::Special {
-            return None;
-        }
+            // Never optimize special segments
+            if read_segment.segment_type() == SegmentType::Special {
+                return None;
+            }
 
-        // Segment must have an index
-        let segment_config = read_segment.config();
-        if !segment_config.is_vector_indexed() {
-            return None;
+            // Segment must have an index
+            let segment_config = read_segment.config();
+            if !segment_config.is_vector_indexed() {
+                return None;
+            }
         }
 
         // We can only work with original segments
@@ -131,18 +133,10 @@ impl VacuumOptimizer {
             LockedSegment::Original(segment) => segment.read(),
             LockedSegment::Proxy(_) => return None,
         };
-        let total_vector_count = real_segment
-            .vector_data
-            .values()
-            .map(|vector_data| vector_data.vector_storage.borrow().total_vector_count())
-            .sum::<usize>();
-        if total_vector_count == 0 {
-            return None;
-        }
 
-        // In this segment, check the index of each named vector for a high deletion count.
-        // Count all deleted vectors of those that reach a threshold.
-        let deleted_vector_count = real_segment
+        // In this segment, check the index of each named vector for a high deletion ratio.
+        // Return the worst ratio.
+        real_segment
             .vector_data
             .values()
             .filter(|vector_data| vector_data.vector_index.borrow().is_index())
@@ -151,11 +145,11 @@ impl VacuumOptimizer {
                 // therefore know the number of deleted vectors then and now. Based on that we
                 // can determine what ratio of points from the index is deleted.
                 let vector_storage = vector_data.vector_storage.borrow();
-                let create_deleted_vec_count = vector_storage.create_deleted_vector_count();
+                let create_deleted_vector_count = vector_storage.create_deleted_vector_count();
                 let full_index_count =
-                    vector_storage.total_vector_count() - create_deleted_vec_count;
+                    vector_storage.total_vector_count() - create_deleted_vector_count;
                 let deleted_index_count =
-                    vector_storage.deleted_vector_count() - create_deleted_vec_count;
+                    vector_storage.deleted_vector_count() - create_deleted_vector_count;
                 let deleted_ratio = if full_index_count != 0 {
                     deleted_index_count as f64 / full_index_count as f64
                 } else {
@@ -164,12 +158,9 @@ impl VacuumOptimizer {
 
                 let reached_minimum = deleted_index_count >= self.min_vectors_number;
                 let reached_ratio = deleted_ratio > self.deleted_threshold;
-                (reached_minimum && reached_ratio).then_some(deleted_index_count)
+                (reached_minimum && reached_ratio).then_some(deleted_ratio)
             })
-            .sum::<usize>();
-
-        (deleted_vector_count > 0)
-            .then_some(deleted_vector_count as f64 / total_vector_count as f64)
+            .max_by_key(|ratio| OrderedFloat(*ratio))
     }
 }
 
@@ -391,7 +382,7 @@ mod tests {
     #[test]
     fn test_vacuum_deleted_vectors() {
         // Collection configuration
-        let (point_count, vector1_dim, vector2_dim) = (300, 4, 6);
+        let (point_count, vector1_dim, vector2_dim) = (500, 4, 6);
         let thresholds_config = OptimizerThresholds {
             max_segment_size: std::usize::MAX,
             memmap_threshold: std::usize::MAX,
