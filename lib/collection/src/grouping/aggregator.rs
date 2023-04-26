@@ -5,17 +5,14 @@ use segment::types::{ExtendedPointId, ScoredPoint};
 use serde_json::Value;
 
 #[derive(Debug, Eq, PartialEq)]
-pub(super) struct GroupKey(serde_json::Value);
+pub(super) struct GroupKey(pub serde_json::Value);
 
 impl Hash for GroupKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match &self.0 {
-            Value::Null => panic!("Null values should not be used as group keys"),
-            Value::Bool(b) => b.hash(state),
             Value::Number(n) => n.hash(state),
             Value::String(s) => s.hash(state),
-            Value::Array(_) => panic!("Array values should not be used as group keys"),
-            Value::Object(_) => panic!("Object values should not be used as group keys"),
+            _ => unreachable!("GroupKey should only be a number or a string"),
         }
     }
 }
@@ -50,21 +47,23 @@ impl GroupsAggregator {
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
     pub(super) fn add_point(&mut self, point: &ScoredPoint) {
         // if the key contains multiple values, grabs the first one
-        let group_key = *point
+        let group_key = point
             .payload
             .as_ref()
-            .expect("The point should have a payload")
-            .get_value(&self.grouped_by)
-            .values()
-            .first()
-            .expect("The payload should have the field we are grouping by");
+            .and_then(|p| p.get_value(&self.grouped_by).values().first().cloned());
+
+        // ignore if no such payload
+        let group_key = match group_key {
+            Some(group_key) => group_key,
+            None => return,
+        };
 
         // ignore arrays, objects and null values
         let group_key = match group_key {
-            serde_json::Value::Null
-            | serde_json::Value::Array(_)
-            | serde_json::Value::Object(_) => return,
-            valid => GroupKey(valid.clone()),
+            serde_json::Value::String(_) | serde_json::Value::Number(_) => {
+                GroupKey(group_key.clone())
+            }
+            _ => return,
         };
 
         println!("point_id: {:?}, group_value: {:#?}", point.id, group_key);
