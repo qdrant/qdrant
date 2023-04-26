@@ -465,17 +465,21 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let vector_storage = self.vector_storage.borrow();
         let mut rng = thread_rng();
 
-        let available_vecs = vector_storage.available_vector_count();
+        let available_vectors = vector_storage.available_vector_count();
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        debug!("building HNSW for {} vectors", available_vecs);
+        debug!("building HNSW for {} vectors", available_vectors);
         let indexing_threshold = self.config.full_scan_threshold;
         let mut graph_layers_builder = GraphLayersBuilder::new(
-            available_vecs,
+            available_vectors,
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
-            (available_vecs.checked_div(indexing_threshold).unwrap_or(0) * 10).max(1),
+            (available_vectors
+                .checked_div(indexing_threshold)
+                .unwrap_or(0)
+                * 10)
+                .max(1),
             HNSW_USE_HEURISTIC,
         );
 
@@ -523,7 +527,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             debug!("skip building main HNSW graph");
         }
 
-        let mut block_filter_list = VisitedList::new(available_vecs);
+        let mut block_filter_list = VisitedList::new(available_vectors);
         let payload_index = self.payload_index.borrow();
         let payload_m = self.config.payload_m.unwrap_or(self.config.m);
 
@@ -537,7 +541,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // We add multiplier for the extra safety.
                 let percolation_multiplier = 2;
                 let max_block_size = if self.config.m > 0 {
-                    available_vecs / self.config.m * percolation_multiplier
+                    available_vectors / self.config.m * percolation_multiplier
                 } else {
                     usize::MAX
                 };
@@ -550,7 +554,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     }
                     // ToDo: re-use graph layer for same payload
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
-                        available_vecs,
+                        available_vectors,
                         payload_m,
                         self.config.payload_m0.unwrap_or(self.config.m0),
                         self.config.ef_construct,
@@ -603,5 +607,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         } else {
             vec![]
         }
+    }
+
+    fn indexed_vector_count(&self) -> usize {
+        self.graph
+            .as_ref()
+            .map(|graph| graph.num_points())
+            .unwrap_or(0)
     }
 }

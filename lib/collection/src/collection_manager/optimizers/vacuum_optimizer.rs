@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
+use segment::index::VectorIndex;
 use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
 use segment::vector_storage::VectorStorage;
 
@@ -141,22 +142,20 @@ impl VacuumOptimizer {
             .values()
             .filter(|vector_data| vector_data.vector_index.borrow().is_index())
             .filter_map(|vector_data| {
-                // We asume the storage and its index are created at the same time. We
-                // therefore know the number of deleted vectors then and now. Based on that we
-                // can determine what ratio of points from the index is deleted.
+                // We use the number of now available vectors against the number of indexed vectors
+                // to determine how many are soft-deleted from the index.
+                let vector_index = vector_data.vector_index.borrow();
                 let vector_storage = vector_data.vector_storage.borrow();
-                let create_deleted_vector_count = vector_storage.create_deleted_vector_count();
-                let full_index_count =
-                    vector_storage.total_vector_count() - create_deleted_vector_count;
-                let deleted_index_count =
-                    vector_storage.deleted_vector_count() - create_deleted_vector_count;
-                let deleted_ratio = if full_index_count != 0 {
-                    deleted_index_count as f64 / full_index_count as f64
+                let indexed_vector_count = vector_index.indexed_vector_count();
+                let deleted_from_index =
+                    indexed_vector_count.saturating_sub(vector_storage.available_vector_count());
+                let deleted_ratio = if indexed_vector_count != 0 {
+                    deleted_from_index as f64 / indexed_vector_count as f64
                 } else {
                     0.0
                 };
 
-                let reached_minimum = deleted_index_count >= self.min_vectors_number;
+                let reached_minimum = deleted_from_index >= self.min_vectors_number;
                 let reached_ratio = deleted_ratio > self.deleted_threshold;
                 (reached_minimum && reached_ratio).then_some(deleted_ratio)
             })

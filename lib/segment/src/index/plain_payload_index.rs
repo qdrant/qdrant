@@ -292,6 +292,10 @@ impl VectorIndex for PlainIndex {
     fn files(&self) -> Vec<PathBuf> {
         vec![]
     }
+
+    fn indexed_vector_count(&self) -> usize {
+        0
+    }
 }
 
 pub struct PlainFilterContext<'a> {

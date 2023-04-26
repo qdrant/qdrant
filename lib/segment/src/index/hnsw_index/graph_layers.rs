@@ -226,6 +226,10 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
     pub fn get_links_path(path: &Path) -> PathBuf {
         path.join(HNSW_LINKS_FILE)
     }
+
+    pub fn num_points(&self) -> usize {
+        self.links.num_points()
+    }
 }
 
 impl<TGraphLinks> GraphLayers<TGraphLinks>
