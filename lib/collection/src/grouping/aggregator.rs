@@ -47,10 +47,12 @@ impl GroupsAggregator {
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
     pub(super) fn add_point(&mut self, point: &ScoredPoint) {
         // if the key contains multiple values, grabs the first one
-        let group_key = point
-            .payload
-            .as_ref()
-            .and_then(|p| p.get_value(&self.grouped_by).values().first().cloned());
+        let group_key = point.payload.as_ref().and_then(|p| {
+            p.get_value(&self.grouped_by)
+                .values()
+                .first()
+                .map(|&val| val.clone())
+        });
 
         // ignore if no such payload
         let group_key = match group_key {
@@ -60,9 +62,7 @@ impl GroupsAggregator {
 
         // ignore arrays, objects and null values
         let group_key = match group_key {
-            serde_json::Value::String(_) | serde_json::Value::Number(_) => {
-                GroupKey(group_key.clone())
-            }
+            serde_json::Value::String(_) | serde_json::Value::Number(_) => GroupKey(group_key),
             _ => return,
         };
 
