@@ -51,6 +51,7 @@ tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
 chrono = { version = "0.4.24", features = ["serde"] }
+indexmap = "1.9.3"
 
 [[bench]]
 name = "vector_search"

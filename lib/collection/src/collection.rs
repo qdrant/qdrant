@@ -1014,6 +1014,7 @@ impl Collection {
                     &with_payload_interface,
                     &with_vector,
                     request.filter.as_ref(),
+                    request.order_by.as_ref(),
                     read_consistency,
                 )
             });

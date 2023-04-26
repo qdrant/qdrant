@@ -5150,8 +5150,47 @@
           },
           "with_vector": {
             "$ref": "#/components/schemas/WithVector"
+          },
+          "order_by": {
+            "description": "Specify order by arbitrary key and offset",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderBy"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "OrderBy": {
+        "type": "object",
+        "required": [
+          "direction",
+          "key",
+          "offset"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/OrderByDirection"
+          },
+          "offset": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "OrderByDirection": {
+        "type": "string",
+        "enum": [
+          "asc",
+          "desc"
+        ]
       },
       "ScrollResult": {
         "description": "Result of the points read request",

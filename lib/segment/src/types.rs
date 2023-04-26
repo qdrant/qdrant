@@ -1355,6 +1355,20 @@ impl Filter {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct OrderBy {
+    pub key: String,
+    pub direction: OrderByDirection,
+    // TODO: add offset
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderByDirection {
+    Asc,
+    Desc,
+}
+
 #[cfg(test)]
 mod tests {
     use serde::de::DeserializeOwned;

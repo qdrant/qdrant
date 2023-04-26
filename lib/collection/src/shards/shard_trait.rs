@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 
@@ -28,6 +28,7 @@ pub trait ShardOperation {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;

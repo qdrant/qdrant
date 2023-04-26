@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use atomic_refcell::AtomicRefCell;
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
@@ -21,15 +22,15 @@ use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use crate::id_tracker::IdTrackerSS;
-use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
+    Filter, OrderBy, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageEnum};
@@ -823,20 +824,74 @@ impl SegmentEntry for Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
+        order_by: Option<&'a OrderBy>,
     ) -> Vec<PointIdType> {
         match filter {
-            None => self
-                .id_tracker
-                .borrow()
-                .iter_from(offset)
-                .map(|x| x.0)
-                .take(limit.unwrap_or(usize::MAX))
-                .collect(),
+            None => match order_by {
+                Some(order_by) => {
+                    let id_tracker = self.id_tracker.borrow();
+                    let (limit, mut external_ids) = match limit {
+                        Some(limit) => (
+                            limit,
+                            indexmap::IndexSet::<PointIdType>::with_capacity(limit),
+                        ),
+                        None => (usize::MAX, indexmap::IndexSet::new()),
+                    };
+                    'index_loop: for index in self
+                        .payload_index
+                        .borrow()
+                        .field_indexes
+                        .get(&order_by.key)
+                        .unwrap()
+                        // May we use only first item?
+                        .iter()
+                    {
+                        for (_, internal_id) in match index {
+                            FieldIndex::IntIndex(index) => Ok(index.iter()),
+                            FieldIndex::FloatIndex(index) => Ok(index.iter()),
+                            // TODO: apply correct error
+                            _ => Err("invalid index type"),
+                        }
+                        .unwrap()
+                        {
+                            let external_id = id_tracker
+                                .external_id(*internal_id)
+                                // TODO: apply correct error
+                                .ok_or("fail to get external id")
+                                .unwrap();
+                            if match offset {
+                                Some(offset) if offset < external_id => {
+                                    external_ids.insert(external_id)
+                                }
+                                None => external_ids.insert(external_id),
+                                _ => false,
+                            } && external_ids.len() == limit
+                            {
+                                break 'index_loop;
+                            }
+                        }
+                    }
+                    external_ids.into_iter().collect()
+                }
+                None => self
+                    .id_tracker
+                    .borrow()
+                    .iter_from(offset)
+                    .map(|x| x.0)
+                    .take(limit.unwrap_or(usize::MAX))
+                    .collect(),
+            },
             Some(condition) => {
                 let query_cardinality = {
                     let payload_index = self.payload_index.borrow();
                     payload_index.estimate_cardinality(condition)
                 };
+
+                if let Some(order_by) = order_by {
+                    let t = self.payload_index.borrow();
+                    let ind = t.field_indexes.get(&order_by.key).unwrap();
+                    if let FieldIndex::IntIndex(item) = ind.first().unwrap().to_owned() {}
+                }
 
                 // ToDo: Add telemetry for this heuristics
 
@@ -1143,7 +1198,7 @@ impl SegmentEntry for Segment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
-        for point_id in self.read_filtered(None, None, Some(filter)) {
+        for point_id in self.read_filtered(None, None, Some(filter), None) {
             deleted_points += self.delete_point(op_num, point_id)? as usize;
         }
 

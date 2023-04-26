@@ -15,7 +15,7 @@ use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
@@ -367,6 +367,7 @@ impl ShardOperation for RemoteShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),
@@ -376,6 +377,7 @@ impl ShardOperation for RemoteShard {
             with_payload: Some(with_payload_interface.clone().into()),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
+            // TODO: add order_by to pb
         };
         let request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
