@@ -103,7 +103,7 @@ mod cgroups_mem {
 
             let cgroup = Cgroup::load(
                 hierarchies::auto(),
-                memory_cgroup_path.trim_prefix_matches('/'),
+                memory_cgroup_path.trim_start_matches('/'),
             );
 
             let mut mem = Self {
