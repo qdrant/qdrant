@@ -88,7 +88,7 @@ mod cgroups_mem {
 
     impl CgroupsMem {
         pub fn new() -> Option<Self> {
-            let cgroup = hierarchies::V2::new().root_control_group();
+            let cgroup = hierarchies::auto().root_control_group();
             let subsystems = cgroup.subsystems();
 
             let mem_controller = subsystems.iter().find_map(|ctrl| match ctrl {
