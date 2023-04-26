@@ -100,11 +100,11 @@ impl GroupsAggregator {
             .collect()
     }
 
-    // gets the keys of the groups that have reached or exceeded the max group size
+    // gets the keys of the groups that have reached the max group size
     pub(super) fn keys_of_filled_groups(&self) -> Vec<Value> {
         self.groups
             .iter()
-            .filter(|(_, hits)| hits.len() >= self.max_group_size)
+            .filter(|(_, hits)| hits.len() == self.max_group_size)
             .map(|(key, _)| key.0.clone())
             .collect()
     }
