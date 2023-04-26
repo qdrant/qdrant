@@ -77,7 +77,8 @@ pub fn assert_available_memory_during_segment_load(
 
 #[cfg(target_os = "linux")]
 mod cgroups_mem {
-    use cgroups_rs::{hierarchies, memory, Hierarchy as _, Subsystem};
+    use cgroups_rs::{hierarchies, memory, Cgroup};
+    use procfs::process::Process;
 
     #[derive(Clone, Debug)]
     pub struct CgroupsMem {
@@ -88,16 +89,24 @@ mod cgroups_mem {
 
     impl CgroupsMem {
         pub fn new() -> Option<Self> {
-            let cgroup = hierarchies::auto().root_control_group();
-            let subsystems = cgroup.subsystems();
+            let memory_cgroup_path = match get_current_process_memory_cgroup_path() {
+                Ok(memory_cgroup_path) => memory_cgroup_path?,
+                Err(err) => {
+                    log::error!(
+                        "Failed to query current process info \
+                         while initializing CgroupsMem: {err}"
+                    );
 
-            let mem_controller = subsystems.iter().find_map(|ctrl| match ctrl {
-                Subsystem::Mem(mem_controller) => Some(mem_controller.clone()),
-                _ => None,
-            })?;
+                    return None;
+                }
+            };
+
+            let cgroup = Cgroup::load(hierarchies::auto(), memory_cgroup_path);
+
+            let mem_controller: &memory::MemController = cgroup.controller_of()?;
 
             let mut mem = Self {
-                mem_controller,
+                mem_controller: mem_controller.clone(),
                 memory_limit_bytes: None,
                 used_memory_bytes: 0,
             };
@@ -120,6 +129,28 @@ mod cgroups_mem {
         pub fn used_memory_bytes(&self) -> u64 {
             self.used_memory_bytes
         }
+    }
+
+    fn get_current_process_memory_cgroup_path() -> procfs::ProcResult<Option<String>> {
+        let process = Process::myself()?;
+        let cgroups = process.cgroups()?;
+
+        for cgroup in cgroups {
+            // TODO: Can a process belong to multiple cgroups v2 hierarchies!?
+            let is_v2_hierarchy = cgroup.controllers.is_empty();
+
+            // TODO: Can a process belong to multiple cgroups v1 hierarchies with the same (e.g., memory) controller!?
+            let is_v1_memory_cgroup = cgroup
+                .controllers
+                .iter()
+                .any(|controller| controller == "memory");
+
+            if is_v2_hierarchy || is_v1_memory_cgroup {
+                return Ok(Some(cgroup.pathname));
+            }
+        }
+
+        Ok(None)
     }
 }
 
