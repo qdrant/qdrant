@@ -338,6 +338,52 @@ def test_payload_indexing_operations():
     assert len(response.json()['result']['points']) == 1
     assert response.json()['result']['points'][0]['payload']['country']['capital'] == "Paris"
 
+    # Search through array without payload index (indexed on array of objetcs)
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "should": [
+                    {
+                        "key": "country.cities[0].name",
+                        "match": {
+                            "value": "Paris"
+                        }
+                    }
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 1
+    assert response.json()['result']['points'][0]['payload']['country']['capital'] == "Paris"
+
+    # Search through array without payload index (indexed on array of scalars)
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "should": [
+                    {
+                        "key": "country.cities[].sightseeing[1]",
+                        "match": {
+                            "value": "Louvre"
+                        }
+                    }
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 1
+    assert response.json()['result']['points'][0]['payload']['country']['capital'] == "Paris"
+
     # Delete indexes
     response = request_with_validation(
         api='/collections/{collection_name}/index/{field_name}',
