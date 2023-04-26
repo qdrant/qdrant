@@ -1,10 +1,9 @@
-
 use std::future::Future;
 
 use itertools::Itertools;
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match,
-    ScoredPoint, WithPayloadInterface, WithVector,
+    AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, ScoredPoint,
+    WithPayloadInterface, WithVector,
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
