@@ -865,19 +865,20 @@ mod grouping {
     }
 
     #[tokio::test]
+    #[ignore = "Takes more than second to run, too slow for CI"]
     async fn big_limit_groups() {
         let Resources {
             collection,
             read_consistency,
             ..
-        } = setup(200, 5).await;
+        } = setup(1000, 5).await;
 
         let group_by_request = GroupBy::new(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
                 params: None,
-                limit: 100,
+                limit: 500,
                 offset: 0,
                 with_payload: None,
                 with_vector: None,
@@ -899,7 +900,7 @@ mod grouping {
 
         let result = result.unwrap();
 
-        assert_eq!(result.len(), 100);
+        assert_eq!(result.len(), group_by_request.groups);
 
         for group in result {
             assert_eq!(group.hits.len(), group_by_request.top);
@@ -907,6 +908,7 @@ mod grouping {
     }
 
     #[tokio::test]
+    #[ignore = "Takes more than a second to run, too slow for CI"]
     async fn big_top_groups() {
         let Resources {
             collection,
@@ -941,7 +943,7 @@ mod grouping {
 
         let result = result.unwrap();
 
-        assert_eq!(result.len(), 3);
+        assert_eq!(result.len(), group_by_request.groups);
 
         for group in result {
             assert_eq!(group.hits.len(), group_by_request.top);
