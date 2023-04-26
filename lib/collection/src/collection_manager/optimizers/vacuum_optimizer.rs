@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn test_vacuum_deleted_vectors() {
         // Collection configuration
-        let (point_count, vector1_dim, vector2_dim) = (500, 4, 6);
+        let (point_count, vector1_dim, vector2_dim) = (1000, 4, 6);
         let thresholds_config = OptimizerThresholds {
             max_segment_size: std::usize::MAX,
             memmap_threshold: std::usize::MAX,
@@ -437,7 +437,7 @@ mod tests {
             Default::default(),
         );
         let vacuum_optimizer = VacuumOptimizer::new(
-            0.5,
+            0.2,
             5,
             thresholds_config,
             dir.path().to_owned(),
@@ -486,17 +486,17 @@ mod tests {
                 LockedSegment::Proxy(_) => unreachable!(),
             };
 
-            // Delete 15% of points
+            // Delete 10% of points
             let segment_points_to_delete = segment
                 .iter_points()
                 .enumerate()
-                .filter_map(|(i, point_id)| (i % 8 == 0).then_some(point_id))
+                .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
             for &point_id in &segment_points_to_delete {
                 segment.delete_point(101, point_id).unwrap();
             }
 
-            // Delete 80% of vectors named vector1
+            // Delete 25% of vectors named vector1
             {
                 let id_tracker = segment.id_tracker.clone();
                 let vector1_data = segment.vector_data.get_mut("vector1").unwrap();
@@ -506,7 +506,7 @@ mod tests {
                     .borrow()
                     .iter_external()
                     .enumerate()
-                    .filter_map(|(i, point_id)| (i % 5 <= 4).then_some(point_id))
+                    .filter_map(|(i, point_id)| (i % 4 == 0).then_some(point_id))
                     .collect_vec();
                 for &point_id in &vector1_vecs_to_delete {
                     let id = id_tracker.borrow().internal_id(point_id).unwrap();
@@ -524,7 +524,7 @@ mod tests {
                     .borrow()
                     .iter_external()
                     .enumerate()
-                    .filter_map(|(i, point_id)| (i % 10 == 0).then_some(point_id))
+                    .filter_map(|(i, point_id)| (i % 10 == 7).then_some(point_id))
                     .collect_vec();
                 for &point_id in &vector2_vecs_to_delete {
                     let id = id_tracker.borrow().internal_id(point_id).unwrap();
@@ -549,7 +549,6 @@ mod tests {
                 // Named vector storages should have deletions, but not at creation
                 segment.vector_data.values().for_each(|vector_data| {
                     let vector_storage = vector_data.vector_storage.borrow();
-                    assert_eq!(vector_storage.create_deleted_vector_count(), 0);
                     assert!(vector_storage.deleted_vector_count() > 0);
                 });
             });
@@ -576,13 +575,18 @@ mod tests {
                 // We should have deleted some points
                 assert!(segment.total_point_count() < point_count as usize);
 
-                // Named vector storages should have deletions at creation
+                // Named vector storages should have:
+                // - deleted vectors
+                // - indexed vectors (more than 0)
+                // - indexed less vectors than the total available
                 segment.vector_data.values().for_each(|vector_data| {
+                    let vector_index = vector_data.vector_index.borrow();
                     let vector_storage = vector_data.vector_storage.borrow();
-                    assert!(vector_storage.create_deleted_vector_count() > 0);
-                    assert_eq!(
-                        vector_storage.create_deleted_vector_count(),
-                        vector_storage.deleted_vector_count()
+
+                    assert!(vector_storage.deleted_vector_count() > 0);
+                    assert!(vector_index.indexed_vector_count() > 0);
+                    assert!(
+                        vector_index.indexed_vector_count() < vector_storage.total_vector_count()
                     );
                 });
             });
