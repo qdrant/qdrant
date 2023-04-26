@@ -51,8 +51,6 @@ impl SourceRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
-                println!("request: {:#?}", request);
-
                 collection.search(request, None, None).await
             }
             SourceRequest::Recommend(request) => {
@@ -65,8 +63,6 @@ impl SourceRequest {
                 // We're enriching the final results at the end, so we'll keep this minimal
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
-
-                println!("request: {:#?}", request);
 
                 recommend_by(request, collection, collection_by_name, None).await
             }
@@ -161,12 +157,11 @@ where
     let mut groups = GroupsAggregator::new(request.groups, request.top, request.path.clone());
 
     // Try to complete amount of groups
-    for i in 0..3 {
+    for _ in 0..3 {
         let enough_groups = (request.groups - groups.len()) == 0;
         if enough_groups {
             break;
         }
-        println!("COMPLETING AMOUNT OF GROUPS, lap: {i}");
 
         let mut req = request.request.clone();
 
@@ -203,12 +198,11 @@ where
     }
 
     // Try to fill up groups
-    for i in 0..3 {
+    for _ in 0..3 {
         let unsatisfied_groups = groups.keys_of_unfilled_groups();
         if unsatisfied_groups.is_empty() {
             break;
         }
-        println!("FILLING GROUPS, lap: {}", i);
 
         let mut req = request.request.clone();
 
@@ -261,8 +255,6 @@ where
     // turn to output form
     let result: Vec<Group> = groups.into();
 
-    println!("RESULT: {:#?}", result);
-
     Ok(result)
 }
 
@@ -281,11 +273,4 @@ fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
         _ => None, // also considers the case of empty values
     }
     .map(|m| Condition::Field(FieldCondition::new_match(path, m)))
-}
-
-fn print_points(points: &[ScoredPoint]) {
-    for point in points {
-        println!("{point:?}");
-    }
-    println!("-------------------");
 }
