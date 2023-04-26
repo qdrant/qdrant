@@ -258,16 +258,31 @@ pub fn max_web_workers(settings: &Settings) -> usize {
 mod tests {
     use super::*;
 
+    /// Ensure we can successfully deserialize into [`Settings`] with just the default configuration.
     #[test]
     fn test_default_config() {
+        Config::builder()
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
+            .build()
+            .expect("failed to build default config")
+            .try_deserialize::<Settings>()
+            .expect("failed to deserialize default config")
+            .validate()
+            .expect("failed to validate default config");
+    }
+
+    #[test]
+    fn test_runtime_development_config() {
         let key = "RUN_MODE";
         env::set_var(key, "development");
 
         // Read config
-        let config = Settings::new(None).unwrap();
+        let config = Settings::new(None).expect("failed to load development config at runtime");
 
         // Validate
-        config.validate().unwrap();
+        config
+            .validate()
+            .expect("failed to validate development config at runtime");
         assert!(config.found_config_files)
     }
 
@@ -277,10 +292,13 @@ mod tests {
         env::remove_var("RUN_MODE");
 
         // Read config
-        let config = Settings::new(Some(non_existing_config_path)).unwrap();
+        let config = Settings::new(Some(non_existing_config_path))
+            .expect("failed to load with non-existing runtime config");
 
         // Validate
-        config.validate().unwrap();
+        config
+            .validate()
+            .expect("failed to validate with non-existing runtime config");
         assert!(!config.found_config_files)
     }
 }
