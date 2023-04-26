@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-use segment::types::{ExtendedPointId, MatchValue, ScoredPoint, ValueVariants};
+use segment::types::{ExtendedPointId, ScoredPoint};
 use serde_json::Value;
 
 #[derive(Debug, Eq, PartialEq)]

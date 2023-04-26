@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+
 use std::future::Future;
 
 use itertools::Itertools;
 use segment::types::{
-    AnyVariants, Condition, ExtendedPointId, FieldCondition, Filter, IsNullCondition, Match,
+    AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match,
     ScoredPoint, WithPayloadInterface, WithVector,
 };
 use serde_json::Value;
@@ -270,13 +270,12 @@ where
 fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
     match values[..] {
         [Value::Number(_), ..] => Some(Match::new_any(AnyVariants::Integers(
-            values.into_iter().map(|v| v.as_i64()).flatten().collect(),
+            values.into_iter().filter_map(|v| v.as_i64()).collect(),
         ))),
         [Value::String(_), ..] => Some(Match::new_any(AnyVariants::Keywords(
             values
                 .into_iter()
-                .map(|v| v.as_str().map(|s| s.to_owned()))
-                .flatten()
+                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
                 .collect(),
         ))),
         _ => None, // also considers the case of empty values
