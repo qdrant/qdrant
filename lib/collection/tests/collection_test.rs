@@ -495,7 +495,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 mod grouping {
 
     use collection::collection::Collection;
-    use collection::grouping::{group_by, GroupBy, SourceRequest};
+    use collection::grouping::group_by::{group_by, GroupBy, SourceRequest};
     use collection::operations::consistency_params::ReadConsistency;
     use rand::distributions::Uniform;
     use rand::rngs::ThreadRng;
@@ -516,7 +516,7 @@ mod grouping {
         rng.sample_iter(Uniform::new(0.4, 0.6)).take(size).collect()
     }
 
-    async fn setup() -> Resources {
+    async fn setup(docs: u64, chunks: u64) -> Resources {
         let mut rng = rand::thread_rng();
 
         let source = SourceRequest::Search(SearchRequest {
@@ -535,8 +535,6 @@ mod grouping {
         let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;
-
-        let (docs, chunks) = (8, 4);
 
         let insert_points = CollectionUpdateOperations::PointOperation(
             Batch {
@@ -576,7 +574,7 @@ mod grouping {
 
     #[tokio::test]
     async fn searching() {
-        let resources = setup().await;
+        let resources = setup(16, 8).await;
 
         let result = group_by(
             resources.request.clone(),
@@ -611,7 +609,7 @@ mod grouping {
 
     #[tokio::test]
     async fn recommending() {
-        let resources = setup().await;
+        let resources = setup(16, 8).await;
 
         let request = GroupBy::new(
             SourceRequest::Recommend(RecommendRequest {
@@ -663,7 +661,7 @@ mod grouping {
 
     #[tokio::test]
     async fn with_filter() {
-        let resources = setup().await;
+        let resources = setup(16, 8).await;
 
         let filter: Filter = serde_json::from_value(json!({
             "must": [
@@ -710,7 +708,7 @@ mod grouping {
 
     #[tokio::test]
     async fn with_payload_and_vectors() {
-        let resources = setup().await;
+        let resources = setup(16, 8).await;
 
         let group_by_request = GroupBy::new(
             SourceRequest::Search(SearchRequest {
@@ -739,42 +737,214 @@ mod grouping {
 
         let result = result.unwrap();
 
-        // assert_eq!(result.len(), 4);
+        assert_eq!(result.len(), 4);
 
         for group in result {
-            // assert_eq!(group.hits.len(), group_by_request.top);
+            assert_eq!(group.hits.len(), group_by_request.top);
             assert!(group.hits[0].payload.is_some());
             assert!(group.hits[0].vector.is_some());
         }
     }
 
-    #[test]
-    fn group_by_string_payload() {
-        todo!();
+    #[tokio::test]
+    async fn group_by_string_field() {
+        let Resources {
+            collection,
+            read_consistency,
+            ..
+        } = setup(16, 8).await;
+
+        let group_by_request = GroupBy::new(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: Some(WithVector::Bool(true)),
+                score_threshold: None,
+            }),
+            "other_stuff".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 4);
+
+        for group in result {
+            assert_eq!(group.hits.len(), group_by_request.top);
+        }
     }
 
-    #[test]
-    fn group_by_int_payload() {
-        todo!();
+    #[tokio::test]
+    async fn zero_top_groups() {
+        let Resources {
+            collection,
+            read_consistency,
+            ..
+        } = setup(16, 8).await;
+
+        let group_by_request = GroupBy::new(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            0,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 0);
     }
 
-    #[test]
-    fn zero_top_groups() {
-        todo!();
+    #[tokio::test]
+    async fn zero_limit_groups() {
+        let Resources {
+            collection,
+            read_consistency,
+            ..
+        } = setup(16, 8).await;
+
+        let group_by_request = GroupBy::new(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 0,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 0);
     }
 
-    #[test]
-    fn zero_limit_groups() {
-        todo!();
+    #[tokio::test]
+    async fn big_limit_groups() {
+        let Resources {
+            collection,
+            read_consistency,
+            ..
+        } = setup(200, 5).await;
+
+        let group_by_request = GroupBy::new(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 100,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 100);
+
+        for group in result {
+            assert_eq!(group.hits.len(), group_by_request.top);
+        }
     }
 
-    #[test]
-    fn big_limit_groups() {
-        todo!();
-    }
+    #[tokio::test]
+    async fn big_top_groups() {
+        let Resources {
+            collection,
+            read_consistency,
+            ..
+        } = setup(10, 500).await;
 
-    #[test]
-    fn big_top_groups() {
-        todo!();
+        let group_by_request = GroupBy::new(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 3,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            400,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 3);
+
+        for group in result {
+            assert_eq!(group.hits.len(), group_by_request.top);
+        }
     }
 }

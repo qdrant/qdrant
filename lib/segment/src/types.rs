@@ -903,7 +903,7 @@ impl Match {
         Self::Text(MatchText { text: text.into() })
     }
 
-    fn new_any(any: AnyVariants) -> Self {
+    pub fn new_any(any: AnyVariants) -> Self {
         Self::Any(MatchAny { any })
     }
 }
