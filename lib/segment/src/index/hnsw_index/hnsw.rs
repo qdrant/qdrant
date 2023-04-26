@@ -72,8 +72,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
+            let vector_storage = vector_storage.borrow();
+            let available_vectors = vector_storage.available_vector_count();
             let full_scan_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
-                / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
+                / (vector_storage.vector_dim() * VECTOR_ELEMENT_SIZE);
 
             HnswGraphConfig::new(
                 hnsw_config.m,
@@ -81,6 +83,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 full_scan_threshold,
                 hnsw_config.max_indexing_threads,
                 hnsw_config.payload_m,
+                available_vectors,
             )
         };
 
@@ -522,6 +525,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 })
             })?;
 
+            self.config.indexed_vector_count.replace(available_vectors);
+
             debug!("finish main graph");
         } else {
             debug!("skip building main HNSW graph");
@@ -610,9 +615,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
     }
 
     fn indexed_vector_count(&self) -> usize {
-        self.graph
-            .as_ref()
-            .map(|graph| graph.num_points())
+        self.config
+            .indexed_vector_count
+            // If indexed vector count is unknown, fall back to number of points
+            .or_else(|| self.graph.as_ref().map(|graph| graph.num_points()))
             .unwrap_or(0)
     }
 }

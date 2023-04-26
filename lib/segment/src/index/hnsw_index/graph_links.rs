@@ -307,7 +307,10 @@ impl GraphLinksConverter {
     {
         let edges_len = self.edges.len();
         if level == 0 {
-            (0..edges_len).for_each(|point_id| f(point_id, &self.edges[point_id][0]));
+            (0..edges_len)
+                // Skip points we don't have edges for
+                .filter(|point_id| !self.edges[*point_id].is_empty())
+                .for_each(|point_id| f(point_id, &self.edges[point_id][0]));
         } else {
             for i in 0..edges_len {
                 let point_id = self.back_index[i];

@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn test_vacuum_deleted_vectors() {
         // Collection configuration
-        let (point_count, vector1_dim, vector2_dim) = (1000, 4, 6);
+        let (point_count, vector1_dim, vector2_dim) = (1000, 10, 20);
         let thresholds_config = OptimizerThresholds {
             max_segment_size: std::usize::MAX,
             memmap_threshold: std::usize::MAX,
@@ -583,10 +583,11 @@ mod tests {
                     let vector_index = vector_data.vector_index.borrow();
                     let vector_storage = vector_data.vector_storage.borrow();
 
+                    assert!(vector_storage.available_vector_count() > 0);
                     assert!(vector_storage.deleted_vector_count() > 0);
-                    assert!(vector_index.indexed_vector_count() > 0);
-                    assert!(
-                        vector_index.indexed_vector_count() < vector_storage.total_vector_count()
+                    assert_eq!(
+                        vector_index.indexed_vector_count(),
+                        vector_storage.available_vector_count(),
                     );
                 });
             });
