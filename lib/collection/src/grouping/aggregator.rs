@@ -10,12 +10,9 @@ pub(super) struct GroupKey(pub serde_json::Value);
 impl Hash for GroupKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match &self.0 {
-            Value::Null => panic!("Null values should not be used as group keys"),
-            Value::Bool(b) => b.hash(state),
             Value::Number(n) => n.hash(state),
             Value::String(s) => s.hash(state),
-            Value::Array(_) => panic!("Array values should not be used as group keys"),
-            Value::Object(_) => panic!("Object values should not be used as group keys"),
+            _ => unreachable!("GroupKey should only be a number or a string"),
         }
     }
 }
@@ -50,24 +47,24 @@ impl GroupsAggregator {
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
     pub(super) fn add_point(&mut self, point: &ScoredPoint) {
         // if the key contains multiple values, grabs the first one
-        let group_key = *point
-            .payload
-            .as_ref()
-            .expect("The point should have a payload")
-            .get_value(&self.grouped_by)
-            .values()
-            .first()
-            .expect("The payload should have the field we are grouping by");
+        let group_key = point.payload.as_ref().and_then(|p| {
+            p.get_value(&self.grouped_by)
+                .values()
+                .first()
+                .map(|&val| val.clone())
+        });
+
+        // ignore if no such payload
+        let group_key = match group_key {
+            Some(group_key) => group_key,
+            None => return,
+        };
 
         // ignore arrays, objects and null values
         let group_key = match group_key {
-            serde_json::Value::Null
-            | serde_json::Value::Array(_)
-            | serde_json::Value::Object(_) => return,
-            valid => GroupKey(valid.clone()),
+            serde_json::Value::String(_) | serde_json::Value::Number(_) => GroupKey(group_key),
+            _ => return,
         };
-
-        println!("point_id: {:?}, group_value: {:#?}", point.id, group_key);
 
         if !self.groups.contains_key(&group_key) && self.groups.len() >= self.max_groups {
             return;
@@ -87,11 +84,7 @@ impl GroupsAggregator {
 
     /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field
     pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
-        print_points(points);
         points.iter().for_each(|point| self.add_point(point));
-        for group in self.groups.iter() {
-            println!("group: {:#?}", group);
-        }
     }
 
     pub(super) fn len(&self) -> usize {
@@ -107,11 +100,11 @@ impl GroupsAggregator {
             .collect()
     }
 
-    // gets the keys of the groups that have reached or exceeded the max group size
+    // gets the keys of the groups that have reached the max group size
     pub(super) fn keys_of_filled_groups(&self) -> Vec<Value> {
         self.groups
             .iter()
-            .filter(|(_, hits)| hits.len() >= self.max_group_size)
+            .filter(|(_, hits)| hits.len() == self.max_group_size)
             .map(|(key, _)| key.0.clone())
             .collect()
     }
@@ -144,13 +137,6 @@ impl GroupsAggregator {
             });
         }
     }
-}
-
-fn print_points(points: &[ScoredPoint]) {
-    for point in points {
-        println!("{point:?}");
-    }
-    println!("-------------------");
 }
 
 #[cfg(test)]
