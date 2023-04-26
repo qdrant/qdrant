@@ -66,8 +66,6 @@ impl GroupsAggregator {
             _ => return,
         };
 
-        println!("point_id: {:?}, group_value: {:#?}", point.id, group_key);
-
         if !self.groups.contains_key(&group_key) && self.groups.len() >= self.max_groups {
             return;
         }
@@ -86,11 +84,7 @@ impl GroupsAggregator {
 
     /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field
     pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
-        print_points(points);
         points.iter().for_each(|point| self.add_point(point));
-        for group in self.groups.iter() {
-            println!("group: {:#?}", group);
-        }
     }
 
     pub(super) fn len(&self) -> usize {
@@ -143,13 +137,6 @@ impl GroupsAggregator {
             });
         }
     }
-}
-
-fn print_points(points: &[ScoredPoint]) {
-    for point in points {
-        println!("{point:?}");
-    }
-    println!("-------------------");
 }
 
 #[cfg(test)]
