@@ -1,3 +1,6 @@
+debug: false
+log_level: INFO
+
 storage:
   # Where to store all the data
   storage_path: ./storage
