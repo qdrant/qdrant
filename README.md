@@ -6,7 +6,6 @@
     <b>Vector Search Engine for the next generation of AI applications</b>
 </p>
 
-
 <p align=center>
     <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://github.com/qdrant/qdrant/workflows/Tests/badge.svg" alt="Tests status"></a>
     <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success" alt="OpenAPI Docs"></a>
@@ -16,14 +15,52 @@
 </p>
 
 **Qdrant** (read: _quadrant_ ) is a vector similarity search engine and vector database.
-It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
-Qdrant is tailored to extended filtering support.  It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications. 
+It provides a production-ready service with a convenient API to store, search, and manage points—vectors with an additional payload
+Qdrant is tailored to extended filtering support. It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications.
 
-Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load.
+Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load. See [benchmarks](https://qdrant.tech/benchmarks/)
 
 With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
 
 Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.io/ ⛅
+
+## Table of Contents
+
+1. [Getting Started](#getting-started)
+1. [Demo Projects](#demo-projects)
+1. [API](#api)
+   - [REST](#rest)
+   - [gRPC](#grpc)
+   - [Clients](#clients): Python, Go, Rust, JS/TS, Elixir, PHP, Ruby etc.
+1. [Features](#features)
+1. [Usage](#usage)
+1. [Contacts](#contacts)
+
+## Getting Started
+
+### Installation
+
+```
+pip install qdrant-client
+```
+
+The client offers a convenient way to interact with Qdrant from Python across 3 different modes:
+
+```python
+from qdrant_client import QdrantClient
+qdrant = QdrantClient(":memory:") # Create in-memory Qdrant instance, for testing, CI/CD
+# OR
+client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast prototyping
+# OR
+qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance, for production
+```
+
+### Where do I go from here?
+
+- [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
+- End to End [Colab Notebook](https://colab.research.google.com/drive/1Bz8RSVHwnNDaNtDwotfPj0w7AYzsdXZ-?usp=sharing) demo with SentenceBERT and Qdrant
+- Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
+- [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
 
 ## Demo Projects
 
@@ -47,7 +84,6 @@ Sometimes it is millions and tens of millions of classes.
 The most promising way to solve this problem is to use similarity learning models.
 We put together a demo example of how you could approach the problem with a pre-trained transformer model and Qdrant.
 So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
-
 
 <details>
 <summary> More solutions </summary>
@@ -105,6 +141,7 @@ So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
 </details>
 
 ## API
+
 ### REST
 
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
@@ -125,12 +162,18 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - [Rust client](https://github.com/qdrant/rust-client)
 - [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
 
+#### Community Clients
+
+- [Elixir](https://hexdocs.pm/qdrant/readme.html)
+- [PHP](https://github.com/hkulekci/qdrant-php)
+- [Ruby](https://github.com/andreibondarev/qdrant-ruby)
+
 ## Features
 
 ### Filtering and Payload
 
-Qdrant supports any JSON payload associated with vectors. It does not only store payload but also allows filter results based on payload values.
-It allows any combinations of `should`, `must`, and `must_not` conditions, but unlike ElasticSearch post-filtering, Qdrant guarantees all relevant vectors are retrieved.
+Qdrant supports any JSON payload associated with vectors. It does not only store payload but also allows filtering results based on payload values.
+It allows any combination of should, must, and must_not conditions, but unlike `ElasticSearch` post-filtering, Qdrant guarantees that all relevant vectors are retrieved.
 
 ### Rich Data Types
 
@@ -139,17 +182,17 @@ Payload filtering conditions allow you to build almost any custom business logic
 
 ### Query Planning and Payload Indexes
 
-Using the information about the stored payload values, the `query planner` decides on the best way to execute the query.
+Using the information about the stored payload values, the _query planner_ decides on the best way to execute the query.
 For example, if the search space limited by filters is small, it is more efficient to use a full brute force than an index.
 
 ### SIMD Hardware Acceleration
 
-Qdrant can take advantage of modern CPU x86-x64 architectures. 
+Qdrant can take advantage of modern CPU x86-x64 architectures.
 It allows you to search even faster on modern hardware.
 
 ### Write-Ahead Logging
 
-Once the service confirmed an update - it won't lose data even in case of power shut down. 
+Once the service confirmed an update - it won't lose data even in case of power shut down.
 All operations are stored in the update journal and the latest database state could be easily reconstructed at any moment.
 
 ### Distributed Deployment
@@ -166,13 +209,7 @@ Qdrant does not rely on any external database or orchestration controller, which
 
 ### Docker 🐳
 
-Build your own from source
-
-```bash
-docker build . --tag=qdrant/qdrant
-```
-
-Or use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
+Use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
 
 ```bash
 docker pull qdrant/qdrant
@@ -184,6 +221,12 @@ To run the container, use the command:
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
+Build your own from source
+
+```bash
+docker build . --tag=qdrant/qdrant
+```
+
 And once you need a fine-grained setup, you can also define a storage path and custom configuration:
 
 ```bash
@@ -193,30 +236,27 @@ docker run -p 6333:6333 \
     qdrant/qdrant
 ```
 
-* `/qdrant/storage` - is a place where Qdrant persists all your data. 
-Make sure to mount it as a volume, otherwise docker will drop it with the container. 
-* `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml) 
+- `/qdrant/storage` - is a place where Qdrant persists all your data.
+  Make sure to mount it as a volume, otherwise docker will drop it with the container.
+- `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml)
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 
+# Integrations
 
-## Docs 📓
+Examples and/or documentation of Qdrant integrations:
 
-* The best place to start is [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
-* The [Documentation](https://qdrant.tech/documentation/)
-* Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
-* Follow our [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
-* Assess Qdrant's performance in our [benchmarks](https://qdrant.tech/benchmarks/)
-* Check out our further plans in [v1.0 Roadmap](https://qdrant.to/roadmap)
+- [Cohere](https://docs.cohere.com/docs/integrations#qdrant) ([blogpost on building a QA app with Cohere and Qdrant](https://qdrant.tech/articles/qa-with-cohere-and-qdrant/)) - Use Cohere embeddings with Qdrant
+- [DocArray](https://docarray.jina.ai/advanced/document-store/qdrant/) - Use Qdrant as a document store in DocArray
+- [LangChain](https://python.langchain.com/en/latest/ecosystem/qdrant.html) ([blogpost](https://qdrant.tech/articles/langchain-integration/)) - Use Qdrant as a memory backend for LangChain.
+- [LlamaIndex](https://gpt-index.readthedocs.io/en/latest/reference/indices/composability_query.html#gpt_index.data_structs.struct_type.IndexStructType.QDRANT) - Use Qdrant as a memory backend for LlamaIndex.
+- [OpenAI - ChatGPT retrieval plugin](https://github.com/openai/chatgpt-retrieval-plugin/blob/main/docs/providers/qdrant/setup.md) - Use Qdrant as a memory backend for ChatGPT
 
 ## Contacts
 
-* Join our [Discord channel](https://qdrant.to/discord)
-* Follow us on [Twitter](https://qdrant.to/twitter)
-* Subscribe to our [Newsletters](https://qdrant.to/newsletter)
-* Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
-
-Building something special with Qdrant? We can [help](https://qdrant.tech/pricing/)!
+- Have questions? Join our [Discord channel](https://qdrant.to/discord) or mention [@qdrant_engine on Twitter](https://qdrant.to/twitter)
+- Want to stay in touch with latest releases? Subscribe to our [Newsletters](https://qdrant.to/newsletter)
+- Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/), need something personalised? We're at [info@qdrant.tech](mailto:info@qdrant.tech)
 
 ## Contributors ✨
 
