@@ -70,6 +70,7 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - Community: [Elixir](https://hexdocs.pm/qdrant/readme.html)
 - Community: [PHP](https://github.com/hkulekci/qdrant-php)
 - Community: [Ruby](https://github.com/andreibondarev/qdrant-ruby)
+- Community: [Java](https://github.com/metaloom/qdrant-java-client)
 
 ### Where do I go from here?
 
