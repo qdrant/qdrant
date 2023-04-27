@@ -99,6 +99,11 @@ pub trait SegmentOptimizer {
         let total_vectors_size: usize = optimizing_segments
             .iter()
             .map(|s| {
+                let segment = match s {
+                    LockedSegment::Original(segment) => segment,
+                    LockedSegment::Proxy(_) => panic!("Proxy segment is not expected here")
+                };
+
                 let segment = s.get();
                 let locked_segment = segment.read();
                 locked_segment
