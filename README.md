@@ -24,18 +24,6 @@ With Qdrant, embeddings or neural network encoders can be turned into full-fledg
 
 Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.io/ ⛅
 
-## Table of Contents
-
-1. [Getting Started](#getting-started)
-1. [Demo Projects](#demo-projects)
-1. [API](#api)
-   - [REST](#rest)
-   - [gRPC](#grpc)
-   - [Clients](#clients): Python, Go, Rust, JS/TS, Elixir, PHP, Ruby etc.
-1. [Features](#features)
-1. [Usage](#usage)
-1. [Contacts](#contacts)
-
 ## Getting Started
 
 ## Python
