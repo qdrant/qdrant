@@ -506,16 +506,11 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn deleted_point_count(&self) -> usize {
-        // May not be entirely accurate, this has multiple segments which may have overlap
-        max(
-            self.wrapped_segment.get().read().deleted_point_count()
-                + self.deleted_points.read().len(),
-            self.write_segment.get().read().deleted_point_count(),
-        )
+        self.write_segment.get().read().deleted_point_count()
     }
 
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
-        let deleted_point_count = self.deleted_point_count();
+        let deleted_point_count = self.deleted_points.read().len();
 
         let (wrapped_segment_est, total_wrapped_size) = {
             let wrapped_segment = self.wrapped_segment.get();
