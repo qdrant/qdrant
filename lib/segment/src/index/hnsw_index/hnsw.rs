@@ -593,7 +593,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
             let indexed_payload_vectors = block_filter_list.count_visits_since(visits_iteration);
 
-            debug_assert!(indexed_vectors > indexed_payload_vectors || self.config.m == 0);
+            debug_assert!(indexed_vectors >= indexed_payload_vectors || self.config.m == 0);
             indexed_vectors = indexed_vectors.max(indexed_payload_vectors);
             debug_assert!(indexed_payload_vectors <= total_vector_count);
         } else {
