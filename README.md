@@ -26,15 +26,41 @@ Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.
 
 ## Table of Contents
 
+1. [Installation](#installation)
+1. [Getting Started](#getting-started)
 1. [Demo Projects](#demo-projects)
-2. [API](#api)
+1. [API](#api)
    - [REST](#rest)
    - [gRPC](#grpc)
    - [Clients](#clients)
-3. [Features](#features)
-4. [Usage](#usage)
-5. [Quick Start and Docs](#docs-)
-6. [Contacts](#contacts)
+1. [Features](#features)
+1. [Usage](#usage)
+1. [Contacts](#contacts)
+
+## Installation
+
+[Colab Notebook](https://colab.research.google.com/drive/1Bz8RSVHwnNDaNtDwotfPj0w7AYzsdXZ-?usp=sharing)
+
+```
+pip install qdrant-client
+```
+
+## Getting Started
+
+```python
+from qdrant_client import QdrantClient
+qdrant = QdrantClient(":memory:") # Create in-memory Qdrant instance, for testing, CI/CD
+# OR
+client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast prototyping
+# OR
+qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance, for production
+```
+
+### Where do I go from here?
+
+- [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
+- Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
+- [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
 
 ## Demo Projects
 
