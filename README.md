@@ -231,12 +231,9 @@ Examples and/or documentation of Qdrant integrations:
 
 ## Contacts
 
-- Have questions? Join our [Discord channel](https://qdrant.to/discord)
-- Follow us on [Twitter](https://qdrant.to/twitter)
+- Have questions? Join our [Discord channel](https://qdrant.to/discord) or mention [@qdrant_engine on Twitter](https://qdrant.to/twitter)
 - Want to stay in touch with latest releases? Subscribe to our [Newsletters](https://qdrant.to/newsletter)
-- Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
-
-Building something special with Qdrant? We can [help](https://qdrant.tech/pricing/)!
+- Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/), need something personalised? We're at [info@qdrant.tech](mailto:info@qdrant.tech),
 
 ## Contributors ✨
 
