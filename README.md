@@ -219,11 +219,21 @@ Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 - Assess Qdrant's performance in our [benchmarks](https://qdrant.tech/benchmarks/)
 - Check out our further plans in [v1.0 Roadmap](https://qdrant.to/roadmap)
 
+# Integrations
+
+Examples and/or documentation of Qdrant integrations:
+
+- [Cohere](https://docs.cohere.com/docs/integrations#qdrant) ([blogpost on building a QA app with Cohere and Qdrant](https://qdrant.tech/articles/qa-with-cohere-and-qdrant/)) - Use Cohere embeddings with Qdrant
+- [DocArray](https://docarray.jina.ai/advanced/document-store/qdrant/) - Use Qdrant as a document store in DocArray
+- [LangChain](https://python.langchain.com/en/latest/ecosystem/qdrant.html) ([blogpost](https://qdrant.tech/articles/langchain-integration/)) - Use Qdrant as a memory backend for LangChain.
+- [LlamaIndex](https://gpt-index.readthedocs.io/en/latest/reference/indices/composability_query.html#gpt_index.data_structs.struct_type.IndexStructType.QDRANT) - Use Qdrant as a memory backend for LlamaIndex.
+- [OpenAI - ChatGPT retrieval plugin](https://github.com/openai/chatgpt-retrieval-plugin/blob/main/docs/providers/qdrant/setup.md) - Use Qdrant as a memory backend for ChatGPT
+
 ## Contacts
 
-- Join our [Discord channel](https://qdrant.to/discord)
+- Have questions? Join our [Discord channel](https://qdrant.to/discord)
 - Follow us on [Twitter](https://qdrant.to/twitter)
-- Subscribe to our [Newsletters](https://qdrant.to/newsletter)
+- Want to stay in touch with latest releases? Subscribe to our [Newsletters](https://qdrant.to/newsletter)
 - Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
 
 Building something special with Qdrant? We can [help](https://qdrant.tech/pricing/)!
