@@ -26,7 +26,6 @@ Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.
 
 ## Table of Contents
 
-1. [Installation](#installation)
 1. [Getting Started](#getting-started)
 1. [Demo Projects](#demo-projects)
 1. [API](#api)
@@ -37,15 +36,15 @@ Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.
 1. [Usage](#usage)
 1. [Contacts](#contacts)
 
-## Installation
+## Getting Started
 
-[Colab Notebook](https://colab.research.google.com/drive/1Bz8RSVHwnNDaNtDwotfPj0w7AYzsdXZ-?usp=sharing)
+### Installation
 
 ```
 pip install qdrant-client
 ```
 
-## Getting Started
+The client offers a convenient way to interact with Qdrant from Python across 3 different modes:
 
 ```python
 from qdrant_client import QdrantClient
@@ -59,6 +58,7 @@ qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant inst
 ### Where do I go from here?
 
 - [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
+- End to End [Colab Notebook](https://colab.research.google.com/drive/1Bz8RSVHwnNDaNtDwotfPj0w7AYzsdXZ-?usp=sharing) demo with SentenceBERT and Qdrant
 - Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
 - [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
 
