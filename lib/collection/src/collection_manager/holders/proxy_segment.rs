@@ -514,20 +514,6 @@ impl SegmentEntry for ProxySegment {
         count
     }
 
-    fn available_vector_count(&self, vector_name: &str) -> OperationResult<usize> {
-        let wrapped = self
-            .wrapped_segment
-            .get()
-            .read()
-            .available_vector_count(vector_name)?;
-        let write = self
-            .write_segment
-            .get()
-            .read()
-            .available_vector_count(vector_name)?;
-        Ok(wrapped + write)
-    }
-
     fn deleted_point_count(&self) -> usize {
         // May not be entirely accurate, this has multiple segments which may have overlap
         max(
