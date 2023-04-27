@@ -30,8 +30,6 @@ With Qdrant, embeddings or neural network encoders can be turned into full-fledg
 
 ## Getting Started
 
-For non-Python clients, see [Clients](#clients) section.
-
 ## Python
 
 ```
