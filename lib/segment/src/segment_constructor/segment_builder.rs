@@ -151,7 +151,7 @@ impl SegmentBuilder {
                         // Based on version
                         let existing_version =
                             id_tracker.internal_version(existing_internal_id).unwrap();
-                        if existing_version < other_version {
+                        let remove_id = if existing_version < other_version {
                             // Other version is the newest, remove the existing one and replace
                             id_tracker.drop(external_id)?;
                             id_tracker.set_link(external_id, new_internal_id)?;
@@ -161,6 +161,14 @@ impl SegmentBuilder {
                                 new_internal_id,
                                 &other_payload_index.payload(old_internal_id)?,
                             )?;
+                            existing_internal_id
+                        } else {
+                            // Old version is still good, do not move anything else
+                            // Mark newly added vector as removed
+                            new_internal_id
+                        };
+                        for vector_storage in vector_storages.values_mut() {
+                            vector_storage.delete_vector(remove_id)?;
                         }
                     }
                 }
