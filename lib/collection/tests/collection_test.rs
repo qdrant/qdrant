@@ -495,8 +495,9 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 mod grouping {
 
     use collection::collection::Collection;
-    use collection::grouping::group_by::{group_by, GroupBy, SourceRequest};
+    use collection::grouping::group_by::{group_by, GroupRequest, SourceRequest};
     use collection::operations::consistency_params::ReadConsistency;
+    use collection::shards::shard::ShardId;
     use rand::distributions::Uniform;
     use rand::rngs::ThreadRng;
     use rand::Rng;
@@ -507,9 +508,10 @@ mod grouping {
     use super::*;
 
     struct Resources {
-        request: GroupBy,
+        request: GroupRequest,
         collection: Collection,
         read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
     }
 
     fn rand_vector(rng: &mut ThreadRng, size: usize) -> VectorType {
@@ -530,7 +532,7 @@ mod grouping {
             score_threshold: None,
         });
 
-        let request = GroupBy::new(source, "docId".to_string(), 3);
+        let request = GroupRequest::new(source, "docId".to_string(), 3);
 
         let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
@@ -569,6 +571,7 @@ mod grouping {
             request,
             collection,
             read_consistency: None,
+            shard_selection: None,
         }
     }
 
@@ -579,8 +582,9 @@ mod grouping {
         let result = group_by(
             resources.request.clone(),
             &resources.collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             resources.read_consistency,
+            resources.shard_selection,
         )
         .await;
 
@@ -611,7 +615,7 @@ mod grouping {
     async fn recommending() {
         let resources = setup(16, 8).await;
 
-        let request = GroupBy::new(
+        let request = GroupRequest::new(
             SourceRequest::Recommend(RecommendRequest {
                 filter: None,
                 params: None,
@@ -632,8 +636,9 @@ mod grouping {
         let result = group_by(
             request.clone(),
             &resources.collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             resources.read_consistency,
+            resources.shard_selection,
         )
         .await;
 
@@ -676,7 +681,7 @@ mod grouping {
         }))
         .unwrap();
 
-        let group_by_request = GroupBy::new(
+        let group_by_request = GroupRequest::new(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: Some(filter.clone()),
@@ -694,8 +699,9 @@ mod grouping {
         let result = group_by(
             group_by_request,
             &resources.collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             resources.read_consistency,
+            resources.shard_selection,
         )
         .await;
 
@@ -710,7 +716,7 @@ mod grouping {
     async fn with_payload_and_vectors() {
         let resources = setup(16, 8).await;
 
-        let group_by_request = GroupBy::new(
+        let group_by_request = GroupRequest::new(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -728,8 +734,9 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &resources.collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             resources.read_consistency,
+            resources.shard_selection,
         )
         .await;
 
@@ -751,10 +758,11 @@ mod grouping {
         let Resources {
             collection,
             read_consistency,
+            shard_selection,
             ..
         } = setup(16, 8).await;
 
-        let group_by_request = GroupBy::new(
+        let group_by_request = GroupRequest::new(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -772,8 +780,9 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             read_consistency,
+            shard_selection,
         )
         .await;
 
@@ -793,10 +802,11 @@ mod grouping {
         let Resources {
             collection,
             read_consistency,
+            shard_selection,
             ..
         } = setup(16, 8).await;
 
-        let group_by_request = GroupBy::new(
+        let group_by_request = GroupRequest::new(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -814,8 +824,9 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             read_consistency,
+            shard_selection,
         )
         .await;
 
@@ -831,10 +842,11 @@ mod grouping {
         let Resources {
             collection,
             read_consistency,
+            shard_selection,
             ..
         } = setup(16, 8).await;
 
-        let group_by_request = GroupBy::new(
+        let group_by_request = GroupRequest::new(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -852,8 +864,9 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             read_consistency,
+            shard_selection,
         )
         .await;
 
@@ -870,10 +883,11 @@ mod grouping {
         let Resources {
             collection,
             read_consistency,
+            shard_selection,
             ..
         } = setup(1000, 5).await;
 
-        let group_by_request = GroupBy::new(
+        let group_by_request = GroupRequest::new(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -891,8 +905,9 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             read_consistency,
+            shard_selection,
         )
         .await;
 
@@ -913,10 +928,11 @@ mod grouping {
         let Resources {
             collection,
             read_consistency,
+            shard_selection,
             ..
         } = setup(10, 500).await;
 
-        let group_by_request = GroupBy::new(
+        let group_by_request = GroupRequest::new(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -934,8 +950,9 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            |_name| async { unreachable!() },
+            Some(|_name| async { unreachable!() }),
             read_consistency,
+            shard_selection,
         )
         .await;
 

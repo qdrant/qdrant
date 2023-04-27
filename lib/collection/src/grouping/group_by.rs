@@ -11,8 +11,11 @@ use tokio::sync::RwLockReadGuard;
 use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest};
+use crate::operations::types::{
+    CollectionError, CollectionResult, RecommendRequest, SearchRequest,
+};
 use crate::recommendations::recommend_by;
+use crate::shards::shard::ShardId;
 
 #[derive(Clone, Debug)]
 pub enum SourceRequest {
@@ -24,7 +27,10 @@ impl SourceRequest {
     async fn r#do<'a, F, Fut>(
         &self,
         collection: &Collection,
-        collection_by_name: F,
+        // only used for recommend
+        collection_by_name: Option<F>,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
         include_key: String,
         top: usize,
     ) -> CollectionResult<Vec<ScoredPoint>>
@@ -50,7 +56,9 @@ impl SourceRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
-                collection.search(request, None, None).await
+                collection
+                    .search(request, read_consistency, shard_selection)
+                    .await
             }
             SourceRequest::Recommend(request) => {
                 let mut request = request.clone();
@@ -63,7 +71,13 @@ impl SourceRequest {
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
 
-                recommend_by(request, collection, collection_by_name, None).await
+                let collection_by_name =
+                    collection_by_name.ok_or(CollectionError::ServiceError {
+                        error: "programmer: collection_by_name is required for recommend".into(),
+                        backtrace: None,
+                    })?;
+
+                recommend_by(request, collection, collection_by_name, read_consistency).await
             }
         }
     }
@@ -95,8 +109,8 @@ impl SourceRequest {
 }
 
 #[derive(Clone)]
-pub struct GroupBy {
-    /// Request to use
+pub struct GroupRequest {
+    /// Request to use (search or recommend)
     pub request: SourceRequest,
     /// Path to the field to group by
     pub path: String,
@@ -106,7 +120,7 @@ pub struct GroupBy {
     pub groups: usize,
 }
 
-impl GroupBy {
+impl GroupRequest {
     pub fn new(request: SourceRequest, path: String, top: usize) -> Self {
         let groups = match &request {
             SourceRequest::Search(request) => request.limit,
@@ -144,10 +158,12 @@ impl From<GroupsAggregator> for Vec<Group> {
 
 /// Uses the request to fill up groups of points.
 pub async fn group_by<'a, F, Fut>(
-    request: GroupBy,
+    request: GroupRequest,
     collection: &Collection,
-    collection_by_name: F,
+    // Obligatory for recommend
+    collection_by_name: Option<F>,
     read_consistency: Option<ReadConsistency>,
+    shard_selection: Option<ShardId>,
 ) -> CollectionResult<Vec<Group>>
 where
     F: Fn(String) -> Fut + Clone,
@@ -184,6 +200,8 @@ where
             .r#do(
                 collection,
                 collection_by_name.clone(),
+                read_consistency,
+                shard_selection,
                 request.path.clone(),
                 request.top,
             )
@@ -222,6 +240,8 @@ where
             .r#do(
                 collection,
                 collection_by_name.clone(),
+                read_consistency,
+                shard_selection,
                 request.path.clone(),
                 request.top,
             )
@@ -235,12 +255,12 @@ where
     }
 
     // flatten results
-    let without_payload_result = groups.flatten();
+    let bare_points = groups.flatten();
 
     // enrich with payload and vector
-    let flat_result = collection
+    let enriched_points = collection
         .fill_search_result_with_payload(
-            without_payload_result,
+            bare_points,
             request.request.with_payload(),
             request.request.with_vector().unwrap_or_default(),
             read_consistency,
@@ -249,7 +269,7 @@ where
         .await?;
 
     // re-group
-    groups.hydrate_from(&flat_result);
+    groups.hydrate_from(&enriched_points);
 
     // turn to output form
     let result: Vec<Group> = groups.into();
