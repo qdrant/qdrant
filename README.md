@@ -36,7 +36,7 @@ With Qdrant, embeddings or neural network encoders can be turned into full-fledg
 pip install qdrant-client
 ```
 
-The client offers a convenient way to interact with Qdrant from Python across 3 different modes:
+The python client offers a convenient way to start with Qdrant locally: 
 
 ```python
 from qdrant_client import QdrantClient
