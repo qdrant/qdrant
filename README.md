@@ -55,6 +55,18 @@ client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast proto
 qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance, for production
 ```
 
+### Clients
+
+Qdrant offers the following client libraries to help you integrate it into your application stack with ease:
+
+- Official: [Go client](https://github.com/qdrant/go-client)
+- Official: [Rust client](https://github.com/qdrant/rust-client)
+- Official: [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
+- Official: [Python client](https://github.com/qdrant/qdrant-client)
+- Community: [Elixir](https://hexdocs.pm/qdrant/readme.html)
+- Community: [PHP](https://github.com/hkulekci/qdrant-php)
+- Community: [Ruby](https://github.com/andreibondarev/qdrant-ruby)
+
 ### Where do I go from here?
 
 - [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
