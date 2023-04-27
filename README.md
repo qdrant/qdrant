@@ -165,21 +165,6 @@ You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant
 
 For faster production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/quick_start/#grpc).
 
-### Clients
-
-Qdrant offers the following client libraries to help you integrate it into your application stack with ease:
-
-- [Python client](https://github.com/qdrant/qdrant-client)
-- [Go client](https://github.com/qdrant/go-client)
-- [Rust client](https://github.com/qdrant/rust-client)
-- [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
-
-#### Community Clients
-
-- [Elixir](https://hexdocs.pm/qdrant/readme.html)
-- [PHP](https://github.com/hkulekci/qdrant-php)
-- [Ruby](https://github.com/andreibondarev/qdrant-ruby)
-
 ## Features
 
 ### Filtering and Payload
