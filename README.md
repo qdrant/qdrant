@@ -45,7 +45,7 @@ qdrant = QdrantClient(":memory:") # Create in-memory Qdrant instance, for testin
 client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast prototyping
 ```
 
-## Client Server
+### Client-Server
 
 This is the recommended method for production usage. To run the container, use the command:
 
