@@ -51,7 +51,19 @@ from qdrant_client import QdrantClient
 qdrant = QdrantClient(":memory:") # Create in-memory Qdrant instance, for testing, CI/CD
 # OR
 client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast prototyping
-# OR
+```
+
+## Client Server
+
+This is the recommended method for production usage. To run the container, use the command:
+
+```bash
+docker run -p 6333:6333 qdrant/qdrant
+```
+
+Now you can connect to this with any client, including Python:
+
+```python
 qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance, for production
 ```
 
