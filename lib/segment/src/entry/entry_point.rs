@@ -264,11 +264,6 @@ pub trait SegmentEntry {
 
     fn vector_dims(&self) -> HashMap<String, usize>;
 
-    /// Total number of points
-    ///
-    /// - includes soft deleted points
-    fn total_point_count(&self) -> usize;
-
     /// Number of available points
     ///
     /// - excludes soft deleted points

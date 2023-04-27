@@ -494,15 +494,6 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
-    fn total_point_count(&self) -> usize {
-        // Proxy segment shares `write_segment` with multiple other proxies
-        // We can't reliably calculate total_point_count for proxy
-        debug_assert!(false, "total_point_count is not implemented for Proxy");
-        // Fallback implementation in case we didn't test all cases
-        self.wrapped_segment.get().read().total_point_count()
-            + self.write_segment.get().read().total_point_count()
-    }
-
     fn available_point_count(&self) -> usize {
         let mut count = 0;
         let deleted_points_count = self.deleted_points.read().len();

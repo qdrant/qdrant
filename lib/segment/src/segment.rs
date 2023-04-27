@@ -609,6 +609,10 @@ impl Segment {
             .borrow()
             .available_vector_count())
     }
+
+    pub fn total_point_count(&self) -> usize {
+        self.id_tracker.borrow().total_point_count()
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -969,10 +973,6 @@ impl SegmentEntry for Segment {
 
     fn has_point(&self, point_id: PointIdType) -> bool {
         self.id_tracker.borrow().internal_id(point_id).is_some()
-    }
-
-    fn total_point_count(&self) -> usize {
-        self.id_tracker.borrow().total_point_count()
     }
 
     fn available_point_count(&self) -> usize {
