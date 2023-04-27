@@ -242,15 +242,6 @@ docker run -p 6333:6333 \
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 
-## Docs 📓
-
-- The best place to start is [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
-- The [Documentation](https://qdrant.tech/documentation/)
-- Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
-- Follow our [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
-- Assess Qdrant's performance in our [benchmarks](https://qdrant.tech/benchmarks/)
-- Check out our further plans in [v1.0 Roadmap](https://qdrant.to/roadmap)
-
 # Integrations
 
 Examples and/or documentation of Qdrant integrations:
@@ -265,7 +256,7 @@ Examples and/or documentation of Qdrant integrations:
 
 - Have questions? Join our [Discord channel](https://qdrant.to/discord) or mention [@qdrant_engine on Twitter](https://qdrant.to/twitter)
 - Want to stay in touch with latest releases? Subscribe to our [Newsletters](https://qdrant.to/newsletter)
-- Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/), need something personalised? We're at [info@qdrant.tech](mailto:info@qdrant.tech),
+- Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/), need something personalised? We're at [info@qdrant.tech](mailto:info@qdrant.tech)
 
 ## Contributors ✨
 
