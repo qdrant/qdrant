@@ -34,6 +34,7 @@ pub fn random_multi_vec_segment(
     let mut segment = build_multivec_segment(path, dim1, dim2, Distance::Dot).unwrap();
     let mut rnd = rand::thread_rng();
     let payload_key = "number";
+    let keyword_key = "keyword";
     for _ in 0..num_vectors {
         let random_vector1: Vec<_> = (0..dim1).map(|_| rnd.gen_range(0.0..1.0)).collect();
         let random_vector2: Vec<_> = (0..dim2).map(|_| rnd.gen_range(0.0..1.0)).collect();
@@ -43,7 +44,9 @@ pub fn random_multi_vec_segment(
 
         let point_id: PointIdType = rnd.gen_range(1..100_000_000).into();
         let payload_value = rnd.gen_range(1..1_000);
-        let payload: Payload = json!({ payload_key: vec![payload_value] }).into();
+        let random_keyword = format!("keyword_{}", rnd.gen_range(1..10));
+        let payload: Payload =
+            json!({ payload_key: vec![payload_value], keyword_key: random_keyword}).into();
         segment.upsert_point(opnum, point_id, &vectors).unwrap();
         segment.set_payload(opnum, point_id, &payload).unwrap();
     }

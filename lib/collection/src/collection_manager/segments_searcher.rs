@@ -474,7 +474,7 @@ fn get_hnsw_ef_construct(config: SegmentConfig, vector_name: &str) -> Option<usi
             config
                 .vector_data
                 .get(vector_name)
-                .and_then(|c| c.hnsw_config)
+                .and_then(|c| c.hnsw_config.as_ref())
                 .map(|c| c.ef_construct)
                 .unwrap_or(hnsw_config.ef_construct),
         ),

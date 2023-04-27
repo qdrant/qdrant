@@ -71,8 +71,8 @@ impl SegmentOptimizer for MergeOptimizer {
         self.collection_params.clone()
     }
 
-    fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config
+    fn hnsw_config(&self) -> &HnswConfig {
+        &self.hnsw_config
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {

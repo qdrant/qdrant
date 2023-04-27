@@ -354,7 +354,7 @@ impl TableOfContent {
         };
 
         let hnsw_config = match hnsw_config_diff {
-            None => self.storage_config.hnsw_index,
+            None => self.storage_config.hnsw_index.clone(),
             Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
         };
 

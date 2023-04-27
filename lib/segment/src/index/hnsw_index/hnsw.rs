@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use bitvec::prelude::BitSlice;
 use log::debug;
 use parking_lot::Mutex;
 use rand::thread_rng;
@@ -31,7 +32,7 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
     default_quantization_ignore_value, default_quantization_rescore_value, FieldCondition, Filter,
-    HnswConfig, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
+    HnswConfig, PointOffsetType, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
@@ -139,6 +140,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         stopped: &AtomicBool,
         graph_layers_builder: &mut GraphLayersBuilder,
         condition: FieldCondition,
+        deleted_bitslice: &BitSlice,
         block_filter_list: &mut VisitedList,
     ) -> OperationResult<()> {
         block_filter_list.next_iteration();
@@ -152,6 +154,12 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let available_vecs = vector_storage.available_vector_count();
         let points_to_index: Vec<_> = payload_index
             .query_points(&filter, Some(available_vecs))
+            .filter(|&point_id| {
+                !deleted_bitslice
+                    .get(point_id as usize)
+                    .map(|x| *x)
+                    .unwrap_or(false)
+            })
             .collect();
 
         for block_point_id in points_to_index.iter().copied() {
@@ -468,17 +476,17 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let vector_storage = self.vector_storage.borrow();
         let mut rng = thread_rng();
 
-        let available_vectors = vector_storage.available_vector_count();
+        let total_vector_count = vector_storage.total_vector_count();
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        debug!("building HNSW for {} vectors", available_vectors);
+        debug!("building HNSW for {} vectors", total_vector_count);
         let indexing_threshold = self.config.full_scan_threshold;
         let mut graph_layers_builder = GraphLayersBuilder::new(
-            available_vectors,
+            total_vector_count,
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
-            (available_vectors
+            (total_vector_count
                 .checked_div(indexing_threshold)
                 .unwrap_or(0)
                 * 10)
@@ -497,8 +505,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             graph_layers_builder.set_levels(vector_id, level);
         }
 
+        let mut indexed_vectors = 0;
+
         if self.config.m > 0 {
             let ids: Vec<_> = id_tracker.iter_ids_exluding(deleted_bitslice).collect();
+
+            indexed_vectors = ids.len();
 
             pool.install(|| {
                 ids.into_par_iter().try_for_each(|vector_id| {
@@ -525,14 +537,14 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 })
             })?;
 
-            self.config.indexed_vector_count.replace(available_vectors);
-
             debug!("finish main graph");
         } else {
             debug!("skip building main HNSW graph");
         }
 
-        let mut block_filter_list = VisitedList::new(available_vectors);
+        let mut block_filter_list = VisitedList::new(total_vector_count);
+        let visits_iteration = block_filter_list.get_current_iteration_id();
+
         let payload_index = self.payload_index.borrow();
         let payload_m = self.config.payload_m.unwrap_or(self.config.m);
 
@@ -546,7 +558,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // We add multiplier for the extra safety.
                 let percolation_multiplier = 2;
                 let max_block_size = if self.config.m > 0 {
-                    available_vectors / self.config.m * percolation_multiplier
+                    total_vector_count / self.config.m * percolation_multiplier
                 } else {
                     usize::MAX
                 };
@@ -559,7 +571,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     }
                     // ToDo: re-use graph layer for same payload
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
-                        available_vectors,
+                        total_vector_count,
                         payload_m,
                         self.config.payload_m0.unwrap_or(self.config.m0),
                         self.config.ef_construct,
@@ -572,17 +584,36 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         stopped,
                         &mut additional_graph,
                         payload_block.condition,
+                        deleted_bitslice,
                         &mut block_filter_list,
                     )?;
                     graph_layers_builder.merge_from_other(additional_graph);
                 }
             }
+
+            let indexed_payload_vectors = block_filter_list.count_visits_since(visits_iteration);
+
+            debug_assert!(indexed_vectors > indexed_payload_vectors || self.config.m == 0);
+            indexed_vectors = indexed_vectors.max(indexed_payload_vectors);
+            debug_assert!(indexed_payload_vectors <= total_vector_count);
         } else {
             debug!("skip building additional HNSW links");
         }
 
+        self.config.indexed_vector_count.replace(indexed_vectors);
+
         let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(&self.path);
         self.graph = Some(graph_layers_builder.into_graph_layers(Some(&graph_links_path))?);
+
+        #[cfg(debug_assertions)]
+        {
+            let graph = self.graph.as_ref().unwrap();
+            for (idx, deleted) in deleted_bitslice.iter().enumerate() {
+                if *deleted {
+                    debug_assert!(graph.links.links(idx as PointOffsetType, 0).is_empty());
+                }
+            }
+        }
 
         debug!("finish additional payload field indexing");
         self.save()

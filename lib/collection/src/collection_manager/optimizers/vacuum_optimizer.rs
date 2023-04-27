@@ -176,8 +176,8 @@ impl SegmentOptimizer for VacuumOptimizer {
         self.collection_params.clone()
     }
 
-    fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config
+    fn hnsw_config(&self) -> &HnswConfig {
+        &self.hnsw_config
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
@@ -218,7 +218,7 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
-    use segment::types::Distance;
+    use segment::types::{Distance, PayloadSchemaType};
     use serde_json::{json, Value};
     use tempfile::Builder;
 
@@ -418,14 +418,30 @@ mod tests {
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut holder = SegmentHolder::default();
-        let mut segment_id = holder.add(random_multi_vec_segment(
+
+        let mut segment = random_multi_vec_segment(
             dir.path(),
             100,
             point_count,
             vector1_dim as usize,
             vector2_dim as usize,
-        ));
+        );
+
+        segment
+            .create_field_index(101, "keyword", Some(&PayloadSchemaType::Keyword.into()))
+            .unwrap();
+
+        let mut segment_id = holder.add(segment);
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+
+        let hnsw_config = HnswConfig {
+            m: 16,
+            ef_construct: 100,
+            full_scan_threshold: 10, // Force to build HNSW links for payload
+            max_indexing_threads: 0,
+            on_disk: None,
+            payload_m: None,
+        };
 
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
@@ -433,7 +449,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params.clone(),
-            Default::default(),
+            hnsw_config.clone(),
             Default::default(),
         );
         let vacuum_optimizer = VacuumOptimizer::new(
@@ -443,7 +459,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params,
-            Default::default(),
+            hnsw_config,
             Default::default(),
         );
 
@@ -493,7 +509,7 @@ mod tests {
                 .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
             for &point_id in &segment_points_to_delete {
-                segment.delete_point(101, point_id).unwrap();
+                segment.delete_point(201, point_id).unwrap();
             }
 
             // Delete 25% of vectors named vector1

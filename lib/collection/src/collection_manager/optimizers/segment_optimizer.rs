@@ -52,7 +52,7 @@ pub trait SegmentOptimizer {
     fn collection_params(&self) -> CollectionParams;
 
     /// Get HNSW config
-    fn hnsw_config(&self) -> HnswConfig;
+    fn hnsw_config(&self) -> &HnswConfig;
 
     /// Get quantization config
     fn quantization_config(&self) -> Option<QuantizationConfig>;
@@ -76,7 +76,7 @@ pub trait SegmentOptimizer {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
             vector_data: collection_params
-                .get_all_vector_params(&self.hnsw_config(), self.quantization_config().as_ref())?,
+                .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?,
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
@@ -125,9 +125,9 @@ pub trait SegmentOptimizer {
 
         let optimized_config = SegmentConfig {
             vector_data: collection_params
-                .get_all_vector_params(&self.hnsw_config(), self.quantization_config().as_ref())?,
+                .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?,
             index: if is_indexed {
-                Indexes::Hnsw(self.hnsw_config())
+                Indexes::Hnsw(self.hnsw_config().clone())
             } else {
                 Indexes::Plain {}
             },

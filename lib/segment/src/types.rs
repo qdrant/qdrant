@@ -295,7 +295,7 @@ pub struct SearchParams {
 }
 
 /// Vector index configuration of the segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
@@ -308,7 +308,7 @@ pub enum Indexes {
 }
 
 /// Config of HNSW index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
