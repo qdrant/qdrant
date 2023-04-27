@@ -96,7 +96,23 @@ pub trait SegmentOptimizer {
         &self,
         optimizing_segments: &[LockedSegment],
     ) -> CollectionResult<SegmentBuilder> {
-        let mut total_vectors_bytes_count = 0usize;
+        // Example:
+        //
+        // S1: {
+        //     text_vectors: 10000,
+        //     image_vectors: 100
+        // }
+        // S2: {
+        //     text_vectors: 200,
+        //     image_vectors: 10000
+        // }
+
+        // Example: bytes_count_by_vector_name = {
+        //     text_vectors: 10200 * dim * VECTOR_ELEMENT_SIZE
+        //     image_vectors: 10100 * dim * VECTOR_ELEMENT_SIZE
+        // }
+        let mut bytes_count_by_vector_name = HashMap::new();
+
         for segment in optimizing_segments {
             let segment = match segment {
                 LockedSegment::Original(segment) => segment,
@@ -107,26 +123,31 @@ pub trait SegmentOptimizer {
                 }
             };
             let locked_segment = segment.read();
-            total_vectors_bytes_count += locked_segment
-                .vector_dims()
-                .into_iter()
-                .map(|(vector_name, dim)| {
-                    let available_vectors =
-                        locked_segment.available_vector_count(&vector_name).unwrap();
-                    dim * VECTOR_ELEMENT_SIZE * available_vectors
-                })
-                .max()
-                .unwrap_or(0)
+
+            for (vector_name, dim) in locked_segment.vector_dims() {
+                let available_vectors =
+                    locked_segment.available_vector_count(&vector_name).unwrap();
+                let vector_size = dim * VECTOR_ELEMENT_SIZE * available_vectors;
+                let size = bytes_count_by_vector_name.entry(vector_name).or_insert(0);
+                *size += vector_size;
+            }
         }
+
+        // Example: maximal_vector_store_size_bytes = 10200 * dim * VECTOR_ELEMENT_SIZE
+        let maximal_vector_store_size_bytes = bytes_count_by_vector_name
+            .values()
+            .max()
+            .copied()
+            .unwrap_or(0);
 
         let thresholds = self.threshold_config();
         let collection_params = self.collection_params();
 
-        let is_indexed =
-            total_vectors_bytes_count >= thresholds.indexing_threshold.saturating_mul(BYTES_IN_KB);
+        let is_indexed = maximal_vector_store_size_bytes
+            >= thresholds.indexing_threshold.saturating_mul(BYTES_IN_KB);
 
-        let is_on_disk =
-            total_vectors_bytes_count >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
+        let is_on_disk = maximal_vector_store_size_bytes
+            >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let optimized_config = SegmentConfig {
             vector_data: collection_params
