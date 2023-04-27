@@ -101,7 +101,7 @@ pub trait SegmentOptimizer {
             .map(|s| {
                 let segment = match s {
                     LockedSegment::Original(segment) => segment,
-                    LockedSegment::Proxy(_) => panic!("Proxy segment is not expected here")
+                    LockedSegment::Proxy(_) => panic!("Proxy segment is not expected here"),
                 };
 
                 let segment = s.get();
