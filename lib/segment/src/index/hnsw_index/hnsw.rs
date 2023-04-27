@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use bitvec::prelude::BitSlice;
 use log::debug;
 use parking_lot::Mutex;
 use rand::thread_rng;
@@ -140,7 +139,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         stopped: &AtomicBool,
         graph_layers_builder: &mut GraphLayersBuilder,
         condition: FieldCondition,
-        deleted_bitslice: &BitSlice,
         block_filter_list: &mut VisitedList,
     ) -> OperationResult<()> {
         block_filter_list.next_iteration();
@@ -150,6 +148,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
+
+        let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
         let available_vecs = vector_storage.available_vector_count();
         let points_to_index: Vec<_> = payload_index
@@ -186,7 +186,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                             quantized_storage.raw_scorer(
                                 &vector,
                                 id_tracker.deleted_point_bitslice(),
-                                vector_storage.deleted_vector_bitslice(),
+                                deleted_bitslice,
                             )
                         } else {
                             new_raw_scorer(
@@ -584,7 +584,6 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         stopped,
                         &mut additional_graph,
                         payload_block.condition,
-                        deleted_bitslice,
                         &mut block_filter_list,
                     )?;
                     graph_layers_builder.merge_from_other(additional_graph);

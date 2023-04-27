@@ -121,10 +121,6 @@ impl IdTracker for FixtureIdTracker {
         self.ids.len()
     }
 
-    fn available_point_count(&self) -> usize {
-        self.total_point_count() - self.deleted_point_count()
-    }
-
     fn deleted_point_count(&self) -> usize {
         self.deleted_count
     }

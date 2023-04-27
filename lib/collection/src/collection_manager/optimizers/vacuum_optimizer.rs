@@ -75,7 +75,7 @@ impl VacuumOptimizer {
             .flat_map(|(idx, segment)| {
                 // Calcualte littered ratio for segment and named vectors
                 let littered_ratio_segment = self.littered_ratio_segment(segment);
-                let littered_ratio_vectors = self.littered_ratio_vectors(segment);
+                let littered_ratio_vectors = self.littered_vectors_index_ratio(segment);
                 [littered_ratio_segment, littered_ratio_vectors]
                     .into_iter()
                     .flatten()
@@ -103,15 +103,16 @@ impl VacuumOptimizer {
         (is_big && is_littered).then_some(littered_ratio)
     }
 
-    /// Calculate littered ratio for segment on vector level
+    /// Calculate littered ratio for segment on vector index level
     ///
     /// If a segment has multiple named vectors, it checks each one.
+    /// We are only interested in indexed vectors, as they are the ones affected by soft-deletes.
     ///
     /// This finds the maximum deletion ratio for a named vector. The ratio is based on the number
     /// of deleted vectors versus the number of indexed vector.s
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds for no named vectors.
-    fn littered_ratio_vectors(&self, segment: &LockedSegment) -> Option<f64> {
+    fn littered_vectors_index_ratio(&self, segment: &LockedSegment) -> Option<f64> {
         {
             let segment_entry = segment.get();
             let read_segment = segment_entry.read();
