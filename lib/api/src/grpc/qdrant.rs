@@ -96,7 +96,6 @@ pub struct HnswConfigDiff {
     ///
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     #[prost(uint64, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_4_max_10000")]
     pub m: ::core::option::Option<u64>,
     ///
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
