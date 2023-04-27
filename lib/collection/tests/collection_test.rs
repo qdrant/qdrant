@@ -587,7 +587,7 @@ mod grouping {
         assert!(result.is_ok());
 
         let result = result.unwrap();
-        println!("{:#?}", result);
+
         let group_req = resources.request;
 
         assert_eq!(result.len(), group_req.groups);

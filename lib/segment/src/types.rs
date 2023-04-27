@@ -895,10 +895,12 @@ pub enum Match {
 }
 
 impl Match {
+    #[cfg(test)]
     fn new_value(value: ValueVariants) -> Self {
         Self::Value(MatchValue { value })
     }
 
+    #[cfg(test)]
     fn new_text(text: &str) -> Self {
         Self::Text(MatchText { text: text.into() })
     }

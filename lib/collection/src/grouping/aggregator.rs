@@ -3,9 +3,28 @@ use std::hash::Hash;
 
 use segment::types::{ExtendedPointId, ScoredPoint};
 use serde_json::Value;
+use AggregatorError::*;
 
-#[derive(Debug, Eq, PartialEq)]
+pub(super) enum AggregatorError {
+    GroupsFull,
+    Other,
+}
+
+/// Abstraction over serde_json::Value to be used as a key in a HashMap/HashSet
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub(super) struct GroupKey(pub serde_json::Value);
+
+impl TryFrom<serde_json::Value> for GroupKey {
+    type Error = AggregatorError;
+
+    /// Only allows Strings and Numbers to be converted into GroupKey
+    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+        match value {
+            serde_json::Value::String(_) | serde_json::Value::Number(_) => Ok(Self(value)),
+            _ => Err(Other),
+        }
+    }
+}
 
 impl Hash for GroupKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -17,12 +36,6 @@ impl Hash for GroupKey {
     }
 }
 
-impl From<&str> for GroupKey {
-    fn from(s: &str) -> Self {
-        Self(serde_json::Value::String(s.to_string()))
-    }
-}
-
 type Hits = HashSet<ScoredPoint>;
 
 #[allow(dead_code)] // temporary
@@ -31,6 +44,7 @@ pub(super) struct GroupsAggregator {
     max_group_size: usize,
     grouped_by: String,
     max_groups: usize,
+    full_groups: HashSet<GroupKey>,
 }
 
 #[allow(dead_code)] // temporary
@@ -41,57 +55,61 @@ impl GroupsAggregator {
             max_group_size: group_size,
             grouped_by,
             max_groups: groups,
+            full_groups: HashSet::with_capacity(groups),
         }
     }
 
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
-    pub(super) fn add_point(&mut self, point: &ScoredPoint) {
+    fn add_point(&mut self, point: &ScoredPoint) -> Result<(), AggregatorError> {
+        if self.full_groups.len() == self.max_groups {
+            return Err(GroupsFull);
+        }
+
         // if the key contains multiple values, grabs the first one
-        let group_key = point.payload.as_ref().and_then(|p| {
-            p.get_value(&self.grouped_by)
-                .values()
-                .first()
-                .map(|&val| val.clone())
-        });
+        let group_key = point
+            .payload
+            .as_ref()
+            .and_then(|p| p.get_value(&self.grouped_by).next().cloned())
+            .ok_or(Other)
+            .and_then(GroupKey::try_from)?;
 
-        // ignore if no such payload
-        let group_key = match group_key {
-            Some(group_key) => group_key,
-            None => return,
-        };
+        // Check if group is full
+        if self.full_groups.contains(&group_key) {
+            return Err(Other);
+        }
 
-        // ignore arrays, objects and null values
-        let group_key = match group_key {
-            serde_json::Value::String(_) | serde_json::Value::Number(_) => GroupKey(group_key),
-            _ => return,
-        };
-
-        if !self.groups.contains_key(&group_key) && self.groups.len() >= self.max_groups {
-            return;
+        // Check if we would still need another group
+        if !self.groups.contains_key(&group_key) && self.groups.len() == self.max_groups {
+            return Err(GroupsFull);
         }
 
         let group = self
             .groups
-            .entry(group_key)
+            .entry(group_key.clone())
             .or_insert_with(|| HashSet::with_capacity(self.max_group_size));
 
+        group.insert(point.clone());
+
         if group.len() == self.max_group_size {
-            return;
+            self.full_groups.insert(group_key);
         }
 
-        group.insert(point.clone());
+        Ok(())
     }
 
-    /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field
+    /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field, else it just ignores them
     pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
-        points.iter().for_each(|point| self.add_point(point));
+        points
+            .iter()
+            .map(|point| self.add_point(point))
+            .any(|r| matches!(r, Err(GroupsFull)));
     }
 
     pub(super) fn len(&self) -> usize {
         self.groups.len()
     }
 
-    // gets the keys of the groups that have less than the max group size
+    // Gets the keys of the groups that have less than the max group size
     pub(super) fn keys_of_unfilled_groups(&self) -> Vec<Value> {
         self.groups
             .iter()
@@ -102,14 +120,10 @@ impl GroupsAggregator {
 
     // gets the keys of the groups that have reached the max group size
     pub(super) fn keys_of_filled_groups(&self) -> Vec<Value> {
-        self.groups
-            .iter()
-            .filter(|(_, hits)| hits.len() == self.max_group_size)
-            .map(|(key, _)| key.0.clone())
-            .collect()
+        self.full_groups.iter().map(|k| k.0.clone()).collect()
     }
 
-    /// Gets the ids of the already present points across the groups
+    /// Gets the ids of the already present points across all the groups
     pub(super) fn ids(&self) -> HashSet<ExtendedPointId> {
         self.groups
             .iter()
@@ -146,7 +160,15 @@ mod unit_tests {
 
     use super::*;
 
+    /// Used for convenience
+    impl From<&str> for GroupKey {
+        fn from(s: &str) -> Self {
+            Self(serde_json::Value::String(s.to_string()))
+        }
+    }
+
     #[test]
+    #[allow(unused_must_use)]
     fn it_adds_single_points() {
         let mut aggregator = GroupsAggregator::new(3, 2, "docId".to_string());
 
