@@ -6,7 +6,6 @@
     <b>Vector Search Engine for the next generation of AI applications</b>
 </p>
 
-
 <p align=center>
     <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://github.com/qdrant/qdrant/workflows/Tests/badge.svg" alt="Tests status"></a>
     <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success" alt="OpenAPI Docs"></a>
@@ -17,13 +16,25 @@
 
 **Qdrant** (read: _quadrant_ ) is a vector similarity search engine and vector database.
 It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
-Qdrant is tailored to extended filtering support.  It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications. 
+Qdrant is tailored to extended filtering support. It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications.
 
 Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load.
 
 With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
 
 Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.io/ ⛅
+
+## Table of Contents
+
+1. [Demo Projects](#demo-projects)
+2. [API](#api)
+   - [REST](#rest)
+   - [gRPC](#grpc)
+   - [Clients](#clients)
+3. [Features](#features)
+4. [Usage](#usage)
+5. [Quick Start and Docs](#docs-)
+6. [Contacts](#contacts)
 
 ## Demo Projects
 
@@ -47,7 +58,6 @@ Sometimes it is millions and tens of millions of classes.
 The most promising way to solve this problem is to use similarity learning models.
 We put together a demo example of how you could approach the problem with a pre-trained transformer model and Qdrant.
 So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
-
 
 <details>
 <summary> More solutions </summary>
@@ -105,6 +115,7 @@ So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
 </details>
 
 ## API
+
 ### REST
 
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
@@ -144,12 +155,12 @@ For example, if the search space limited by filters is small, it is more efficie
 
 ### SIMD Hardware Acceleration
 
-Qdrant can take advantage of modern CPU x86-x64 architectures. 
+Qdrant can take advantage of modern CPU x86-x64 architectures.
 It allows you to search even faster on modern hardware.
 
 ### Write-Ahead Logging
 
-Once the service confirmed an update - it won't lose data even in case of power shut down. 
+Once the service confirmed an update - it won't lose data even in case of power shut down.
 All operations are stored in the update journal and the latest database state could be easily reconstructed at any moment.
 
 ### Distributed Deployment
@@ -193,28 +204,27 @@ docker run -p 6333:6333 \
     qdrant/qdrant
 ```
 
-* `/qdrant/storage` - is a place where Qdrant persists all your data. 
-Make sure to mount it as a volume, otherwise docker will drop it with the container. 
-* `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml) 
+- `/qdrant/storage` - is a place where Qdrant persists all your data.
+  Make sure to mount it as a volume, otherwise docker will drop it with the container.
+- `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml)
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 
-
 ## Docs 📓
 
-* The best place to start is [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
-* The [Documentation](https://qdrant.tech/documentation/)
-* Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
-* Follow our [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
-* Assess Qdrant's performance in our [benchmarks](https://qdrant.tech/benchmarks/)
-* Check out our further plans in [v1.0 Roadmap](https://qdrant.to/roadmap)
+- The best place to start is [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
+- The [Documentation](https://qdrant.tech/documentation/)
+- Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
+- Follow our [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
+- Assess Qdrant's performance in our [benchmarks](https://qdrant.tech/benchmarks/)
+- Check out our further plans in [v1.0 Roadmap](https://qdrant.to/roadmap)
 
 ## Contacts
 
-* Join our [Discord channel](https://qdrant.to/discord)
-* Follow us on [Twitter](https://qdrant.to/twitter)
-* Subscribe to our [Newsletters](https://qdrant.to/newsletter)
-* Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
+- Join our [Discord channel](https://qdrant.to/discord)
+- Follow us on [Twitter](https://qdrant.to/twitter)
+- Subscribe to our [Newsletters](https://qdrant.to/newsletter)
+- Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
 
 Building something special with Qdrant? We can [help](https://qdrant.tech/pricing/)!
 
