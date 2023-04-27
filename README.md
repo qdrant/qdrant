@@ -78,26 +78,17 @@ Qdrant offers the following client libraries to help you integrate it into your 
 
 ## Demo Projects
 
-### Semantic Text Search 🔍
+### Discover Semantic Text Search 🔍
 
-The neural search uses semantic embeddings instead of keywords and works best with short texts.
-With Qdrant and a pre-trained neural network, you can build and deploy semantic neural search on your data in minutes.
-[Try it online!](https://qdrant.to/semantic-search-demo)
+Unlock the power of semantic embeddings with Qdrant, transcending keyword-based search to find meaningful connections in short texts. Deploy a neural search in minutes using a pre-trained neural network, and experience the future of text search. [Try it online!](https://qdrant.to/semantic-search-demo)
 
-### Similar Image Search - Food Discovery 🍕
+### Explore Similar Image Search - Food Discovery 🍕
 
-There are multiple ways to discover things, text search is not the only one.
-In the case of food, people rely more on appearance than description and ingredients.
-So why not let people choose their next lunch by its appearance, even if they don’t know the name of the dish?
-[Check it out!](https://qdrant.to/food-discovery)
+There's more to discovery than text search, especially when it comes to food. People often choose meals based on appearance rather than descriptions and ingredients. Let Qdrant help your users find their next delicious meal using visual search, even if they don't know the dish's name. [Check it out!](https://qdrant.to/food-discovery)
 
-### Extreme classification - E-commerce Product Categorization 📺
+### Master Extreme Classification - E-commerce Product Categorization 📺
 
-Extreme classification is a rapidly growing research area within machine learning focusing on multi-class and multi-label problems involving an extremely large number of labels.
-Sometimes it is millions and tens of millions of classes.
-The most promising way to solve this problem is to use similarity learning models.
-We put together a demo example of how you could approach the problem with a pre-trained transformer model and Qdrant.
-So you can [play with it online!](https://qdrant.to/extreme-classification-demo)
+Enter the cutting-edge realm of extreme classification, an emerging machine learning field tackling multi-class and multi-label problems with millions of labels. Harness the potential of similarity learning models, and see how a pre-trained transformer model and Qdrant can revolutionize e-commerce product categorization. [Play with it online!](https://qdrant.to/extreme-classification-demo)
 
 <details>
 <summary> More solutions </summary>
