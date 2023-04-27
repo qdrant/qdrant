@@ -96,32 +96,37 @@ pub trait SegmentOptimizer {
         &self,
         optimizing_segments: &[LockedSegment],
     ) -> CollectionResult<SegmentBuilder> {
-        let total_vectors_size: usize = optimizing_segments
-            .iter()
-            .map(|s| {
-                let segment = s.get();
-                let locked_segment = segment.read();
-                locked_segment
-                    .vector_dims()
-                    .into_iter()
-                    .map(|(vector_name, dim)| {
-                        let available_vectors =
-                            locked_segment.available_vector_count(&vector_name).unwrap();
-                        dim * VECTOR_ELEMENT_SIZE * available_vectors
-                    })
-                    .max()
-                    .unwrap_or(0)
-            })
-            .sum();
+        let mut total_vectors_bytes_count = 0usize;
+        for segment in optimizing_segments {
+            let segment = match segment {
+                LockedSegment::Original(segment) => segment,
+                LockedSegment::Proxy(_) => {
+                    return Err(CollectionError::service_error(
+                        "Proxy segment is not expected here".to_string(),
+                    ))
+                }
+            };
+            let locked_segment = segment.read();
+            total_vectors_bytes_count += locked_segment
+                .vector_dims()
+                .into_iter()
+                .map(|(vector_name, dim)| {
+                    let available_vectors =
+                        locked_segment.available_vector_count(&vector_name).unwrap();
+                    dim * VECTOR_ELEMENT_SIZE * available_vectors
+                })
+                .max()
+                .unwrap_or(0)
+        }
 
         let thresholds = self.threshold_config();
         let collection_params = self.collection_params();
 
         let is_indexed =
-            total_vectors_size >= thresholds.indexing_threshold.saturating_mul(BYTES_IN_KB);
+            total_vectors_bytes_count >= thresholds.indexing_threshold.saturating_mul(BYTES_IN_KB);
 
         let is_on_disk =
-            total_vectors_size >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
+            total_vectors_bytes_count >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let optimized_config = SegmentConfig {
             vector_data: collection_params

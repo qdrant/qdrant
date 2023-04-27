@@ -601,6 +601,18 @@ impl Segment {
         }
         Ok(())
     }
+
+    pub fn available_vector_count(&self, vector_name: &str) -> OperationResult<usize> {
+        check_vector_name(vector_name, &self.segment_config)?;
+        Ok(self.vector_data[vector_name]
+            .vector_storage
+            .borrow()
+            .available_vector_count())
+    }
+
+    pub fn total_point_count(&self) -> usize {
+        self.id_tracker.borrow().total_point_count()
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -963,20 +975,8 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().internal_id(point_id).is_some()
     }
 
-    fn total_point_count(&self) -> usize {
-        self.id_tracker.borrow().total_point_count()
-    }
-
     fn available_point_count(&self) -> usize {
         self.id_tracker.borrow().available_point_count()
-    }
-
-    fn available_vector_count(&self, vector_name: &str) -> OperationResult<usize> {
-        check_vector_name(vector_name, &self.segment_config)?;
-        Ok(self.vector_data[vector_name]
-            .vector_storage
-            .borrow()
-            .available_vector_count())
     }
 
     fn deleted_point_count(&self) -> usize {

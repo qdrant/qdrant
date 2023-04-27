@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
+use segment::entry::entry_point::SegmentEntry;
 use segment::index::VectorIndex;
 use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
 use segment::vector_storage::VectorStorage;
@@ -88,13 +89,11 @@ impl VacuumOptimizer {
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds.
     fn littered_ratio_segment(&self, segment: &LockedSegment) -> Option<f64> {
-        let segment_entry = segment.get();
+        let segment_entry = match segment {
+            LockedSegment::Original(segment) => segment,
+            LockedSegment::Proxy(_) => return None,
+        };
         let read_segment = segment_entry.read();
-
-        // Never optimize special segments
-        if read_segment.segment_type() == SegmentType::Special {
-            return None;
-        }
 
         let littered_ratio =
             read_segment.deleted_point_count() as f64 / read_segment.total_point_count() as f64;
@@ -343,7 +342,7 @@ mod tests {
 
         // Check new segment have proper amount of points
         assert_eq!(
-            segment_guard.total_point_count(),
+            segment_guard.available_point_count(),
             200 - segment_points_to_delete.len(),
         );
 
