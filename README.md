@@ -31,7 +31,7 @@ Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.
 1. [API](#api)
    - [REST](#rest)
    - [gRPC](#grpc)
-   - [Clients](#clients)
+   - [Clients](#clients): Python, Go, Rust, JS/TS, Elixir, PHP, Ruby etc.
 1. [Features](#features)
 1. [Usage](#usage)
 1. [Contacts](#contacts)
