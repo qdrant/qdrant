@@ -15,7 +15,7 @@
 </p>
 
 **Qdrant** (read: _quadrant_ ) is a vector similarity search engine and vector database.
-It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
+It provides a production-ready service with a convenient API to store, search, and manage points—vectors with an additional payload
 Qdrant is tailored to extended filtering support. It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications.
 
 Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load.
@@ -140,8 +140,8 @@ Qdrant offers the following client libraries to help you integrate it into your 
 
 ### Filtering and Payload
 
-Qdrant supports any JSON payload associated with vectors. It does not only store payload but also allows filter results based on payload values.
-It allows any combinations of `should`, `must`, and `must_not` conditions, but unlike ElasticSearch post-filtering, Qdrant guarantees all relevant vectors are retrieved.
+Qdrant supports any JSON payload associated with vectors. It does not only store payload but also allows filtering results based on payload values.
+It allows any combination of should, must, and must_not conditions, but unlike `ElasticSearch` post-filtering, Qdrant guarantees that all relevant vectors are retrieved.
 
 ### Rich Data Types
 
@@ -150,7 +150,7 @@ Payload filtering conditions allow you to build almost any custom business logic
 
 ### Query Planning and Payload Indexes
 
-Using the information about the stored payload values, the `query planner` decides on the best way to execute the query.
+Using the information about the stored payload values, the _query planner_ decides on the best way to execute the query.
 For example, if the search space limited by filters is small, it is more efficient to use a full brute force than an index.
 
 ### SIMD Hardware Acceleration
