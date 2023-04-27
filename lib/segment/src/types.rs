@@ -312,7 +312,6 @@ pub enum Indexes {
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
-    #[validate(range(min = 4, max = 10_000))]
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     #[validate(range(min = 4))]
