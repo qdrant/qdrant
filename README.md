@@ -38,7 +38,7 @@ Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.
 
 ## Getting Started
 
-### Installation
+## Python
 
 ```
 pip install qdrant-client
