@@ -37,7 +37,6 @@ pub trait DiffConfig<T: DeserializeOwned + Serialize> {
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
-    #[validate(range(min = 4, max = 10_000))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub m: Option<usize>,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
