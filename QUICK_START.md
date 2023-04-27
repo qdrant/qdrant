@@ -1,12 +1,49 @@
-# Quick Start with Qdrant
+# Quick Start for Production
 
 This example covers the most basic use-case - collection creation and basic vector search.
 For additional information please refer to the [API documentation](https://qdrant.github.io/qdrant/redoc/index.html).
 
 You can also try all Qdrant REST API in our [Swagger UI](https://ui.qdrant.tech/).
 
+## Docker 🐳
+
+Use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
+
+```bash
+docker pull qdrant/qdrant
+```
+
+Run it with default configuration:
+
+```bash
+docker run -p 6333:6333 qdrant/qdrant
+```
+
+Build your own from source
+
+```bash
+docker build . --tag=qdrant/qdrant
+```
+
+And once you need a fine-grained setup, you can also define a storage path and custom configuration:
+
+```bash
+docker run -p 6333:6333 \
+    -v $(pwd)/path/to/data:/qdrant/storage \
+    -v $(pwd)/path/to/custom_config.yaml:/qdrant/config/production.yaml \
+    qdrant/qdrant
+```
+
+- `/qdrant/storage` - is a place where Qdrant persists all your data.
+  Make sure to mount it as a volume, otherwise docker will drop it with the container.
+- `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml)
+
+Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
+
 ## Create collection
+
 First - let's create a collection with dot-production metric.
+
 ```bash
 curl -X PUT 'http://localhost:6333/collections/test_collection' \
     -H 'Content-Type: application/json' \
@@ -19,15 +56,17 @@ curl -X PUT 'http://localhost:6333/collections/test_collection' \
 ```
 
 Expected response:
+
 ```json
 {
-    "result": true,
-    "status": "ok",
-    "time": 0.031095451
+  "result": true,
+  "status": "ok",
+  "time": 0.031095451
 }
 ```
 
 We can ensure that collection was created:
+
 ```bash
 curl 'http://localhost:6333/collections/test_collection'
 ```
@@ -69,12 +108,12 @@ Expected response:
     }
   },
   "status": "ok",
-  "time": 2.1199e-05
+  "time": 2.1199e-5
 }
 ```
 
-
 ## Add points
+
 Let's now add vectors with some payload:
 
 ```bash
@@ -93,14 +132,15 @@ curl -L -X PUT 'http://localhost:6333/collections/test_collection/points?wait=tr
 ```
 
 Expected response:
+
 ```json
 {
-    "result": {
-        "operation_id": 0,
-        "status": "completed"
-    },
-    "status": "ok",
-    "time": 0.000206061
+  "result": {
+    "operation_id": 0,
+    "status": "completed"
+  },
+  "status": "ok",
+  "time": 0.000206061
 }
 ```
 
@@ -153,13 +193,14 @@ curl -L -X POST 'http://localhost:6333/collections/test_collection/points/search
 ```
 
 Expected response:
+
 ```json
 {
-    "result": [
-        { "id": 4, "score": 1.362 },
-        { "id": 2, "score": 0.871 }
-    ],
-    "status": "ok",
-    "time": 0.000093972
+  "result": [
+    { "id": 4, "score": 1.362 },
+    { "id": 2, "score": 0.871 }
+  ],
+  "status": "ok",
+  "time": 0.000093972
 }
 ```
