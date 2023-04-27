@@ -136,6 +136,12 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - [Rust client](https://github.com/qdrant/rust-client)
 - [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
 
+#### Community Clients
+
+- [Elixir](https://hexdocs.pm/qdrant/readme.html)
+- [PHP](https://github.com/hkulekci/qdrant-php)
+- [Ruby](https://github.com/andreibondarev/qdrant-ruby)
+
 ## Features
 
 ### Filtering and Payload
