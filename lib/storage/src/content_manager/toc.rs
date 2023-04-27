@@ -12,6 +12,7 @@ use collection::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams,
 };
+use collection::grouping::group_by::{group_by, Group, GroupRequest, SourceRequest};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
@@ -1175,6 +1176,31 @@ impl TableOfContent {
             .retrieve(request, read_consistency, shard_selection)
             .await
             .map_err(|err| err.into())
+    }
+
+    pub async fn bucket(
+        &self,
+        collection_name: &str,
+        request: GroupRequest,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> Result<Vec<Group>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+
+        let collection_by_name = match request.request {
+            SourceRequest::Recommend(_) => Some(|name| self.get_collection_opt(name)),
+            SourceRequest::Search(_) => None,
+        };
+
+        group_by(
+            request,
+            &collection,
+            collection_by_name,
+            read_consistency,
+            shard_selection,
+        )
+        .await
+        .map_err(|err| err.into())
     }
 
     /// List of all collections
