@@ -177,13 +177,7 @@ Qdrant does not rely on any external database or orchestration controller, which
 
 ### Docker 🐳
 
-Build your own from source
-
-```bash
-docker build . --tag=qdrant/qdrant
-```
-
-Or use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
+Use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
 
 ```bash
 docker pull qdrant/qdrant
@@ -193,6 +187,12 @@ To run the container, use the command:
 
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
+```
+
+Build your own from source
+
+```bash
+docker build . --tag=qdrant/qdrant
 ```
 
 And once you need a fine-grained setup, you can also define a storage path and custom configuration:
