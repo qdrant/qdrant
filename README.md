@@ -217,43 +217,6 @@ Coordination with the distributed consensus is provided by the [Raft](https://ra
 
 Qdrant does not rely on any external database or orchestration controller, which makes it very easy to configure.
 
-## Usage
-
-### Docker 🐳
-
-Use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
-
-```bash
-docker pull qdrant/qdrant
-```
-
-To run the container, use the command:
-
-```bash
-docker run -p 6333:6333 qdrant/qdrant
-```
-
-Build your own from source
-
-```bash
-docker build . --tag=qdrant/qdrant
-```
-
-And once you need a fine-grained setup, you can also define a storage path and custom configuration:
-
-```bash
-docker run -p 6333:6333 \
-    -v $(pwd)/path/to/data:/qdrant/storage \
-    -v $(pwd)/path/to/custom_config.yaml:/qdrant/config/production.yaml \
-    qdrant/qdrant
-```
-
-- `/qdrant/storage` - is a place where Qdrant persists all your data.
-  Make sure to mount it as a volume, otherwise docker will drop it with the container.
-- `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml)
-
-Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
-
 # Integrations
 
 Examples and/or documentation of Qdrant integrations:
