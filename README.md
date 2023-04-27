@@ -171,38 +171,31 @@ For faster production-tier searches, Qdrant also provides a gRPC interface. You 
 
 ### Filtering and Payload
 
-Qdrant supports any JSON payload associated with vectors. It does not only store payload but also allows filtering results based on payload values.
-It allows any combination of should, must, and must_not conditions, but unlike `ElasticSearch` post-filtering, Qdrant guarantees that all relevant vectors are retrieved.
+Qdrant enables JSON payloads to be associated with vectors, providing both storage and filtering based on payload values. It supports various combinations of `should`, `must`, and `must_not` conditions, ensuring retrieval of all relevant vectors unlike `ElasticSearch` post-filtering.
 
 ### Rich Data Types
 
-Vector payload supports a large variety of data types and query conditions, including string matching, numerical ranges, geo-locations, and more.
-Payload filtering conditions allow you to build almost any custom business logic that should work on top of similarity matching.
+The vector payload accommodates diverse data types and query conditions, including string matching, numerical ranges, geo-locations, and more. These filtering conditions empower you to create custom business logic on top of similarity matching.
 
 ### Query Planning and Payload Indexes
 
-Using the information about the stored payload values, the _query planner_ decides on the best way to execute the query.
-For example, if the search space limited by filters is small, it is more efficient to use a full brute force than an index.
+The _query planner_ leverages stored payload information to optimize query execution. For instance, smaller search spaces limited by filters might benefit from full brute force over an index.
 
 ### SIMD Hardware Acceleration
 
-Qdrant can take advantage of modern CPU x86-x64 architectures.
-It allows you to search even faster on modern hardware.
+Utilizing modern CPU x86-x64 architectures, Qdrant delivers faster search performance on modern hardware.
 
 ### Write-Ahead Logging
 
-Once the service confirmed an update - it won't lose data even in case of power shut down.
-All operations are stored in the update journal and the latest database state could be easily reconstructed at any moment.
+Qdrant ensures data persistence with update confirmation, even during power outages. The update journal stores all operations, enabling effortless reconstruction of the latest database state.
 
 ### Distributed Deployment
 
-Since [v0.8.0](https://github.com/qdrant/qdrant/releases/tag/v0.8.0) Qdrant supports distributed deployment.
-In this mode, multiple Qdrant machines are joined into a cluster to provide horizontal scaling.
-Coordination with the distributed consensus is provided by the [Raft](https://raft.github.io/) protocol.
+As of [v0.8.0](https://github.com/qdrant/qdrant/releases/tag/v0.8.0), Qdrant supports distributed deployment. Multiple Qdrant machines form a cluster for horizontal scaling, coordinated through the [Raft](https://raft.github.io/) protocol.
 
 ### Stand-alone
 
-Qdrant does not rely on any external database or orchestration controller, which makes it very easy to configure.
+Qdrant operates independently, without reliance on external databases or orchestration controllers, simplifying configuration.
 
 # Integrations
 
