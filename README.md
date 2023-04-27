@@ -26,6 +26,8 @@ Also available as managed solution in the **Qdrant Cloud** https://cloud.qdrant.
 
 ## Getting Started
 
+For non-Python clients, see [Clients](#clients) section.
+
 ## Python
 
 ```
