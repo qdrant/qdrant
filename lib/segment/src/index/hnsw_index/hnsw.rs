@@ -499,7 +499,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .num_threads(self.config.max_rayon_threads())
             .build()?;
 
-        for vector_id in id_tracker.iter_ids_exluding(deleted_bitslice) {
+        for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(vector_id, level);
@@ -508,7 +508,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let mut indexed_vectors = 0;
 
         if self.config.m > 0 {
-            let ids: Vec<_> = id_tracker.iter_ids_exluding(deleted_bitslice).collect();
+            let ids: Vec<_> = id_tracker.iter_ids_excluding(deleted_bitslice).collect();
 
             indexed_vectors = ids.len();
 

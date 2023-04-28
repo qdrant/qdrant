@@ -60,7 +60,7 @@ pub trait IdTracker {
     ///
     /// - excludes removed points
     /// - excludes flagged items from `exclude_bitslice`
-    fn iter_ids_exluding<'a>(
+    fn iter_ids_excluding<'a>(
         &'a self,
         exclude_bitslice: &'a BitSlice,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
