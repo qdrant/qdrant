@@ -6,9 +6,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator,
 };
-use segment::types::{
-    HnswConfig, Indexes, QuantizationConfig, SegmentType, StorageType, VECTOR_ELEMENT_SIZE,
-};
+use segment::types::{HnswConfig, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
@@ -69,8 +67,8 @@ impl IndexingOptimizer {
 
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                let vector_count = read_segment.points_count();
-                let vector_size = vector_count
+                let point_count = read_segment.available_point_count();
+                let vector_size = point_count
                     * read_segment
                         .vector_dims()
                         .values()
@@ -84,16 +82,8 @@ impl IndexingOptimizer {
                 }
 
                 let segment_config = read_segment.config();
-
-                let is_vector_indexed = match segment_config.index {
-                    Indexes::Plain {} => false,
-                    Indexes::Hnsw(_) => true,
-                };
-
-                let is_memmaped = match segment_config.storage_type {
-                    StorageType::InMemory => false,
-                    StorageType::Mmap => true,
-                };
+                let is_vector_indexed = segment_config.is_vector_indexed();
+                let is_memmaped = segment_config.is_memmaped();
 
                 if !(is_vector_indexed || is_memmaped) {
                     return None;
@@ -121,8 +111,8 @@ impl IndexingOptimizer {
 
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                let vector_count = read_segment.points_count();
-                let vector_size = vector_count
+                let point_count = read_segment.available_point_count();
+                let vector_size = point_count
                     * read_segment
                         .vector_dims()
                         .values()
@@ -138,15 +128,8 @@ impl IndexingOptimizer {
                 }
 
                 // Apply indexing to plain segments which have grown too big
-                let is_vector_indexed = match segment_config.index {
-                    Indexes::Plain {} => false,
-                    Indexes::Hnsw(_) => true,
-                };
-
-                let is_memmaped = match segment_config.storage_type {
-                    StorageType::InMemory => false,
-                    StorageType::Mmap => true,
-                };
+                let is_vector_indexed = segment_config.is_vector_indexed();
+                let is_memmaped = segment_config.is_memmaped();
 
                 let big_for_mmap = vector_size
                     >= self
@@ -162,12 +145,11 @@ impl IndexingOptimizer {
                 let require_indexing =
                     (big_for_mmap && !is_memmaped) || (big_for_index && !is_vector_indexed);
 
-                match require_indexing {
-                    true => Some((*idx, vector_size)),
-                    false => None,
-                }
+                require_indexing.then_some((*idx, vector_size))
             })
             .collect();
+
+        // Select the largest unindexed segment, return if none
         let selected_segment = candidates
             .iter()
             .max_by_key(|(_, vector_size)| *vector_size);
@@ -175,13 +157,15 @@ impl IndexingOptimizer {
             return vec![];
         }
         let (selected_segment_id, selected_segment_size) = *selected_segment.unwrap();
+
         // It is better for scheduling if indexing optimizer optimizes 2 segments.
         // Because result of the optimization is usually 2 segment - it should preserve
         // overall count of segments.
+
+        // Find smallest unindexed to check if we can index together
         let smallest_unindexed = candidates
             .iter()
             .min_by_key(|(_, vector_size)| *vector_size);
-
         if let Some((idx, size)) = smallest_unindexed {
             if *idx != selected_segment_id
                 && selected_segment_size + size
@@ -194,8 +178,8 @@ impl IndexingOptimizer {
             }
         }
 
+        // Find smallest indexed to check if we can reindex together
         let smallest_indexed = self.smallest_indexed_segment(&segments_read_guard, excluded_ids);
-
         if let Some((idx, size)) = smallest_indexed {
             if idx != selected_segment_id
                 && selected_segment_size + size
@@ -225,8 +209,8 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.collection_params.clone()
     }
 
-    fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config
+    fn hnsw_config(&self) -> &HnswConfig {
+        &self.hnsw_config
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {

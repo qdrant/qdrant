@@ -65,10 +65,10 @@ mod tests {
             let payload: Payload = generate_diverse_payload(&mut rnd);
 
             plain_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             struct_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             plain_segment
                 .set_full_payload(opnum, idx, &payload)
@@ -194,10 +194,10 @@ mod tests {
             let payload: Payload = generate_diverse_nested_payload(&mut rnd);
 
             plain_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             struct_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             plain_segment
                 .set_full_payload(opnum, idx, &payload)
@@ -376,8 +376,8 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
-                "{estimation:#?}"
+                estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+                "{estimation:#?}",
             );
 
             // Perform additional sort to break ties by score
@@ -455,8 +455,8 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
-                "{estimation:#?}"
+                estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+                "{estimation:#?}",
             );
 
             let struct_result = struct_segment
@@ -479,8 +479,8 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
-                "{estimation:#?}"
+                estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+                "{estimation:#?}",
             );
 
             plain_result
@@ -547,8 +547,8 @@ mod tests {
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
-                "{estimation:#?}"
+                estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+                "{estimation:#?}",
             );
 
             // warning: report flakiness at https://github.com/qdrant/qdrant/issues/534

@@ -28,6 +28,8 @@ pub struct HnswGraphConfig {
     pub payload_m: Option<usize>,
     #[serde(default)]
     pub payload_m0: Option<usize>,
+    #[serde(default)]
+    pub indexed_vector_count: Option<usize>,
 }
 
 impl HnswGraphConfig {
@@ -37,6 +39,7 @@ impl HnswGraphConfig {
         full_scan_threshold: usize,
         max_indexing_threads: usize,
         payload_m: Option<usize>,
+        indexed_vector_count: usize,
     ) -> Self {
         HnswGraphConfig {
             m,
@@ -47,6 +50,7 @@ impl HnswGraphConfig {
             max_indexing_threads,
             payload_m,
             payload_m0: payload_m.map(|v| v * 2),
+            indexed_vector_count: Some(indexed_vector_count),
         }
     }
 

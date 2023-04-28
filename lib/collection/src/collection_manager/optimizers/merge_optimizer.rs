@@ -71,8 +71,8 @@ impl SegmentOptimizer for MergeOptimizer {
         self.collection_params.clone()
     }
 
-    fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config
+    fn hnsw_config(&self) -> &HnswConfig {
+        &self.hnsw_config
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
@@ -111,20 +111,17 @@ impl SegmentOptimizer for MergeOptimizer {
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                match read_segment.segment_type() != SegmentType::Special {
-                    true => Some((
-                        *idx,
-                        read_segment.points_count()
-                            * read_segment
-                                .vector_dims()
-                                .values()
-                                .max()
-                                .copied()
-                                .unwrap_or(0)
-                            * VECTOR_ELEMENT_SIZE,
-                    )),
-                    false => None,
-                }
+                (read_segment.segment_type() != SegmentType::Special).then_some((
+                    *idx,
+                    read_segment.available_point_count()
+                        * read_segment
+                            .vector_dims()
+                            .values()
+                            .max()
+                            .copied()
+                            .unwrap_or(0)
+                        * VECTOR_ELEMENT_SIZE,
+                ))
             })
             .sorted_by_key(|(_, size)| *size)
             .scan(0, |size_sum, (sid, size)| {
@@ -271,7 +268,7 @@ mod tests {
             if !other_segment_ids.contains(&segment_id) {
                 let holder_guard = locked_holder.read();
                 let new_segment = holder_guard.get(segment_id).unwrap();
-                assert_eq!(new_segment.get().read().points_count(), 3 * 3 + 10);
+                assert_eq!(new_segment.get().read().available_point_count(), 3 * 3 + 10);
             }
         }
 
