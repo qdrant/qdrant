@@ -66,7 +66,7 @@ pub fn adjust_to_available_vectors(
     // Another extreme case - all deleted vectors are not selected
     let max = estimation.max.min(available_vectors);
 
-    let availability_prob = number_of_deleted_vectors as f64 / available_points as f64;
+    let availability_prob = available_vectors as f64 / available_points as f64;
 
     let exp = (estimation.exp as f64 * availability_prob).round() as usize;
 
