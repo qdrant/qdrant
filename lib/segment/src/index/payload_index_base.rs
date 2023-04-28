@@ -29,11 +29,7 @@ pub trait PayloadIndex {
     /// Estimate amount of points (min, max) which satisfies filtering condition.
     ///
     /// A best estimation of the number of available points should be given.
-    fn estimate_cardinality(
-        &self,
-        query: &Filter,
-        available_points: Option<usize>,
-    ) -> CardinalityEstimation;
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation;
 
     /// Return list of all point ids, which satisfy filtering criteria
     ///
@@ -41,7 +37,6 @@ pub trait PayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-        available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
     /// Return number of points, indexed by this field
