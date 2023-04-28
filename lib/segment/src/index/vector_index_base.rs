@@ -27,12 +27,25 @@ pub trait VectorIndex {
     fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    /// The number of indexed vectors, currently accessible
+    fn indexed_vector_count(&self) -> usize;
 }
 
 pub enum VectorIndexEnum {
     Plain(PlainIndex),
     HnswRam(HNSWIndex<GraphLinksRam>),
     HnswMmap(HNSWIndex<GraphLinksMmap>),
+}
+
+impl VectorIndexEnum {
+    pub fn is_index(&self) -> bool {
+        match self {
+            Self::Plain(_) => false,
+            Self::HnswRam(_) => true,
+            Self::HnswMmap(_) => true,
+        }
+    }
 }
 
 impl VectorIndex for VectorIndexEnum {
@@ -71,6 +84,14 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => index.files(),
             VectorIndexEnum::HnswRam(index) => index.files(),
             VectorIndexEnum::HnswMmap(index) => index.files(),
+        }
+    }
+
+    fn indexed_vector_count(&self) -> usize {
+        match self {
+            Self::Plain(index) => index.indexed_vector_count(),
+            Self::HnswRam(index) => index.indexed_vector_count(),
+            Self::HnswMmap(index) => index.indexed_vector_count(),
         }
     }
 }

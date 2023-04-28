@@ -106,7 +106,7 @@ impl Segment {
                 None => {
                     // No vector provided, so we remove it
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.delete_vec(internal_id)?;
+                    vector_storage.delete_vector(internal_id)?;
                 }
             }
         }
@@ -124,7 +124,7 @@ impl Segment {
         vectors: NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
-        let new_index = self.id_tracker.borrow().internal_size() as PointOffsetType;
+        let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
         check_vectors_set(&vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
@@ -133,7 +133,7 @@ impl Segment {
                 None => {
                     let dim = vector_storage.vector_dim();
                     vector_storage.insert_vector(new_index, &vec![1.0; dim])?;
-                    vector_storage.delete_vec(new_index)?;
+                    vector_storage.delete_vector(new_index)?;
                 }
                 Some(vec) => {
                     vector_storage.insert_vector(new_index, vec)?;
@@ -308,7 +308,7 @@ impl Segment {
         let is_vector_deleted = vector_data
             .vector_storage
             .borrow()
-            .is_deleted_vec(point_offset);
+            .is_deleted_vector(point_offset);
         if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
             Ok(Some(
                 vector_data
@@ -331,7 +331,7 @@ impl Segment {
             let is_vector_deleted = vector_data
                 .vector_storage
                 .borrow()
-                .is_deleted_vec(point_offset);
+                .is_deleted_vector(point_offset);
             if !is_vector_deleted {
                 vectors.insert(
                     vector_name.clone(),
@@ -584,7 +584,7 @@ impl Segment {
                 // Drop removed points from vector storage
                 for vector_data in self.vector_data.values() {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.delete_vec(*internal_id)?;
+                    vector_storage.delete_vector(*internal_id)?;
                 }
             }
 
@@ -600,6 +600,18 @@ impl Segment {
             self.flush(true)?;
         }
         Ok(())
+    }
+
+    pub fn available_vector_count(&self, vector_name: &str) -> OperationResult<usize> {
+        check_vector_name(vector_name, &self.segment_config)?;
+        Ok(self.vector_data[vector_name]
+            .vector_storage
+            .borrow()
+            .available_vector_count())
+    }
+
+    pub fn total_point_count(&self) -> usize {
+        self.id_tracker.borrow().total_point_count()
     }
 }
 
@@ -683,7 +695,7 @@ impl SegmentEntry for Segment {
         res
     }
 
-    fn upsert_vector(
+    fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -745,7 +757,7 @@ impl SegmentEntry for Segment {
                     // Propagate point deletion to all its vectors
                     for vector_data in segment.vector_data.values() {
                         let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                        vector_storage.delete_vec(internal_id)?;
+                        vector_storage.delete_vector(internal_id)?;
                     }
 
                     Ok((true, Some(internal_id)))
@@ -772,7 +784,7 @@ impl SegmentEntry for Segment {
                         },
                     )?;
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    let is_deleted = vector_storage.delete_vec(internal_id)?;
+                    let is_deleted = vector_storage.delete_vector(internal_id)?;
                     Ok((is_deleted, Some(internal_id)))
                 })
             }
@@ -929,12 +941,12 @@ impl SegmentEntry for Segment {
                 //  - point filter prob = 10 / 10000 = 0.001
                 //  - expected_checks = 10 / 0.001  = 10000
 
-                let total_points = self.points_count() + 1 /* + 1 for division-by-zero */;
+                let available_points = self.available_point_count() + 1 /* + 1 for division-by-zero */;
                 // Expected number of successful checks per point
                 let check_probability = (query_cardinality.exp as f64 + 1.0/* protect from zero */)
-                    / total_points as f64;
+                    / available_points as f64;
                 let exp_stream_checks =
-                    (limit.unwrap_or(total_points) as f64 / check_probability) as usize;
+                    (limit.unwrap_or(available_points) as f64 / check_probability) as usize;
 
                 // Assume it would require about `query cardinality` checks.
                 // We are interested in approximate number of checks, so we can
@@ -963,19 +975,23 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().internal_id(point_id).is_some()
     }
 
-    fn points_count(&self) -> usize {
-        self.id_tracker.borrow().points_count()
+    fn available_point_count(&self) -> usize {
+        self.id_tracker.borrow().available_point_count()
     }
 
-    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+    fn deleted_point_count(&self) -> usize {
+        self.id_tracker.borrow().deleted_point_count()
+    }
+
+    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
         match filter {
             None => {
-                let total_count = self.points_count();
+                let available = self.available_point_count();
                 CardinalityEstimation {
                     primary_clauses: vec![],
-                    min: total_count,
-                    exp: total_count,
-                    max: total_count,
+                    min: available,
+                    exp: available,
+                    max: available,
                 }
             }
             Some(filter) => {
@@ -983,10 +999,6 @@ impl SegmentEntry for Segment {
                 payload_index.estimate_cardinality(filter, None)
             }
         }
-    }
-
-    fn deleted_point_count(&self) -> usize {
-        self.id_tracker.borrow().deleted_point_count()
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -1006,8 +1018,8 @@ impl SegmentEntry for Segment {
 
         SegmentInfo {
             segment_type: self.segment_type,
-            num_vectors: self.points_count() * self.vector_data.len(),
-            num_points: self.points_count(),
+            num_vectors: self.available_point_count() * self.vector_data.len(),
+            num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
@@ -1447,11 +1459,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
@@ -1517,7 +1529,7 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment
-            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1608,7 +1620,7 @@ mod tests {
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
 
         segment
-            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         segment
@@ -1642,8 +1654,18 @@ mod tests {
 
         // validate restored snapshot is the same as original segment
         assert_eq!(segment.vector_dims(), restored_segment.vector_dims());
-
-        assert_eq!(segment.points_count(), restored_segment.points_count());
+        assert_eq!(
+            segment.total_point_count(),
+            restored_segment.total_point_count(),
+        );
+        assert_eq!(
+            segment.available_point_count(),
+            restored_segment.available_point_count(),
+        );
+        assert_eq!(
+            segment.deleted_point_count(),
+            restored_segment.deleted_point_count(),
+        );
 
         for id in segment.iter_points() {
             let vectors = segment.all_vectors(id).unwrap();
@@ -1686,7 +1708,7 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
         segment
-            .upsert_vector(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1720,11 +1742,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
 
         // first pass on consistent data

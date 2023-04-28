@@ -62,7 +62,7 @@ mod tests {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
             segment
-                .upsert_vector(n as SeqNumberType, idx, &only_default_vector(&vector))
+                .upsert_point(n as SeqNumberType, idx, &only_default_vector(&vector))
                 .unwrap();
         }
         segment.vector_data.values_mut().for_each(|vector_storage| {

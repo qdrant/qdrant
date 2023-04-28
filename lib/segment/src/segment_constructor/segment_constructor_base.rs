@@ -118,14 +118,17 @@ fn create_segment(
                 .load_quantization(&quantized_data_path)?;
         }
 
-        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match config.index {
+        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &config.index {
             Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
                 id_tracker.clone(),
                 vector_storage.clone(),
                 payload_index.clone(),
             ))),
             Indexes::Hnsw(collection_hnsw_config) => {
-                let hnsw_config = vector_config.hnsw_config.unwrap_or(collection_hnsw_config);
+                let hnsw_config = vector_config
+                    .hnsw_config
+                    .clone()
+                    .unwrap_or_else(|| collection_hnsw_config.clone());
                 sp(if hnsw_config.on_disk == Some(true) {
                     VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
                         &vector_index_path,

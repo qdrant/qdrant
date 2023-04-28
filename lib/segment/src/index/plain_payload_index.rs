@@ -110,7 +110,7 @@ impl PayloadIndex for PlainPayloadIndex {
         available_points: Option<usize>,
     ) -> CardinalityEstimation {
         let available_points =
-            available_points.unwrap_or_else(|| self.id_tracker.borrow().points_count());
+            available_points.unwrap_or_else(|| self.id_tracker.borrow().available_point_count());
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
@@ -237,7 +237,7 @@ impl VectorIndex for PlainIndex {
                 let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let available_vecs = vector_storage.available_vec_count();
+                let available_vecs = vector_storage.available_vector_count();
                 let filtered_ids_vec: Vec<_> = payload_index
                     .query_points(filter, Some(available_vecs))
                     .collect();
@@ -291,6 +291,10 @@ impl VectorIndex for PlainIndex {
 
     fn files(&self) -> Vec<PathBuf> {
         vec![]
+    }
+
+    fn indexed_vector_count(&self) -> usize {
+        0
     }
 }
 

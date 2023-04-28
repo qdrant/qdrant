@@ -43,6 +43,7 @@ pub struct MmapVectors {
     ///
     /// This has the same lifetime as this struct, a borrow must never be leased out for longer.
     deleted: &'static mut BitSlice,
+    /// Current number of deleted vectors.
     pub deleted_count: usize,
     pub quantized_vectors: Option<QuantizedVectorsStorage>,
 }
@@ -166,7 +167,7 @@ impl MmapVectors {
         is_deleted
     }
 
-    pub fn is_deleted_vec(&self, key: PointOffsetType) -> bool {
+    pub fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
         self.deleted[key as usize]
     }
 
@@ -174,7 +175,7 @@ impl MmapVectors {
     ///
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
-    pub fn deleted_vec_bitslice(&self) -> &BitSlice {
+    pub fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted
     }
 
