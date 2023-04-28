@@ -17,12 +17,15 @@ where
         None => true,
         Some(conditions) => {
             let condition_count = conditions.len();
-            let matching_paths: Vec<usize> = conditions.iter().flat_map(checker).collect();
             // Count the number of matches per element index
-            let mut matches: HashMap<usize, usize> = HashMap::new();
-            for m in matching_paths {
-                *matches.entry(m).or_insert(0) += 1;
-            }
+            let matches: HashMap<usize, usize> =
+                conditions
+                    .iter()
+                    .flat_map(checker)
+                    .fold(HashMap::new(), |mut acc, m| {
+                        *acc.entry(m).or_insert(0) += 1;
+                        acc
+                    });
             matches.iter().any(|(_, count)| *count == condition_count)
         }
     }

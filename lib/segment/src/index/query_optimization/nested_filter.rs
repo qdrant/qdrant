@@ -41,14 +41,14 @@ pub fn find_indices_matching_all_conditions(
     nested_checkers: &Vec<NestedMatchingIndicesFn>,
 ) -> Vec<ElemIndex> {
     let condition_len = nested_checkers.len();
-    let mut matches: HashMap<ElemIndex, usize> = HashMap::new();
-    for f in nested_checkers {
-        let inner_matches = f(point_id);
-        for inner in inner_matches {
-            let count = matches.entry(inner).or_insert(0);
-            *count += 1;
-        }
-    }
+    let matches: HashMap<ElemIndex, usize> =
+        nested_checkers
+            .iter()
+            .flat_map(|f| f(point_id))
+            .fold(HashMap::new(), |mut acc, inner| {
+                *acc.entry(inner).or_insert(0) += 1;
+                acc
+            });
     // gather all indices that have matched all musts conditions
     matches
         .iter()
@@ -63,17 +63,17 @@ pub fn nested_conditions_converter<'a>(
     payload_provider: PayloadProvider,
     nested_path: JsonPathPayload,
 ) -> Vec<NestedMatchingIndicesFn<'a>> {
-    let mut nested_checker_fns = vec![];
-    conditions.iter().for_each(|condition| {
-        let condition_checker = nested_condition_converter(
-            condition,
-            field_indexes,
-            payload_provider.clone(),
-            nested_path.clone(),
-        );
-        nested_checker_fns.push(condition_checker);
-    });
-    nested_checker_fns
+    conditions
+        .iter()
+        .map(|condition| {
+            nested_condition_converter(
+                condition,
+                field_indexes,
+                payload_provider.clone(),
+                nested_path.clone(),
+            )
+        })
+        .collect()
 }
 
 pub fn nested_condition_converter<'a>(
@@ -90,8 +90,7 @@ pub fn nested_condition_converter<'a>(
                 .and_then(|indexes| {
                     indexes
                         .iter()
-                        .filter_map(|index| nested_field_condition_index(index, field_condition))
-                        .next()
+                        .find_map(|index| nested_field_condition_index(index, field_condition))
                 })
                 .unwrap_or_else(|| {
                     Box::new(move |point_id| {

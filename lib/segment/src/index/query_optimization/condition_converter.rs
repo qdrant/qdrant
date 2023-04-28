@@ -25,8 +25,7 @@ pub fn condition_converter<'a>(
             .and_then(|indexes| {
                 indexes
                     .iter()
-                    .filter_map(|index| field_condition_index(index, field_condition))
-                    .next()
+                    .find_map(|index| field_condition_index(index, field_condition))
             })
             .unwrap_or_else(|| {
                 Box::new(move |point_id| {

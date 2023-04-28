@@ -289,7 +289,7 @@ def test_nesting_nested_payload_query_operations():
     assert response.ok
     assert len(response.json()['result']['points']) == 2
 
-    # Search doubly nested field with payload index and without
+    # Search doubly nested field with and without payload index
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",
