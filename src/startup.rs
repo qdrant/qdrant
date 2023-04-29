@@ -6,6 +6,8 @@ use log::LevelFilter;
 
 use crate::common::error_reporting::ErrorReporter;
 
+const INITIALIZED_FILE: &str = ".qdrant-initialized";
+
 pub fn setup_logger(log_level: &str) {
     let is_info = log_level.to_ascii_uppercase() == "INFO";
     let mut log_builder = env_logger::Builder::new();
@@ -50,4 +52,22 @@ pub fn setup_panic_hook(reporting_enabled: bool, reporting_id: String) {
             ErrorReporter::report(message, &reporting_id, Some(&loc));
         }
     }));
+}
+
+/// Creates a file that indicates that the server has been started.
+/// This file is used to check if the server has been been successfully started before potential kill.
+pub fn touch_started_file_indicator() {
+    if let Err(err) = std::fs::write(INITIALIZED_FILE, "") {
+        log::warn!("Failed to create init file indicator: {}", err);
+    }
+}
+
+/// Removes a file that indicates that the server has been started.
+/// Use before server initialization to avoid false positives.
+pub fn remove_started_file_indicator() {
+    if std::path::Path::new(INITIALIZED_FILE).exists() {
+        if let Err(err) = std::fs::remove_file(INITIALIZED_FILE) {
+            log::warn!("Failed to remove init file indicator: {}", err);
+        }
+    }
 }

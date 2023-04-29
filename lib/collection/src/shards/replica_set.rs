@@ -481,32 +481,36 @@ impl ShardReplicaSet {
         );
 
         let local = if replica_state.read().is_local {
-            let res = LocalShard::load(
-                shard_id,
-                collection_id.clone(),
-                shard_path,
-                collection_config.clone(),
-                shared_storage_config.clone(),
-                update_runtime.clone(),
-            )
-            .await;
+            let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
+                Dummy(DummyShard::new(recovery_reason))
+            } else {
+                let res = LocalShard::load(
+                    shard_id,
+                    collection_id.clone(),
+                    shard_path,
+                    collection_config.clone(),
+                    shared_storage_config.clone(),
+                    update_runtime.clone(),
+                )
+                .await;
 
-            let shard = match res {
-                Ok(shard) => Local(shard),
-                Err(err) => {
-                    if !shared_storage_config.handle_collection_load_errors {
-                        panic!("Failed to load local shard {shard_path:?}: {err}")
-                    }
+                match res {
+                    Ok(shard) => Local(shard),
+                    Err(err) => {
+                        if !shared_storage_config.handle_collection_load_errors {
+                            panic!("Failed to load local shard {shard_path:?}: {err}")
+                        }
 
-                    log::error!(
-                        "Failed to load local shard {shard_path:?}, \
+                        log::error!(
+                            "Failed to load local shard {shard_path:?}, \
                          initializing \"dummy\" shard instead: \
                          {err}"
-                    );
+                        );
 
-                    Dummy(DummyShard::new(format!(
-                        "Failed to load local shard {shard_path:?}: {err}"
-                    )))
+                        Dummy(DummyShard::new(format!(
+                            "Failed to load local shard {shard_path:?}: {err}"
+                        )))
+                    }
                 }
             };
 

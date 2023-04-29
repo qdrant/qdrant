@@ -42,7 +42,7 @@ use crate::greeting::welcome;
 use crate::migrations::single_to_cluster::handle_existing_collections;
 use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
-use crate::startup::setup_logger;
+use crate::startup::{remove_started_file_indicator, setup_logger, touch_started_file_indicator};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -106,6 +106,8 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    remove_started_file_indicator();
+
     let args = Args::parse();
     let settings = Settings::new(args.config_path).expect("Can't read config.");
 
@@ -119,6 +121,11 @@ fn main() -> anyhow::Result<()> {
     segment::madvise::set_global(settings.storage.mmap_advice);
 
     welcome();
+
+    if let Some(recovery_warning) = &settings.storage.recovery_mode {
+        log::warn!("Qdrant is loaded in recovery mode: {}", recovery_warning);
+        log::warn!("Read more: https://qdrant.tech/documentation/administration/#recovery-mode");
+    }
 
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
@@ -399,6 +406,8 @@ fn main() -> anyhow::Result<()> {
             })
             .unwrap();
     }
+
+    touch_started_file_indicator();
 
     for handle in handles.into_iter() {
         log::debug!(
