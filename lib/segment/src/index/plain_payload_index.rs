@@ -26,7 +26,7 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType, SearchParams,
 };
-use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -104,13 +104,8 @@ impl PayloadIndex for PlainPayloadIndex {
         self.save_config()
     }
 
-    fn estimate_cardinality(
-        &self,
-        _query: &Filter,
-        available_points: Option<usize>,
-    ) -> CardinalityEstimation {
-        let available_points =
-            available_points.unwrap_or_else(|| self.id_tracker.borrow().available_point_count());
+    fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
+        let available_points = self.id_tracker.borrow().available_point_count();
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
@@ -122,7 +117,6 @@ impl PayloadIndex for PlainPayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-        _available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let filter_context = self.filter_context(query);
         Box::new(ArcAtomicRefCellIterator::new(
@@ -237,10 +231,7 @@ impl VectorIndex for PlainIndex {
                 let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let available_vecs = vector_storage.available_vector_count();
-                let filtered_ids_vec: Vec<_> = payload_index
-                    .query_points(filter, Some(available_vecs))
-                    .collect();
+                let filtered_ids_vec: Vec<_> = payload_index.query_points(filter).collect();
                 vectors
                     .iter()
                     .map(|vector| {

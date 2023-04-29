@@ -23,6 +23,7 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::VisitedList;
@@ -151,9 +152,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        let available_vecs = vector_storage.available_vector_count();
         let points_to_index: Vec<_> = payload_index
-            .query_points(&filter, Some(available_vecs))
+            .query_points(&filter)
             .filter(|&point_id| {
                 !deleted_bitslice
                     .get(point_id as usize)
@@ -310,8 +310,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let available_vecs = vector_storage.available_vector_count();
-        let mut filtered_iter = payload_index.query_points(filter, Some(available_vecs));
+        let mut filtered_iter = payload_index.query_points(filter);
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -426,11 +425,14 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let available_vecs = vector_storage.available_vector_count();
-                let query_cardinality =
-                    payload_index.estimate_cardinality(query_filter, Some(available_vecs));
-
-                // debug!("query_cardinality: {:#?}", query_cardinality);
+                let id_tracker = self.id_tracker.borrow();
+                let available_vector_count = vector_storage.available_vector_count();
+                let query_point_cardinality = payload_index.estimate_cardinality(query_filter);
+                let query_cardinality = adjust_to_available_vectors(
+                    query_point_cardinality,
+                    available_vector_count,
+                    id_tracker.available_point_count(),
+                );
 
                 if query_cardinality.max < self.config.full_scan_threshold {
                     // if cardinality is small - use plain index
@@ -454,7 +456,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     id_tracker.sample_ids(Some(vector_storage.deleted_vector_bitslice())),
                     |idx| filter_context.check(idx),
                     self.config.full_scan_threshold,
-                    available_vecs,
+                    available_vector_count, // Check cardinality among available vectors
                 ) {
                     // if cardinality is high enough - use HNSW index
                     let _timer =

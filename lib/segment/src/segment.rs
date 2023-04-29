@@ -524,7 +524,7 @@ impl Segment {
         let id_tracker = self.id_tracker.borrow();
 
         let ids_iterator = payload_index
-            .query_points(condition, None)
+            .query_points(condition)
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {
@@ -921,7 +921,7 @@ impl SegmentEntry for Segment {
             Some(condition) => {
                 let query_cardinality = {
                     let payload_index = self.payload_index.borrow();
-                    payload_index.estimate_cardinality(condition, None)
+                    payload_index.estimate_cardinality(condition)
                 };
 
                 // ToDo: Add telemetry for this heuristics
@@ -996,7 +996,7 @@ impl SegmentEntry for Segment {
             }
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
-                payload_index.estimate_cardinality(filter, None)
+                payload_index.estimate_cardinality(filter)
             }
         }
     }
