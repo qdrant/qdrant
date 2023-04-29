@@ -116,7 +116,7 @@ mod tests {
         for block in &blocks {
             let px = payload_index_ptr.borrow();
             let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-            let points = px.query_points(&filter, None);
+            let points = px.query_points(&filter);
             for point in points {
                 coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
             }

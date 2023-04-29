@@ -260,17 +260,17 @@ mod tests {
         let estimation_struct = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter, None);
+            .estimate_cardinality(&filter);
 
         let estimation_plain = plain_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter, None);
+            .estimate_cardinality(&filter);
 
         let real_number = plain_segment
             .payload_index
             .borrow()
-            .query_points(&filter, None)
+            .query_points(&filter)
             .count();
 
         eprintln!("estimation_plain = {estimation_plain:#?}");
@@ -309,7 +309,7 @@ mod tests {
         let estimation = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter, None);
+            .estimate_cardinality(&filter);
 
         let payload_index = struct_segment.payload_index.borrow();
         let filter_context = payload_index.filter_context(&filter);
@@ -371,7 +371,7 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter, None);
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -450,7 +450,7 @@ mod tests {
             let estimation = plain_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter, None);
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -474,7 +474,7 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter, None);
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -542,7 +542,7 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter, None);
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");

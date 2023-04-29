@@ -358,24 +358,21 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn estimate_cardinality(
-        &self,
-        query: &Filter,
-        available_points: Option<usize>,
-    ) -> CardinalityEstimation {
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
+        let available_points = self.available_point_count();
         let estimator = |condition: &Condition| self.condition_cardinality(condition);
-        let available_points = available_points.unwrap_or_else(|| self.available_point_count());
+
         estimate_filter(&estimator, query, available_points)
     }
 
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-        available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
 
-        let query_cardinality = self.estimate_cardinality(query, available_points);
+        let query_cardinality = self.estimate_cardinality(query);
+
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator =
                 ArcAtomicRefCellIterator::new(self.id_tracker.clone(), |points_iterator| {
