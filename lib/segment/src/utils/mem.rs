@@ -1,5 +1,3 @@
-use crate::entry::entry_point::{OperationError, OperationResult};
-
 #[derive(Debug)]
 pub struct Mem {
     #[cfg(target_os = "linux")]
@@ -47,31 +45,6 @@ impl Mem {
         }
 
         self.sysinfo.available_memory_bytes()
-    }
-}
-
-pub fn assert_available_memory_during_segment_load(
-    mem: &Mem,
-    data_size_bytes: u64,
-    available_memory_percent: u64,
-) -> OperationResult<()> {
-    let total_memory_bytes = mem.total_memory_bytes();
-    let available_memory_bytes = mem.available_memory_bytes();
-
-    let available_memory_after_data_load_bytes =
-        available_memory_bytes.saturating_sub(data_size_bytes);
-
-    let required_available_memory_bytes = total_memory_bytes / 100 * available_memory_percent;
-
-    // Create segment only if at least 15% of RAM available (to prevent OOM on load)
-    if available_memory_after_data_load_bytes >= required_available_memory_bytes {
-        Ok(())
-    } else {
-        Err(OperationError::service_error(format!(
-            "less than {available_memory_percent}% of RAM available \
-             ({available_memory_after_data_load_bytes} bytes out of {total_memory_bytes} bytes) \
-             while loading DB segment, segment load aborted to prevent OOM"
-        )))
     }
 }
 
