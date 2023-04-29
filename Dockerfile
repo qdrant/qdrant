@@ -16,6 +16,16 @@ ENV TARGETARCH=${TARGETARCH:-amd64}
 
 WORKDIR /qdrant
 
+ARG MOLD_VERSION=1.11.0
+
+# Choose MOLD arch based on TARGETARCH: amd64 -> x86_64, arm64 -> aarch64
+COPY ./tools/mold_arch.sh ./mold_arch.sh
+
+RUN wget https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz \
+    && tar -xf mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz  \
+    && mv mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux /qdrant/mold \
+    && chmod +x /qdrant/mold/bin/mold
+
 COPY ./tools/target_arch.sh ./target_arch.sh
 RUN echo "Building for $TARGETARCH, arch: $(bash target_arch.sh)"
 
@@ -30,13 +40,12 @@ RUN apt-get update \
 RUN rustup target add $(bash target_arch.sh)
 
 # Build dependencies - this is the caching Docker layer!
-RUN cargo chef cook --release --target $(bash target_arch.sh) --recipe-path recipe.json
+RUN /qdrant/mold/bin/mold -run cargo chef cook --release --target $(bash target_arch.sh) --recipe-path recipe.json
 
 COPY . .
 
-
 # Build actual target here
-RUN cargo build --release --target $(bash target_arch.sh) --bin qdrant
+RUN /qdrant/mold/bin/mold -run cargo build --release --target $(bash target_arch.sh) --bin qdrant
 
 RUN mv target/$(bash target_arch.sh)/release/qdrant /qdrant/qdrant
 
