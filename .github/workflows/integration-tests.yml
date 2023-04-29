@@ -2,9 +2,9 @@ name: Integration tests
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: [ '*' ]
   pull_request:
-    branches: [ master, dev ]
+    branches: [ '*' ]
 
 env:
   CARGO_TERM_COLOR: always
