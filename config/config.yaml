@@ -192,3 +192,7 @@ tls:
   #
   # Required if cluster.p2p.enable_tls is true.
   ca_cert: ./tls/cacert.pem
+
+  # TTL to re-load certificate from disk. Useful for certificate rotations
+  cert_ttl: 3600
+

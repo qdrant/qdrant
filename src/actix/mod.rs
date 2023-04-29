@@ -1,11 +1,11 @@
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
-pub mod api;
+pub(crate) mod api;
 pub mod api_key;
+pub mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
-use std::fs;
 use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
@@ -15,9 +15,6 @@ use actix_multipart::form::MultipartFormConfig;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use collection::operations::validation;
-use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod, SslVerifyMode};
-use openssl::x509::store::X509StoreBuilder;
-use openssl::x509::X509;
 use storage::dispatcher::Dispatcher;
 
 use crate::actix::api::cluster_api::config_cluster_api;
@@ -32,6 +29,8 @@ use crate::actix::api::update_api::config_update_api;
 use crate::actix::api_key::ApiKey;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
+
+use self::certificate_helpers::{build_ssl_acceptor};
 
 #[get("/")]
 pub async fn index() -> impl Responder {
@@ -106,30 +105,7 @@ pub fn init(
         let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
 
         server = if settings.service.enable_tls {
-            let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls())?;
-
-            let tls_config = settings
-                .tls
-                .ok_or_else(Settings::tls_config_is_undefined_error)?;
-
-            // Server side TLS configuration
-            acceptor.set_private_key_file(&tls_config.key, SslFiletype::PEM)?;
-            acceptor.set_certificate_chain_file(&tls_config.cert)?;
-            acceptor.check_private_key()?;
-
-            if settings.service.verify_https_client_certificate {
-                // Verify client CA
-                let client_ca = fs::read_to_string(&tls_config.ca_cert)?;
-                let client_ca = X509::from_pem(client_ca.as_bytes())?;
-
-                let mut x509_client_store_builder = X509StoreBuilder::new()?;
-                x509_client_store_builder.add_cert(client_ca)?;
-                let client_cert_store = x509_client_store_builder.build();
-                acceptor.set_verify_cert_store(client_cert_store)?;
-                acceptor.set_verify(SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT);
-            }
-
-            server.bind_openssl(bind_addr, acceptor)?
+            server.bind_openssl(bind_addr, build_ssl_acceptor(&settings)?)?
         } else {
             server.bind(bind_addr)?
         };
