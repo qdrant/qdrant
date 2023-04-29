@@ -2,7 +2,7 @@ name: Integration tests
 
 on:
   push:
-    branches: [ '*' ]
+    branches: [ master, dev ]
   pull_request:
     branches: [ '*' ]
 
