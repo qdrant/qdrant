@@ -440,7 +440,8 @@ impl ShardReplicaSet {
     /// Recovers shard from disk.
     ///
     /// WARN: This method intended to be used only on the initial start of the node.
-    /// It does not implement any logic to recover from a failure. Will panic if there is a failure.
+    /// It does not implement any logic to recover from a failure.
+    /// Will panic or load partial state if there is a failure.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         shard_id: ShardId,

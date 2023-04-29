@@ -1,6 +1,6 @@
 use std::backtrace::Backtrace;
-use std::collections::HashMap;
-use std::io::Error as IoError;
+use std::collections::{HashMap, TryReserveError};
+use std::io::{Error as IoError, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::result;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +19,7 @@ use crate::types::{
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
     WithVector,
 };
+use crate::utils::mem::Mem;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -48,6 +49,8 @@ pub enum OperationError {
         description: String,
         backtrace: Option<String>,
     },
+    #[error("Out of memory, free: {free}, {description}")]
+    OutOfMemory { description: String, free: u64 },
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
 }
@@ -121,7 +124,16 @@ impl<E> From<AtomicIoError<E>> for OperationError {
 
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
-        OperationError::service_error(format!("IO Error: {err}"))
+        match err.kind() {
+            ErrorKind::OutOfMemory => {
+                let free_memory = Mem::new().available_memory_bytes();
+                OperationError::OutOfMemory {
+                    description: format!("IO Error: {err}"),
+                    free: free_memory,
+                }
+            }
+            _ => OperationError::service_error(format!("IO Error: {err}")),
+        }
     }
 }
 
@@ -134,6 +146,16 @@ impl From<serde_json::Error> for OperationError {
 impl From<fs_extra::error::Error> for OperationError {
     fn from(err: fs_extra::error::Error) -> Self {
         OperationError::service_error(format!("File system error: {err}"))
+    }
+}
+
+impl From<TryReserveError> for OperationError {
+    fn from(err: TryReserveError) -> Self {
+        let free_memory = Mem::new().available_memory_bytes();
+        OperationError::OutOfMemory {
+            description: format!("Failed to reserve memory: {err}"),
+            free: free_memory,
+        }
     }
 }
 

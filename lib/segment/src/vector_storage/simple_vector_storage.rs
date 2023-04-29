@@ -19,7 +19,6 @@ use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationError, OperationResult};
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
-use crate::utils;
 use crate::vector_storage::quantized::quantized_vectors_base::{
     QuantizedVectors, QuantizedVectorsStorage,
 };
@@ -53,13 +52,8 @@ pub fn open_simple_vector_storage(
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
 
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
-    let mut mem = utils::mem::Mem::new();
 
-    for (iter, (key, value)) in db_wrapper.lock_db().iter()?.enumerate() {
-        if iter % 25 == 0 {
-            utils::mem::assert_available_memory_during_segment_load(&mem, 0, 10)?;
-        }
-
+    for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
         let stored_record: StoredRecord = bincode::deserialize(&value)
@@ -70,12 +64,7 @@ pub fn open_simple_vector_storage(
             deleted_count += 1;
             bitvec_set_deleted(&mut deleted, point_id, true);
         }
-
-        vectors.insert(point_id, &stored_record.vector);
-
-        if iter % 25 == 0 {
-            mem.refresh();
-        }
+        vectors.insert(point_id, &stored_record.vector)?;
     }
 
     debug!("Segment vectors: {}", vectors.len());
@@ -161,7 +150,7 @@ impl VectorStorage for SimpleVectorStorage {
         key: PointOffsetType,
         vector: &[VectorElementType],
     ) -> OperationResult<()> {
-        self.vectors.insert(key, vector);
+        self.vectors.insert(key, vector)?;
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector))?;
         Ok(())
@@ -179,7 +168,7 @@ impl VectorStorage for SimpleVectorStorage {
             // Do not perform preprocessing - vectors should be already processed
             let other_deleted = other.is_deleted_vec(point_id);
             let other_vector = other.get_vector(point_id);
-            let new_id = self.vectors.push(other_vector);
+            let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted);
             self.update_stored(new_id, false, Some(other_vector))?;
         }
