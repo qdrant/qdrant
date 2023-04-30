@@ -60,7 +60,7 @@ impl SslContextHolder {
                 self.ssl_context = ssl_context;
                 Ok(())
             }
-            Err(_err) => Err(())
+            Err(_err) => Err(()),
         }
     }
 }

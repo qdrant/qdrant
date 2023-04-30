@@ -17,6 +17,7 @@ use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Res
 use collection::operations::validation;
 use storage::dispatcher::Dispatcher;
 
+use self::certificate_helpers::build_ssl_acceptor;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
@@ -29,8 +30,6 @@ use crate::actix::api::update_api::config_update_api;
 use crate::actix::api_key::ApiKey;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
-
-use self::certificate_helpers::{build_ssl_acceptor};
 
 #[get("/")]
 pub async fn index() -> impl Responder {
