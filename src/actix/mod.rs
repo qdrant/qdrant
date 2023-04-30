@@ -1,8 +1,8 @@
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
-pub(crate) mod api;
+pub mod api;
 pub mod api_key;
-pub mod certificate_helpers;
+mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 

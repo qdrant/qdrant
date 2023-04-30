@@ -21,7 +21,7 @@ struct SslContextHolder {
 }
 
 impl SslContextHolder {
-    pub fn new(
+    fn new(
         tls_config: &TlsConfig,
         verify_client_cert: bool,
         refresh_interval: Duration,
@@ -36,7 +36,7 @@ impl SslContextHolder {
         })
     }
 
-    pub fn try_get_ssl_context(&self) -> Option<&SslContext> {
+    fn try_get_ssl_context(&self) -> Option<&SslContext> {
         if self.last_updated.elapsed() < self.refresh_interval {
             Some(&self.ssl_context)
         } else {
@@ -44,7 +44,7 @@ impl SslContextHolder {
         }
     }
 
-    pub fn refresh_and_get_ssl_context(&mut self) -> Result<&SslContext, ()> {
+    fn refresh_and_get_ssl_context(&mut self) -> Result<&SslContext, ()> {
         if self.last_updated.elapsed() < self.refresh_interval {
             Ok(&self.ssl_context)
         } else {
