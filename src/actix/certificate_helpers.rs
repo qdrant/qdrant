@@ -26,7 +26,7 @@ impl SslContextHolder {
         verify_client_cert: bool,
         refresh_interval: Duration,
     ) -> Result<SslContextHolder, ErrorStack> {
-        let ssl_context = build_ssl_context(&tls_config, verify_client_cert)?;
+        let ssl_context = build_ssl_context(tls_config, verify_client_cert)?;
         Ok(SslContextHolder {
             ssl_context,
             tls_config: tls_config.clone(),
@@ -87,7 +87,7 @@ pub fn build_ssl_acceptor(settings: &Settings) -> std::io::Result<SslAcceptorBui
             let reader = ssl_context_holder.read();
             if let Some(ssl_context) = reader.try_get_ssl_context() {
                 should_refresh = false;
-                ssl.set_ssl_context(&ssl_context).map_err(|error_stack| {
+                ssl.set_ssl_context(ssl_context).map_err(|error_stack| {
                     log::error!("Failed to set SSL context: {}", error_stack);
                     SniError::ALERT_FATAL
                 })?;
@@ -102,7 +102,7 @@ pub fn build_ssl_acceptor(settings: &Settings) -> std::io::Result<SslAcceptorBui
                     log::error!("Failed to refresh certificates!");
                     SniError::ALERT_FATAL
                 })?;
-            ssl.set_ssl_context(&ssl_context).map_err(|error_stack| {
+            ssl.set_ssl_context(ssl_context).map_err(|error_stack| {
                 log::error!("Failed to set SSL context: {}", error_stack);
                 SniError::ALERT_FATAL
             })?;
