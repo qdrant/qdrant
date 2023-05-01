@@ -37,4 +37,12 @@ service Collections {
   Get list of all aliases for all existing collections
   */
   rpc ListAliases (ListAliasesRequest) returns (ListAliasesResponse) {}
+  /*
+  Get cluster information for a collection
+  */
+  rpc CollectionClusterInfo (CollectionClusterInfoRequest) returns (CollectionClusterInfoResponse) {}
+  /*
+  Update cluster setup for a collection
+  */
+  rpc UpdateCollectionClusterSetup (UpdateCollectionClusterSetupRequest) returns (UpdateCollectionClusterSetupResponse) {}
 }
