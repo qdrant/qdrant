@@ -6,7 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 declare DOCKER_IMAGE_NAME=qdrant-recovery
 
-#docker build ../../ --tag=$DOCKER_IMAGE_NAME
+docker build ../../ --tag=$DOCKER_IMAGE_NAME
 
 if [[ ! -e storage ]]; then
     git lfs pull
