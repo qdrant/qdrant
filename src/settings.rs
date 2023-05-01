@@ -256,6 +256,8 @@ pub fn max_web_workers(settings: &Settings) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use sealed_test::prelude::*;
+
     use super::*;
 
     /// Ensure we can successfully deserialize into [`Settings`] with just the default configuration.
@@ -271,8 +273,15 @@ mod tests {
             .expect("failed to validate default config");
     }
 
-    #[test]
+    #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
     fn test_runtime_development_config() {
+        // `sealed_test` copies files into the same directory as the test runs in.
+        // We need them in a subdirectory.
+        std::fs::create_dir("config").expect("failed to create `config` subdirectory.");
+        std::fs::copy("config.yaml", "config/config.yaml").expect("failed to copy `config.yaml`.");
+        std::fs::copy("development.yaml", "config/development.yaml")
+            .expect("failed to copy `development.yaml`.");
+
         let key = "RUN_MODE";
         env::set_var(key, "development");
 
@@ -286,7 +295,7 @@ mod tests {
         assert!(config.found_config_files)
     }
 
-    #[test]
+    #[sealed_test]
     fn test_no_config_files() {
         let non_existing_config_path = "config/non_existing_config".to_string();
         env::remove_var("RUN_MODE");
