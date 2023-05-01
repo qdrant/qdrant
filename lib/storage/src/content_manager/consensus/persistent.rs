@@ -156,7 +156,9 @@ impl Persistent {
     /// `first_peer` - if this is a first peer in a new deployment (e.g. it does not bootstrap from anyone)
     /// It is `None` if distributed deployment is disabled
     fn init(path: PathBuf, first_peer: bool) -> Result<Self, StorageError> {
-        let this_peer_id = rand::random();
+        // Do not generate too big peer ID, to avoid problems with serialization
+        // (especially in json format)
+        let this_peer_id = rand::random::<PeerId>() % (1 << 53);
         let voters = if first_peer {
             vec![this_peer_id]
         } else {
