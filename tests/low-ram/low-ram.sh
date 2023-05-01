@@ -6,7 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 declare DOCKER_IMAGE_NAME=qdrant-recovery
 
-docker build ../../ --tag=$DOCKER_IMAGE_NAME
+#docker build ../../ --tag=$DOCKER_IMAGE_NAME
 
 if [[ ! -e storage ]]; then
     git lfs pull
@@ -75,19 +75,11 @@ while ! curl -sS --fail-with-body localhost:6333/collections | jq -e '.result.co
 done
 
 # Check that there's a "dummy" shard log message in service logs
-declare DUMMY_SHARD_MSG='initializing "dummy" shard'
+declare RECOVERY_MODE_MSG='Qdrant is loaded in recovery mode'
 
-if ! docker logs "$container" 2>&1 | grep "$DUMMY_SHARD_MSG"; then
-    echo "'$DUMMY_SHARD_MSG' log message not found in $container container logs" >&2
+if ! docker logs "$container" 2>&1 | grep "$RECOVERY_MODE_MSG"; then
+    echo "'$RECOVERY_MODE_MSG' log message not found in $container container logs" >&2
     exit 3
-fi
-
-# Check that there's a "low RAM" log message in service logs
-declare LOW_RAM_MSG='segment load aborted to prevent OOM'
-
-if ! docker logs "$container" 2>&1 | grep "$LOW_RAM_MSG"; then
-    echo "'$LOW_RAM_MSG' log message not found in $container container logs" >&2
-    exit 4
 fi
 
 # Check that `low-ram` collection initialized as a "dummy" shard
@@ -99,3 +91,16 @@ if ((status != 500)); then
     echo "Collection info request returned an unexpected HTTP status: expected 500, but received $STATUS" >&2
     exit 5
 fi
+
+declare EXPECTED_ERROR_MESSAGE='Out-of-Memory'
+
+# Check that curl returns a error about recovery mode
+CURL_RESPONSE="$(curl -sS localhost:6333/collections/low-ram)"
+
+if ! echo "$CURL_RESPONSE" | grep "${EXPECTED_ERROR_MESSAGE}"; then
+    echo "'${EXPECTED_ERROR_MESSAGE}' error message not found in curl output" >&2
+    exit 6
+fi
+
+
+echo "Success"
