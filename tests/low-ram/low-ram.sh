@@ -26,7 +26,7 @@ docker run \
     --name ${OOM_CONTAINER_NAME} \
     $DOCKER_IMAGE_NAME || true
 
-declare oom_status_code && oom_status_code=$(docker inspect OOM_CONTAINER_NAME --format='{{.State.ExitCode}}')
+declare oom_status_code && oom_status_code=$(docker inspect ${OOM_CONTAINER_NAME} --format='{{.State.ExitCode}}')
 
 if ((${oom_status_code} != "137")); then
     echo "Expected qdrant to OOM" >&2
