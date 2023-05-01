@@ -13,24 +13,28 @@ EXIT_CODE=$?
 QDRANT_ALLOW_RECOVERY_MODE=${QDRANT_ALLOW_RECOVERY_MODE:-false}
 
 # Check that recovery mode is allowed
-if [ "$QDRANT_ALLOW_RECOVERY_MODE" = true ]; then
+if [ "$QDRANT_ALLOW_RECOVERY_MODE" != true ]; then
+    exit $EXIT_CODE
+fi
 
-  IS_INITIALIZED_FILE='.qdrant-initialized'
+# Check that qdrant was killed (exit code 137)
+# Ideally, we want to catch only OOM, but it's not possible to distinguish it from random kill signal
+if [ $EXIT_CODE != 137 ]; then
+    exit $EXIT_CODE
+fi
 
-  RECOVERY_MESSAGE="Qdrant was killed during initialization. Most likely it's Out-of-Memory. \
-  Please check memory consumption, increase memory limit or remove some collections and restart"
+IS_INITIALIZED_FILE='.qdrant-initialized'
+RECOVERY_MESSAGE="Qdrant was killed during initialization. Most likely it's Out-of-Memory.
+Please check memory consumption, increase memory limit or remove some collections and restart"
 
-  # Check that qdrant was killed (exit code 137)
-  # Ideally, we want to catch only OOM, but it's not possible to distinguish it from random kill signal
-  if [ $EXIT_CODE -eq 137 ]; then
-    # Check that qdrant was initialized
-    # Qdrant creates IS_INITIALIZED_FILE file after initialization
-    # So if it doesn't exist, qdrant was killed during initialization
-    if [ ! -f "$IS_INITIALIZED_FILE" ]; then
-      QDRANT__STORAGE__RECOVERY_MODE="$RECOVERY_MESSAGE" ./qdrant $@
-      exit $?
-    fi
-  fi
+# Check that qdrant was initialized
+# Qdrant creates IS_INITIALIZED_FILE file after initialization
+# So if it doesn't exist, qdrant was killed during initialization
+if [ ! -f "$IS_INITIALIZED_FILE" ]; then
+    # Run qdrant in recovery mode.
+    # No collection operations are allowed in recovery mode except for removing collections
+    QDRANT__STORAGE__RECOVERY_MODE="$RECOVERY_MESSAGE" ./qdrant $@
+    exit $?
 fi
 
 exit $EXIT_CODE
