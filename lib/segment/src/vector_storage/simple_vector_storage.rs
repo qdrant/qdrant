@@ -53,6 +53,7 @@ pub fn open_simple_vector_storage(
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
 
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
+
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
@@ -64,8 +65,7 @@ pub fn open_simple_vector_storage(
             deleted_count += 1;
             bitvec_set_deleted(&mut deleted, point_id, true);
         }
-
-        vectors.insert(point_id, &stored_record.vector);
+        vectors.insert(point_id, &stored_record.vector)?;
     }
 
     debug!("Segment vectors: {}", vectors.len());
@@ -152,7 +152,7 @@ impl VectorStorage for SimpleVectorStorage {
         key: PointOffsetType,
         vector: &[VectorElementType],
     ) -> OperationResult<()> {
-        self.vectors.insert(key, vector);
+        self.vectors.insert(key, vector)?;
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector))?;
         Ok(())
@@ -170,7 +170,7 @@ impl VectorStorage for SimpleVectorStorage {
             // Do not perform preprocessing - vectors should be already processed
             let other_deleted = other.is_deleted_vector(point_id);
             let other_vector = other.get_vector(point_id);
-            let new_id = self.vectors.push(other_vector);
+            let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted);
             self.update_stored(new_id, other_deleted, Some(other_vector))?;
         }
