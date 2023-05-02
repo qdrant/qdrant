@@ -1178,7 +1178,7 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
-    pub async fn bucket(
+    pub async fn group(
         &self,
         collection_name: &str,
         request: GroupRequest,

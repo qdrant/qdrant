@@ -5,8 +5,10 @@ use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, ScoredPoint,
     WithPayloadInterface, WithVector,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
+use validator::Validate;
 
 use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
@@ -17,7 +19,8 @@ use crate::operations::types::{
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum SourceRequest {
     Search(SearchRequest),
     Recommend(RecommendRequest),
@@ -108,15 +111,20 @@ impl SourceRequest {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Validate, Deserialize)]
 pub struct GroupRequest {
     /// Request to use (search or recommend)
     pub request: SourceRequest,
+
     /// Path to the field to group by
-    pub path: String,
+    pub group_by: String,
+    
     /// Limit of points to return per group
+    #[validate(range(min = 1))]
     pub top: usize,
+
     /// Limit of groups to return
+    #[validate(range(min = 1))]
     pub groups: usize,
 }
 
@@ -128,14 +136,14 @@ impl GroupRequest {
         };
         Self {
             request,
-            path,
+            group_by: path,
             top,
             groups,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Group {
     pub hits: Vec<ScoredPoint>,
     pub group_id: Value,
@@ -169,7 +177,7 @@ where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
-    let mut groups = GroupsAggregator::new(request.groups, request.top, request.path.clone());
+    let mut groups = GroupsAggregator::new(request.groups, request.top, request.group_by.clone());
 
     // Try to complete amount of groups
     for _ in 0..3 {
@@ -183,7 +191,7 @@ where
         // construct filter to exclude already found groups
         let full_groups = groups.keys_of_filled_groups();
         if !full_groups.is_empty() {
-            if let Some(match_any) = match_on(request.path.clone(), full_groups) {
+            if let Some(match_any) = match_on(request.group_by.clone(), full_groups) {
                 let exclude_groups = Filter::new_must_not(match_any);
                 req.merge_filter(&exclude_groups);
             }
@@ -202,7 +210,7 @@ where
                 collection_by_name.clone(),
                 read_consistency,
                 shard_selection,
-                request.path.clone(),
+                request.group_by.clone(),
                 request.top,
             )
             .await?;
@@ -224,7 +232,7 @@ where
         let mut req = request.request.clone();
 
         // construct filter to only include unsatisfied groups
-        if let Some(match_any) = match_on(request.path.clone(), unsatisfied_groups) {
+        if let Some(match_any) = match_on(request.group_by.clone(), unsatisfied_groups) {
             let include_groups = Filter::new_must(match_any);
             req.merge_filter(&include_groups);
         }
@@ -242,7 +250,7 @@ where
                 collection_by_name.clone(),
                 read_consistency,
                 shard_selection,
-                request.path.clone(),
+                request.group_by.clone(),
                 request.top,
             )
             .await?;
