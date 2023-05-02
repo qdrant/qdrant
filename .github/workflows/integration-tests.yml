@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master, dev ]
   pull_request:
-    branches: [ master, dev ]
+    branches: [ '**' ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,7 +29,6 @@ jobs:
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
-
   test-consensus:
 
     runs-on: ubuntu-latest
@@ -63,11 +62,11 @@ jobs:
           name: consensus-test-logs
           retention-days: 90 # default max value
           path: consensus_test_logs
-      
+
   test-consensus-compose:
-    
+
     runs-on: ubuntu-latest
-  
+
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -78,3 +77,34 @@ jobs:
       - name: Run integration tests - multiple peers - compose
         run: ./test_restart.sh
         working-directory: ./tests/consensus_tests
+
+  test-tls-compose:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run integration tests
+        run: ./test_tls.sh
+        working-directory: ./tests/tls
+
+  test-consistency:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: gRPC file consistency check
+        run: ./tests/grpc_consistency_check.sh
+      - name: OpenAPI file consistency check
+        run: ./tests/openapi_consistency_check.sh

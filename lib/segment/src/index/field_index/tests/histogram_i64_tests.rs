@@ -144,12 +144,8 @@ pub fn request_histogram_i64(histogram: &Histogram<i64>, points_index: &BTreeSet
     let real = count_range(points_index, 0, 0);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -157,12 +153,8 @@ pub fn request_histogram_i64(histogram: &Histogram<i64>, points_index: &BTreeSet
     let real = count_range(points_index, 0, 100);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -170,12 +162,8 @@ pub fn request_histogram_i64(histogram: &Histogram<i64>, points_index: &BTreeSet
     let real = count_range(points_index, -100, 100);
 
     eprintln!(
-        "{} / ({}, {}, {}) = {}",
-        real,
-        est_min,
-        estimation,
-        est_max,
-        estimation as f64 / real as f64
+        "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+        estimation as f64 / real as f64,
     );
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 
@@ -187,12 +175,8 @@ pub fn request_histogram_i64(histogram: &Histogram<i64>, points_index: &BTreeSet
         let real = count_range(points_index, from, to);
 
         eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
+            "{real} / ({est_min}, {estimation}, {est_max}) = {}",
+            estimation as f64 / real as f64,
         );
         assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
     }

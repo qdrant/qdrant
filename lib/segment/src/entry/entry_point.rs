@@ -98,17 +98,7 @@ impl From<ThreadPoolBuildError> for OperationError {
 
 impl From<FileStorageError> for OperationError {
     fn from(err: FileStorageError) -> Self {
-        match err {
-            FileStorageError::IoError { description } => {
-                OperationError::service_error(format!("IO Error: {description}"))
-            }
-            FileStorageError::UserAtomicIoError => {
-                OperationError::service_error("Unknown atomic write error")
-            }
-            FileStorageError::GenericError { description } => {
-                OperationError::service_error(description)
-            }
-        }
+        Self::service_error(err.to_string())
     }
 }
 
@@ -166,8 +156,9 @@ pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> 
 }
 
 /// Define all operations which can be performed with Segment or Segment-like entity.
-/// Assume, that all operations are idempotent - which means that
-///     no matter how much time they will consequently executed - storage state will be the same.
+///
+/// Assume all operations are idempotent - which means that no matter how many times an operation
+/// is executed - the storage state will be the same.
 pub trait SegmentEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
@@ -199,7 +190,7 @@ pub trait SegmentEntry {
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
-    fn upsert_vector(
+    fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -210,6 +201,13 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+    ) -> OperationResult<bool>;
+
+    fn delete_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector_name: &str,
     ) -> OperationResult<bool>;
 
     fn set_payload(
@@ -243,7 +241,7 @@ pub trait SegmentEntry {
         &self,
         vector_name: &str,
         point_id: PointIdType,
-    ) -> OperationResult<Vec<VectorElementType>>;
+    ) -> OperationResult<Option<Vec<VectorElementType>>>;
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
 
@@ -265,18 +263,20 @@ pub trait SegmentEntry {
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
 
-    /// Return number of vectors in this segment
-    fn points_count(&self) -> usize;
-
-    /// Estimate points count in this segment for given filter.
-    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
+    /// Estimate available point count in this segment for given filter.
+    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize>;
 
     fn vector_dims(&self) -> HashMap<String, usize>;
 
-    /// Number of vectors, marked as deleted
-    fn deleted_count(&self) -> usize;
+    /// Number of available points
+    ///
+    /// - excludes soft deleted points
+    fn available_point_count(&self) -> usize;
+
+    /// Number of deleted points
+    fn deleted_point_count(&self) -> usize;
 
     /// Get segment type
     fn segment_type(&self) -> SegmentType;

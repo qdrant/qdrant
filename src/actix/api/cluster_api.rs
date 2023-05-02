@@ -1,18 +1,21 @@
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, web, Responder};
+use actix_web_validator::Query;
 use serde::Deserialize;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use validator::Validate;
 
 use crate::actix::helpers::process_response;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 struct QueryParams {
     #[serde(default)]
     force: bool,
     #[serde(default)]
+    #[validate(range(min = 1))]
     timeout: Option<u64>,
 }
 
@@ -26,14 +29,14 @@ async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
 #[post("/cluster/recover")]
 async fn recover_current_peer(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
-    process_response(toc.request_snapshot(None).map(|_| true), timing)
+    process_response(toc.request_snapshot().map(|_| true), timing)
 }
 
 #[delete("/cluster/peer/{peer_id}")]
 async fn remove_peer(
     dispatcher: web::Data<Dispatcher>,
     peer_id: web::Path<u64>,
-    web::Query(params): web::Query<QueryParams>,
+    Query(params): Query<QueryParams>,
 ) -> impl Responder {
     let timing = Instant::now();
     let dispatcher = dispatcher.into_inner();
@@ -41,7 +44,7 @@ async fn remove_peer(
 
     let has_shards = dispatcher.peer_has_shards(peer_id).await;
     if !params.force && has_shards {
-        return process_response(
+        return process_response::<()>(
             Err(StorageError::BadRequest {
                 description: format!("Cannot remove peer {peer_id} as there are shards on it"),
             }),
@@ -59,7 +62,7 @@ async fn remove_peer(
                 .await
         }
         None => Err(StorageError::BadRequest {
-            description: "Distributed deployment is disabled.".to_string(),
+            description: "Distributed mode disabled.".to_string(),
         }),
     };
     process_response(response, timing)

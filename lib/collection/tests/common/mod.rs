@@ -26,7 +26,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     default_segment_number: 2,
     max_segment_size: None,
     memmap_threshold: None,
-    indexing_threshold: 50_000,
+    indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
     max_optimization_threads: 2,
 };
@@ -43,6 +43,8 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         vectors: VectorParams {
             size: NonZeroU64::new(4).unwrap(),
             distance: Distance::Dot,
+            hnsw_config: None,
+            quantization_config: None,
         }
         .into(),
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),

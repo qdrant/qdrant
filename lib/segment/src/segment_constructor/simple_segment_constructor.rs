@@ -26,6 +26,8 @@ pub fn build_simple_segment(
                 VectorDataConfig {
                     size: dim,
                     distance,
+                    hnsw_config: None,
+                    quantization_config: None,
                 },
             )]),
             index: Indexes::Plain {},
@@ -46,6 +48,8 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim1,
             distance,
+            hnsw_config: None,
+            quantization_config: None,
         },
     );
     vectors_config.insert(
@@ -53,6 +57,8 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim2,
             distance,
+            hnsw_config: None,
+            quantization_config: None,
         },
     );
 
@@ -95,26 +101,26 @@ mod tests {
         let vec4 = vec![1.0, 1.0, 0.0, 1.0];
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-        match segment.upsert_vector(1, 120.into(), &only_default_vector(&wrong_vec)) {
+        match segment.upsert_point(1, 120.into(), &only_default_vector(&wrong_vec)) {
             Err(OperationError::WrongVector { .. }) => (),
             Err(_) => panic!("Wrong error"),
             Ok(_) => panic!("Operation with wrong vector should fail"),
         };
 
         segment
-            .upsert_vector(2, 1.into(), &only_default_vector(&vec1))
+            .upsert_point(2, 1.into(), &only_default_vector(&vec1))
             .unwrap();
         segment
-            .upsert_vector(2, 2.into(), &only_default_vector(&vec2))
+            .upsert_point(2, 2.into(), &only_default_vector(&vec2))
             .unwrap();
         segment
-            .upsert_vector(2, 3.into(), &only_default_vector(&vec3))
+            .upsert_point(2, 3.into(), &only_default_vector(&vec3))
             .unwrap();
         segment
-            .upsert_vector(2, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(2, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         segment
-            .upsert_vector(2, 5.into(), &only_default_vector(&vec5))
+            .upsert_point(2, 5.into(), &only_default_vector(&vec5))
             .unwrap();
 
         segment
@@ -151,25 +157,25 @@ mod tests {
 
         // Replace vectors
         segment
-            .upsert_vector(4, 1.into(), &only_default_vector(&vec1))
+            .upsert_point(4, 1.into(), &only_default_vector(&vec1))
             .unwrap();
         segment
-            .upsert_vector(5, 2.into(), &only_default_vector(&vec2))
+            .upsert_point(5, 2.into(), &only_default_vector(&vec2))
             .unwrap();
         segment
-            .upsert_vector(6, 3.into(), &only_default_vector(&vec3))
+            .upsert_point(6, 3.into(), &only_default_vector(&vec3))
             .unwrap();
         segment
-            .upsert_vector(7, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(7, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         segment
-            .upsert_vector(8, 5.into(), &only_default_vector(&vec5))
+            .upsert_point(8, 5.into(), &only_default_vector(&vec5))
             .unwrap();
 
         assert_eq!(segment.version(), 8);
 
         let declined = segment
-            .upsert_vector(3, 5.into(), &only_default_vector(&vec5))
+            .upsert_point(3, 5.into(), &only_default_vector(&vec5))
             .unwrap();
 
         // Should not be processed due to operation number

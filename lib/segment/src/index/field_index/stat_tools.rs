@@ -1,9 +1,9 @@
 use std::f64::consts::{E, PI};
 
 /// This function estimates how many real points were selected with the filter.
-/// It is assumed that each real point has, on average, X values in correspondence.
-/// As a response to the execution of the query it is possible to establish only the number of matched associated values.
-///
+/// It is assumed that each real point has, on average, X values in correspondence. As a response
+/// to the execution of the query it is possible to establish only the number of matched associated
+/// values.
 ///
 /// # Arguments
 ///

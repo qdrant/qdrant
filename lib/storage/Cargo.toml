@@ -6,7 +6,7 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
-tempfile = "3.4.0"
+tempfile = "3.5.0"
 proptest = "1.1.0"
 env_logger = "0.10.0"
 
@@ -14,32 +14,34 @@ env_logger = "0.10.0"
 num_cpus = "1.15"
 thiserror = "1.0"
 rand = "0.8.5"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "7536f9e222d55cc53f7f7507a3028b0e303976cc" }
-tokio = { version = "~1.26", features = ["rt-multi-thread"] }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "660ccf17b117e7a0667a17177e96fdaeb166851b" }
+tokio = { version = "~1.28", features = ["rt-multi-thread"] }
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
-schemars = { version = "0.8.12", features = ["uuid1", "preserve_order"] }
+schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono"] }
 itertools = "0.10"
-async-trait = "0.1.66"
+async-trait = "0.1.68"
 log = "0.4"
-tonic = { version = "0.8.3", features = ["gzip"] }
+tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 http = "0.2"
 parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
 tar = "0.4.38"
 chrono = { version = "~0.4", features = ["serde"] }
+validator = { version = "0.16", features = ["derive"] }
 
 # Consensus related
-atomicwrites = { version = "0.4.0" }
-raft = { git = "https://github.com/tikv/raft-rs", rev = "5ce52b480065ff31ecef16b9b77c7c3b7c57c8c7", features = ["prost-codec"], default-features = false }
-prost = { version = "0.11.8" } # version of prost used by raft
+atomicwrites = { version = "0.4.1" }
+raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
+prost = { version = "0.11.9" } # version of prost used by raft
 serde_cbor = { version = "0.11.2" }
 
 segment = { path = "../segment" }
 collection = { path = "../collection" }
 api = { path = "../api" }
-futures = "0.3.27"
-anyhow = "1.0.69"
-uuid = "1.3.0"
+futures = "0.3.28"
+anyhow = "1.0.71"
+uuid = "1.3.2"
 url = "2.3.1"
 reqwest = { version = "0.11", features = ["stream", "rustls-tls"] }
 openssl = { version = "0.10", features = ["vendored"] }
+tempfile = "3.5.0"

@@ -2,12 +2,13 @@ use schemars::JsonSchema;
 use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
 use crate::shards::shard::ShardId;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(try_from = "SetPayloadShadow")]
 pub struct SetPayload {
     pub payload: Payload,
@@ -51,7 +52,7 @@ impl TryFrom<SetPayloadShadow> for SetPayload {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(try_from = "DeletePayloadShadow")]
 pub struct DeletePayload {
     /// List of payload keys to remove from payload
@@ -109,6 +110,18 @@ impl PayloadOps {
             PayloadOps::ClearPayload { .. } => false,
             PayloadOps::ClearPayloadByFilter(_) => false,
             PayloadOps::OverwritePayload(_) => true,
+        }
+    }
+}
+
+impl Validate for PayloadOps {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            PayloadOps::SetPayload(operation) => operation.validate(),
+            PayloadOps::DeletePayload(operation) => operation.validate(),
+            PayloadOps::ClearPayload { .. } => Ok(()),
+            PayloadOps::ClearPayloadByFilter(_) => Ok(()),
+            PayloadOps::OverwritePayload(operation) => operation.validate(),
         }
     }
 }

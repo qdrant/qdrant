@@ -10,6 +10,7 @@ use tokio::sync::mpsc::Sender;
 use tonic::transport::Uri;
 use tonic::{async_trait, Request, Response, Status};
 
+use super::validate;
 use crate::consensus;
 
 pub struct RaftService {
@@ -57,6 +58,7 @@ impl Raft for RaftService {
         &self,
         request: tonic::Request<AddPeerToKnownMessage>,
     ) -> Result<tonic::Response<AllPeers>, tonic::Status> {
+        validate(request.get_ref())?;
         let peer = request.get_ref();
         let uri_string = if let Some(uri) = &peer.uri {
             uri.clone()

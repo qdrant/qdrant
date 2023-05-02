@@ -105,12 +105,12 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
-        let total_points = self.id_tracker.borrow().points_count();
+        let available_points = self.id_tracker.borrow().available_point_count();
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
-            exp: total_points / 2,
-            max: total_points,
+            exp: available_points / 2,
+            max: available_points,
         }
     }
 
@@ -228,9 +228,9 @@ impl VectorIndex for PlainIndex {
         match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
+                let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let id_tracker = self.id_tracker.borrow();
                 let filtered_ids_vec: Vec<_> = payload_index.query_points(filter).collect();
                 vectors
                     .iter()
@@ -238,7 +238,7 @@ impl VectorIndex for PlainIndex {
                         new_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
-                            id_tracker.deleted_bitvec(),
+                            id_tracker.deleted_point_bitslice(),
                         )
                         .peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
                     })
@@ -254,7 +254,7 @@ impl VectorIndex for PlainIndex {
                         new_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
-                            id_tracker.deleted_bitvec(),
+                            id_tracker.deleted_point_bitslice(),
                         )
                         .peek_top_all(top)
                     })
@@ -282,6 +282,10 @@ impl VectorIndex for PlainIndex {
 
     fn files(&self) -> Vec<PathBuf> {
         vec![]
+    }
+
+    fn indexed_vector_count(&self) -> usize {
+        0
     }
 }
 

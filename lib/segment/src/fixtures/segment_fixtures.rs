@@ -22,7 +22,7 @@ pub fn random_segment(path: &Path, num_points: usize) -> Segment {
         let payload = generate_diverse_payload(&mut rnd_gen);
 
         segment
-            .upsert_vector(
+            .upsert_point(
                 100,
                 (point_id as u64).into(),
                 &NamedVectors::from_ref(DEFAULT_VECTOR_NAME, &vector),

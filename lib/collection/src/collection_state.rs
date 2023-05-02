@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use crate::collection::Collection;
 use crate::config::CollectionConfig;
@@ -14,8 +15,9 @@ pub struct ShardInfo {
     pub replicas: HashMap<PeerId, ReplicaState>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Validate, Clone, PartialEq)]
 pub struct State {
+    #[validate]
     pub config: CollectionConfig,
     pub shards: HashMap<ShardId, ShardInfo>,
     #[serde(default)]

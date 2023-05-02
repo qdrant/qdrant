@@ -1,7 +1,7 @@
 # Leveraging the pre-built Docker images with
 # cargo-chef and the Rust toolchain
 # https://www.lpalmieri.com/posts/fast-rust-docker-builds/
-FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.67.1 AS chef
+FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.69.0 AS chef
 WORKDIR /qdrant
 
 FROM chef AS planner
@@ -33,6 +33,7 @@ RUN rustup target add $(bash target_arch.sh)
 RUN cargo chef cook --release --target $(bash target_arch.sh) --recipe-path recipe.json
 
 COPY . .
+
 
 # Build actual target here
 RUN cargo build --release --target $(bash target_arch.sh) --bin qdrant

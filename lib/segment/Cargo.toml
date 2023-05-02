@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-tempfile = "3.4.0"
+tempfile = "3.5.0"
 criterion = "0.4"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
@@ -30,14 +30,14 @@ serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_json = "~1.0"
 serde_cbor = "0.11.2"
 serde-value = "0.7"
-ordered-float = "3.4"
+ordered-float = "3.7"
 thiserror = "1.0"
-atomic_refcell = "0.1.9"
-atomicwrites = "0.4.0"
+atomic_refcell = "0.1.10"
+atomicwrites = "0.4.1"
 memmap2 = "0.5.10"
-schemars = { version = "0.8.12", features = ["uuid1", "preserve_order"] }
+schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono"] }
 log = "0.4"
-geo = "0.24.0"
+geo = "0.24.1"
 geohash = "0.13.0"
 num-traits = "0.2.15"
 num-derive = "0.3.3"
@@ -49,6 +49,8 @@ fs_extra = "1.3.0"
 semver = "1.0.17"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
+validator = { version = "0.16", features = ["derive"] }
+chrono = { version = "0.4.24", features = ["serde"] }
 
 [[bench]]
 name = "vector_search"

@@ -8,7 +8,6 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{RepeatedIntegers, RepeatedStrings};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -20,11 +19,12 @@ use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
-    HnswConfigDiff, IsEmptyCondition, ListCollectionsResponse, ListValue, Match, NamedVectors,
-    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
-    PayloadSchemaType, PointId, QuantizationConfig, QuantizationSearchParams, Range,
-    ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value,
-    ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match,
+    NamedVectors, PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams,
+    PayloadSchemaInfo, PayloadSchemaType, PointId, QuantizationConfig, QuantizationSearchParams,
+    Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams,
+    Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector,
+    WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -637,6 +637,9 @@ impl TryFrom<Condition> for segment::types::Condition {
                 ConditionOneOf::IsEmpty(is_empty) => {
                     Ok(segment::types::Condition::IsEmpty(is_empty.into()))
                 }
+                ConditionOneOf::IsNull(is_null) => {
+                    Ok(segment::types::Condition::IsNull(is_null.into()))
+                }
             };
         }
         Err(Status::invalid_argument("Malformed Condition type"))
@@ -650,6 +653,7 @@ impl From<segment::types::Condition> for Condition {
             segment::types::Condition::IsEmpty(is_empty) => {
                 ConditionOneOf::IsEmpty(is_empty.into())
             }
+            segment::types::Condition::IsNull(is_null) => ConditionOneOf::IsNull(is_null.into()),
             segment::types::Condition::HasId(has_id) => ConditionOneOf::HasId(has_id.into()),
             segment::types::Condition::Filter(filter) => ConditionOneOf::Filter(filter.into()),
         };
@@ -672,6 +676,22 @@ impl From<segment::types::IsEmptyCondition> for IsEmptyCondition {
     fn from(value: segment::types::IsEmptyCondition) -> Self {
         Self {
             key: value.is_empty.key,
+        }
+    }
+}
+
+impl From<IsNullCondition> for segment::types::IsNullCondition {
+    fn from(value: IsNullCondition) -> Self {
+        segment::types::IsNullCondition {
+            is_null: segment::types::PayloadField { key: value.key },
+        }
+    }
+}
+
+impl From<segment::types::IsNullCondition> for IsNullCondition {
+    fn from(value: segment::types::IsNullCondition) -> Self {
+        Self {
+            key: value.is_null.key,
         }
     }
 }

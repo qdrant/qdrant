@@ -3,6 +3,7 @@ use std::io::Error as IoError;
 
 use collection::operations::types::CollectionError;
 use segment::common::file_operations::FileStorageError;
+use tempfile::PersistError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
@@ -78,6 +79,9 @@ impl StorageError {
             CollectionError::BadShardSelection { .. } => StorageError::BadRequest {
                 description: overriding_description,
             },
+            CollectionError::ForwardProxyError { error, .. } => {
+                Self::from_inconsistent_shard_failure(*error, overriding_description)
+            }
         }
     }
 }
@@ -108,6 +112,10 @@ impl From<CollectionError> for StorageError {
             CollectionError::BadShardSelection { description } => {
                 StorageError::BadRequest { description }
             }
+            CollectionError::ForwardProxyError { error, .. } => {
+                let full_description = format!("{error}");
+                StorageError::from_inconsistent_shard_failure(*error, full_description)
+            }
         }
     }
 }
@@ -120,15 +128,7 @@ impl From<IoError> for StorageError {
 
 impl From<FileStorageError> for StorageError {
     fn from(err: FileStorageError) -> Self {
-        match err {
-            FileStorageError::IoError { description } => StorageError::service_error(description),
-            FileStorageError::UserAtomicIoError => {
-                StorageError::service_error("Unknown atomic write error")
-            }
-            FileStorageError::GenericError { description } => {
-                StorageError::service_error(description)
-            }
-        }
+        Self::service_error(err.to_string())
     }
 }
 
@@ -226,6 +226,15 @@ impl From<tokio::task::JoinError> for StorageError {
     fn from(err: tokio::task::JoinError) -> Self {
         StorageError::ServiceError {
             description: format!("Tokio task join error: {err}"),
+            backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
+impl From<PersistError> for StorageError {
+    fn from(err: PersistError) -> Self {
+        StorageError::ServiceError {
+            description: format!("Persist error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }

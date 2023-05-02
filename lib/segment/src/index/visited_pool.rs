@@ -28,6 +28,18 @@ impl VisitedList {
         }
     }
 
+    pub fn get_current_iteration_id(&self) -> usize {
+        self.current_iter
+    }
+
+    // Count how many points were visited since the given iteration
+    pub fn count_visits_since(&self, iteration_id: usize) -> usize {
+        self.visit_counters
+            .iter()
+            .filter(|x| **x >= iteration_id)
+            .count()
+    }
+
     /// Return `true` if visited
     pub fn check(&self, point_id: PointOffsetType) -> bool {
         self.visit_counters

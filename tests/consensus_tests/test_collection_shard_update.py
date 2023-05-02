@@ -62,7 +62,7 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
     collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], "test_collection")
     assert collection_cluster_info["shard_count"] == N_SHARDS
 
-    # Create malformed points in first peer's collection
+    # Create request with missing named vectors in first peer's collection
     r = requests.put(
         f"{peer_api_uris[0]}/collections/test_collection/points?wait=true", json={
             "points": [
@@ -95,9 +95,44 @@ def test_collection_shard_update(tmp_path: pathlib.Path):
                 }
             ]
         })
- 
+    assert_http_ok(r)
+
+    # Create malformed points in first peer's collection
+    r = requests.put(
+        f"{peer_api_uris[0]}/collections/test_collection/points?wait=true", json={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "image": [0.05, 0.61, 0.76, 0.74],
+                        "text": [0.05, 0.61, 0.76, 0.74]
+                    }
+                },
+                {
+                    "id": 2,
+                    "vector": {
+                        "image": [0.05, 0.61, 0.76]
+                    }
+                },
+                {
+                    "id": 3,
+                    "vector": {
+                        "image": [0.05, 0.61, 0.76, 0.74],
+                        "text": [0.05, 0.61, 0.76, 0.74]
+                    }
+                },
+                {
+                    "id": 4,
+                    "vector": {
+                        "image": [0.05, 0.61, 0.76, 0.74],
+                        "text": [0.05, 0.61, 0.76, 0.74]
+                    }
+                }
+            ]
+        })
+
     assert r.status_code == 400
     error = r.json()["status"]["error"]
     assert error.__contains__("Wrong input: 1 out of 2 shards failed to apply operation")
-    assert error.__contains__("Wrong input: Missed vector name error: text")
+    assert error.__contains__("Wrong input: InvalidArgument")
 

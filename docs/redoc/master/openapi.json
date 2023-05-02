@@ -59,10 +59,7 @@
                       ]
                     },
                     "result": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/TelemetryData"
-                      }
+                      "$ref": "#/components/schemas/TelemetryData"
                     }
                   }
                 }
@@ -1350,6 +1347,133 @@
         }
       }
     },
+    "/collections/{collection_name}/snapshots/upload": {
+      "post": {
+        "tags": [
+          "snapshots",
+          "collections"
+        ],
+        "summary": "Recover from an uploaded snapshot",
+        "description": "Recover local collection data from an uploaded snapshot. This will overwrite any data, stored on this node, for the collection. If collection does not exist - it will be created.",
+        "operationId": "recover_from_uploaded_snapshot",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "Defines source of truth for snapshot recovery",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SnapshotPriority"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Snapshot to recover from",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "snapshot": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/snapshots/recover": {
       "put": {
         "tags": [
@@ -1430,6 +1554,29 @@
                     },
                     "result": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
                     }
                   }
                 }
@@ -1528,6 +1675,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -1576,6 +1732,29 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1606,6 +1785,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -1650,6 +1838,29 @@
                     },
                     "result": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
                     }
                   }
                 }
@@ -1788,6 +1999,17 @@
         "summary": "Create storage snapshot",
         "description": "Create new snapshot of the whole storage",
         "operationId": "create_full_snapshot",
+        "parameters": [
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "default": {
             "description": "error",
@@ -1834,6 +2056,29 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1854,6 +2099,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen. If false - let changes happen in background. Default is true.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -1898,6 +2152,29 @@
                     },
                     "result": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "operation is accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
                     }
                   }
                 }
@@ -3550,6 +3827,28 @@
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"
+          },
+          "hnsw_config": {
+            "description": "Custom params for HNSW index. If none - values from collection configuration are used.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quantization_config": {
+            "description": "Custom params for quantization. If none - values from collection configuration are used.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -3560,6 +3859,99 @@
           "Cosine",
           "Euclid",
           "Dot"
+        ]
+      },
+      "HnswConfigDiff": {
+        "type": "object",
+        "properties": {
+          "m": {
+            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "ef_construct": {
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 4,
+            "nullable": true
+          },
+          "full_scan_threshold": {
+            "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1000,
+            "nullable": true
+          },
+          "max_indexing_threads": {
+            "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1000,
+            "nullable": true
+          },
+          "on_disk": {
+            "description": "Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "type": "boolean",
+            "nullable": true
+          },
+          "payload_m": {
+            "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "QuantizationConfig": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ScalarQuantization"
+          }
+        ]
+      },
+      "ScalarQuantization": {
+        "type": "object",
+        "required": [
+          "scalar"
+        ],
+        "properties": {
+          "scalar": {
+            "$ref": "#/components/schemas/ScalarQuantizationConfig"
+          }
+        }
+      },
+      "ScalarQuantizationConfig": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ScalarType"
+          },
+          "quantile": {
+            "description": "Quantile for quantization. Expected value range in [0.5, 1.0]. If not set - use the whole range of values",
+            "type": "number",
+            "format": "float",
+            "maximum": 1,
+            "minimum": 0.5,
+            "nullable": true
+          },
+          "always_ram": {
+            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "ScalarType": {
+        "type": "string",
+        "enum": [
+          "int8"
         ]
       },
       "HnswConfig": {
@@ -3581,7 +3973,7 @@
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 4
           },
           "full_scan_threshold": {
             "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
@@ -3616,7 +4008,6 @@
           "default_segment_number",
           "deleted_threshold",
           "flush_interval_sec",
-          "indexing_threshold",
           "max_optimization_threads",
           "vacuum_min_vector_number"
         ],
@@ -3624,16 +4015,18 @@
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "type": "number",
-            "format": "double"
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
           },
           "vacuum_min_vector_number": {
             "description": "The minimal number of vectors in a segment, required to perform segment optimization",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 100
           },
           "default_segment_number": {
-            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads If `default_segment_number = 0`, will be automatically selected by the number of available CPUs",
+            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. If `default_segment_number = 0`, will be automatically selected by the number of available CPUs.",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -3651,14 +4044,15 @@
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1000,
             "nullable": true
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1000,
+            "nullable": true
           },
           "flush_interval_sec": {
             "description": "Minimum interval between forced flushes.",
@@ -3685,7 +4079,7 @@
             "description": "Size of a single WAL segment in MB",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1
           },
           "wal_segments_ahead": {
             "description": "Number of WAL segments to create ahead of actually used ones",
@@ -3694,52 +4088,6 @@
             "minimum": 0
           }
         }
-      },
-      "QuantizationConfig": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/ScalarQuantization"
-          }
-        ]
-      },
-      "ScalarQuantization": {
-        "type": "object",
-        "required": [
-          "scalar"
-        ],
-        "properties": {
-          "scalar": {
-            "$ref": "#/components/schemas/ScalarQuantizationConfig"
-          }
-        }
-      },
-      "ScalarQuantizationConfig": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/ScalarType"
-          },
-          "quantile": {
-            "description": "Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values",
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "always_ram": {
-            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
-            "type": "boolean",
-            "nullable": true
-          }
-        }
-      },
-      "ScalarType": {
-        "type": "string",
-        "enum": [
-          "int8"
-        ]
       },
       "PayloadIndexInfo": {
         "description": "Display payload field type & index information",
@@ -4168,6 +4516,9 @@
             "$ref": "#/components/schemas/IsEmptyCondition"
           },
           {
+            "$ref": "#/components/schemas/IsNullCondition"
+          },
+          {
             "$ref": "#/components/schemas/HasIdCondition"
           },
           {
@@ -4465,6 +4816,18 @@
           }
         }
       },
+      "IsNullCondition": {
+        "description": "Select points with null payload for a specified field",
+        "type": "object",
+        "required": [
+          "is_null"
+        ],
+        "properties": {
+          "is_null": {
+            "$ref": "#/components/schemas/PayloadField"
+          }
+        }
+      },
       "HasIdCondition": {
         "description": "ID-based filtering condition",
         "type": "object",
@@ -4758,7 +5121,7 @@
             "description": "Page size. Default: 10",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "filter": {
@@ -4914,54 +5277,6 @@
           }
         }
       },
-      "HnswConfigDiff": {
-        "type": "object",
-        "properties": {
-          "m": {
-            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "full_scan_threshold": {
-            "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "max_indexing_threads": {
-            "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
-            "default": null,
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "on_disk": {
-            "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
-            "default": null,
-            "type": "boolean",
-            "nullable": true
-          },
-          "payload_m": {
-            "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
-            "default": null,
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          }
-        }
-      },
       "WalConfigDiff": {
         "type": "object",
         "properties": {
@@ -5015,14 +5330,14 @@
             "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1000,
             "nullable": true
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1000,
             "nullable": true
           },
           "flush_interval_sec": {
@@ -5036,7 +5351,7 @@
             "description": "Maximum available threads for optimization workers",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           }
         }
@@ -5896,6 +6211,7 @@
         "type": "object",
         "required": [
           "name",
+          "startup",
           "version"
         ],
         "properties": {
@@ -5924,6 +6240,10 @@
                 "nullable": true
               }
             ]
+          },
+          "startup": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -6255,6 +6575,30 @@
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"
+          },
+          "hnsw_config": {
+            "description": "Vector specific HNSW config that overrides collection config",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quantization_config": {
+            "description": "Vector specific quantization config that overrides collection config",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -6435,6 +6779,11 @@
           "max_duration_micros": {
             "type": "number",
             "format": "float",
+            "nullable": true
+          },
+          "last_responded": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         }

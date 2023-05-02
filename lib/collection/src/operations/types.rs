@@ -13,8 +13,8 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType,
-    SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
+    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -24,8 +24,10 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
+use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
+use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -73,7 +75,7 @@ pub struct Record {
 }
 
 /// Current statistics and configuration of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CollectionInfo {
     /// Status of the collection
     pub status: CollectionStatus,
@@ -95,6 +97,7 @@ pub struct CollectionInfo {
     /// Each segment has independent vector as payload indexes
     pub segments_count: usize,
     /// Collection settings
+    #[validate]
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
@@ -166,19 +169,20 @@ pub struct UpdateResult {
 }
 
 /// Scroll request - paginate over all points which matches given condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequest {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
     /// Page size. Default: 10
+    #[validate(range(min = 1))]
     pub limit: Option<usize>,
     /// Look only for points which satisfies this conditions. If not provided - all points.
     pub filter: Option<Filter>,
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
-    #[serde(default)]
+    #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 }
 
@@ -207,7 +211,7 @@ pub struct ScrollResult {
 /// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
     /// Look for vectors closest to this
@@ -227,7 +231,7 @@ pub struct SearchRequest {
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
-    #[serde(default)]
+    #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
@@ -236,13 +240,13 @@ pub struct SearchRequest {
     pub score_threshold: Option<ScoreType>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestBatch {
     pub searches: Vec<SearchRequest>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointRequest {
     /// Look for points with ids
@@ -250,7 +254,7 @@ pub struct PointRequest {
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
-    #[serde(default)]
+    #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 }
 
@@ -287,7 +291,7 @@ pub struct LookupLocation {
 /// Service should look for the points which are closer to positive examples and at the same time
 /// further to negative examples. The concrete way of how to compare negative and positive distances
 /// is up to implementation in `segment` crate.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
     /// Look for vectors closest to those
@@ -310,7 +314,7 @@ pub struct RecommendRequest {
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
-    #[serde(default)]
+    #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
@@ -326,7 +330,7 @@ pub struct RecommendRequest {
     pub lookup_from: Option<LookupLocation>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequestBatch {
     pub searches: Vec<RecommendRequest>,
@@ -335,7 +339,7 @@ pub struct RecommendRequestBatch {
 /// Count Request
 /// Counts the number of points which satisfy the given filter.
 /// If filter is not provided, the count of all points in the collection will be returned.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct CountRequest {
     /// Look only for points which satisfies this conditions
@@ -385,6 +389,8 @@ pub enum CollectionError {
         shards_failed: u32,
         first_err: Box<CollectionError>,
     },
+    #[error("Remote shard on {peer_id} failed during forward proxy operation: {error}")]
+    ForwardProxyError { peer_id: PeerId, error: Box<Self> },
 }
 
 impl CollectionError {
@@ -405,6 +411,20 @@ impl CollectionError {
 
     pub fn bad_shard_selection(description: String) -> CollectionError {
         CollectionError::BadShardSelection { description }
+    }
+
+    pub fn forward_proxy_error(peer_id: PeerId, error: impl Into<Self>) -> Self {
+        Self::ForwardProxyError {
+            peer_id,
+            error: Box::new(error.into()),
+        }
+    }
+
+    pub fn remote_peer_id(&self) -> Option<PeerId> {
+        match self {
+            Self::ForwardProxyError { peer_id, .. } => Some(*peer_id),
+            _ => None,
+        }
     }
 }
 
@@ -566,17 +586,7 @@ impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
 
 impl From<FileStorageError> for CollectionError {
     fn from(err: FileStorageError) -> Self {
-        match err {
-            FileStorageError::IoError { description } => {
-                CollectionError::service_error(description)
-            }
-            FileStorageError::UserAtomicIoError => {
-                CollectionError::service_error("Unknown atomic write error".to_string())
-            }
-            FileStorageError::GenericError { description } => {
-                CollectionError::service_error(description)
-            }
-        }
+        Self::service_error(err.to_string())
     }
 }
 
@@ -594,6 +604,14 @@ impl From<save_on_disk::Error> for CollectionError {
         CollectionError::ServiceError {
             error: err.to_string(),
             backtrace: Some(Backtrace::force_capture().to_string()),
+        }
+    }
+}
+
+impl From<validator::ValidationErrors> for CollectionError {
+    fn from(err: validator::ValidationErrors) -> Self {
+        CollectionError::BadInput {
+            description: format!("{err}"),
         }
     }
 }
@@ -634,13 +652,31 @@ impl Record {
 }
 
 /// Params of single vector data storage
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorParams {
     /// Size of a vectors used
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Custom params for HNSW index. If none - values from collection configuration are used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate]
+    pub hnsw_config: Option<HnswConfigDiff>,
+    /// Custom params for quantization. If none - values from collection configuration are used.
+    #[serde(
+        default,
+        alias = "quantization",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[validate]
+    pub quantization_config: Option<QuantizationConfig>,
+}
+
+impl Anonymize for VectorParams {
+    fn anonymize(&self) -> Self {
+        self.clone()
+    }
 }
 
 /// Vector params separator for single and multiple vector modes
@@ -664,27 +700,6 @@ pub enum VectorsConfig {
     Multi(BTreeMap<String, VectorParams>),
 }
 
-impl Anonymize for VectorParams {
-    fn anonymize(&self) -> Self {
-        self.clone()
-    }
-}
-
-impl Anonymize for VectorsConfig {
-    fn anonymize(&self) -> Self {
-        match self {
-            VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
-            VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
-        }
-    }
-}
-
-impl From<VectorParams> for VectorsConfig {
-    fn from(params: VectorParams) -> Self {
-        VectorsConfig::Single(params)
-    }
-}
-
 impl VectorsConfig {
     pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
         match self {
@@ -697,6 +712,49 @@ impl VectorsConfig {
             }
             VectorsConfig::Multi(params) => params.get(name),
         }
+    }
+
+    /// Iterate over the named vector parameters.
+    ///
+    /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParams)> + 'a> {
+        match self {
+            VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
+            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+        }
+    }
+}
+
+impl Anonymize for VectorsConfig {
+    fn anonymize(&self) -> Self {
+        match self {
+            VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
+            VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
+        }
+    }
+}
+
+impl Validate for VectorsConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            VectorsConfig::Single(single) => single.validate(),
+            VectorsConfig::Multi(multi) => {
+                let errors = multi
+                    .values()
+                    .filter_map(|v| v.validate().err())
+                    .fold(Err(ValidationErrors::new()), |bag, err| {
+                        ValidationErrors::merge(bag, "?", Err(err))
+                    })
+                    .unwrap_err();
+                errors.errors().is_empty().then_some(()).ok_or(errors)
+            }
+        }
+    }
+}
+
+impl From<VectorParams> for VectorsConfig {
+    fn from(params: VectorParams) -> Self {
+        VectorsConfig::Single(params)
     }
 }
 

@@ -11,16 +11,20 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{HnswConfig, QuantizationConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 use wal::WalOptions;
 
+use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
+use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 pub struct WalConfig {
     /// Size of a single WAL segment in MB
+    #[validate(range(min = 1))]
     pub wal_capacity_mb: usize,
     /// Number of WAL segments to create ahead of actually used ones
     pub wal_segments_ahead: usize,
@@ -44,10 +48,11 @@ impl Default for WalConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
+    #[validate]
     pub vectors: VectorsConfig,
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
@@ -97,11 +102,15 @@ fn default_on_disk_payload() -> bool {
     false
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct CollectionConfig {
+    #[validate]
     pub params: CollectionParams,
+    #[validate]
     pub hnsw_config: HnswConfig,
+    #[validate]
     pub optimizer_config: OptimizersConfig,
+    #[validate]
     pub wal_config: WalConfig,
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
@@ -131,55 +140,56 @@ impl CollectionConfig {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         config_path.exists()
     }
+
+    pub fn validate_and_warn(&self) {
+        if let Err(ref errs) = self.validate() {
+            validation::warn_validation_errors("Collection configuration file", errs);
+        }
+    }
 }
 
 impl CollectionParams {
     pub fn get_vector_params(&self, vector_name: &str) -> CollectionResult<VectorParams> {
-        if vector_name == DEFAULT_VECTOR_NAME {
-            self.vectors
-                .get_params(vector_name)
-                .cloned()
-                .ok_or_else(|| CollectionError::BadInput {
-                    description: "Default vector params are not specified in config".to_string(),
-                })
-        } else {
-            self.vectors
-                .get_params(vector_name)
-                .cloned()
-                .ok_or_else(|| CollectionError::BadInput {
-                    description: format!(
-                        "vector params for {vector_name} are not specified in config"
-                    ),
-                })
-        }
+        self.vectors
+            .get_params(vector_name)
+            .cloned()
+            .ok_or_else(|| CollectionError::BadInput {
+                description: if vector_name == DEFAULT_VECTOR_NAME {
+                    "Default vector params are not specified in config".into()
+                } else {
+                    format!("Vector params for {vector_name} are not specified in config")
+                },
+            })
     }
 
-    pub fn get_all_vector_params(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
-        let vector_config = match &self.vectors {
-            VectorsConfig::Single(params) => {
-                let mut map = HashMap::new();
-                map.insert(
-                    DEFAULT_VECTOR_NAME.to_string(),
+    /// Get all vector params as `VectorDataConfig`
+    ///
+    /// The vector specific HNSW configuration will be based upon the given `collection_hnsw`.
+    pub fn get_all_vector_params(
+        &self,
+        collection_hnsw: &HnswConfig,
+        collection_quantization: Option<&QuantizationConfig>,
+    ) -> CollectionResult<HashMap<String, VectorDataConfig>> {
+        Ok(self
+            .vectors
+            .params_iter()
+            .map(|(name, params)| {
+                (
+                    name.into(),
                     VectorDataConfig {
                         size: params.size.get() as usize,
                         distance: params.distance,
+                        hnsw_config: params
+                            .hnsw_config
+                            .and_then(|c| c.update(collection_hnsw).ok()),
+                        quantization_config: params
+                            .quantization_config
+                            .as_ref()
+                            .or(collection_quantization)
+                            .cloned(),
                     },
-                );
-                map
-            }
-            VectorsConfig::Multi(ref map) => map
-                .iter()
-                .map(|(name, params)| {
-                    (
-                        name.clone(),
-                        VectorDataConfig {
-                            size: params.size.get() as usize,
-                            distance: params.distance,
-                        },
-                    )
-                })
-                .collect(),
-        };
-        Ok(vector_config)
+                )
+            })
+            .collect())
     }
 }

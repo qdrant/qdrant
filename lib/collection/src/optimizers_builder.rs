@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 use segment::common::cpu::get_num_cpus;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
@@ -15,11 +16,13 @@ use crate::update_handler::Optimizer;
 
 const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 200_000;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: f64,
     /// The minimal number of vectors in a segment, required to perform segment optimization
+    #[validate(range(min = 100))]
     pub vacuum_min_vector_number: usize,
     /// Target amount of segments optimizer will try to keep.
     /// Real amount of segments may vary depending on multiple parameters:
@@ -27,8 +30,8 @@ pub struct OptimizersConfig {
     ///  - Current write RPS
     ///
     /// It is recommended to select default number of segments as a factor of the number of search threads,
-    /// so that each segment would be handled evenly by one of the threads
-    /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs
+    /// so that each segment would be handled evenly by one of the threads.
+    /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs.
     pub default_segment_number: usize,
     /// Do not create segments larger this size (in KiloBytes).
     /// Large segments might require disproportionately long indexation times,
@@ -48,12 +51,14 @@ pub struct OptimizersConfig {
     /// If not set, mmap will not be used.
     #[serde(alias = "memmap_threshold_kb")]
     #[serde(default)]
+    #[validate(range(min = 1000))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
-    pub indexing_threshold: usize,
+    #[validate(range(min = 1000))]
+    pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
     /// Maximum available threads for optimization workers
@@ -69,7 +74,7 @@ impl OptimizersConfig {
             default_segment_number: 0,
             max_segment_size: None,
             memmap_threshold: None,
-            indexing_threshold: 100_000,
+            indexing_threshold: Some(100_000),
             flush_interval_sec: 60,
             max_optimization_threads: 0,
         }
@@ -108,7 +113,7 @@ pub fn build_optimizers(
 
     let threshold_config = OptimizerThresholds {
         memmap_threshold: optimizers_config.memmap_threshold.unwrap_or(usize::MAX),
-        indexing_threshold: optimizers_config.indexing_threshold,
+        indexing_threshold: optimizers_config.indexing_threshold.unwrap_or(usize::MAX),
         max_segment_size: optimizers_config.get_max_segment_size(),
     };
 
@@ -119,7 +124,7 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
-            *hnsw_config,
+            hnsw_config.clone(),
             quantization_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
@@ -127,7 +132,7 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
-            *hnsw_config,
+            hnsw_config.clone(),
             quantization_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
@@ -137,7 +142,7 @@ pub fn build_optimizers(
             segments_path,
             temp_segments_path,
             collection_params.clone(),
-            *hnsw_config,
+            hnsw_config.clone(),
             quantization_config.clone(),
         )),
     ])

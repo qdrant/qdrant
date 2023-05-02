@@ -1,3 +1,6 @@
+debug: false
+log_level: INFO
+
 storage:
   # Where to store all the data
   storage_path: ./storage
@@ -75,14 +78,14 @@ storage:
 
     # Interval between forced flushes.
     flush_interval_sec: 5
-    
+
     # Max number of threads, which can be used for optimization per collection.
     # Note: Each optimization thread will also use `max_indexing_threads` for index building.
     # So total number of threads used for optimization will be `max_optimization_threads * max_indexing_threads`
     # If `max_optimization_threads = 0`, optimization will be disabled.
     max_optimization_threads: 1
 
-  # Default parameters of HNSW Index. Could be overridden for each collection individually
+  # Default parameters of HNSW Index. Could be overridden for each collection or named vector individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     m: 16
@@ -112,7 +115,7 @@ service:
   # Host to bind the service on
   host: 0.0.0.0
 
-  # HTTP port to bind the service on
+  # HTTP(S) port to bind the service on
   http_port: 6333
 
   # gRPC port to bind the service on.
@@ -127,6 +130,23 @@ service:
   # Default: true
   enable_cors: true
 
+  # Use HTTPS for the REST API
+  enable_tls: false
+
+  # Check user HTTPS client certificate against CA file specified in tls config
+  verify_https_client_certificate: false
+
+  # Set an api-key.
+  # If set, all requests must include a header with the api-key.
+  # example header: `api-key: <API-KEY>`
+  #
+  # If you enable this you should also enable TLS.
+  # (Either above or via an external service like nginx.)
+  # Sending an api-key over an unencrypted channel is insecure.
+  #
+  # Uncomment to enable.
+  # api_key: your_secret_api_key_here
+
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false
@@ -135,6 +155,9 @@ cluster:
   p2p:
     # Port for internal communication between peers
     port: 6335
+
+    # Use TLS for communication between peers
+    enable_tls: false
 
   # Configuration related to distributed consensus algorithm
   consensus:
@@ -149,3 +172,23 @@ cluster:
 # Set to true to prevent service from sending usage statistics to the developers.
 # Read more: https://qdrant.tech/documentation/telemetry
 telemetry_disabled: false
+
+
+# TLS configuration.
+# Required if either service.enable_tls or cluster.p2p.enable_tls is true.
+tls:
+  # Server certificate chain file
+  cert: ./tls/cert.pem
+
+  # Server private key file
+  key: ./tls/key.pem
+
+  # Certificate authority certificate file.
+  # This certificate will be used to validate the certificates
+  # presented by other nodes during inter-cluster communication.
+  #
+  # If verify_https_client_certificate is true, it will verify
+  # HTTPS client certificate
+  #
+  # Required if cluster.p2p.enable_tls is true.
+  ca_cert: ./tls/cacert.pem

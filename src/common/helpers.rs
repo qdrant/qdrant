@@ -1,19 +1,24 @@
 use std::cmp::max;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{fs, io};
 
 use schemars::JsonSchema;
 use segment::common::cpu::get_num_cpus;
 use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use tokio::runtime::Runtime;
+use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
+use validator::Validate;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+use crate::settings::{Settings, TlsConfig};
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct LocksOption {
     pub error_message: Option<String>,
     pub write: bool,
 }
 
-pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runtime> {
+pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
     let mut search_threads = max_search_threads;
 
     if search_threads == 0 {
@@ -35,7 +40,6 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
 
     runtime::Builder::new_multi_thread()
         .worker_threads(search_threads)
-        .enable_time()
         .enable_all()
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
@@ -45,7 +49,7 @@ pub fn create_search_runtime(max_search_threads: usize) -> std::io::Result<Runti
         .build()
 }
 
-pub fn create_update_runtime(max_optimization_threads: usize) -> std::io::Result<Runtime> {
+pub fn create_update_runtime(max_optimization_threads: usize) -> io::Result<Runtime> {
     let mut update_runtime_builder = runtime::Builder::new_multi_thread();
 
     update_runtime_builder
@@ -63,7 +67,7 @@ pub fn create_update_runtime(max_optimization_threads: usize) -> std::io::Result
     update_runtime_builder.build()
 }
 
-pub fn create_general_purpose_runtime() -> std::io::Result<Runtime> {
+pub fn create_general_purpose_runtime() -> io::Result<Runtime> {
     runtime::Builder::new_multi_thread()
         .enable_time()
         .enable_io()
@@ -74,6 +78,47 @@ pub fn create_general_purpose_runtime() -> std::io::Result<Runtime> {
             format!("general-{general_id}")
         })
         .build()
+}
+
+/// Load client TLS configuration.
+pub fn load_tls_client_config(settings: &Settings) -> io::Result<Option<ClientTlsConfig>> {
+    if settings.cluster.p2p.enable_tls {
+        let tls_config = &settings.tls()?;
+        Ok(Some(
+            ClientTlsConfig::new()
+                .identity(load_identity(tls_config)?)
+                .ca_certificate(load_ca_certificate(tls_config)?),
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Load server TLS configuration for external gRPC
+pub fn load_tls_external_server_config(tls_config: &TlsConfig) -> io::Result<ServerTlsConfig> {
+    Ok(ServerTlsConfig::new().identity(load_identity(tls_config)?))
+}
+
+/// Load server TLS configuration for internal gRPC, check client certificate against CA
+pub fn load_tls_internal_server_config(tls_config: &TlsConfig) -> io::Result<ServerTlsConfig> {
+    Ok(ServerTlsConfig::new()
+        .identity(load_identity(tls_config)?)
+        .client_ca_root(load_ca_certificate(tls_config)?))
+}
+
+fn load_identity(tls_config: &TlsConfig) -> io::Result<Identity> {
+    let cert = fs::read_to_string(&tls_config.cert)?;
+    let key = fs::read_to_string(&tls_config.key)?;
+    Ok(Identity::from_pem(cert, key))
+}
+
+fn load_ca_certificate(tls_config: &TlsConfig) -> io::Result<Certificate> {
+    let pem = fs::read_to_string(&tls_config.ca_cert)?;
+    Ok(Certificate::from_pem(pem))
+}
+
+pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, err)
 }
 
 #[cfg(test)]

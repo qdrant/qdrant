@@ -60,7 +60,7 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &str) -> PathBuf 
 }
 
 fn create_segment(
-    version: SeqNumberType,
+    version: Option<SeqNumberType>,
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
@@ -108,7 +108,7 @@ fn create_segment(
             )?,
         };
 
-        if config.quantization_config.is_some() {
+        if config.quantization_config(vector_name).is_some() {
             let quantized_data_path = vector_storage_path;
             // Try to load quantization data from disk, if exists
             // If not exists or it's a new segment, just ignore it
@@ -117,32 +117,34 @@ fn create_segment(
                 .load_quantization(&quantized_data_path)?;
         }
 
-        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match config.index {
-            Indexes::Plain { .. } => sp(VectorIndexEnum::Plain(PlainIndex::new(
+        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &config.index {
+            Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
                 id_tracker.clone(),
                 vector_storage.clone(),
                 payload_index.clone(),
             ))),
-            Indexes::Hnsw(hnsw_config) => {
-                if hnsw_config.on_disk.unwrap_or(false) {
-                    sp(VectorIndexEnum::HnswMmap(
-                        HNSWIndex::<GraphLinksMmap>::open(
-                            &vector_index_path,
-                            id_tracker.clone(),
-                            vector_storage.clone(),
-                            payload_index.clone(),
-                            hnsw_config,
-                        )?,
-                    ))
-                } else {
-                    sp(VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
+            Indexes::Hnsw(collection_hnsw_config) => {
+                let hnsw_config = vector_config
+                    .hnsw_config
+                    .clone()
+                    .unwrap_or_else(|| collection_hnsw_config.clone());
+                sp(if hnsw_config.on_disk == Some(true) {
+                    VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
                         &vector_index_path,
                         id_tracker.clone(),
                         vector_storage.clone(),
                         payload_index.clone(),
                         hnsw_config,
-                    )?))
-                }
+                    )?)
+                } else {
+                    VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
+                        &vector_index_path,
+                        id_tracker.clone(),
+                        vector_storage.clone(),
+                        payload_index.clone(),
+                        hnsw_config,
+                    )?)
+                })
             }
         };
 
@@ -156,7 +158,7 @@ fn create_segment(
     }
 
     let segment_type = match config.index {
-        Indexes::Plain { .. } => SegmentType::Plain,
+        Indexes::Plain {} => SegmentType::Plain,
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
 
@@ -238,7 +240,7 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 
     std::fs::create_dir_all(&segment_path)?;
 
-    let segment = create_segment(0, &segment_path, config)?;
+    let segment = create_segment(None, &segment_path, config)?;
     segment.save_current_state()?;
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.
@@ -284,9 +286,11 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
             let vector_data = VectorDataConfig {
                 size: state.config.vector_size,
                 distance: state.config.distance,
+                hnsw_config: None,
+                quantization_config: None,
             };
             SegmentState {
-                version: state.version,
+                version: Some(state.version),
                 config: SegmentConfig {
                     vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
                     index: state.config.index,

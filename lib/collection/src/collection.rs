@@ -19,6 +19,7 @@ use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use validator::Validate;
 
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -36,7 +37,7 @@ use crate::operations::types::{
     CountResult, LocalShardInfo, NodeType, PointRequest, Record, RemoteShardInfo, ScrollRequest,
     ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
-use crate::operations::{CollectionUpdateOperations, Validate};
+use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -248,9 +249,10 @@ impl Collection {
             panic!(
                 "Can't read collection config due to {}\nat {}",
                 err,
-                path.to_str().unwrap()
+                path.to_str().unwrap(),
             )
         });
+        collection_config.validate_and_warn();
 
         let ring = HashRing::fair(HASH_RING_SHARD_SCALE);
         let mut shard_holder = ShardHolder::new(path, ring).expect("Can not create shard holder");
@@ -686,7 +688,11 @@ impl Collection {
                 .set_local(shard, Some(ReplicaState::Partial))
                 .await?;
         } else {
-            if !replica_set.is_local().await {
+            if replica_set.is_dummy().await {
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} is a \"dummy\" shard"
+                )));
+            } else if !replica_set.is_local().await {
                 // We have proxy or something, we need to unwrap it
                 log::warn!("Unwrapping proxy shard {}", shard_id);
                 replica_set.un_proxify_local().await?
@@ -1388,7 +1394,11 @@ impl Collection {
                 let shard_snapshot_path =
                     versioned_shard_path(&snapshot_path_with_tmp_extension, *shard_id, 0);
                 create_dir_all(&shard_snapshot_path).await?;
-                replica_set.create_snapshot(&shard_snapshot_path).await?;
+                // If node is listener, we can save whatever currently is in the storage
+                let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
+                replica_set
+                    .create_snapshot(&shard_snapshot_path, save_wal)
+                    .await?;
             }
         }
 
@@ -1464,6 +1474,7 @@ impl Collection {
         ar.unpack(target_dir)?;
 
         let config = CollectionConfig::load(target_dir)?;
+        config.validate_and_warn();
         let configured_shards = config.params.shard_number.get();
 
         for shard_id in 0..configured_shards {
@@ -1577,7 +1588,7 @@ impl Collection {
                 continue;
             }
 
-            if this_peer_state != Some(Dead) {
+            if this_peer_state != Some(Dead) || replica_set.is_dummy().await {
                 continue; // All good
             }
 

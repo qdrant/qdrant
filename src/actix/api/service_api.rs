@@ -1,6 +1,8 @@
+use actix_web::http::header::ContentType;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{get, post, web, HttpResponse, Responder};
+use actix_web_validator::Json;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
@@ -36,29 +38,34 @@ async fn telemetry(
     process_response(Ok(telemetry_data), timing)
 }
 
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct MetricsParam {
+    pub anonymize: Option<bool>,
+}
+
 #[get("/metrics")]
 async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
-    params: Query<TelemetryParam>,
+    params: Query<MetricsParam>,
 ) -> impl Responder {
     let anonymize = params.anonymize.unwrap_or(false);
-    let details_level = params.details_level.unwrap_or(0);
     let telemetry_collector = telemetry_collector.lock().await;
-    let telemetry_data = telemetry_collector.prepare_data(details_level).await;
+    let telemetry_data = telemetry_collector.prepare_data(1).await;
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()
     } else {
         telemetry_data
     };
 
-    let metrics_data = MetricsData::from(telemetry_data);
-    HttpResponse::Ok().body(metrics_data.format_metrics())
+    HttpResponse::Ok()
+        .content_type(ContentType::plaintext())
+        .body(MetricsData::from(telemetry_data).format_metrics())
 }
 
 #[post("/locks")]
 async fn put_locks(
     toc: web::Data<TableOfContent>,
-    locks_option: web::Json<LocksOption>,
+    locks_option: Json<LocksOption>,
 ) -> impl Responder {
     let timing = Instant::now();
     let result = LocksOption {

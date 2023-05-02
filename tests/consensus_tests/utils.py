@@ -258,6 +258,7 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str
             return False
     return True
 
+
 def all_nodes_respond(peer_api_uris: [str]) -> bool:
     for uri in peer_api_uris:
         try:
@@ -351,6 +352,7 @@ def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
     except Exception as e:
         print_clusters_info(peer_api_uris)
         raise e
+
 
 def wait_all_peers_up(peer_api_uris: [str]):
     try:

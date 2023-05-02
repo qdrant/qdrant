@@ -10,7 +10,8 @@ collection_name = 'test_collection_geo_indexing'
 def setup():
     basic_collection_setup(collection_name=collection_name)
     yield
-    # drop_collection(collection_name=collection_name)
+    drop_collection(collection_name=collection_name)
+
 
 def test_payload_operations():
     # create payload

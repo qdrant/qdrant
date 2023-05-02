@@ -1,10 +1,12 @@
 use collection::operations::consistency_params::ReadConsistency;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use validator::Validate;
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema, Validate)]
 pub struct ReadParams {
     #[serde(default, deserialize_with = "deserialize_read_consistency")]
+    #[validate]
     pub consistency: Option<ReadConsistency>,
 }
 

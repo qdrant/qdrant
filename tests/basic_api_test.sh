@@ -121,7 +121,6 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search/b
     ]
   }' | jq
 
-
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" \
   --fail -s \
   -H 'Content-Type: application/json' \

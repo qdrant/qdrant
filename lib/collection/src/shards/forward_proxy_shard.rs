@@ -11,8 +11,8 @@ use tokio::sync::Mutex;
 
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
-    SearchRequestBatch, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
@@ -120,8 +120,14 @@ impl ForwardProxyShard {
     }
 
     /// Forward `create_snapshot` to `wrapped_shard`
-    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
-        self.wrapped_shard.create_snapshot(target_path).await
+    pub async fn create_snapshot(
+        &self,
+        target_path: &Path,
+        save_wal: bool,
+    ) -> CollectionResult<()> {
+        self.wrapped_shard
+            .create_snapshot(target_path, save_wal)
+            .await
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
@@ -152,7 +158,10 @@ impl ShardOperation for ForwardProxyShard {
         // during the transfer restart and finalization.
         local_shard.update(operation.clone(), wait).await?;
 
-        self.remote_shard.update(operation, false).await
+        self.remote_shard
+            .update(operation, false)
+            .await
+            .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`

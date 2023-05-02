@@ -4,6 +4,8 @@ package qdrant;
 message VectorParams {
   uint64 size = 1; // Size of the vectors
   Distance distance = 2; // Distance function used for comparing vectors
+  optional HnswConfigDiff hnsw_config = 3; // Configuration of vector HNSW graph. If omitted - the collection configuration will be used
+  optional QuantizationConfig quantization_config = 4; // Configuration of vector quantization config. If omitted - the collection configuration will be used
 }
 
 message VectorParamsMap {
@@ -77,14 +79,14 @@ message HnswConfigDiff {
    */
   optional uint64 m = 1;
   /*
-  Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+  Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
   */
   optional uint64 ef_construct = 2;
   /*
   Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
-  If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+  If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
   in this case full-scan search should be preferred by query planner and additional indexing is not required.
-  Note: 1Kb = 1 vector of size 256
+  Note: 1 Kb = 1 vector of size 256
   */
   optional uint64 full_scan_threshold = 3;
   /*
@@ -92,7 +94,7 @@ message HnswConfigDiff {
    */
   optional uint64 max_indexing_threads = 4;
   /*
-  Store HNSW index on disk. If set to false, index will be stored in RAM.
+  Store HNSW index on disk. If set to false, the index will be stored in RAM.
    */
   optional bool on_disk = 5;
   /*
@@ -116,13 +118,13 @@ message OptimizersConfigDiff {
    */
   optional uint64 vacuum_min_vector_number = 2;
   /*
-  Target amount of segments optimizer will try to keep.
+  Target amount of segments the optimizer will try to keep.
   Real amount of segments may vary depending on multiple parameters:
 
    - Amount of stored points.
    - Current write RPS.
 
-  It is recommended to select default number of segments as a factor of the number of search threads,
+  It is recommended to select the default number of segments as a factor of the number of search threads,
   so that each segment would be handled evenly by one of the threads.
   */
   optional uint64 default_segment_number = 3;
@@ -131,14 +133,14 @@ message OptimizersConfigDiff {
   Large segments might require disproportionately long indexation times,
   therefore it makes sense to limit the size of segments.
 
-  If indexation speed have more priority for your - make this parameter lower.
+  If indexation speed has more priority for you - make this parameter lower.
   If search speed is more important - make this parameter higher.
   Note: 1Kb = 1 vector of size 256
   */
   optional uint64 max_segment_size = 4;
   /*
   Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-  Segments larger than this threshold will be stored as read-only memmaped file.
+  Segments larger than this threshold will be stored as a read-only memmaped file.
   To enable memmap storage, lower the threshold
   Note: 1Kb = 1 vector of size 256
   */
@@ -191,7 +193,7 @@ message CreateCollection {
   optional uint32 replication_factor = 11; // Number of replicas of each shard that network tries to maintain, default = 1
   optional uint32 write_consistency_factor = 12; // How many replicas should apply the operation for us to consider it successful, default = 1
   optional string init_from_collection = 13; // Specify name of the other collection to copy data from
-  optional QuantizationConfig quantization_config = 14;
+  optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
 }
 
 message UpdateCollection {
@@ -243,7 +245,7 @@ enum TokenizerType {
 
 message TextIndexParams {
   TokenizerType tokenizer = 1; // Tokenizer type
-  optional bool lowercase = 2; // If true - all tokens will be lowercased
+  optional bool lowercase = 2; // If true - all tokens will be lowercase
   optional uint64 min_token_len = 3; // Minimal token length
   optional uint64 max_token_len = 4; // Maximal token length
 }
@@ -315,4 +317,69 @@ message AliasDescription {
 message ListAliasesResponse {
   repeated AliasDescription aliases = 1;
   double time = 2; // Time spent to process
+}
+
+message CollectionClusterInfoRequest {
+  string collection_name = 1; // Name of the collection
+}
+
+enum ReplicaState {
+  Active = 0; // Active and sound
+  Dead = 1; // Failed for some reason
+  Partial = 2; // The shard is partially loaded and is currently receiving data from other shards
+  Initializing = 3; // Collection is being created
+  Listener = 4; // A shard which receives data, but is not used for search; Useful for backup shards
+}
+
+message LocalShardInfo {
+  uint32 shard_id = 1; // Local shard id
+  uint64 points_count = 2; // Number of points in the shard
+  ReplicaState state = 3;  // Is replica active
+}
+
+message RemoteShardInfo {
+  uint32 shard_id = 1; // Local shard id
+  uint64 peer_id = 2; // Remote peer id
+  ReplicaState state = 3; // Is replica active
+}
+
+message ShardTransferInfo {
+  uint32 shard_id = 1; // Local shard id
+  uint64 from = 2;
+  uint64 to = 3;
+  bool sync = 4; // If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another
+}
+
+message CollectionClusterInfoResponse {
+  uint64 peer_id = 1;  // ID of this peer 
+  uint64 shard_count = 2; // Total number of shards
+  repeated LocalShardInfo local_shards = 3; // Local shards
+  repeated RemoteShardInfo remote_shards = 4; // Remote shards
+  repeated ShardTransferInfo shard_transfers = 5; // Shard transfers
+}
+
+message MoveShard {
+  uint32 shard_id = 1; // Local shard id
+  uint64 from_peer_id = 2;
+  uint64 to_peer_id = 3;
+}
+
+message Replica {
+  uint32 shard_id = 1; 
+  uint64 peer_id = 2; 
+}
+
+message UpdateCollectionClusterSetupRequest {
+  string collection_name = 1; // Name of the collection
+  oneof operation {
+    MoveShard move_shard = 2;
+    MoveShard replicate_shard = 3;
+    MoveShard abort_transfer = 4;
+    Replica drop_replica = 5;
+  }
+  optional uint64 timeout = 6; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+}
+
+message UpdateCollectionClusterSetupResponse {
+  bool result = 1;
 }

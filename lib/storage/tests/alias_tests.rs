@@ -37,7 +37,7 @@ fn test_alias_operation() {
             default_segment_number: 2,
             max_segment_size: None,
             memmap_threshold: Some(100),
-            indexing_threshold: 100,
+            indexing_threshold: Some(100),
             flush_interval_sec: 2,
             max_optimization_threads: 2,
         },
@@ -45,12 +45,14 @@ fn test_alias_operation() {
         performance: PerformanceConfig {
             max_search_threads: 1,
             max_optimization_threads: 1,
+            update_rate_limit: None,
         },
         hnsw_index: Default::default(),
         quantization: None,
         mmap_advice: madvise::Advice::Random,
         node_type: Default::default(),
         update_queue_size: Default::default(),
+        handle_collection_load_errors: false,
     };
 
     let search_runtime = Runtime::new().unwrap();
@@ -83,6 +85,8 @@ fn test_alias_operation() {
                         vectors: VectorParams {
                             size: NonZeroU64::new(10).unwrap(),
                             distance: Distance::Cosine,
+                            hnsw_config: None,
+                            quantization_config: None,
                         }
                         .into(),
                         hnsw_config: None,

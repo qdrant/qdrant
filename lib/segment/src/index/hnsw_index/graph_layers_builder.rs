@@ -306,7 +306,7 @@ impl GraphLayersBuilder {
             .entry_points
             .lock()
             .new_point(point_id, level, |point_id| {
-                points_scorer.check_point(point_id)
+                points_scorer.check_vector(point_id)
             });
         match entry_point_opt {
             // New point is a new empty entry (for this filter, at least)
@@ -434,7 +434,6 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
-    use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
     use super::*;
     use crate::data_types::vectors::VectorElementType;
@@ -458,6 +457,7 @@ mod tests {
     where
         R: Rng + ?Sized,
     {
+        use rayon::prelude::{IntoParallelIterator, ParallelIterator};
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(2)
             .build()

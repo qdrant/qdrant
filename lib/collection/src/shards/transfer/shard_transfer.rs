@@ -427,7 +427,7 @@ pub fn suggest_peer_to_remove_replica(
         }
     });
 
-    candidates.into_iter().next().map(|(peer_id, _, _)| peer_id)
+    candidates.first().map(|(peer_id, _, _)| *peer_id)
 }
 
 pub fn spawn_transfer_task<T, F>(

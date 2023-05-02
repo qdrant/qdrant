@@ -6,60 +6,69 @@ use segment::types::HnswConfig;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use validator::Validate;
 
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::OptimizersConfig;
 
 // Structures for partial update of collection params
-// ToDo: Make auto-generated somehow...
+// TODO: make auto-generated somehow...
 
 pub trait DiffConfig<T: DeserializeOwned + Serialize> {
     fn update(self, config: &T) -> CollectionResult<T>
     where
-        Self: Sized,
-        Self: Serialize,
-        Self: DeserializeOwned,
-        Self: Merge,
+        Self: Sized + Serialize + DeserializeOwned + Merge,
     {
         update_config(config, self)
     }
 
     fn from_full(full: &T) -> CollectionResult<Self>
     where
-        Self: Sized,
-        Self: Serialize,
-        Self: DeserializeOwned,
+        Self: Sized + Serialize + DeserializeOwned,
     {
         from_full(full)
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Merge, Hash)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq, Merge, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub m: Option<usize>,
-    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
+    #[validate(range(min = 4))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ef_construct: Option<usize>,
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
     /// Note: 1Kb = 1 vector of size 256
-    #[serde(alias = "full_scan_threshold_kb")]
+    #[serde(
+        alias = "full_scan_threshold_kb",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[validate(range(min = 1000))]
     pub full_scan_threshold: Option<usize>,
     /// Number of parallel threads used for background index building. If 0 - auto selection.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1000))]
     pub max_indexing_threads: Option<usize>,
-    /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
-    #[serde(default)]
+    /// Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
     /// Custom M param for additional payload-aware HNSW links. If not set, default M will be used.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_m: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
+)]
 pub struct WalConfigDiff {
     /// Size of a single WAL segment in MB
     pub wal_capacity_mb: Option<usize>,
@@ -75,7 +84,7 @@ pub struct CollectionParamsDiff {
     pub write_consistency_factor: Option<NonZeroU32>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     pub deleted_threshold: Option<f64>,
@@ -104,15 +113,18 @@ pub struct OptimizersConfigDiff {
     /// To enable memmap storage, lower the threshold
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "memmap_threshold_kb")]
+    #[validate(range(min = 1000))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
+    #[validate(range(min = 1000))]
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,
     /// Maximum available threads for optimization workers
+    #[validate(range(min = 1))]
     pub max_optimization_threads: Option<usize>,
 }
 
@@ -185,7 +197,7 @@ pub fn from_full<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serializ
     Ok(res)
 }
 
-/// Merge first level of json values, if diff values present explicitly
+/// Merge first level of JSON values, if diff values present explicitly
 ///
 /// Example:
 ///
@@ -212,7 +224,7 @@ fn merge_level_0(base: &mut Value, diff: Value) {
 
 /// Hacky way to update configuration structures with diff-updates.
 /// Intended to only be used in non critical for speed places.
-/// ToDo: Replace with proc macro
+/// TODO: replace with proc macro
 pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serialize + Merge>(
     config: &T,
     update: Y,
@@ -240,6 +252,8 @@ mod tests {
             vectors: VectorParams {
                 size: NonZeroU64::new(128).unwrap(),
                 distance: Distance::Cosine,
+                hnsw_config: None,
+                quantization_config: None,
             }
             .into(),
             shard_number: NonZeroU32::new(1).unwrap(),
@@ -275,14 +289,14 @@ mod tests {
             default_segment_number: 10,
             max_segment_size: None,
             memmap_threshold: None,
-            indexing_threshold: 50_000,
+            indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: 1,
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
         let new_config = update.update(&base_config).unwrap();
-        assert_eq!(new_config.indexing_threshold, 10000)
+        assert_eq!(new_config.indexing_threshold, Some(10000))
     }
 
     #[test]

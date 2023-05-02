@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
+use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
 use api::grpc::transport_channel_pool::TransportChannelPool;
@@ -22,10 +23,11 @@ use storage::types::PeerAddressById;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
-use tonic::transport::Uri;
+use tonic::transport::{ClientTlsConfig, Uri};
 
+use crate::common::helpers;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
-use crate::settings::ConsensusConfig;
+use crate::settings::{ConsensusConfig, Settings};
 use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
@@ -52,6 +54,7 @@ pub struct Consensus {
     bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
     channel_service: ChannelService,
+    tls_config: Option<ClientTlsConfig>,
 }
 
 impl Consensus {
@@ -62,15 +65,19 @@ impl Consensus {
         state_ref: ConsensusStateRef,
         bootstrap_peer: Option<Uri>,
         uri: Option<String>,
-        p2p_host: String,
-        p2p_port: u16,
-        config: ConsensusConfig,
+        settings: Settings,
         channel_service: ChannelService,
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
+        let tls_client_config = helpers::load_tls_client_config(&settings)?;
+
+        let p2p_host = settings.service.host;
+        let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
+        let config = settings.cluster.consensus;
+
         let (mut consensus, message_sender) = Self::new(
             logger,
             state_ref.clone(),
@@ -78,6 +85,7 @@ impl Consensus {
             uri,
             p2p_port,
             config,
+            tls_client_config,
             channel_service,
             runtime.clone(),
         )?;
@@ -111,6 +119,16 @@ impl Consensus {
                 }
             })?;
 
+        let server_tls = if settings.cluster.p2p.enable_tls {
+            let tls_config = settings
+                .tls
+                .ok_or_else(Settings::tls_config_is_undefined_error)?;
+
+            Some(helpers::load_tls_internal_server_config(&tls_config)?)
+        } else {
+            None
+        };
+
         let handle = thread::Builder::new()
             .name("grpc_internal".to_string())
             .spawn(move || {
@@ -120,6 +138,7 @@ impl Consensus {
                     telemetry_collector,
                     p2p_host,
                     p2p_port,
+                    server_tls,
                     message_sender,
                     runtime,
                 )
@@ -138,6 +157,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: ConsensusConfig,
+        tls_config: Option<ClientTlsConfig>,
         channel_service: ChannelService,
         runtime: Handle,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
@@ -171,13 +191,20 @@ impl Consensus {
                 uri,
                 p2p_port,
                 &config,
+                tls_config.clone(),
                 runtime.clone(),
                 leader_established_in_ms,
             )
             .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {}", err))?;
         } else {
             runtime
-                .block_on(Self::recover(&state_ref, uri.clone(), p2p_port, &config))
+                .block_on(Self::recover(
+                    &state_ref,
+                    uri.clone(),
+                    p2p_port,
+                    &config,
+                    tls_config.clone(),
+                ))
                 .map_err(|err| {
                     anyhow!(
                         "Failed to recover Consensus from existing Raft state: {}",
@@ -202,6 +229,7 @@ impl Consensus {
             bootstrap_uri: bootstrap_peer,
             config,
             channel_service,
+            tls_config,
         };
 
         Ok((consensus, sender))
@@ -214,6 +242,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
+        tls_config: Option<ClientTlsConfig>,
         runtime: Handle,
         leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
@@ -225,6 +254,7 @@ impl Consensus {
                 uri,
                 p2p_port,
                 config,
+                tls_config,
             ))?;
             Ok(())
         } else {
@@ -249,12 +279,14 @@ impl Consensus {
         current_uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
+        tls_config: Option<ClientTlsConfig>,
     ) -> anyhow::Result<AllPeers> {
         // Use dedicated transport channel for bootstrapping because of specific timeout
-        let channel = TransportChannelPool::make_channel(
+        let channel = make_grpc_channel(
             Duration::from_secs(config.bootstrap_timeout_sec),
             Duration::from_secs(config.bootstrap_timeout_sec),
             cluster_uri,
+            tls_config,
         )
         .await
         .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
@@ -280,6 +312,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
+        tls_config: Option<ClientTlsConfig>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
         let mut peer_to_uri = state_ref
@@ -306,6 +339,7 @@ impl Consensus {
                         uri.clone(),
                         p2p_port,
                         config,
+                        tls_config.clone(),
                     )
                     .await;
                     if res.is_err() {
@@ -351,6 +385,7 @@ impl Consensus {
         uri: Option<String>,
         p2p_port: u16,
         config: &ConsensusConfig,
+        tls_config: Option<ClientTlsConfig>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
         let all_peers = Self::add_peer_to_known_for(
@@ -359,6 +394,7 @@ impl Consensus {
             uri.clone(),
             p2p_port,
             config,
+            tls_config,
         )
         .await?;
 
@@ -479,11 +515,7 @@ impl Consensus {
                         log::debug!("Proposing network configuration change: {:?}", change);
                         self.node.propose_conf_change(uri.into_bytes(), change)
                     }
-                    ConsensusOperations::RequestSnapshot { request_index } => {
-                        self.node.request_snapshot(
-                            request_index.unwrap_or_else(|| self.node.store().hard_state().commit),
-                        )
-                    }
+                    ConsensusOperations::RequestSnapshot => self.node.request_snapshot(),
                     ConsensusOperations::ReportSnapshot { peer_id, status } => {
                         self.node.report_snapshot(peer_id, status.into());
                         Ok(())
@@ -728,9 +760,12 @@ impl Consensus {
             .collect();
         let bootstrap_uri = self.bootstrap_uri.clone();
         let consensus_config_arc = Arc::new(self.config.clone());
-        let message_timeout = Duration::from_millis(consensus_config_arc.tick_period_ms * 2);
+        let message_timeout = Duration::from_millis(
+            consensus_config_arc.tick_period_ms * consensus_config_arc.message_timeout_ticks,
+        );
         let pool = self.channel_service.channel_pool.clone();
         let store = self.store();
+        let tls_config = self.tls_config.clone();
         let future = async move {
             let mut send_futures = Vec::new();
             for (message, address) in messages_with_address {
@@ -740,6 +775,7 @@ impl Consensus {
                         message.to,
                         bootstrap_uri.clone(),
                         consensus_config_arc.clone(),
+                        tls_config.clone(),
                     )
                     .await
                     {
@@ -790,16 +826,21 @@ async fn who_is(
     peer_id: collection::shards::shard::PeerId,
     bootstrap_uri: Option<Uri>,
     config: Arc<ConsensusConfig>,
+    tls_config: Option<ClientTlsConfig>,
 ) -> anyhow::Result<Uri> {
     log::debug!("Resolving who is {peer_id}");
     let bootstrap_uri =
         bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
     let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
     // Use dedicated transport channel for who_is because of specific timeout
-    let channel =
-        TransportChannelPool::make_channel(bootstrap_timeout, bootstrap_timeout, bootstrap_uri)
-            .await
-            .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
+    let channel = make_grpc_channel(
+        bootstrap_timeout,
+        bootstrap_timeout,
+        bootstrap_uri,
+        tls_config,
+    )
+    .await
+    .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
     let mut client = RaftClient::new(channel);
     Ok(client
         .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))
@@ -835,6 +876,7 @@ async fn send_message(
                 client.send(request).await
             },
             Some(timeout),
+            0,
         )
         .await;
 
@@ -941,6 +983,7 @@ mod tests {
             Some("http://127.0.0.1:6335".parse().unwrap()),
             6335,
             ConsensusConfig::default(),
+            None,
             ChannelService::default(),
             handle.clone(),
         )
@@ -978,6 +1021,8 @@ mod tests {
                             vectors: VectorParams {
                                 size: NonZeroU64::new(10).unwrap(),
                                 distance: Distance::Cosine,
+                                hnsw_config: None,
+                                quantization_config: None,
                             }
                             .into(),
                             hnsw_config: None,

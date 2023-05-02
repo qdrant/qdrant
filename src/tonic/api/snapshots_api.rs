@@ -12,18 +12,19 @@ use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots,
 };
-use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use tonic::{async_trait, Request, Response, Status};
 
+use super::validate;
 use crate::common::collections::{do_create_snapshot, do_list_snapshots};
 
 pub struct SnapshotsService {
-    toc: Arc<TableOfContent>,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl SnapshotsService {
-    pub fn new(toc: Arc<TableOfContent>) -> Self {
-        Self { toc }
+    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
+        Self { dispatcher }
     }
 }
 
@@ -33,9 +34,11 @@ impl Snapshots for SnapshotsService {
         &self,
         request: Request<CreateSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
+        validate(request.get_ref())?;
         let collection_name = request.into_inner().collection_name;
         let timing = Instant::now();
-        let response = do_create_snapshot(&self.toc, &collection_name)
+        let dispatcher = self.dispatcher.clone();
+        let response = do_create_snapshot(&dispatcher, &collection_name, true)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(CreateSnapshotResponse {
@@ -48,10 +51,11 @@ impl Snapshots for SnapshotsService {
         &self,
         request: Request<ListSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
+        validate(request.get_ref())?;
         let collection_name = request.into_inner().collection_name;
 
         let timing = Instant::now();
-        let snapshots = do_list_snapshots(&self.toc, &collection_name)
+        let snapshots = do_list_snapshots(&self.dispatcher, &collection_name)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {
@@ -64,14 +68,16 @@ impl Snapshots for SnapshotsService {
         &self,
         request: Request<DeleteSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
+        validate(request.get_ref())?;
         let DeleteSnapshotRequest {
             collection_name,
             snapshot_name,
         } = request.into_inner();
         let timing = Instant::now();
-        let _response = do_delete_collection_snapshot(&self.toc, &collection_name, &snapshot_name)
-            .await
-            .map_err(error_to_status)?;
+        let _response =
+            do_delete_collection_snapshot(&self.dispatcher, &collection_name, &snapshot_name, true)
+                .await
+                .map_err(error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
@@ -79,24 +85,26 @@ impl Snapshots for SnapshotsService {
 
     async fn create_full(
         &self,
-        _request: Request<CreateFullSnapshotRequest>,
+        request: Request<CreateFullSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
+        validate(request.get_ref())?;
         let timing = Instant::now();
-        let response = do_create_full_snapshot(&self.toc)
+        let response = do_create_full_snapshot(&self.dispatcher, true)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(CreateSnapshotResponse {
-            snapshot_description: Some(response.into()),
+            snapshot_description: response.map(|x| x.into()),
             time: timing.elapsed().as_secs_f64(),
         }))
     }
 
     async fn list_full(
         &self,
-        _request: Request<ListFullSnapshotsRequest>,
+        request: Request<ListFullSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
+        validate(request.get_ref())?;
         let timing = Instant::now();
-        let snapshots = do_list_full_snapshots(&self.toc)
+        let snapshots = do_list_full_snapshots(&self.dispatcher)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {
@@ -109,9 +117,10 @@ impl Snapshots for SnapshotsService {
         &self,
         request: Request<DeleteFullSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
+        validate(request.get_ref())?;
         let snapshot_name = request.into_inner().snapshot_name;
         let timing = Instant::now();
-        let _response = do_delete_full_snapshot(&self.toc, &snapshot_name)
+        let _response = do_delete_full_snapshot(&self.dispatcher, &snapshot_name, true)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {

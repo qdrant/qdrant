@@ -13,13 +13,11 @@ pub type HttpStatusCode = u16;
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub responses: HashMap<String, OperationDurationStatistics>,
 }
 
@@ -174,16 +172,30 @@ impl Anonymize for RequestsTelemetry {
 
 impl Anonymize for WebApiTelemetry {
     fn anonymize(&self) -> Self {
-        WebApiTelemetry {
-            responses: self.responses.clone(),
-        }
+        let responses = self
+            .responses
+            .iter()
+            .map(|(key, value)| {
+                let value: HashMap<_, _> = value
+                    .iter()
+                    .map(|(key, value)| (*key, value.anonymize()))
+                    .collect();
+                (key.clone(), value)
+            })
+            .collect();
+
+        WebApiTelemetry { responses }
     }
 }
 
 impl Anonymize for GrpcTelemetry {
     fn anonymize(&self) -> Self {
-        GrpcTelemetry {
-            responses: self.responses.clone(),
-        }
+        let responses = self
+            .responses
+            .iter()
+            .map(|(key, value)| (key.clone(), value.anonymize()))
+            .collect();
+
+        GrpcTelemetry { responses }
     }
 }

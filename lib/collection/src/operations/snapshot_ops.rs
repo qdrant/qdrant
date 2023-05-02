@@ -6,13 +6,14 @@ use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
+use validator::Validate;
 
 use crate::operations::types::CollectionResult;
 
 /// Defines source of truth for snapshot recovery
 /// `Snapshot` means - prefer snapshot data over the current state
 /// `Replica` means - prefer existing data over the snapshot
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotPriority {
     Snapshot,
@@ -20,7 +21,7 @@ pub enum SnapshotPriority {
     Replica,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SnapshotRecover {
     /// Examples:
     /// - URL `http://localhost:8080/collections/my_collection/snapshots/my_snapshot`

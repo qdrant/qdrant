@@ -1,9 +1,12 @@
+use std::borrow::Cow;
+
 use api::grpc::qdrant::{
     read_consistency, ReadConsistency as ReadConsistencyGrpc,
     ReadConsistencyType as ReadConsistencyTypeGrpc,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use validator::{Validate, ValidationError as ValidatorError, ValidationErrors};
 
 /// Read consistency parameter
 ///
@@ -24,6 +27,24 @@ pub enum ReadConsistency {
     // send N random request and return points, which present on all of them
     Factor(#[serde(deserialize_with = "deserialize_factor")] usize),
     Type(ReadConsistencyType),
+}
+
+impl Validate for ReadConsistency {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            ReadConsistency::Factor(factor) if *factor == 0 => {
+                let mut errors = ValidationErrors::new();
+                errors.add("factor", {
+                    let mut error = ValidatorError::new("range");
+                    error.add_param(Cow::from("value"), factor);
+                    error.add_param(Cow::from("min"), &1);
+                    error
+                });
+                Err(errors)
+            }
+            ReadConsistency::Factor(_) | ReadConsistency::Type(_) => Ok(()),
+        }
+    }
 }
 
 impl Default for ReadConsistency {

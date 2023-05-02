@@ -8,6 +8,7 @@ mod tests {
     use segment::data_types::named_vectors::NamedVectors;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::{OperationError, SegmentEntry};
+    use segment::segment_constructor::load_segment;
     use segment::types::{Condition, Filter, WithPayload};
     use tempfile::Builder;
 
@@ -132,20 +133,29 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_segment_3(dir.path());
 
-        let result = segment.upsert_vector(
-            6,
-            6.into(),
-            &NamedVectors::from([
-                ("vector2".to_owned(), vec![10.]),
-                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
-            ]),
-        );
+        let exists = segment
+            .upsert_point(
+                7,
+                1.into(),
+                &NamedVectors::from([
+                    ("vector2".to_owned(), vec![10.]),
+                    ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ]),
+            )
+            .unwrap();
+        assert!(exists, "this partial vector should overwrite existing");
 
-        if let Err(OperationError::MissedVectorName { received_name }) = result {
-            assert!(received_name == "vector1");
-        } else {
-            panic!("wrong upsert result")
-        }
+        let exists = segment
+            .upsert_point(
+                8,
+                6.into(),
+                &NamedVectors::from([
+                    ("vector2".to_owned(), vec![10.]),
+                    ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ]),
+            )
+            .unwrap();
+        assert!(!exists, "this partial vector should not existing");
     }
 
     #[test]
@@ -153,7 +163,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_segment_3(dir.path());
 
-        let result = segment.upsert_vector(
+        let result = segment.upsert_point(
             6,
             6.into(),
             &NamedVectors::from([
@@ -169,5 +179,34 @@ mod tests {
         } else {
             panic!("wrong upsert result")
         }
+    }
+
+    #[test]
+    fn ordered_deletion_test() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let path = {
+            let mut segment = build_segment_1(dir.path());
+            segment.delete_point(6, 5.into()).unwrap();
+            segment.delete_point(6, 4.into()).unwrap();
+            segment.flush(true).unwrap();
+            segment.current_path.clone()
+        };
+
+        let segment = load_segment(&path).unwrap().unwrap();
+        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let res = segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query_vector,
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                1,
+                None,
+            )
+            .unwrap();
+        let best_match = res.get(0).expect("Non-empty result");
+        assert_eq!(best_match.id, 3.into());
     }
 }

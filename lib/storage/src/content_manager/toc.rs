@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
@@ -31,9 +32,10 @@ use collection::shards::transfer::shard_transfer::{
 };
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
+use segment::common::cpu::get_num_cpus;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
-use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::{RwLock, RwLockReadGuard, Semaphore};
 use uuid::Uuid;
 
 use super::collection_meta_ops::{
@@ -77,6 +79,12 @@ pub struct TableOfContent {
     consensus_proposal_sender: Option<OperationSender>,
     is_write_locked: AtomicBool,
     lock_error_message: parking_lot::Mutex<Option<String>>,
+    /// Prevent DDoS of too many concurrent updates in distributed mode.
+    /// One external update usually triggers multiple internal updates, which breaks internal
+    /// timings. For example, the health check timing and consensus timing.
+    ///
+    /// If not defined - no rate limiting is applied.
+    update_rate_limiter: Option<Semaphore>,
 }
 
 impl TableOfContent {
@@ -148,6 +156,25 @@ impl TableOfContent {
         let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
         let alias_persistence =
             AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
+
+        let rate_limiter = match storage_config.performance.update_rate_limit {
+            Some(limit) => Some(Semaphore::new(limit)),
+            None => {
+                if consensus_proposal_sender.is_some() {
+                    // Auto adjust the rate limit in distributed mode.
+                    // Select number of working threads as a guess.
+                    let limit = max(get_num_cpus(), 2);
+                    log::debug!(
+                        "Auto adjusting update rate limit to {} parallel update requests",
+                        limit
+                    );
+                    Some(Semaphore::new(limit))
+                } else {
+                    None
+                }
+            }
+        };
+
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
@@ -160,6 +187,7 @@ impl TableOfContent {
             consensus_proposal_sender,
             is_write_locked: AtomicBool::new(false),
             lock_error_message: parking_lot::Mutex::new(None),
+            update_rate_limiter: rate_limiter,
         }
     }
 
@@ -276,8 +304,8 @@ impl TableOfContent {
             )));
         }
 
-        if let Some(init_from_) = &init_from {
-            self.check_collections_compatibility(&vectors, &init_from_.collection)
+        if let Some(init_from) = &init_from {
+            self.check_collections_compatibility(&vectors, &init_from.collection)
                 .await?;
         }
 
@@ -326,7 +354,7 @@ impl TableOfContent {
         };
 
         let hnsw_config = match hnsw_config_diff {
-            None => self.storage_config.hnsw_index,
+            None => self.storage_config.hnsw_index.clone(),
             Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
         };
 
@@ -576,7 +604,7 @@ impl TableOfContent {
         })
     }
 
-    pub fn request_snapshot(&self, request_index: Option<u64>) -> Result<(), StorageError> {
+    pub fn request_snapshot(&self) -> Result<(), StorageError> {
         let sender = match &self.consensus_proposal_sender {
             Some(sender) => sender,
             None => {
@@ -586,7 +614,7 @@ impl TableOfContent {
             }
         };
 
-        sender.send(ConsensusOperations::request_snapshot(request_index))?;
+        sender.send(ConsensusOperations::request_snapshot())?;
 
         Ok(())
     }
@@ -717,6 +745,7 @@ impl TableOfContent {
                 .join(collection_name)
                 .with_extension(uuid);
             tokio::fs::rename(path, &deleted_path).await?;
+
             // At this point collection is removed from memory and moved to ".deleted" folder.
             // Next time we load service the collection will not appear in the list of collections.
             // We can take our time to delete the collection from disk.
@@ -1233,6 +1262,10 @@ impl TableOfContent {
                     .await
             }
             None => {
+                let _rate_limit = match &self.update_rate_limiter {
+                    None => None,
+                    Some(rate_limiter) => Some(rate_limiter.acquire().await),
+                };
                 if operation.is_write_operation() {
                     self.check_write_lock()?;
                 }

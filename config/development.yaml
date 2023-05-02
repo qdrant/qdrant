@@ -1,4 +1,3 @@
-
 debug: true
 log_level: DEBUG
 
@@ -20,3 +19,6 @@ storage:
 
     # Do not create too much segments in dev
     default_segment_number: 2
+
+  handle_collection_load_errors: true
+

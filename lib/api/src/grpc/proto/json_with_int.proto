@@ -11,7 +11,7 @@ package qdrant;
 // object. The details of that representation are described together
 // with the proto support for the language.
 //
-// The JSON representation for `Struct` is JSON object.
+// The JSON representation for `Struct` is a JSON object.
 message Struct {
   // Unordered map of dynamically typed values.
   map<string, Value> fields = 1;
@@ -19,10 +19,10 @@ message Struct {
 
 // `Value` represents a dynamically typed value which can be either
 // null, a number, a string, a boolean, a recursive struct value, or a
-// list of values. A producer of value is expected to set one of that
+// list of values. A producer of value is expected to set one of those
 // variants, absence of any variant indicates an error.
 //
-// The JSON representation for `Value` is JSON value.
+// The JSON representation for `Value` is a JSON value.
 message Value {
   // The kind of value.
   oneof kind {
@@ -54,7 +54,7 @@ enum NullValue {
 
 // `ListValue` is a wrapper around a repeated field of values.
 //
-// The JSON representation for `ListValue` is JSON array.
+// The JSON representation for `ListValue` is a JSON array.
 message ListValue {
   // Repeated field of dynamically typed values.
   repeated Value values = 1;

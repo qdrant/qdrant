@@ -2,25 +2,34 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use api::grpc::conversions::{from_grpc_dist, payload_to_proto, proto_to_payloads};
+use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
+use api::grpc::qdrant::QuantizationType;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::Distance;
+use segment::types::{
+    Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+};
 use tonic::Status;
 
-use super::config_diff::CollectionParamsDiff;
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams, WalConfig,
 };
-use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
+use crate::operations::cluster_ops::{
+    AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShard, MoveShardOperation,
+    Replica, ReplicateShardOperation,
+};
+use crate::operations::config_diff::{
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff,
+};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
 use crate::operations::types::{
-    AliasDescription, CollectionInfo, CollectionStatus, CountResult, LookupLocation,
-    OptimizersStatus, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus,
-    VectorParams, VectorsConfig,
+    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
+    LocalShardInfo, LookupLocation, OptimizersStatus, RecommendRequest, Record, RemoteShardInfo,
+    SearchRequest, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionSearchRequest;
@@ -97,6 +106,19 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             max_indexing_threads: value.max_indexing_threads.map(|v| v as usize),
             on_disk: value.on_disk,
             payload_m: value.payload_m.map(|v| v as usize),
+        }
+    }
+}
+
+impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
+    fn from(value: HnswConfigDiff) -> Self {
+        Self {
+            m: value.m.map(|v| v as u64),
+            ef_construct: value.ef_construct.map(|v| v as u64),
+            full_scan_threshold: value.full_scan_threshold.map(|v| v as u64),
+            max_indexing_threads: value.max_indexing_threads.map(|v| v as u64),
+            on_disk: value.on_disk,
+            payload_m: value.payload_m.map(|v| v as u64),
         }
     }
 }
@@ -229,7 +251,10 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     ),
                     max_segment_size: config.optimizer_config.max_segment_size.map(|x| x as u64),
                     memmap_threshold: config.optimizer_config.memmap_threshold.map(|x| x as u64),
-                    indexing_threshold: Some(config.optimizer_config.indexing_threshold as u64),
+                    indexing_threshold: config
+                        .optimizer_config
+                        .indexing_threshold
+                        .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
                     max_optimization_threads: Some(
                         config.optimizer_config.max_optimization_threads as u64,
@@ -285,7 +310,7 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
                 as usize,
             max_segment_size: optimizer_config.max_segment_size.map(|x| x as usize),
             memmap_threshold: optimizer_config.memmap_threshold.map(|x| x as usize),
-            indexing_threshold: optimizer_config.indexing_threshold.unwrap_or_default() as usize,
+            indexing_threshold: optimizer_config.indexing_threshold.map(|x| x as usize),
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
             max_optimization_threads: optimizer_config
                 .max_optimization_threads
@@ -312,7 +337,39 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 Status::invalid_argument("VectorParams size must be greater than zero")
             })?,
             distance: from_grpc_dist(vector_params.distance)?,
+            hnsw_config: vector_params.hnsw_config.map(Into::into),
+            quantization_config: match vector_params.quantization_config {
+                Some(config) => Some(
+                    grpc_to_segment_quantization_config(config)
+                        .map_err(Status::invalid_argument)?,
+                ),
+                None => None,
+            },
         })
+    }
+}
+
+fn grpc_to_segment_quantization_config(
+    value: api::grpc::qdrant::QuantizationConfig,
+) -> Result<QuantizationConfig, String> {
+    let quantization = value
+        .quantization
+        .ok_or_else(|| "QuantizationConfig should always have a value".to_string())?;
+    match quantization {
+        api::grpc::qdrant::quantization_config::Quantization::Scalar(config) => {
+            Ok(QuantizationConfig::Scalar(ScalarQuantization {
+                scalar: ScalarQuantizationConfig {
+                    r#type: match QuantizationType::from_i32(config.r#type) {
+                        Some(QuantizationType::Int8) => ScalarType::Int8,
+                        Some(QuantizationType::UnknownQuantization) | None => {
+                            return Err(format!("Cannot convert ordering: {}", config.r#type));
+                        }
+                    },
+                    quantile: config.quantile,
+                    always_ram: config.always_ram,
+                },
+            }))
+        }
     }
 }
 
@@ -690,6 +747,8 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 Distance::Dot => api::grpc::qdrant::Distance::Dot,
             }
             .into(),
+            hnsw_config: value.hnsw_config.map(Into::into),
+            quantization_config: value.quantization_config.map(Into::into),
         }
     }
 }
@@ -699,6 +758,101 @@ impl From<AliasDescription> for api::grpc::qdrant::AliasDescription {
         api::grpc::qdrant::AliasDescription {
             alias_name: value.alias_name,
             collection_name: value.collection_name,
+        }
+    }
+}
+
+impl From<LocalShardInfo> for api::grpc::qdrant::LocalShardInfo {
+    fn from(value: LocalShardInfo) -> Self {
+        Self {
+            shard_id: value.shard_id,
+            points_count: value.points_count as u64,
+            state: value.state as i32,
+        }
+    }
+}
+
+impl From<RemoteShardInfo> for api::grpc::qdrant::RemoteShardInfo {
+    fn from(value: RemoteShardInfo) -> Self {
+        Self {
+            shard_id: value.shard_id,
+            peer_id: value.peer_id,
+            state: value.state as i32,
+        }
+    }
+}
+
+impl From<ShardTransferInfo> for api::grpc::qdrant::ShardTransferInfo {
+    fn from(value: ShardTransferInfo) -> Self {
+        Self {
+            shard_id: value.shard_id,
+            from: value.from,
+            to: value.to,
+            sync: value.sync,
+        }
+    }
+}
+
+impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoResponse {
+    fn from(value: CollectionClusterInfo) -> Self {
+        Self {
+            peer_id: value.peer_id,
+            shard_count: value.shard_count as u64,
+            local_shards: value
+                .local_shards
+                .into_iter()
+                .map(|shard| shard.into())
+                .collect(),
+            remote_shards: value
+                .remote_shards
+                .into_iter()
+                .map(|shard| shard.into())
+                .collect(),
+            shard_transfers: value
+                .shard_transfers
+                .into_iter()
+                .map(|shard| shard.into())
+                .collect(),
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::MoveShard> for MoveShard {
+    fn from(value: api::grpc::qdrant::MoveShard) -> Self {
+        Self {
+            shard_id: value.shard_id,
+            from_peer_id: value.from_peer_id,
+            to_peer_id: value.to_peer_id,
+        }
+    }
+}
+
+impl From<ClusterOperationsPb> for ClusterOperations {
+    fn from(value: ClusterOperationsPb) -> Self {
+        match value {
+            ClusterOperationsPb::MoveShard(op) => {
+                ClusterOperations::MoveShard(MoveShardOperation {
+                    move_shard: op.into(),
+                })
+            }
+            ClusterOperationsPb::ReplicateShard(op) => {
+                ClusterOperations::ReplicateShard(ReplicateShardOperation {
+                    replicate_shard: op.into(),
+                })
+            }
+            ClusterOperationsPb::AbortTransfer(op) => {
+                ClusterOperations::AbortTransfer(AbortTransferOperation {
+                    abort_transfer: op.into(),
+                })
+            }
+            ClusterOperationsPb::DropReplica(op) => {
+                ClusterOperations::DropReplica(DropReplicaOperation {
+                    drop_replica: Replica {
+                        shard_id: op.shard_id,
+                        peer_id: op.peer_id,
+                    },
+                })
+            }
         }
     }
 }

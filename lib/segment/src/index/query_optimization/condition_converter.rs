@@ -5,7 +5,9 @@ use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::payload_storage::query_checker::{check_field_condition, check_is_empty_condition};
+use crate::payload_storage::query_checker::{
+    check_field_condition, check_is_empty_condition, check_is_null_condition,
+};
 use crate::types::{
     AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match,
     MatchAny, MatchText, MatchValue, PointOffsetType, Range, ValueVariants,
@@ -39,6 +41,11 @@ pub fn condition_converter<'a>(
         Condition::IsEmpty(is_empty) => Box::new(move |point_id| {
             payload_provider.with_payload(point_id, |payload| {
                 check_is_empty_condition(is_empty, &payload)
+            })
+        }),
+        Condition::IsNull(is_null) => Box::new(move |point_id| {
+            payload_provider.with_payload(point_id, |payload| {
+                check_is_null_condition(is_null, &payload)
             })
         }),
         // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet

@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -128,7 +127,7 @@ impl SegmentsSearcher {
                         && retrieved_points < required_limit
                         && segment_lowest_score >= lowest_batch_score
                     {
-                        log::debug!("Search to re-run without sampling on segment_id: {} segment_lowest_score: {}, lowest_batch_score: {}, retrieved_points: {}, required_limit: {}", segment_id, segment_lowest_score, lowest_batch_score, retrieved_points, required_limit);
+                        log::debug!("Search to re-run without sampling on segment_id: {segment_id} segment_lowest_score: {segment_lowest_score}, lowest_batch_score: {lowest_batch_score}, retrieved_points: {retrieved_points}, required_limit: {required_limit}");
                         // It is possible, that current segment can have better results than
                         // the lowest score in the batch. In that case, we need to re-run the search
                         // without sampling on that segment.
@@ -157,7 +156,6 @@ impl SegmentsSearcher {
             let segments = segments.read();
 
             let some_segment = segments.iter().next();
-
             if some_segment.is_none() {
                 return Ok(vec![]);
             }
@@ -169,11 +167,12 @@ impl SegmentsSearcher {
             // - sampling is enabled
             // - more than 1 segment
             // - segments are not empty
-            let total_points_segments = segments
+            let available_points_segments = segments
                 .iter()
-                .map(|(_, segment)| segment.get().read().points_count())
+                .map(|(_, segment)| segment.get().read().available_point_count())
                 .sum();
-            let use_sampling = sampling_enabled && segments.len() > 1 && total_points_segments > 0;
+            let use_sampling =
+                sampling_enabled && segments.len() > 1 && available_points_segments > 0;
 
             segments
                 .iter()
@@ -183,7 +182,7 @@ impl SegmentsSearcher {
                         search_in_segment(
                             segment.clone(),
                             batch_request.clone(),
-                            total_points_segments,
+                            available_points_segments,
                             use_sampling,
                         ),
                     )
@@ -287,10 +286,19 @@ impl SegmentsSearcher {
                             WithVector::Selector(vector_names) => {
                                 let mut selected_vectors = NamedVectors::default();
                                 for vector_name in vector_names {
-                                    selected_vectors.insert(
-                                        vector_name.clone(),
-                                        segment.vector(vector_name, id)?,
-                                    );
+                                    let vector_opt = segment.vector(vector_name, id)?;
+                                    match vector_opt {
+                                        Some(vector) => {
+                                            selected_vectors.insert(vector_name.clone(), vector);
+                                        }
+                                        None => {
+                                            // ToDo: Allow to return partial result
+                                            return Err(OperationError::service_error(format!(
+                                                "Vector {} not found for point {}",
+                                                vector_name, id
+                                            )));
+                                        }
+                                    }
                                 }
                                 Some(selected_vectors.into())
                             }
@@ -330,22 +338,15 @@ fn sampling_limit(
     let poisson_sampling =
         find_search_sampling_over_point_distribution(limit as f64, segment_probability)
             .unwrap_or(limit);
-    let res = if poisson_sampling > limit {
-        // sampling cannot be greater than limit
-        return limit;
-    } else {
-        // sampling should not be less than ef_limit
-        max(poisson_sampling, ef_limit.unwrap_or(0))
-    };
-    log::trace!(
-        "sampling: {}, poisson: {} segment_probability: {}, segment_points: {}, total_points: {}",
-        res,
-        poisson_sampling,
-        segment_probability,
-        segment_points,
-        total_points
-    );
-    res
+    let effective = effective_limit(limit, ef_limit.unwrap_or(0), poisson_sampling);
+    log::trace!("sampling: {effective}, poisson: {poisson_sampling} segment_probability: {segment_probability}, segment_points: {segment_points}, total_points: {total_points}");
+    effective
+}
+
+/// Determines the effective ef limit value for the given parameters.
+fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> usize {
+    // Prefer the highest of poisson_sampling/ef_limit, but never be higher than limit
+    poisson_sampling.max(ef_limit).min(limit)
 }
 
 /// Process sequentially contiguous batches
@@ -371,7 +372,7 @@ async fn search_in_segment(
     let batch_size = request.searches.len();
 
     let mut result: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
-    let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // true if segment have more points to return
+    let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // if segment have more points to return
     let mut vectors_batch: Vec<&[VectorElementType]> = vec![];
     let mut prev_params = BatchSearchParams::default();
 
@@ -399,12 +400,11 @@ async fn search_in_segment(
             if !vectors_batch.is_empty() {
                 let locked_segment = segment.get();
                 let read_segment = locked_segment.read();
-                let segment_points = read_segment.points_count();
+                let segment_points = read_segment.available_point_count();
                 let top = if use_sampling {
-                    let ef_limit = prev_params
-                        .params
-                        .and_then(|p| p.hnsw_ef)
-                        .or_else(|| config_hnsw_ef_construct(read_segment.config()));
+                    let ef_limit = prev_params.params.and_then(|p| p.hnsw_ef).or_else(|| {
+                        get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name)
+                    });
                     sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
                 } else {
                     prev_params.top
@@ -436,12 +436,12 @@ async fn search_in_segment(
     if !vectors_batch.is_empty() {
         let locked_segment = segment.get();
         let read_segment = locked_segment.read();
-        let segment_points = read_segment.points_count();
+        let segment_points = read_segment.available_point_count();
         let top = if use_sampling {
             let ef_limit = prev_params
                 .params
                 .and_then(|p| p.hnsw_ef)
-                .or_else(|| config_hnsw_ef_construct(read_segment.config()));
+                .or_else(|| get_hnsw_ef_construct(read_segment.config(), prev_params.vector_name));
             sampling_limit(prev_params.top, ef_limit, segment_points, total_points)
         } else {
             prev_params.top
@@ -464,11 +464,20 @@ async fn search_in_segment(
     Ok((result, further_results))
 }
 
-/// None if plain index, Some if hnsw.
-fn config_hnsw_ef_construct(config: SegmentConfig) -> Option<usize> {
+/// Find the maximum segment or vector specific HNSW ef_construct in this config
+///
+/// If the index is `Plain`, `None` is returned.
+fn get_hnsw_ef_construct(config: SegmentConfig, vector_name: &str) -> Option<usize> {
     match config.index {
-        Indexes::Plain { .. } => None,
-        Indexes::Hnsw(config) => Some(config.ef_construct),
+        Indexes::Plain {} => None,
+        Indexes::Hnsw(hnsw_config) => Some(
+            config
+                .vector_data
+                .get(vector_name)
+                .and_then(|c| c.hnsw_config.as_ref())
+                .map(|c| c.ef_construct)
+                .unwrap_or(hnsw_config.ef_construct),
+        ),
     }
 }
 
@@ -628,5 +637,33 @@ mod tests {
     #[test]
     fn test_sampling_limit_high() {
         assert_eq!(sampling_limit(1000000, None, 464530, 35103551), 1000000);
+    }
+
+    /// Tests whether calculating the effective ef limit value is correct.
+    ///
+    /// Because there was confustion about what the effective value should be for some imput
+    /// combinations, we decided to write this tests to ensure correctness.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/1694>
+    #[test]
+    fn test_effective_limit() {
+        // Test cases to assert: (limit, ef_limit, poisson_sampling, effective)
+        let tests = [
+            (1000, 128, 150, 150),
+            (1000, 128, 110, 128),
+            (130, 128, 150, 130),
+            (130, 128, 110, 128),
+            (50, 128, 150, 50),
+            (50, 128, 110, 50),
+            (500, 1000, 300, 500),
+            (500, 400, 300, 400),
+            (1000, 0, 150, 150),
+            (1000, 0, 110, 110),
+        ];
+        tests.into_iter().for_each(|(limit, ef_limit, poisson_sampling, effective)| assert_eq!(
+            effective_limit(limit, ef_limit, poisson_sampling),
+            effective,
+            "effective limit for [limit: {limit}, ef_limit: {ef_limit}, poisson_sampling: {poisson_sampling}] must be {effective}",
+        ));
     }
 }

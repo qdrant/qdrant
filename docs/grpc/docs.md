@@ -7,6 +7,8 @@
     - [AliasDescription](#qdrant-AliasDescription)
     - [AliasOperations](#qdrant-AliasOperations)
     - [ChangeAliases](#qdrant-ChangeAliases)
+    - [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest)
+    - [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse)
     - [CollectionConfig](#qdrant-CollectionConfig)
     - [CollectionDescription](#qdrant-CollectionDescription)
     - [CollectionInfo](#qdrant-CollectionInfo)
@@ -26,15 +28,22 @@
     - [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest)
     - [ListCollectionsRequest](#qdrant-ListCollectionsRequest)
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
+    - [LocalShardInfo](#qdrant-LocalShardInfo)
+    - [MoveShard](#qdrant-MoveShard)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
     - [PayloadIndexParams](#qdrant-PayloadIndexParams)
     - [PayloadSchemaInfo](#qdrant-PayloadSchemaInfo)
     - [QuantizationConfig](#qdrant-QuantizationConfig)
+    - [RemoteShardInfo](#qdrant-RemoteShardInfo)
     - [RenameAlias](#qdrant-RenameAlias)
+    - [Replica](#qdrant-Replica)
     - [ScalarQuantization](#qdrant-ScalarQuantization)
+    - [ShardTransferInfo](#qdrant-ShardTransferInfo)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
+    - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
+    - [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse)
     - [VectorParams](#qdrant-VectorParams)
     - [VectorParamsMap](#qdrant-VectorParamsMap)
     - [VectorParamsMap.MapEntry](#qdrant-VectorParamsMap-MapEntry)
@@ -45,6 +54,7 @@
     - [Distance](#qdrant-Distance)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
+    - [ReplicaState](#qdrant-ReplicaState)
     - [TokenizerType](#qdrant-TokenizerType)
   
 - [collections_service.proto](#collections_service-proto)
@@ -78,6 +88,7 @@
     - [GetResponse](#qdrant-GetResponse)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
+    - [IsNullCondition](#qdrant-IsNullCondition)
     - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
     - [NamedVectors](#qdrant-NamedVectors)
@@ -204,6 +215,40 @@
 | ----- | ---- | ----- | ----------- |
 | actions | [AliasOperations](#qdrant-AliasOperations) | repeated | List of actions |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+
+
+
+
+
+
+<a name="qdrant-CollectionClusterInfoRequest"></a>
+
+### CollectionClusterInfoRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+
+
+
+
+
+
+<a name="qdrant-CollectionClusterInfoResponse"></a>
+
+### CollectionClusterInfoResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| peer_id | [uint64](#uint64) |  | ID of this peer |
+| shard_count | [uint64](#uint64) |  | Total number of shards |
+| local_shards | [LocalShardInfo](#qdrant-LocalShardInfo) | repeated | Local shards |
+| remote_shards | [RemoteShardInfo](#qdrant-RemoteShardInfo) | repeated | Remote shards |
+| shard_transfers | [ShardTransferInfo](#qdrant-ShardTransferInfo) | repeated | Shard transfers |
 
 
 
@@ -368,7 +413,7 @@
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain, default = 1 |
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
 | init_from_collection | [string](#string) | optional | Specify name of the other collection to copy data from |
-| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional |  |
+| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 
 
 
@@ -446,10 +491,10 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | m | [uint64](#uint64) | optional | Number of edges per node in the index graph. Larger the value - more accurate the search, more space required. |
-| ef_construct | [uint64](#uint64) | optional | Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index. |
-| full_scan_threshold | [uint64](#uint64) | optional | Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold` additional indexing won&#39;t be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256 |
+| ef_construct | [uint64](#uint64) | optional | Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index. |
+| full_scan_threshold | [uint64](#uint64) | optional | Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If the payload chunk is smaller than `full_scan_threshold` additional indexing won&#39;t be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1 Kb = 1 vector of size 256 |
 | max_indexing_threads | [uint64](#uint64) | optional | Number of parallel threads used for background index building. If 0 - auto selection. |
-| on_disk | [bool](#bool) | optional | Store HNSW index on disk. If set to false, index will be stored in RAM. |
+| on_disk | [bool](#bool) | optional | Store HNSW index on disk. If set to false, the index will be stored in RAM. |
 | payload_m | [uint64](#uint64) | optional | Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used. |
 
 
@@ -524,6 +569,40 @@
 
 
 
+<a name="qdrant-LocalShardInfo"></a>
+
+### LocalShardInfo
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| points_count | [uint64](#uint64) |  | Number of points in the shard |
+| state | [ReplicaState](#qdrant-ReplicaState) |  | Is replica active |
+
+
+
+
+
+
+<a name="qdrant-MoveShard"></a>
+
+### MoveShard
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| from_peer_id | [uint64](#uint64) |  |  |
+| to_peer_id | [uint64](#uint64) |  |  |
+
+
+
+
+
+
 <a name="qdrant-OptimizerStatus"></a>
 
 ### OptimizerStatus
@@ -550,15 +629,15 @@
 | ----- | ---- | ----- | ----------- |
 | deleted_threshold | [double](#double) | optional | The minimal fraction of deleted vectors in a segment, required to perform segment optimization |
 | vacuum_min_vector_number | [uint64](#uint64) | optional | The minimal number of vectors in a segment, required to perform segment optimization |
-| default_segment_number | [uint64](#uint64) | optional | Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters:
+| default_segment_number | [uint64](#uint64) | optional | Target amount of segments the optimizer will try to keep. Real amount of segments may vary depending on multiple parameters:
 
 - Amount of stored points. - Current write RPS.
 
-It is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. |
+It is recommended to select the default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. |
 | max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.
 
-If indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 |
-| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 |
+If indexation speed has more priority for you - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 |
+| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as a read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 |
 | indexing_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256 |
 | flush_interval_sec | [uint64](#uint64) | optional | Interval between forced flushes. |
 | max_optimization_threads | [uint64](#uint64) | optional | Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used |
@@ -615,6 +694,23 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
+<a name="qdrant-RemoteShardInfo"></a>
+
+### RemoteShardInfo
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| peer_id | [uint64](#uint64) |  | Remote peer id |
+| state | [ReplicaState](#qdrant-ReplicaState) |  | Is replica active |
+
+
+
+
+
+
 <a name="qdrant-RenameAlias"></a>
 
 ### RenameAlias
@@ -625,6 +721,22 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | old_alias_name | [string](#string) |  | Name of the alias to rename |
 | new_alias_name | [string](#string) |  | Name of the alias |
+
+
+
+
+
+
+<a name="qdrant-Replica"></a>
+
+### Replica
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  |  |
+| peer_id | [uint64](#uint64) |  |  |
 
 
 
@@ -648,6 +760,24 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
+<a name="qdrant-ShardTransferInfo"></a>
+
+### ShardTransferInfo
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| from | [uint64](#uint64) |  |  |
+| to | [uint64](#uint64) |  |  |
+| sync | [bool](#bool) |  | If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another |
+
+
+
+
+
+
 <a name="qdrant-TextIndexParams"></a>
 
 ### TextIndexParams
@@ -657,7 +787,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | tokenizer | [TokenizerType](#qdrant-TokenizerType) |  | Tokenizer type |
-| lowercase | [bool](#bool) | optional | If true - all tokens will be lowercased |
+| lowercase | [bool](#bool) | optional | If true - all tokens will be lowercase |
 | min_token_len | [uint64](#uint64) | optional | Minimal token length |
 | max_token_len | [uint64](#uint64) | optional | Maximal token length |
 
@@ -684,6 +814,41 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
+<a name="qdrant-UpdateCollectionClusterSetupRequest"></a>
+
+### UpdateCollectionClusterSetupRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| move_shard | [MoveShard](#qdrant-MoveShard) |  |  |
+| replicate_shard | [MoveShard](#qdrant-MoveShard) |  |  |
+| abort_transfer | [MoveShard](#qdrant-MoveShard) |  |  |
+| drop_replica | [Replica](#qdrant-Replica) |  |  |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+
+
+
+
+
+
+<a name="qdrant-UpdateCollectionClusterSetupResponse"></a>
+
+### UpdateCollectionClusterSetupResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [bool](#bool) |  |  |
+
+
+
+
+
+
 <a name="qdrant-VectorParams"></a>
 
 ### VectorParams
@@ -694,6 +859,8 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | size | [uint64](#uint64) |  | Size of the vectors |
 | distance | [Distance](#qdrant-Distance) |  | Distance function used for comparing vectors |
+| hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Configuration of vector HNSW graph. If omitted - the collection configuration will be used |
+| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of vector quantization config. If omitted - the collection configuration will be used |
 
 
 
@@ -821,6 +988,21 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
+<a name="qdrant-ReplicaState"></a>
+
+### ReplicaState
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Active | 0 | Active and sound |
+| Dead | 1 | Failed for some reason |
+| Partial | 2 | The shard is partially loaded and is currently receiving data from other shards |
+| Initializing | 3 | Collection is being created |
+| Listener | 4 | A shard which receives data, but is not used for search; Useful for backup shards |
+
+
+
 <a name="qdrant-TokenizerType"></a>
 
 ### TokenizerType
@@ -870,6 +1052,8 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | UpdateAliases | [ChangeAliases](#qdrant-ChangeAliases) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update Aliases of the existing collection |
 | ListCollectionAliases | [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for a collection |
 | ListAliases | [ListAliasesRequest](#qdrant-ListAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for all existing collections |
+| CollectionClusterInfo | [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest) | [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse) | Get cluster information for a collection |
+| UpdateCollectionClusterSetup | [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest) | [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse) | Update cluster setup for a collection |
 
  
 
@@ -887,7 +1071,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 ### ListValue
 `ListValue` is a wrapper around a repeated field of values.
 
-The JSON representation for `ListValue` is JSON array.
+The JSON representation for `ListValue` is a JSON array.
 
 
 | Field | Type | Label | Description |
@@ -909,7 +1093,7 @@ scripting languages like JS a struct is represented as an
 object. The details of that representation are described together
 with the proto support for the language.
 
-The JSON representation for `Struct` is JSON object.
+The JSON representation for `Struct` is a JSON object.
 
 
 | Field | Type | Label | Description |
@@ -942,10 +1126,10 @@ The JSON representation for `Struct` is JSON object.
 ### Value
 `Value` represents a dynamically typed value which can be either
 null, a number, a string, a boolean, a recursive struct value, or a
-list of values. A producer of value is expected to set one of that
+list of values. A producer of value is expected to set one of those
 variants, absence of any variant indicates an error.
 
-The JSON representation for `Value` is JSON value.
+The JSON representation for `Value` is a JSON value.
 
 
 | Field | Type | Label | Description |
@@ -1038,6 +1222,7 @@ The JSON representation for `Value` is JSON value.
 | is_empty | [IsEmptyCondition](#qdrant-IsEmptyCondition) |  |  |
 | has_id | [HasIdCondition](#qdrant-HasIdCondition) |  |  |
 | filter | [Filter](#qdrant-Filter) |  |  |
+| is_null | [IsNullCondition](#qdrant-IsNullCondition) |  |  |
 
 
 
@@ -1178,7 +1363,7 @@ The JSON representation for `Value` is JSON value.
 | key | [string](#string) |  |  |
 | match | [Match](#qdrant-Match) |  | Check if point has field with a given value |
 | range | [Range](#qdrant-Range) |  | Check if points value lies in a given range |
-| geo_bounding_box | [GeoBoundingBox](#qdrant-GeoBoundingBox) |  | Check if points geo location lies in a given area |
+| geo_bounding_box | [GeoBoundingBox](#qdrant-GeoBoundingBox) |  | Check if points geolocation lies in a given area |
 | geo_radius | [GeoRadius](#qdrant-GeoRadius) |  | Check if geo point is within a given radius |
 | values_count | [ValuesCount](#qdrant-ValuesCount) |  | Check number of values for a specific field |
 
@@ -1305,6 +1490,21 @@ The JSON representation for `Value` is JSON value.
 <a name="qdrant-IsEmptyCondition"></a>
 
 ### IsEmptyCondition
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="qdrant-IsNullCondition"></a>
+
+### IsNullCondition
 
 
 
@@ -2127,7 +2327,7 @@ The JSON representation for `Value` is JSON value.
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
-| Upsert | [UpsertPoints](#qdrant-UpsertPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Perform insert &#43; updates on points. If point with given ID already exists - it will be overwritten. |
+| Upsert | [UpsertPoints](#qdrant-UpsertPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Perform insert &#43; updates on points. If a point with a given ID already exists - it will be overwritten. |
 | Delete | [DeletePoints](#qdrant-DeletePoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete points |
 | Get | [GetPoints](#qdrant-GetPoints) | [GetResponse](#qdrant-GetResponse) | Retrieve points |
 | SetPayload | [SetPayloadPoints](#qdrant-SetPayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Set payload for points |

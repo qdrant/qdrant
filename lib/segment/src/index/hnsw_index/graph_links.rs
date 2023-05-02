@@ -602,10 +602,10 @@ mod tests {
             .collect()
     }
 
-    fn test_save_load<A, B>(points_count: usize, max_levels_count: usize)
+    /// Test that random links can be saved by `GraphLinksConverter` and loaded correctly by a GraphLinks impl.
+    fn test_save_load<A>(points_count: usize, max_levels_count: usize)
     where
         A: GraphLinks,
-        B: GraphLinks,
     {
         let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
         let links_file = path.path().join("links.bin");
@@ -614,7 +614,7 @@ mod tests {
             let mut links_converter = GraphLinksConverter::new(links.clone());
             links_converter.save_as(&links_file).unwrap();
         }
-        let cmp_links = to_vec(&B::load_from_file(&links_file).unwrap());
+        let cmp_links = to_vec(&A::load_from_file(&links_file).unwrap());
         assert_eq!(links, cmp_links);
     }
 
@@ -685,10 +685,8 @@ mod tests {
     }
 
     #[test]
-    fn test_graph_links_mmap_ram_compability() {
-        test_save_load::<GraphLinksRam, GraphLinksRam>(1000, 10);
-        test_save_load::<GraphLinksMmap, GraphLinksRam>(1000, 10);
-        test_save_load::<GraphLinksRam, GraphLinksMmap>(1000, 10);
-        test_save_load::<GraphLinksMmap, GraphLinksMmap>(1000, 10);
+    fn test_graph_links_mmap_ram_compatibility() {
+        test_save_load::<GraphLinksRam>(1000, 10);
+        test_save_load::<GraphLinksMmap>(1000, 10);
     }
 }

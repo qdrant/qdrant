@@ -12,6 +12,7 @@ use segment::madvise;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
+use validator::Validate;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 
@@ -20,6 +21,8 @@ pub struct PerformanceConfig {
     pub max_search_threads: usize,
     #[serde(default = "default_max_optimization_threads")]
     pub max_optimization_threads: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_rate_limit: Option<usize>,
 }
 
 fn default_max_optimization_threads() -> usize {
@@ -27,17 +30,23 @@ fn default_max_optimization_threads() -> usize {
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Validate)]
 pub struct StorageConfig {
+    #[validate(length(min = 1))]
     pub storage_path: String,
     #[serde(default = "default_snapshots_path")]
+    #[validate(length(min = 1))]
     pub snapshots_path: String,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
+    #[validate]
     pub optimizers: OptimizersConfig,
+    #[validate]
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
+    #[validate]
     pub hnsw_index: HnswConfig,
+    #[validate]
     pub quantization: Option<QuantizationConfig>,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,
@@ -45,11 +54,17 @@ pub struct StorageConfig {
     pub node_type: NodeType,
     #[serde(default)]
     pub update_queue_size: Option<usize>,
+    #[serde(default)]
+    pub handle_collection_load_errors: bool,
 }
 
 impl StorageConfig {
     pub fn to_shared_storage_config(&self) -> SharedStorageConfig {
-        SharedStorageConfig::new(self.update_queue_size, self.node_type)
+        SharedStorageConfig::new(
+            self.update_queue_size,
+            self.node_type,
+            self.handle_collection_load_errors,
+        )
     }
 }
 

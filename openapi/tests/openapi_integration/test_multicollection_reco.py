@@ -138,7 +138,8 @@ def test_recommend_from_another_collection():
     )
     assert response.ok, response.text
     assert len(response.json()['result']) == 3
-    assert response.json()['result'][0]['id'] == 3  # vector with the largest 1st element
+    # vector with the largest 1st element
+    assert response.json()['result'][0]['id'] == 8
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/recommend/batch',
@@ -180,8 +181,10 @@ def test_recommend_from_another_collection():
     assert len(response.json()['result'][0]) == 3
     assert len(response.json()['result'][1]) == 3
     assert len(response.json()['result'][2]) == 3
-    assert response.json()['result'][0][0]['id'] == 3  # vector with the largest 1st element
-    assert response.json()['result'][1][0]['id'] == 2  # vector with the largest 2nd element
+    # vector with the largest 1st element
+    assert response.json()['result'][0][0]['id'] == 8
+    # vector with the largest 2nd element
+    assert response.json()['result'][1][0]['id'] == 7
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/recommend',

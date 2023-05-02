@@ -27,14 +27,6 @@ impl<T> MultiValue<T> {
         Self::Single(value)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn is_empty(&self) -> bool {
-        match self {
-            Self::Single(opt) => opt.is_none(),
-            Self::Multiple(vec) => vec.is_empty(),
-        }
-    }
-
     fn push(&mut self, value: T) {
         match self {
             Self::Single(opt) => match opt.take() {
@@ -61,6 +53,47 @@ impl<T> MultiValue<T> {
         match self {
             Self::Single(opt) => opt.into_iter().collect(),
             Self::Multiple(vec) => vec,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn as_ref(&self) -> MultiValue<&T> {
+        match self {
+            Self::Single(opt) => MultiValue::option(opt.as_ref()),
+            Self::Multiple(vec) => MultiValue::Multiple(vec.iter().collect()),
+        }
+    }
+}
+
+impl MultiValue<&Value> {
+    pub(crate) fn check_is_empty(&self) -> bool {
+        match self {
+            Self::Multiple(vec) => vec.iter().all(|x| match x {
+                Value::Array(vec) => vec.is_empty(),
+                Value::Null => true,
+                _ => false,
+            }),
+            Self::Single(val) => match val {
+                None => true,
+                Some(Value::Array(vec)) => vec.is_empty(),
+                Some(Value::Null) => true,
+                _ => false,
+            },
+        }
+    }
+
+    pub(crate) fn check_is_null(&self) -> bool {
+        match self {
+            MultiValue::Single(val) => {
+                if let Some(val) = val {
+                    return val.is_null();
+                }
+                false
+            }
+            // { "a": [ { "b": null }, { "b": 1 } ] } => true
+            // { "a": [ { "b": 1 }, { "b": null } ] } => true
+            // { "a": [ { "b": 1 }, { "b": 2 } ] } => false
+            MultiValue::Multiple(vals) => vals.iter().any(|val| val.is_null()),
         }
     }
 }
@@ -119,23 +152,27 @@ fn focus_array_path<'a>(
         Some(Value::Array(array)) => {
             let mut values: MultiValue<_> = MultiValue::default();
             for (i, value) in array.iter().enumerate() {
-                if let Value::Object(map) = value {
-                    if let Some(array_index) = array_index {
-                        if i == array_index as usize {
-                            match rest_path {
-                                Some(rest_path) => {
-                                    values.extend(get_value_from_json_map(rest_path, map))
-                                }
-                                None => values.push(value),
-                            }
-                        }
-                    } else {
+                if let Some(array_index) = array_index {
+                    if i == array_index as usize {
                         match rest_path {
                             Some(rest_path) => {
-                                values.extend(get_value_from_json_map(rest_path, map))
+                                // expect an Object if there is a rest path
+                                if let Value::Object(map) = value {
+                                    values.extend(get_value_from_json_map(rest_path, map))
+                                }
                             }
                             None => values.push(value),
                         }
+                    }
+                } else {
+                    match rest_path {
+                        Some(rest_path) => {
+                            // expect an Object if there is a rest path
+                            if let Value::Object(map) = value {
+                                values.extend(get_value_from_json_map(rest_path, map))
+                            }
+                        }
+                        None => values.push(value),
                     }
                 }
             }
@@ -308,7 +345,43 @@ mod tests {
         );
 
         // missing path
-        assert!(get_value_from_json_map("a.b.c.d", &map).is_empty());
+        assert!(get_value_from_json_map("a.b.c.d", &map).check_is_empty());
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+                {
+                   "a": [
+                     { "b": 1 },
+                     { "b": 2 },
+                     { "b": null },
+                     { "d": [] },
+                     { "d": [] },
+                     { "f": null }
+                   ]
+                }
+            "#,
+        )
+        .unwrap();
+        let multivalue = get_value_from_json_map("a[].b", &map);
+        let is_empty = multivalue.check_is_empty();
+
+        assert!(!is_empty, "a[].b is not empty");
+
+        let multivalue = get_value_from_json_map("a[].c", &map);
+        let is_empty = multivalue.check_is_empty();
+
+        assert!(is_empty, "a[].c is empty");
+
+        let multivalue = get_value_from_json_map("a[].d", &map);
+        let is_empty = multivalue.check_is_empty();
+        assert!(is_empty, "a[].d is empty");
+
+        let multivalue = get_value_from_json_map("a[].f", &map);
+        let is_empty = multivalue.check_is_empty();
+        assert!(is_empty, "a[].f is empty");
     }
 
     #[test]
@@ -323,7 +396,8 @@ mod tests {
                         { "d": { "e": 3 } }
                     ]
                 },
-                "f": 3
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
             }
             "#,
         )
@@ -397,13 +471,25 @@ mod tests {
             )]))]
         );
 
-        // select scalar element from array different index
+        // select scalar object from array different index
         assert_eq!(
             get_value_from_json_map("a.b[1]", &map).values(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "c".to_string(),
                 Value::Number(2.into())
             )]))]
+        );
+
+        // select field element from array different index
+        assert_eq!(
+            get_value_from_json_map("a.b[1].c", &map).values(),
+            vec![&Value::Number(2.into())]
+        );
+
+        // select scalar element from array different index
+        assert_eq!(
+            get_value_from_json_map("g[2]", &map).values(),
+            vec![&Value::String("g2".to_string())]
         );
 
         // select object element from array
@@ -419,9 +505,9 @@ mod tests {
         );
 
         // select out of bound index from array
-        assert!(get_value_from_json_map("a.b[3]", &map).is_empty());
+        assert!(get_value_from_json_map("a.b[3]", &map).check_is_empty());
 
         // select bad index from array
-        assert!(get_value_from_json_map("a.b[z]", &map).is_empty());
+        assert!(get_value_from_json_map("a.b[z]", &map).check_is_empty());
     }
 }

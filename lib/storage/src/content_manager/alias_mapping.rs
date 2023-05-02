@@ -73,15 +73,25 @@ impl AliasPersistence {
     }
 
     pub fn remove(&mut self, alias: &str) -> Result<Option<String>, StorageError> {
-        let res = self.alias_mapping.0.remove(alias);
-        self.alias_mapping.save(&self.data_path)?;
-        Ok(res)
+        let output = self.alias_mapping.0.remove(alias);
+
+        if output.is_some() {
+            self.alias_mapping.save(&self.data_path)?;
+        }
+
+        Ok(output)
     }
 
     /// Removes all aliases for a given collection.
     pub fn remove_collection(&mut self, collection_name: &str) -> Result<(), StorageError> {
+        let prev_len = self.alias_mapping.0.len();
+
         self.alias_mapping.0.retain(|_, v| v != collection_name);
-        self.alias_mapping.save(&self.data_path)?;
+
+        if prev_len != self.alias_mapping.0.len() {
+            self.alias_mapping.save(&self.data_path)?;
+        }
+
         Ok(())
     }
 

@@ -1,8 +1,21 @@
 use std::path::Path;
 
+use chrono::{DateTime, SubsecRound, Utc};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
+
+pub struct AppBuildTelemetryCollector {
+    pub startup: DateTime<Utc>,
+}
+
+impl AppBuildTelemetryCollector {
+    pub fn new() -> Self {
+        AppBuildTelemetryCollector {
+            startup: Utc::now().round_subsecs(2),
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct AppFeaturesTelemetry {
@@ -32,10 +45,11 @@ pub struct AppBuildTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub system: Option<RunningEnvironmentTelemetry>,
+    pub startup: DateTime<Utc>,
 }
 
 impl AppBuildTelemetry {
-    pub fn collect(level: usize) -> Self {
+    pub fn collect(level: usize, collector: &AppBuildTelemetryCollector) -> Self {
         AppBuildTelemetry {
             name: env!("CARGO_PKG_NAME").to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -53,6 +67,7 @@ impl AppBuildTelemetry {
             } else {
                 None
             },
+            startup: collector.startup,
         }
     }
 }
@@ -68,29 +83,29 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
     } else {
         sys_info::os_release().ok()
     };
-    let mut cpu_flags = String::new();
+    let mut cpu_flags = vec![];
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if std::arch::is_x86_feature_detected!("sse") {
-            cpu_flags += "sse,";
+            cpu_flags.push("sse");
         }
         if std::arch::is_x86_feature_detected!("avx") {
-            cpu_flags += "avx,";
+            cpu_flags.push("avx");
         }
         if std::arch::is_x86_feature_detected!("avx2") {
-            cpu_flags += "avx2,";
+            cpu_flags.push("avx2");
         }
         if std::arch::is_x86_feature_detected!("fma") {
-            cpu_flags += "fma,";
+            cpu_flags.push("fma");
         }
         if std::arch::is_x86_feature_detected!("avx512f") {
-            cpu_flags += "avx512f,";
+            cpu_flags.push("avx512f");
         }
     }
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
-            cpu_flags += "neon,";
+            cpu_flags.push("neon");
         }
     }
     RunningEnvironmentTelemetry {
@@ -100,7 +115,7 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         cores: sys_info::cpu_num().ok().map(|x| x as usize),
         ram_size: sys_info::mem_info().ok().map(|x| x.total as usize),
         disk_size: sys_info::disk_info().ok().map(|x| x.total as usize),
-        cpu_flags,
+        cpu_flags: cpu_flags.join(","),
     }
 }
 
@@ -121,6 +136,7 @@ impl Anonymize for AppBuildTelemetry {
             version: self.version.clone(),
             features: self.features.anonymize(),
             system: self.system.anonymize(),
+            startup: self.startup.anonymize(),
         }
     }
 }

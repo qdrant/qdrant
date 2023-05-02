@@ -10,6 +10,7 @@ use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
 use segment::types::QuantizationConfig;
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
@@ -95,11 +96,12 @@ pub struct InitFrom {
 }
 
 /// Operation for creating new collection and (optionally) specify index params
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
     /// Vector data config.
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
+    #[validate]
     pub vectors: VectorsConfig,
     /// Number of shards in collection.
     /// Default is 1 for standalone, otherwise equal to the number of nodes
@@ -124,18 +126,21 @@ pub struct CreateCollection {
     #[serde(default)]
     pub on_disk_payload: Option<bool>,
     /// Custom params for HNSW index. If none - values from service configuration file are used.
+    #[validate]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for WAL. If none - values from service configuration file are used.
+    #[validate]
     pub wal_config: Option<WalConfigDiff>,
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
     #[serde(alias = "optimizer_config")]
+    #[validate]
     pub optimizers_config: Option<OptimizersConfigDiff>,
     /// Specify other collection to copy data from.
     #[serde(default)]
     pub init_from: Option<InitFrom>,
     /// Quantization parameters. If none - quantization is disabled.
-    #[serde(default)]
-    #[serde(alias = "quantization")]
+    #[serde(default, alias = "quantization")]
+    #[validate]
     pub quantization_config: Option<QuantizationConfig>,
 }
 
@@ -171,7 +176,7 @@ impl CreateCollectionOperation {
 }
 
 /// Operation for updating parameters of the existing collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollection {
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
@@ -235,7 +240,7 @@ impl UpdateCollectionOperation {
 /// Operation for performing changes of collection aliases.
 /// Alias changes are atomic, meaning that no collection modifications can happen between
 /// alias operations.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ChangeAliasesOperation {
     pub actions: Vec<AliasOperations>,

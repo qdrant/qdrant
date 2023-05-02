@@ -1,6 +1,7 @@
 use std::cmp;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -36,8 +37,9 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
+use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
-use crate::shards::shard::Shard::{ForwardProxy, Local};
+use crate::shards::shard::Shard::{Dummy, ForwardProxy, Local};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
@@ -150,7 +152,7 @@ impl ReplicaSetState {
 pub struct ShardReplicaSet {
     local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
     remotes: RwLock<Vec<RemoteShard>>,
-    replica_state: SaveOnDisk<ReplicaSetState>,
+    replica_state: Arc<SaveOnDisk<ReplicaSetState>>,
     /// List of peers that are marked as dead locally, but are not yet submitted to the consensus.
     /// List is checked on each consensus round and submitted to the consensus.
     /// If the state of the peer is changed in the consensus, it is removed from the list.
@@ -174,7 +176,12 @@ pub struct ShardReplicaSet {
 impl ShardReplicaSet {
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
-        matches!(*local_read, Some(Local(_)))
+        matches!(*local_read, Some(Local(_) | Dummy(_)))
+    }
+
+    pub async fn is_dummy(&self) -> bool {
+        let local_read = self.local.read().await;
+        matches!(*local_read, Some(Dummy(_)))
     }
 
     pub async fn has_local_shard(&self) -> bool {
@@ -194,19 +201,14 @@ impl ShardReplicaSet {
     }
 
     pub fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
-        self.replica_state
-            .read()
-            .peers
-            .iter()
-            .filter_map(|(peer_id, _state)| {
-                if self.peer_is_active(peer_id) {
-                    Some(peer_id)
-                } else {
-                    None
-                }
-            })
+        let read_lock = self.replica_state.read();
+        let peer_ids = read_lock.peers.keys().cloned().collect::<Vec<_>>();
+        drop(read_lock);
+
+        peer_ids
+            .into_iter()
+            .filter(|peer_id| self.peer_is_active(peer_id)) // re-acquire replica_state read lock
             .max()
-            .cloned()
     }
 
     pub async fn remote_peers(&self) -> Vec<PeerId> {
@@ -306,7 +308,7 @@ impl ShardReplicaSet {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
-            replica_state,
+            replica_state: replica_state.into(),
             locally_disabled_peers: Default::default(),
             shard_path,
             // TODO: move to collection config
@@ -326,7 +328,7 @@ impl ShardReplicaSet {
             rs.remove_peer_state(&peer_id);
         })?;
 
-        self.locally_disabled_peers.write().remove(&peer_id);
+        self.update_locally_disabled(peer_id);
 
         let mut remotes = self.remotes.write().await;
         remotes.retain(|remote| remote.peer_id != peer_id);
@@ -338,7 +340,7 @@ impl ShardReplicaSet {
             rs.set_peer_state(peer_id, state);
         })?;
 
-        self.locally_disabled_peers.write().remove(&peer_id);
+        self.update_locally_disabled(peer_id);
 
         let mut remotes = self.remotes.write().await;
 
@@ -364,9 +366,7 @@ impl ShardReplicaSet {
             rs.remove_peer_state(&this_peer_id);
         })?;
 
-        self.locally_disabled_peers
-            .write()
-            .remove(&self.this_peer_id());
+        self.update_locally_disabled(self.this_peer_id());
 
         let removing_local = {
             let mut local = self.local.write().await;
@@ -395,9 +395,7 @@ impl ShardReplicaSet {
                 }
             })?;
         }
-        self.locally_disabled_peers
-            .write()
-            .remove(&self.this_peer_id());
+        self.update_locally_disabled(self.this_peer_id());
         Ok(old_shard)
     }
 
@@ -482,7 +480,7 @@ impl ShardReplicaSet {
         );
 
         let local = if replica_state.read().is_local {
-            let shard = LocalShard::load(
+            let res = LocalShard::load(
                 shard_id,
                 collection_id.clone(),
                 shard_path,
@@ -490,12 +488,28 @@ impl ShardReplicaSet {
                 shared_storage_config.clone(),
                 update_runtime.clone(),
             )
-            .await
-            .map_err(|e| {
-                panic!("Failed to load local shard {shard_path:?}: {e}");
-            })
-            .unwrap();
-            Some(Local(shard))
+            .await;
+
+            let shard = match res {
+                Ok(shard) => Local(shard),
+                Err(err) => {
+                    if !shared_storage_config.handle_collection_load_errors {
+                        panic!("Failed to load local shard {shard_path:?}: {err}")
+                    }
+
+                    log::error!(
+                        "Failed to load local shard {shard_path:?}, \
+                         initializing \"dummy\" shard instead: \
+                         {err}"
+                    );
+
+                    Dummy(DummyShard::new(format!(
+                        "Failed to load local shard {shard_path:?}: {err}"
+                    )))
+                }
+            };
+
+            Some(shard)
         } else {
             None
         };
@@ -504,7 +518,7 @@ impl ShardReplicaSet {
             shard_id,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
-            replica_state,
+            replica_state: replica_state.into(),
             // TODO: move to collection config
             locally_disabled_peers: Default::default(),
             shard_path: shard_path.to_path_buf(),
@@ -547,7 +561,7 @@ impl ShardReplicaSet {
             }
             rs.set_peer_state(*peer_id, state);
         })?;
-        self.locally_disabled_peers.write().remove(peer_id);
+        self.update_locally_disabled(*peer_id);
         Ok(())
     }
 
@@ -684,11 +698,11 @@ impl ShardReplicaSet {
                 match read_operation_res {
                     Ok(_) => return read_operation_res,
                     res @ Err(CollectionError::ServiceError { .. }) => {
-                        log::debug!("Local read op. failed: {:?}", res.as_ref().err());
+                        log::debug!("Local read op. failed: {}", res.as_ref().err().unwrap());
                         local_result = Some(res);
                     }
                     res @ Err(CollectionError::Cancelled { .. }) => {
-                        log::debug!("Local read op. cancelled: {:?}", res.as_ref().err());
+                        log::debug!("Local read op. cancelled: {}", res.as_ref().err().unwrap());
                         local_result = Some(res);
                     }
                     res @ Err(_) => {
@@ -736,11 +750,11 @@ impl ShardReplicaSet {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
                 err @ Err(CollectionError::ServiceError { .. }) => {
-                    log::debug!("Remote read op. failed: {:?}", err.as_ref().err());
+                    log::debug!("Remote read op. failed: {}", err.as_ref().err().unwrap());
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(CollectionError::Cancelled { .. }) => {
-                    log::debug!("Remote read op. cancelled: {:?}", err.as_ref().err());
+                    log::debug!("Remote read op. cancelled: {}", err.as_ref().err().unwrap());
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(_) => return err, // Validation or user errors reported immediately
@@ -763,13 +777,16 @@ impl ShardReplicaSet {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
                 err @ Err(CollectionError::ServiceError { .. }) => {
-                    log::debug!("Remote fallback read op. failed: {:?}", err.as_ref().err());
+                    log::debug!(
+                        "Remote fallback read op. failed: {}",
+                        err.as_ref().err().unwrap()
+                    );
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(CollectionError::Cancelled { .. }) => {
                     log::debug!(
-                        "Remote fallback read op. cancelled: {:?}",
-                        err.as_ref().err()
+                        "Remote fallback read op. cancelled: {}",
+                        err.as_ref().err().unwrap()
                     );
                     captured_error = Some(err)
                 } // capture error for possible error reporting
@@ -857,6 +874,7 @@ impl ShardReplicaSet {
             operations.by_ref().take(required_reads).collect();
 
         let mut responses = Vec::new();
+        let mut errors = Vec::new();
 
         while let Some(result) = pending_operations.next().await {
             match result {
@@ -870,6 +888,7 @@ impl ShardReplicaSet {
 
                     if is_transient {
                         log::debug!("Read operation failed: {err}");
+                        errors.push(err);
                     } else {
                         return Err(err);
                     }
@@ -899,9 +918,22 @@ impl ShardReplicaSet {
                 Ok(Res::resolve(responses, condition))
             }
         } else {
-            Err(CollectionError::service_error(
-                "Failed to complete read operation: too many replicas returned an error".into(),
-            ))
+            let success_count = responses.len();
+            let error_count = errors.len();
+
+            Err(CollectionError::service_error(format!(
+                "{error_count} of {} shards failed with: {}",
+                success_count + error_count,
+                errors.into_iter().fold(String::new(), |mut msg, err| {
+                    if msg.is_empty() {
+                        msg = err.to_string();
+                    } else {
+                        write!(&mut msg, ", {err}").unwrap(); // Writing into `String` never fails
+                    }
+
+                    msg
+                })
+            )))
         }
     }
 
@@ -1008,11 +1040,15 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+    pub async fn create_snapshot(
+        &self,
+        target_path: &Path,
+        save_wal: bool,
+    ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
 
         if let Some(local) = &*local_read {
-            local.create_snapshot(target_path).await?
+            local.create_snapshot(target_path, save_wal).await?
         }
 
         self.replica_state
@@ -1180,6 +1216,7 @@ impl ShardReplicaSet {
                     }
                     _ => {}
                 }
+
                 log::debug!(
                     "Deactivating peer {} because of failed update of shard {}:{}",
                     peer_id,
@@ -1191,6 +1228,26 @@ impl ShardReplicaSet {
             }
         }
         wait_for_deactivation
+    }
+
+    // Make sure that locally disabled peers do not contradict the consensus
+    fn update_locally_disabled(&self, peer_id_to_remove: PeerId) {
+        // Check that we are not trying to disable the last active peer
+        let peers = self.peers();
+        let active_peers: Vec<_> = peers
+            .iter()
+            .filter(|(_, state)| **state == ReplicaState::Active)
+            .map(|(peer, _)| *peer)
+            .collect();
+
+        let mut locally_disabled = self.locally_disabled_peers.write();
+
+        locally_disabled.remove(&peer_id_to_remove);
+
+        if active_peers.len() == 1 {
+            let last_peer = active_peers.first().unwrap();
+            locally_disabled.remove(last_peer);
+        }
     }
 
     /// Check if the are any locally disabled peers
@@ -1286,6 +1343,7 @@ impl ShardReplicaSet {
         let all_res: Vec<Result<_, _>> = {
             let local = self.local.read().await;
             let remotes = self.remotes.read().await;
+            let this_peer_id = self.this_peer_id();
 
             // target all remote peers that can receive updates
             let active_remote_shards: Vec<_> = remotes
@@ -1295,13 +1353,12 @@ impl ShardReplicaSet {
 
             // local is defined AND the peer itself can receive updates
             let local_is_updatable =
-                local.is_some() && self.peer_is_active_or_pending(&self.this_peer_id());
+                local.is_some() && self.peer_is_active_or_pending(&this_peer_id);
 
             if active_remote_shards.is_empty() && !local_is_updatable {
                 return Err(CollectionError::service_error(format!(
                     "The replica set for shard {} on peer {} has no active replica",
-                    self.shard_id,
-                    self.this_peer_id()
+                    self.shard_id, this_peer_id
                 )));
             }
 
@@ -1317,13 +1374,24 @@ impl ShardReplicaSet {
             }
 
             match local.deref() {
-                Some(local) if self.peer_is_active_or_pending(&self.this_peer_id()) => {
+                Some(local) if self.peer_is_active_or_pending(&this_peer_id) => {
+                    let local_wait =
+                        if self.peer_state(&this_peer_id) == Some(ReplicaState::Listener) {
+                            false
+                        } else {
+                            wait
+                        };
+
                     let local_update = async move {
                         local
                             .get()
-                            .update(operation.clone(), wait)
+                            .update(operation.clone(), local_wait)
                             .await
-                            .map_err(|err| (self.this_peer_id(), err))
+                            .map_err(|err| {
+                                let peer_id = err.remote_peer_id().unwrap_or(this_peer_id);
+
+                                (peer_id, err)
+                            })
                     };
                     let remote_updates = join_all(remote_futures);
 
@@ -1355,18 +1423,26 @@ impl ShardReplicaSet {
             if wait && wait_for_deactivation && !failures.is_empty() {
                 // ToDo: allow timeout configuration in API
                 let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
-                let shards_disabled = self.replica_state.wait_for(
-                    |state| {
-                        failures.iter().all(|(peer_id, _)| {
-                            state
-                                .peers
-                                .get(peer_id)
-                                .map(|state| state != &ReplicaState::Active)
-                                .unwrap_or(true) // not found means that peer is dead
-                        })
-                    },
-                    DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
-                );
+
+                let replica_state = self.replica_state.clone();
+                let peer_ids: Vec<_> = failures.iter().map(|(peer_id, _)| *peer_id).collect();
+
+                let shards_disabled = tokio::task::spawn_blocking(move || {
+                    replica_state.wait_for(
+                        |state| {
+                            peer_ids.iter().all(|peer_id| {
+                                state
+                                    .peers
+                                    .get(peer_id)
+                                    .map(|state| state != &ReplicaState::Active)
+                                    .unwrap_or(true) // not found means that peer is dead
+                            })
+                        },
+                        DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
+                    )
+                })
+                .await?;
+
                 if !shards_disabled {
                     return Err(CollectionError::service_error(format!(
                         "Some replica of shard {} failed to apply operation and deactivation \
@@ -1505,7 +1581,7 @@ mod tests {
         default_segment_number: 2,
         max_segment_size: None,
         memmap_threshold: None,
-        indexing_threshold: 50_000,
+        indexing_threshold: Some(50_000),
         flush_interval_sec: 30,
         max_optimization_threads: 2,
     };
@@ -1525,6 +1601,8 @@ mod tests {
             vectors: VectorsConfig::Single(VectorParams {
                 size: NonZeroU64::new(4).unwrap(),
                 distance: Distance::Dot,
+                hnsw_config: None,
+                quantization_config: None,
             }),
             shard_number: NonZeroU32::new(4).unwrap(),
             replication_factor: NonZeroU32::new(3).unwrap(),

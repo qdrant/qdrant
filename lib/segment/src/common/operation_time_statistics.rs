@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, SubsecRound, Utc};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,10 @@ pub struct OperationDurationStatistics {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub max_duration_micros: Option<f32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub last_responded: Option<DateTime<Utc>>,
 }
 
 pub struct OperationDurationsAggregator {
@@ -39,6 +44,7 @@ pub struct OperationDurationsAggregator {
     timing_loops: usize,
     min_value: Option<f32>,
     max_value: Option<f32>,
+    last_response_date: Option<DateTime<Utc>>,
 }
 
 pub struct ScopeDurationMeasurer {
@@ -52,9 +58,8 @@ impl Anonymize for OperationDurationStatistics {
         Self {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
-            avg_duration_micros: self.avg_duration_micros,
-            min_duration_micros: self.min_duration_micros,
-            max_duration_micros: self.max_duration_micros,
+            last_responded: self.last_responded.anonymize(),
+            ..*self
         }
     }
 }
@@ -82,6 +87,7 @@ impl std::ops::Add for OperationDurationStatistics {
                 other.max_duration_micros,
                 |a, b| a > b,
             ),
+            last_responded: std::cmp::max(self.last_responded, other.last_responded),
         }
     }
 }
@@ -174,6 +180,7 @@ impl OperationDurationsAggregator {
             timing_loops: 0,
             min_value: None,
             max_value: None,
+            last_response_date: Some(Utc::now().round_subsecs(2)),
         }))
     }
 
@@ -199,6 +206,8 @@ impl OperationDurationsAggregator {
         } else {
             self.fail_count += 1;
         }
+
+        self.last_response_date = Some(Utc::now().round_subsecs(2));
     }
 
     pub fn get_statistics(&self) -> OperationDurationStatistics {
@@ -212,6 +221,7 @@ impl OperationDurationsAggregator {
             },
             min_duration_micros: self.min_value,
             max_duration_micros: self.max_value,
+            last_responded: self.last_response_date,
         }
     }
 

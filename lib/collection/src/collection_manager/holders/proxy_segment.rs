@@ -118,7 +118,7 @@ impl ProxySegment {
         let segment_arc = self.write_segment.get();
         let mut write_segment = segment_arc.write();
 
-        write_segment.upsert_vector(op_num, point_id, &all_vectors)?;
+        write_segment.upsert_point(op_num, point_id, &all_vectors)?;
         write_segment.set_full_payload(op_num, point_id, &payload)?;
 
         Ok(true)
@@ -283,7 +283,7 @@ impl SegmentEntry for ProxySegment {
         Ok(wrapped_results)
     }
 
-    fn upsert_vector(
+    fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -293,7 +293,7 @@ impl SegmentEntry for ProxySegment {
         self.write_segment
             .get()
             .write()
-            .upsert_vector(op_num, point_id, vectors)
+            .upsert_point(op_num, point_id, vectors)
     }
 
     fn delete_point(
@@ -303,8 +303,7 @@ impl SegmentEntry for ProxySegment {
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
         if self.wrapped_segment.get().read().has_point(point_id) {
-            self.deleted_points.write().insert(point_id);
-            was_deleted = true;
+            was_deleted = self.deleted_points.write().insert(point_id);
         }
         let was_deleted_in_writable = self
             .write_segment
@@ -313,6 +312,19 @@ impl SegmentEntry for ProxySegment {
             .delete_point(op_num, point_id)?;
 
         Ok(was_deleted || was_deleted_in_writable)
+    }
+
+    fn delete_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector_name: &str,
+    ) -> OperationResult<bool> {
+        self.move_if_exists(op_num, point_id)?;
+        self.write_segment
+            .get()
+            .write()
+            .delete_vector(op_num, point_id, vector_name)
     }
 
     fn set_full_payload(
@@ -370,7 +382,7 @@ impl SegmentEntry for ProxySegment {
         &self,
         vector_name: &str,
         point_id: PointIdType,
-    ) -> OperationResult<Vec<VectorElementType>> {
+    ) -> OperationResult<Option<Vec<VectorElementType>>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment
                 .get()
@@ -401,7 +413,9 @@ impl SegmentEntry for ProxySegment {
             .vector_data
             .keys()
         {
-            result.insert(vector_name.clone(), self.vector(vector_name, point_id)?);
+            if let Some(vector) = self.vector(vector_name, point_id)? {
+                result.insert(vector_name.clone(), vector);
+            }
         }
         Ok(result)
     }
@@ -480,38 +494,38 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
-    fn points_count(&self) -> usize {
+    fn available_point_count(&self) -> usize {
         let mut count = 0;
         let deleted_points_count = self.deleted_points.read().len();
-        let wrapped_segment_count = self.wrapped_segment.get().read().points_count();
-        let write_segment_count = self.write_segment.get().read().points_count();
+        let wrapped_segment_count = self.wrapped_segment.get().read().available_point_count();
+        let write_segment_count = self.write_segment.get().read().available_point_count();
         count += wrapped_segment_count;
         count += write_segment_count;
         count = count.saturating_sub(deleted_points_count);
         count
     }
 
-    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
-        let deleted_points_count = self.deleted_points.read().len();
+    fn deleted_point_count(&self) -> usize {
+        self.write_segment.get().read().deleted_point_count()
+    }
+
+    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+        let deleted_point_count = self.deleted_points.read().len();
 
         let (wrapped_segment_est, total_wrapped_size) = {
             let wrapped_segment = self.wrapped_segment.get();
             let wrapped_segment_guard = wrapped_segment.read();
             (
-                wrapped_segment_guard.estimate_points_count(filter),
-                wrapped_segment_guard.points_count(),
+                wrapped_segment_guard.estimate_point_count(filter),
+                wrapped_segment_guard.available_point_count(),
             )
         };
 
-        let write_segment_est = self
-            .write_segment
-            .get()
-            .read()
-            .estimate_points_count(filter);
+        let write_segment_est = self.write_segment.get().read().estimate_point_count(filter);
 
         let expected_deleted_count = if total_wrapped_size > 0 {
             (wrapped_segment_est.exp as f64
-                * (deleted_points_count as f64 / total_wrapped_size as f64)) as usize
+                * (deleted_point_count as f64 / total_wrapped_size as f64)) as usize
         } else {
             0
         };
@@ -525,16 +539,12 @@ impl SegmentEntry for ProxySegment {
 
         CardinalityEstimation {
             primary_clauses,
-            min: wrapped_segment_est.min.saturating_sub(deleted_points_count)
+            min: wrapped_segment_est.min.saturating_sub(deleted_point_count)
                 + write_segment_est.min,
             exp: (wrapped_segment_est.exp + write_segment_est.exp)
                 .saturating_sub(expected_deleted_count),
             max: wrapped_segment_est.max + write_segment_est.max,
         }
-    }
-
-    fn deleted_count(&self) -> usize {
-        self.write_segment.get().read().deleted_count()
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -548,8 +558,8 @@ impl SegmentEntry for ProxySegment {
 
         SegmentInfo {
             segment_type: SegmentType::Special,
-            num_vectors: self.points_count() * num_vectors, // ToDo: account number of vector storages
-            num_points: self.points_count(),
+            num_vectors: self.available_point_count() * num_vectors, // TODO: account number of vector storages
+            num_points: self.available_point_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
@@ -760,11 +770,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
@@ -827,11 +837,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
@@ -1151,16 +1161,16 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_vector(100, 4.into(), &only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), &only_default_vector(&vec4))
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_vector(101, 6.into(), &only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), &only_default_vector(&vec6))
             .unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
         proxy_segment2
-            .upsert_vector(201, 11.into(), &only_default_vector(&vec6))
+            .upsert_point(201, 11.into(), &only_default_vector(&vec6))
             .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();

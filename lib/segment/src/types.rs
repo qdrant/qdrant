@@ -14,6 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
+use validator::{Validate, ValidationErrors};
 
 use crate::common::utils;
 use crate::common::utils::MultiValue;
@@ -268,11 +269,11 @@ pub struct QuantizationSearchParams {
     pub rescore: bool,
 }
 
-pub fn default_quantization_ignore_value() -> bool {
+pub const fn default_quantization_ignore_value() -> bool {
     false
 }
 
-pub fn default_quantization_rescore_value() -> bool {
+pub const fn default_quantization_rescore_value() -> bool {
     false
 }
 
@@ -294,7 +295,7 @@ pub struct SearchParams {
 }
 
 /// Vector index configuration of the segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
@@ -307,12 +308,13 @@ pub enum Indexes {
 }
 
 /// Config of HNSW index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    #[validate(range(min = 4))]
     pub ef_construct: usize,
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
@@ -344,22 +346,24 @@ pub enum ScalarType {
     Int8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScalarQuantizationConfig {
     /// Type of quantization to use
     /// If `int8` - 8 bit quantization will be used
     pub r#type: ScalarType,
-    /// Quantile for quantization. Expected value range in (0, 1.0]. If not set - use the whole range of values
+    /// Quantile for quantization. Expected value range in [0.5, 1.0]. If not set - use the whole range of values
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.5, max = 1.0))]
     pub quantile: Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct ScalarQuantization {
+    #[validate]
     pub scalar: ScalarQuantizationConfig,
 }
 
@@ -400,6 +404,14 @@ impl Eq for ScalarQuantizationConfig {}
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
+}
+
+impl Validate for QuantizationConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            QuantizationConfig::Scalar(scalar) => scalar.validate(),
+        }
+    }
 }
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {
@@ -493,6 +505,35 @@ pub struct SegmentConfig {
     pub quantization_config: Option<QuantizationConfig>,
 }
 
+impl SegmentConfig {
+    /// Helper to get vector specific quantization config.
+    ///
+    /// This grabs the quantization config for the given vector name if it exists. Falls back to
+    /// the collection quantization config.
+    ///
+    /// If no quantization is configured, `None` is returned.
+    pub fn quantization_config(&self, vector_name: &str) -> Option<&QuantizationConfig> {
+        self.vector_data
+            .get(vector_name)
+            .and_then(|v| v.quantization_config.as_ref())
+            .or(self.quantization_config.as_ref())
+    }
+
+    pub fn is_vector_indexed(&self) -> bool {
+        match self.index {
+            Indexes::Plain {} => false,
+            Indexes::Hnsw(_) => true,
+        }
+    }
+
+    pub fn is_memmaped(&self) -> bool {
+        match self.storage_type {
+            StorageType::InMemory => false,
+            StorageType::Mmap => true,
+        }
+    }
+}
+
 /// Config of single vector data storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -501,6 +542,12 @@ pub struct VectorDataConfig {
     pub size: usize,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Vector specific HNSW config that overrides collection config
+    #[serde(default)]
+    pub hnsw_config: Option<HnswConfig>,
+    /// Vector specific quantization config that overrides collection config
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
@@ -510,7 +557,7 @@ pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentState {
-    pub version: SeqNumberType,
+    pub version: Option<SeqNumberType>,
     pub config: SegmentConfig,
 }
 
@@ -1103,6 +1150,12 @@ pub struct IsEmptyCondition {
     pub is_empty: PayloadField,
 }
 
+/// Select points with null payload for a specified field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+pub struct IsNullCondition {
+    pub is_null: PayloadField,
+}
+
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
@@ -1121,8 +1174,10 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 pub enum Condition {
     /// Check if field satisfies provided condition
     Field(FieldCondition),
-    /// Check if payload field is empty: equals to `NULL`, empty array, or does not exists
+    /// Check if payload field is empty: equals to empty array, or does not exists
     IsEmpty(IsEmptyCondition),
+    /// Check if payload field equals `NULL`
+    IsNull(IsNullCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
     /// Nested filter
@@ -1547,6 +1602,58 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_empty_query() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "is_empty" : {
+                        "key" : "Jason"
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::IsEmpty(c)) => c,
+            _ => panic!("Condition::IsEmpty expected"),
+        };
+
+        assert_eq!(c.is_empty.key.as_str(), "Jason");
+    }
+
+    #[test]
+    fn test_parse_null_query() {
+        let query = r#"
+        {
+            "should": [
+                {
+                    "is_null" : {
+                        "key" : "Jason"
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let should = filter.should.unwrap();
+
+        assert_eq!(should.len(), 1);
+        let c = match should.get(0) {
+            Some(Condition::IsNull(c)) => c,
+            _ => panic!("Condition::IsNull expected"),
+        };
+
+        assert_eq!(c.is_null.key.as_str(), "Jason");
+    }
+
+    #[test]
     fn test_payload_query_parse() {
         let query1 = r#"
         {
@@ -1721,15 +1828,15 @@ mod tests {
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("k", &mut payload.0);
-        assert!(removed.is_empty());
+        assert!(removed.as_ref().check_is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("", &mut payload.0);
-        assert!(removed.is_empty());
+        assert!(removed.as_ref().check_is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("b.e.l", &mut payload.0);
-        assert!(removed.is_empty());
+        assert!(removed.as_ref().check_is_empty());
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("a", &mut payload.0).values();
