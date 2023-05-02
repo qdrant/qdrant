@@ -375,17 +375,19 @@ impl PartialEq for ScalarQuantizationConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct ProductQuantizationConfig {
+    #[validate(range(min = 1))]
     pub bucket_size: usize,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct ProductQuantization {
+    #[validate]
     pub product: ProductQuantizationConfig,
 }
 
@@ -410,6 +412,7 @@ impl Validate for QuantizationConfig {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
+            QuantizationConfig::Product(product) => product.validate(),
         }
     }
 }

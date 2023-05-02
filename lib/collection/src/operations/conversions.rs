@@ -7,7 +7,7 @@ use api::grpc::qdrant::QuantizationType;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{
-    Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+    Distance, QuantizationConfig, ProductQuantization, ProductQuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
 };
 use tonic::Status;
 
@@ -366,6 +366,14 @@ fn grpc_to_segment_quantization_config(
                         }
                     },
                     quantile: config.quantile,
+                    always_ram: config.always_ram,
+                },
+            }))
+        }
+        api::grpc::qdrant::quantization_config::Quantization::Product(config) => {
+            Ok(QuantizationConfig::Product(ProductQuantization {
+                product: ProductQuantizationConfig {
+                    bucket_size: config.bucket_size as usize,
                     always_ram: config.always_ram,
                 },
             }))

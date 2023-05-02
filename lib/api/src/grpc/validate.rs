@@ -84,6 +84,7 @@ impl Validate for crate::grpc::qdrant::quantization_config::Quantization {
         use crate::grpc::qdrant::quantization_config::Quantization;
         match self {
             Quantization::Scalar(scalar) => scalar.validate(),
+            Quantization::Product(product) => product.validate(),
         }
     }
 }
@@ -99,6 +100,11 @@ pub fn validate_not_empty(value: &Option<String>) -> Result<(), ValidationError>
 /// Validate the value is in `[1, ]` or `None`.
 pub fn validate_u64_range_min_1(value: &Option<u64>) -> Result<(), ValidationError> {
     validate_range_generic(value, Some(1), None)
+}
+
+/// Validate the required value is in `[1, ]` or `None`.
+pub fn validate_required_u64_range_min_1(value: u64) -> Result<(), ValidationError> {
+    validate_range_generic(&Some(value), Some(1), None)
 }
 
 /// Validate the value is in `[1, ]` or `None`.

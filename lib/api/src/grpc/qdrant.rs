@@ -210,11 +210,13 @@ pub struct ScalarQuantization {
     #[prost(bool, optional, tag = "3")]
     pub always_ram: ::core::option::Option<bool>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProductQuantization {
     /// maximum centroid dimension
     #[prost(uint64, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_required_u64_range_min_1")]
     pub bucket_size: u64,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "2")]
