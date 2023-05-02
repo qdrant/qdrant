@@ -76,11 +76,9 @@ pub fn build_ssl_acceptor(settings: &Settings) -> std::io::Result<SslAcceptorBui
 
     // Use set_servername_callback to implement dynamic certificate loading and refresh
     acceptor.set_servername_callback(move |ssl, _alert| -> Result<(), SniError> {
-        let mut should_refresh = true;
         {
             let reader = ssl_context_holder.read();
             if let Some(ssl_context) = reader.try_get_ssl_context() {
-                should_refresh = false;
                 ssl.set_ssl_context(ssl_context).map_err(|error_stack| {
                     log::error!("Failed to set SSL context: {}", error_stack);
                     SniError::ALERT_FATAL
