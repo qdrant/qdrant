@@ -129,26 +129,35 @@ message OptimizersConfigDiff {
   */
   optional uint64 default_segment_number = 3;
   /*
-  Do not create segments larger this size (in KiloBytes).
+  Do not create segments larger this size (in kilobytes).
   Large segments might require disproportionately long indexation times,
   therefore it makes sense to limit the size of segments.
-
-  If indexation speed has more priority for you - make this parameter lower.
+    
+  If indexing speed is more important - make this parameter lower.
   If search speed is more important - make this parameter higher.
   Note: 1Kb = 1 vector of size 256
+  If not set, will be automatically selected considering the number of available CPUs.
   */
   optional uint64 max_segment_size = 4;
   /*
-  Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-  Segments larger than this threshold will be stored as a read-only memmaped file.
-  To enable memmap storage, lower the threshold
+  Maximum size (in kilobytes) of vectors to store in-memory per segment.
+  Segments larger than this threshold will be stored as read-only memmaped file.
+
+  To enable memmap storage, lower the threshold.
+  To disable memmap storage entirely, set to `0`. It will be treated as the largest value possible.
+
   Note: 1Kb = 1 vector of size 256
   */
   optional uint64 memmap_threshold = 5;
   /*
-  Maximum size (in KiloBytes) of vectors allowed for plain index.
-  Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
-  Note: 1Kb = 1 vector of size 256
+  Maximum size (in kilobytes) of vectors allowed for plain index.
+  Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
+  
+  Recommendend minimum value is `1000`.
+  
+  When set to `0`, plain index will be disabled. It will be treated as the largest value possible.
+  
+  Note: 1kB = 1 vector of size 256.
   */
   optional uint64 indexing_threshold = 6;
   /*

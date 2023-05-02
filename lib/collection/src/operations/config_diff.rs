@@ -43,7 +43,7 @@ pub struct HnswConfigDiff {
     #[validate(range(min = 4))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ef_construct: Option<usize>,
-    /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
+    /// Minimal size (in kilobytes) of vectors for additional payload-based indexing.
     /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
     /// Note: 1Kb = 1 vector of size 256
@@ -99,7 +99,7 @@ pub struct OptimizersConfigDiff {
     /// so that each segment would be handled evenly by one of the threads
     /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs
     pub default_segment_number: Option<usize>,
-    /// Do not create segments larger this size (in KiloBytes).
+    /// Do not create segments larger this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
@@ -108,18 +108,25 @@ pub struct OptimizersConfigDiff {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "max_segment_size_kb")]
     pub max_segment_size: Option<usize>,
-    /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
+    /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
-    /// To enable memmap storage, lower the threshold
+    ///
+    /// To enable memmap storage, lower the threshold.
+    /// To disable memmap storage entirely, set to `0`. It will be treated as the largest value possible.
+    ///
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "memmap_threshold_kb")]
     #[validate(range(min = 1000))]
     pub memmap_threshold: Option<usize>,
-    /// Maximum size (in KiloBytes) of vectors allowed for plain index.
-    /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
-    /// Note: 1Kb = 1 vector of size 256
+    /// Maximum size (in kilobytes) of vectors allowed for plain index.
+    /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
+    ///
+    /// Recommendend minimum value is `1000`.
+    ///
+    /// When set to `0`, plain index will be disabled. It will be treated as the largest value possible.
+    ///
+    /// Note: 1kB = 1 vector of size 256.
     #[serde(alias = "indexing_threshold_kb")]
-    #[validate(range(min = 1000))]
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,

@@ -33,7 +33,7 @@ pub struct OptimizersConfig {
     /// so that each segment would be handled evenly by one of the threads.
     /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs.
     pub default_segment_number: usize,
-    /// Do not create segments larger this size (in KiloBytes).
+    /// Do not create segments larger this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
@@ -44,29 +44,28 @@ pub struct OptimizersConfig {
     #[serde(alias = "max_segment_size_kb")]
     #[serde(default)]
     pub max_segment_size: Option<usize>,
-    /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
+    /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
-    /// 
+    ///
     /// To enable memmap storage, lower the threshold.
     /// To disable memmap storage entirely, set to `0`. It will be treated as the largest value possible.
-    /// 
+    ///
     /// Note: 1Kb = 1 vector of size 256
     /// If not set, mmap will not be used.
     #[serde(alias = "memmap_threshold_kb")]
     #[serde(default)]
-    #[validate(range(min = 1000))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in kilobytes) of vectors allowed for plain index.
     /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
-    /// 
-    /// Minimum value is `1000`.
-    /// 
+    ///
+    /// Recommendend minimum value is `1000`.
+    ///
     /// When set to `0`, plain index will be disabled. It will be treated as the largest value possible.
-    /// 
+    ///
     /// Note: 1kB = 1 vector of size 256.
     /// If not set, the default 20,000 will be used.
     #[serde(alias = "indexing_threshold_kb")]
-    #[validate(range(min = 1000))]
+    #[serde(default)]
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
@@ -121,13 +120,13 @@ pub fn build_optimizers(
     let temp_segments_path = shard_path.join("temp_segments");
 
     let indexing_threshold = match optimizers_config.indexing_threshold {
-        None => 20_000,         // default value
-        Some(0) => usize::MAX,  // disable plain index
+        None => 20_000,        // default value
+        Some(0) => usize::MAX, // disable plain index
         Some(custom) => custom,
     };
 
     let memmap_threshold = match optimizers_config.memmap_threshold {
-        None | Some(0) => usize::MAX, // disable memmap
+        None | Some(0) => usize::MAX, // default | disable memmap
         Some(custom) => custom,
     };
 

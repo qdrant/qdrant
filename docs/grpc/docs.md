@@ -637,8 +637,18 @@ It is recommended to select the default number of segments as a factor of the nu
 | max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.
 
 If indexation speed has more priority for you - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 |
-| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as a read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 |
-| indexing_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256 |
+| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.
+
+To enable memmap storage, lower the threshold. To disable memmap storage entirely, set to `0`. It will be treated as the largest value possible.
+
+Note: 1Kb = 1 vector of size 256 |
+| indexing_threshold | [uint64](#uint64) | optional | Maximum size (in kilobytes) of vectors allowed for plain index. Default value based on &lt;https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md&gt;.
+
+Recommendend minimum value is `1000`.
+
+When set to `0`, plain index will be disabled. It will be treated as the largest value possible.
+
+Note: 1kB = 1 vector of size 256. |
 | flush_interval_sec | [uint64](#uint64) | optional | Interval between forced flushes. |
 | max_optimization_threads | [uint64](#uint64) | optional | Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used |
 

@@ -1,6 +1,7 @@
 /target
 /benches/search-points/target
 /.idea
+/.vscode
 /storage
 /snapshots
 /consensus_test_logs
