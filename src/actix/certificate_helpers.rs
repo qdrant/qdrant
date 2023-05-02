@@ -37,11 +37,7 @@ impl SslContextHolder {
     }
 
     fn try_get_ssl_context(&self) -> Option<&SslContext> {
-        if self.last_updated.elapsed() < self.refresh_interval {
-            Some(&self.ssl_context)
-        } else {
-            None
-        }
+        (self.last_updated.elapsed() < self.refresh_interval).then_some(&self.ssl_context)
     }
 
     fn get_ssl_context_or_refresh(&mut self) -> Result<&SslContext, ()> {
