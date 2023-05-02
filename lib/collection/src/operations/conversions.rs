@@ -7,7 +7,8 @@ use api::grpc::qdrant::QuantizationType;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{
-    Distance, QuantizationConfig, ProductQuantization, ProductQuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+    Distance, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
+    ScalarQuantization, ScalarQuantizationConfig, ScalarType,
 };
 use tonic::Status;
 
