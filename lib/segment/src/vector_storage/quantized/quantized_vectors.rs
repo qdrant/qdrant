@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitVec;
+use bitvec::slice::BitSlice;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
@@ -43,7 +43,8 @@ impl QuantizedVectors {
     pub fn raw_scorer<'a>(
         &'a self,
         query: &[VectorElementType],
-        deleted: &'a BitVec,
+        point_deleted: &'a BitSlice,
+        vec_deleted: &'a BitSlice,
     ) -> Box<dyn RawScorer + 'a> {
         let query = self
             .distance
@@ -54,7 +55,8 @@ impl QuantizedVectors {
                 let query = storage.encode_query(&query);
                 Box::new(QuantizedRawScorer {
                     query,
-                    deleted,
+                    point_deleted,
+                    vec_deleted,
                     quantized_data: storage,
                 })
             }
@@ -62,7 +64,8 @@ impl QuantizedVectors {
                 let query = storage.encode_query(&query);
                 Box::new(QuantizedRawScorer {
                     query,
-                    deleted,
+                    point_deleted,
+                    vec_deleted,
                     quantized_data: storage,
                 })
             }
@@ -70,7 +73,8 @@ impl QuantizedVectors {
                 let query = storage.encode_query(&query);
                 Box::new(QuantizedRawScorer {
                     query,
-                    deleted,
+                    point_deleted,
+                    vec_deleted,
                     quantized_data: storage,
                 })
             }
@@ -78,7 +82,8 @@ impl QuantizedVectors {
                 let query = storage.encode_query(&query);
                 Box::new(QuantizedRawScorer {
                     query,
-                    deleted,
+                    point_deleted,
+                    vec_deleted,
                     quantized_data: storage,
                 })
             }
