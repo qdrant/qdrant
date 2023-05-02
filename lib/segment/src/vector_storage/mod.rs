@@ -1,3 +1,4 @@
+pub mod chunked_mmap_vectors;
 pub mod chunked_vectors;
 pub mod memmap_vector_storage;
 mod mmap_vectors;

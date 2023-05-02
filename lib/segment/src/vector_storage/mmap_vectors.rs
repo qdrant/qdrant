@@ -7,15 +7,14 @@ use std::slice;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
-use memmap2::{Mmap, MmapMut, MmapOptions};
+use memmap2::{Mmap, MmapMut};
 use parking_lot::Mutex;
 
 use super::div_ceil;
 use crate::common::error_logging::LogError;
-use crate::common::Flusher;
+use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::madvise;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
 
@@ -53,7 +52,7 @@ impl MmapVectors {
         // Allocate/open vectors mmap
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
-        let mmap = open_read(vectors_path).describe("Open mmap for reading")?;
+        let mmap = mmap_ops::open_read_mmap(vectors_path).describe("Open mmap for reading")?;
         let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<VectorElementType>();
 
         // Allocate/open deleted mmap
@@ -61,7 +60,7 @@ impl MmapVectors {
         ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
             .describe("Create mmap deleted file")?;
         let mut deleted_mmap =
-            open_write(deleted_path).describe("Open mmap deleted for writing")?;
+            mmap_ops::open_write_mmap(deleted_path).describe("Open mmap deleted for writing")?;
 
         // Advice kernel that we'll need this page soon so the kernel can prepare
         #[cfg(unix)]
@@ -195,31 +194,6 @@ impl MmapVectors {
             );
         }
     }
-}
-
-fn open_read(path: &Path) -> OperationResult<Mmap> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(false)
-        .append(true)
-        .create(true)
-        .open(path)?;
-
-    let mmap = unsafe { MmapOptions::new().map(&file)? };
-    madvise::madvise(&mmap, madvise::get_global())?;
-    Ok(mmap)
-}
-
-fn open_write(path: &Path) -> OperationResult<MmapMut> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(false)
-        .open(path)?;
-
-    let mmap = unsafe { MmapMut::map_mut(&file)? };
-    madvise::madvise(&mmap, madvise::get_global())?;
-    Ok(mmap)
 }
 
 /// Ensure the given mmap file exists and is the given size
