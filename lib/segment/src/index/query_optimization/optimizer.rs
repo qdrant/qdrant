@@ -113,6 +113,8 @@ where
     )
 }
 
+// TODO args
+#[allow(clippy::too_many_arguments)]
 fn convert_conditions<'a, F>(
     conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
@@ -121,6 +123,7 @@ fn convert_conditions<'a, F>(
     estimator: &F,
     total: usize,
     nested_path: Option<JsonPathPayload>,
+    nested_negate: bool,
 ) -> Vec<(OptimizedCondition<'a>, CardinalityEstimation)>
 where
     F: Fn(&Condition) -> CardinalityEstimation,
@@ -128,12 +131,8 @@ where
     if let Some(nested_path) = nested_path {
         let nested_checker_fns =
             nested_conditions_converter(conditions, field_indexes, payload_provider, nested_path);
-        let mut estimations = vec![];
-        conditions.iter().for_each(|condition| {
-            let estimation = estimator(condition);
-            estimations.push(estimation);
-        });
-        let merged = merge_nested_matching_indices(nested_checker_fns);
+        let estimations: Vec<_> = conditions.iter().map(estimator).collect();
+        let merged = merge_nested_matching_indices(nested_checker_fns, nested_negate);
         // TODO is this correct?
         let estimation = combine_must_estimations(&estimations, total);
         vec![(OptimizedCondition::Checker(merged), estimation)]
@@ -200,6 +199,7 @@ where
         estimator,
         total,
         nested_path,
+        false,
     );
     // More probable conditions first
     converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
@@ -228,6 +228,7 @@ where
         estimator,
         total,
         nested_path,
+        false,
     );
     // Less probable conditions first
     converted.sort_by_key(|(_, estimation)| estimation.exp);
@@ -256,6 +257,7 @@ where
         estimator,
         total,
         nested_path,
+        true,
     );
     // More probable conditions first, as it will be reverted
     converted.sort_by_key(|(_, estimation)| estimation.exp);

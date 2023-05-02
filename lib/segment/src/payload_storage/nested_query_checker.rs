@@ -11,7 +11,7 @@ use crate::types::{
 
 fn check_all_nested_conditions<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
 where
-    F: Fn(&Condition) -> Vec<usize>,
+    F: Fn(&Condition) -> (Vec<usize>, usize),
 {
     match must {
         None => true,
@@ -21,7 +21,7 @@ where
             let matches: HashMap<usize, usize> =
                 conditions
                     .iter()
-                    .flat_map(checker)
+                    .flat_map(|c| checker(c).0)
                     .fold(HashMap::new(), |mut acc, m| {
                         *acc.entry(m).or_insert(0) += 1;
                         acc
@@ -60,7 +60,7 @@ where
 /// Warning only `must` conditions are supported for those tests
 pub fn nested_filter_checker<F>(matching_paths: &F, nested_filter: &Filter) -> bool
 where
-    F: Fn(&Condition) -> Vec<usize>,
+    F: Fn(&Condition) -> (Vec<usize>, usize),
 {
     // TODO add check_nested_should and check_nested_must_not
     check_all_nested_conditions(matching_paths, &nested_filter.must)
@@ -71,19 +71,20 @@ pub fn check_nested_is_empty_condition(
     nested_path: &JsonPathPayload,
     is_empty: &IsEmptyCondition,
     payload: &Payload,
-) -> Vec<usize> {
+) -> (Vec<usize>, usize) {
     let full_path = nested_path.extend(&is_empty.is_empty.key);
     let field_values = payload.get_value(&full_path.path);
-
+    let mut field_len = 0;
     let mut matching_indices = vec![];
     for (index, p) in field_values.values().iter().enumerate() {
+        field_len += 1;
         match p {
             Value::Null => matching_indices.push(index),
             Value::Array(vec) if vec.is_empty() => matching_indices.push(index),
             _ => (),
         }
     }
-    matching_indices
+    (matching_indices, field_len)
 }
 
 /// Return element indices matching the condition in the payload
@@ -91,22 +92,24 @@ pub fn check_nested_is_null_condition(
     nested_path: &JsonPathPayload,
     is_null: &IsNullCondition,
     payload: &Payload,
-) -> Vec<usize> {
+) -> (Vec<usize>, usize) {
     let full_path = nested_path.extend(&is_null.is_null.key);
     let field_values = payload.get_value(&full_path.path);
-
+    let mut field_len = 0;
     match field_values {
-        MultiValue::Single(None) => vec![0],
+        MultiValue::Single(None) => (vec![0], field_len),
         MultiValue::Single(Some(v)) => {
+            field_len += 1;
             if v.is_null() {
-                vec![0]
+                (vec![0], field_len)
             } else {
-                vec![]
+                (vec![], field_len)
             }
         }
         MultiValue::Multiple(multiple_values) => {
             let mut paths = vec![];
             for (index, p) in multiple_values.iter().enumerate() {
+                field_len += 1;
                 match p {
                     Value::Null => paths.push(index),
                     Value::Array(vec) => {
@@ -117,7 +120,7 @@ pub fn check_nested_is_null_condition(
                     _ => (),
                 }
             }
-            paths
+            (paths, field_len)
         }
     }
 }
@@ -127,13 +130,14 @@ pub fn nested_check_field_condition(
     field_condition: &FieldCondition,
     payload: &Payload,
     nested_path: &JsonPathPayload,
-) -> Vec<usize> {
+) -> (Vec<usize>, usize) {
     let full_path = nested_path.extend(&field_condition.key);
     let field_values = payload.get_value(&full_path.path);
-
+    let mut field_len = 0;
     let mut matching_indices = vec![];
 
     for (index, p) in field_values.values().iter().enumerate() {
+        field_len += 1;
         let mut res = false;
         // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
         res = res
@@ -165,7 +169,7 @@ pub fn nested_check_field_condition(
             matching_indices.push(index);
         }
     }
-    matching_indices
+    (matching_indices, field_len)
 }
 
 #[cfg(test)]

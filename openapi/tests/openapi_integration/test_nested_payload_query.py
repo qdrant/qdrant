@@ -265,6 +265,79 @@ def test_nested_payload_indexing_operations():
     # Only Tokio has more than 8M inhabitants and less than 3 sightseeing
     assert response.json()['result']['points'][0]['payload']['country']['name'] == "Japan"
 
+    # Search with nested filter on indexed & non payload (must_not)
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "nested": {
+                            "key": "country.cities",
+                            "filter": {
+                                "must_not": [
+                                    {
+                                        "key": "population",
+                                        "range": {
+                                            "lt": 8.0,
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 2
+    # Only 2 records that do NOT have at least one city population < 8.0
+    assert response.json()['result']['points'][0]['payload']['country']['name'] == "England" #London
+    assert response.json()['result']['points'][1]['payload']['country']['name'] == "Japan"   #Tokyo
+
+    # Search with nested filter on indexed & non payload (must_not)
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "nested": {
+                            "key": "country.cities",
+                            "filter": {
+                                "must_not": [
+                                    {
+                                        "key": "population",
+                                        "range": {
+                                            "lt": 8.0,
+                                        }
+                                    },
+                                    {
+                                        "key": "sightseeing",
+                                        "values_count": {
+                                            "gte": 3
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 1
+    # Only 1 record that do NOT have at least one city population < 8.0 and NOT more than 3 sightseeing
+    assert response.json()['result']['points'][0]['payload']['country']['name'] == "Japan"   #Tokyo
+
     # Search nested null field
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
