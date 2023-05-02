@@ -3910,6 +3910,9 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/ScalarQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/ProductQuantization"
           }
         ]
       },
@@ -3953,6 +3956,34 @@
         "enum": [
           "int8"
         ]
+      },
+      "ProductQuantization": {
+        "type": "object",
+        "required": [
+          "product"
+        ],
+        "properties": {
+          "product": {
+            "$ref": "#/components/schemas/ProductQuantizationConfig"
+          }
+        }
+      },
+      "ProductQuantizationConfig": {
+        "type": "object",
+        "required": [
+          "bucket_size"
+        ],
+        "properties": {
+          "bucket_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1
+          },
+          "always_ram": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
