@@ -34,6 +34,7 @@
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
     - [PayloadIndexParams](#qdrant-PayloadIndexParams)
     - [PayloadSchemaInfo](#qdrant-PayloadSchemaInfo)
+    - [ProductQuantization](#qdrant-ProductQuantization)
     - [QuantizationConfig](#qdrant-QuantizationConfig)
     - [RemoteShardInfo](#qdrant-RemoteShardInfo)
     - [RenameAlias](#qdrant-RenameAlias)
@@ -679,6 +680,22 @@ If indexation speed has more priority for you - make this parameter lower. If se
 
 
 
+<a name="qdrant-ProductQuantization"></a>
+
+### ProductQuantization
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| bucket_size | [uint64](#uint64) |  | maximum centroid dimension |
+| always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
+
+
+
+
+
+
 <a name="qdrant-QuantizationConfig"></a>
 
 ### QuantizationConfig
@@ -688,6 +705,7 @@ If indexation speed has more priority for you - make this parameter lower. If se
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | scalar | [ScalarQuantization](#qdrant-ScalarQuantization) |  |  |
+| product | [ProductQuantization](#qdrant-ProductQuantization) |  |  |
 
 
 
