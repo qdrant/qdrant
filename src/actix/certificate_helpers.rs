@@ -44,24 +44,18 @@ impl SslContextHolder {
         }
     }
 
-    fn refresh_and_get_ssl_context(&mut self) -> Result<&SslContext, ()> {
-        if self.last_updated.elapsed() < self.refresh_interval {
-            Ok(&self.ssl_context)
-        } else {
+    fn get_ssl_context_or_refresh(&mut self) -> Result<&SslContext, ()> {
+        if self.last_updated.elapsed() >= self.refresh_interval {
             self.refresh()?;
-            Ok(&self.ssl_context)
         }
+        Ok(&self.ssl_context)
     }
 
     fn refresh(&mut self) -> Result<(), ()> {
         log::info!("Refreshing TLS certificates for actix!");
-        match build_ssl_context(&self.tls_config, self.verify_client_cert) {
-            Ok(ssl_context) => {
-                self.ssl_context = ssl_context;
-                Ok(())
-            }
-            Err(_err) => Err(()),
-        }
+        self.ssl_context =
+            build_ssl_context(&self.tls_config, self.verify_client_cert).map_err(|_| ())?;
+        Ok(())
     }
 }
 
@@ -91,22 +85,22 @@ pub fn build_ssl_acceptor(settings: &Settings) -> std::io::Result<SslAcceptorBui
                     log::error!("Failed to set SSL context: {}", error_stack);
                     SniError::ALERT_FATAL
                 })?;
+                return Ok(());
             }
         }
 
-        if should_refresh {
-            let mut writer = ssl_context_holder.write();
-            let ssl_context = writer
-                .refresh_and_get_ssl_context()
-                .map_err(|_refresh_error| {
-                    log::error!("Failed to refresh certificates!");
-                    SniError::ALERT_FATAL
-                })?;
-            ssl.set_ssl_context(ssl_context).map_err(|error_stack| {
-                log::error!("Failed to set SSL context: {}", error_stack);
+        // If getting the SSL context failed, try to get it again with refreshing
+        let mut writer = ssl_context_holder.write();
+        let ssl_context = writer
+            .get_ssl_context_or_refresh()
+            .map_err(|_refresh_error| {
+                log::error!("Failed to refresh certificates!");
                 SniError::ALERT_FATAL
             })?;
-        }
+        ssl.set_ssl_context(ssl_context).map_err(|error_stack| {
+            log::error!("Failed to set SSL context: {}", error_stack);
+            SniError::ALERT_FATAL
+        })?;
         Ok(())
     });
     Ok(acceptor)

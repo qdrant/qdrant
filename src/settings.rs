@@ -194,9 +194,9 @@ fn default_message_timeout_tics() -> u64 {
     10
 }
 
-fn default_tls_cert_ttl() -> u64 {
-    // Default one day
-    60 * 60 * 24
+const fn default_tls_cert_ttl() -> u64 {
+    // Default one hour
+    3600
 }
 
 impl Settings {
