@@ -19,7 +19,10 @@ pub fn create_scalar_quantized_vectors_ram<'a>(
         quantization::EncodedVectorsU8::<ChunkedVectors<u8>>::get_quantized_vector_size(
             vector_parameters,
         );
-    let storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
+    let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
+
+    storage_builder.try_reserve_exact(vector_parameters.count)?;
+
     let quantized_vectors = quantization::EncodedVectorsU8::encode(
         vectors,
         storage_builder,

@@ -57,7 +57,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         key: PointOffsetType,
         vector: &[VectorElementType],
     ) -> OperationResult<()> {
-        self.vectors.insert(key, vector);
+        self.vectors.insert(key, vector)?;
         Ok(())
     }
 
@@ -123,7 +123,7 @@ where
         for _ in 0..num_vectors {
             let rnd_vec = random_vector(rng, dim);
             let rnd_vec = TMetric::preprocess(&rnd_vec).unwrap_or(rnd_vec);
-            vectors.push(&rnd_vec);
+            vectors.push(&rnd_vec).unwrap();
         }
         TestRawScorerProducer::<TMetric> {
             vectors,
