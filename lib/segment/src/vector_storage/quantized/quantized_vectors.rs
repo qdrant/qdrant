@@ -214,7 +214,7 @@ impl QuantizedVectors {
     }
 
     fn crate_scalar<'a>(
-        vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
+        vectors: impl Iterator<Item = &'a [f32]> + Clone,
         vector_parameters: &quantization::VectorParameters,
         scalar_config: &crate::types::ScalarQuantizationConfig,
         path: &Path,
