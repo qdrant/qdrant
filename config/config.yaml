@@ -192,3 +192,9 @@ tls:
   #
   # Required if cluster.p2p.enable_tls is true.
   ca_cert: ./tls/cacert.pem
+
+  # TTL, in seconds, to re-load certificate from disk. Useful for certificate rotations,
+  # Only works for HTTPS endpoints, gRPC endpoints (including intra-cluster communication)
+  # doesn't support certificate re-load
+  cert_ttl: 3600
+

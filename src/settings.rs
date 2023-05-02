@@ -98,6 +98,8 @@ pub struct TlsConfig {
     pub cert: String,
     pub key: String,
     pub ca_cert: String,
+    #[serde(default = "default_tls_cert_ttl")]
+    pub cert_ttl: u64,
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
@@ -190,6 +192,11 @@ fn default_connection_pool_size() -> usize {
 
 fn default_message_timeout_tics() -> u64 {
     10
+}
+
+const fn default_tls_cert_ttl() -> u64 {
+    // Default one hour
+    3600
 }
 
 impl Settings {
