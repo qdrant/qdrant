@@ -10,7 +10,7 @@ use crate::vector_storage::quantized::scalar_quantized::{
 };
 
 pub fn create_scalar_quantized_vectors_ram<'a>(
-    vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
+    vectors: impl Iterator<Item = &'a [f32]> + Clone,
     config: &ScalarQuantizationConfig,
     vector_parameters: &quantization::VectorParameters,
     distance: Distance,
