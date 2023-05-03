@@ -128,6 +128,8 @@ fn configure_validation(builder: Builder) -> Builder {
         .validates(&[
             ("UpsertPoints.collection_name", "length(min = 1, max = 255)"),
             ("DeletePoints.collection_name", "length(min = 1, max = 255)"),
+            ("UpdatePointVectors.collection_name", "length(min = 1, max = 255)"),
+            ("DeletePointVectors.collection_name", "length(min = 1, max = 255)"),
             ("GetPoints.collection_name", "length(min = 1, max = 255)"),
             ("SetPayloadPoints.collection_name", "length(min = 1, max = 255)"),
             ("DeletePayloadPoints.collection_name", "length(min = 1, max = 255)"),
@@ -152,6 +154,8 @@ fn configure_validation(builder: Builder) -> Builder {
         .validates(&[
             ("UpsertPointsInternal.upsert_points", ""),
             ("DeletePointsInternal.delete_points", ""),
+            ("UpdateVectorsInternal.update_vectors", ""),
+            ("DeleteVectorsInternal.delete_vectors", ""),
             ("SetPayloadPointsInternal.set_payload_points", ""),
             ("DeletePayloadPointsInternal.delete_payload_points", ""),
             ("ClearPayloadPointsInternal.clear_payload_points", ""),
