@@ -772,13 +772,22 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vectors: NamedVectors,
     ) -> OperationResult<bool> {
+        // Ensure we can append, and that the given named vectors exist before we do anything
+        debug_assert!(self.is_appendable());
+        check_vectors_set(&vectors, &self.segment_config)?;
+
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
             Some(internal_id) => {
                 self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
-                    segment.update_vectors(internal_id, vectors)?;
+                    for (vector_name, new_vector) in vectors {
+                        segment.vector_data[vector_name.as_ref()]
+                            .vector_storage
+                            .borrow_mut()
+                            .insert_vector(internal_id, new_vector.as_ref())?;
+                    }
                     Ok((true, Some(internal_id)))
                 })
             }
