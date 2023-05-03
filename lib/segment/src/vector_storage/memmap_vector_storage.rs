@@ -97,7 +97,7 @@ impl VectorStorage for MemmapVectorStorage {
         for id in other_ids {
             check_process_stopped(stopped)?;
             let vector = other.get_vector(id);
-            let raw_bites = mmap_ops::transmute_to_u8_array(vector);
+            let raw_bites = mmap_ops::transmute_to_u8_slice(vector);
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 
@@ -199,7 +199,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::mmap_ops::transmute_to_u8_array;
+    use crate::common::mmap_ops::transmute_to_u8_slice;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
@@ -540,7 +540,7 @@ mod tests {
     fn test_casts() {
         let data: Vec<VectorElementType> = vec![0.42, 0.069, 333.1, 100500.];
 
-        let raw_data = transmute_to_u8_array(&data);
+        let raw_data = transmute_to_u8_slice(&data);
 
         eprintln!("raw_data.len() = {:#?}", raw_data.len());
 
