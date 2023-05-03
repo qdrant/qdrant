@@ -4040,7 +4040,7 @@
             "nullable": true
           },
           "memmap_threshold": {
-            "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.\n\nTo enable memmap storage, lower the threshold. To disable memmap storage entirely, set to `0`. It will be treated as the largest value possible.\n\nNote: 1Kb = 1 vector of size 256 If not set, mmap will not be used.",
+            "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.\n\nMemmap storage is disabled by default, to enable it, set this threshold to a reasonable value.\n\nTo disable memmap storage, set this to `0`. Internally it will use the largest threshold possible.\n\nNote: 1Kb = 1 vector of size 256",
             "default": null,
             "type": "integer",
             "format": "uint",
@@ -4048,7 +4048,7 @@
             "nullable": true
           },
           "indexing_threshold": {
-            "description": "Maximum size (in kilobytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.\n\nRecommendend minimum value is `1000`.\n\nWhen set to `0`, plain index will be disabled. It will be treated as the largest value possible.\n\nNote: 1kB = 1 vector of size 256. If not set, the default 20,000 will be used.",
+            "description": "Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing\n\nDefault value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.\n\nTo disable vector indexing, set to `0`. Internally it will use the largest threshold possible.\n\nNote: 1kB = 1 vector of size 256.",
             "default": null,
             "type": "integer",
             "format": "uint",
@@ -5328,14 +5328,14 @@
             "nullable": true
           },
           "memmap_threshold": {
-            "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.\n\nTo enable memmap storage, lower the threshold. To disable memmap storage entirely, set to `0`. It will be treated as the largest value possible.\n\nNote: 1Kb = 1 vector of size 256",
+            "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.\n\nMemmap storage is disabled by default, to enable it, set this threshold to a reasonable value.\n\nTo disable memmap storage, set this to `0`. Internally it will use the largest threshold possible.\n\nNote: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
             "minimum": 1000,
             "nullable": true
           },
           "indexing_threshold": {
-            "description": "Maximum size (in kilobytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.\n\nRecommendend minimum value is `1000`.\n\nWhen set to `0`, plain index will be disabled. It will be treated as the largest value possible.\n\nNote: 1kB = 1 vector of size 256.",
+            "description": "Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing\n\nDefault value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.\n\nTo disable vector indexing, set to `0`. Internally it will use the largest threshold possible.\n\nNote: 1kB = 1 vector of size 256.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,

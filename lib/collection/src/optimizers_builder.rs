@@ -15,6 +15,7 @@ use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
 
 const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 200_000;
+const DEFAULT_INDEXING_THRESHOLD_KB: usize = 20_000;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct OptimizersConfig {
@@ -47,23 +48,21 @@ pub struct OptimizersConfig {
     /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
     ///
-    /// To enable memmap storage, lower the threshold.
-    /// To disable memmap storage entirely, set to `0`. It will be treated as the largest value possible.
+    /// Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
+    ///
+    /// To disable memmap storage, set this to `0`. Internally it will use the largest threshold possible.
     ///
     /// Note: 1Kb = 1 vector of size 256
-    /// If not set, mmap will not be used.
     #[serde(alias = "memmap_threshold_kb")]
     #[serde(default)]
     pub memmap_threshold: Option<usize>,
-    /// Maximum size (in kilobytes) of vectors allowed for plain index.
-    /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
+    /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
     ///
-    /// Recommendend minimum value is `1000`.
+    /// Default value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
     ///
-    /// When set to `0`, plain index will be disabled. It will be treated as the largest value possible.
+    /// To disable vector indexing, set to `0`. Internally it will use the largest threshold possible.
     ///
     /// Note: 1kB = 1 vector of size 256.
-    /// If not set, the default 20,000 will be used.
     #[serde(alias = "indexing_threshold_kb")]
     #[serde(default)]
     pub indexing_threshold: Option<usize>,
@@ -120,8 +119,8 @@ pub fn build_optimizers(
     let temp_segments_path = shard_path.join("temp_segments");
 
     let indexing_threshold = match optimizers_config.indexing_threshold {
-        None => 20_000,        // default value
-        Some(0) => usize::MAX, // disable plain index
+        None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
+        Some(0) => usize::MAX,                 // disable vector index
         Some(custom) => custom,
     };
 
