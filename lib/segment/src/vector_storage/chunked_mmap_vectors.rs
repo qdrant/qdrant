@@ -7,12 +7,14 @@ use std::path::{Path, PathBuf};
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
-use crate::common::mmap_ops::{read_from_mmap, read_slice_from_mmap,
-                              write_slice_to_mmap, write_to_mmap,
+use crate::common::mmap_ops::{
+    read_from_mmap, read_slice_from_mmap, write_slice_to_mmap, write_to_mmap,
 };
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
-use crate::vector_storage::chunked_utils::{create_chunk, MmapStatus, ensure_status_file, read_mmaps};
+use crate::vector_storage::chunked_utils::{
+    create_chunk, ensure_status_file, read_mmaps, MmapStatus,
+};
 
 #[cfg(test)]
 const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb

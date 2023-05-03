@@ -18,7 +18,7 @@ use crate::vector_storage::mmap_vectors::mmap_to_bitslice;
 const MINIMAL_MMAP_SIZE: usize = 1024; // 1Kb
 
 #[cfg(not(test))]
-const MINIMAL_MMAP_SIZE: usize = 1 * 1024 * 1024; // 1Mb
+const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
 const FLAGS_FILE: &str = "flags.dat";
 
@@ -109,7 +109,7 @@ impl DynamicMmapFlags {
 
         self.status.len = new_len;
         write_to_mmap(&mut self.status_mmap, 0, self.status.len);
-        return Ok(());
+        Ok(())
     }
 
     pub fn get<TKey>(&self, key: TKey) -> bool

@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use memmap2::MmapMut;
-use crate::common::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, write_to_mmap,
-};
+
+use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap, write_to_mmap};
 use crate::entry::entry_point::{OperationError, OperationResult};
 
 const STATUS_FILE_NAME: &str = "status.json";
