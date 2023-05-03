@@ -416,7 +416,10 @@ impl LocalShard {
 
                     return Err(err.clone());
                 }
-
+                Err(err @ CollectionError::OutOfMemory { .. }) => {
+                    log::error!("{err}");
+                    return Err(err.clone());
+                }
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
             }
