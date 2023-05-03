@@ -226,10 +226,9 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
 
                 let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
-                let max_threads = if let Indexes::Hnsw(hnsw) = segment.config().index {
-                    max_rayon_threads(hnsw.max_indexing_threads)
-                } else {
-                    1
+                let max_threads = match segment.config().index {
+                    Indexes::Hnsw(hnsw) => max_rayon_threads(hnsw.max_indexing_threads),
+                    _ => 1,
                 };
                 vector_data.vector_storage.borrow_mut().quantize(
                     &vector_storage_path,
