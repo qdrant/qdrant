@@ -7,6 +7,8 @@
     - [AliasDescription](#qdrant-AliasDescription)
     - [AliasOperations](#qdrant-AliasOperations)
     - [ChangeAliases](#qdrant-ChangeAliases)
+    - [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest)
+    - [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse)
     - [CollectionConfig](#qdrant-CollectionConfig)
     - [CollectionDescription](#qdrant-CollectionDescription)
     - [CollectionInfo](#qdrant-CollectionInfo)
@@ -26,15 +28,22 @@
     - [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest)
     - [ListCollectionsRequest](#qdrant-ListCollectionsRequest)
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
+    - [LocalShardInfo](#qdrant-LocalShardInfo)
+    - [MoveShard](#qdrant-MoveShard)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
     - [PayloadIndexParams](#qdrant-PayloadIndexParams)
     - [PayloadSchemaInfo](#qdrant-PayloadSchemaInfo)
     - [QuantizationConfig](#qdrant-QuantizationConfig)
+    - [RemoteShardInfo](#qdrant-RemoteShardInfo)
     - [RenameAlias](#qdrant-RenameAlias)
+    - [Replica](#qdrant-Replica)
     - [ScalarQuantization](#qdrant-ScalarQuantization)
+    - [ShardTransferInfo](#qdrant-ShardTransferInfo)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
+    - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
+    - [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse)
     - [VectorParams](#qdrant-VectorParams)
     - [VectorParamsMap](#qdrant-VectorParamsMap)
     - [VectorParamsMap.MapEntry](#qdrant-VectorParamsMap-MapEntry)
@@ -45,6 +54,7 @@
     - [Distance](#qdrant-Distance)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
+    - [ReplicaState](#qdrant-ReplicaState)
     - [TokenizerType](#qdrant-TokenizerType)
   
 - [collections_service.proto](#collections_service-proto)
@@ -205,6 +215,40 @@
 | ----- | ---- | ----- | ----------- |
 | actions | [AliasOperations](#qdrant-AliasOperations) | repeated | List of actions |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+
+
+
+
+
+
+<a name="qdrant-CollectionClusterInfoRequest"></a>
+
+### CollectionClusterInfoRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+
+
+
+
+
+
+<a name="qdrant-CollectionClusterInfoResponse"></a>
+
+### CollectionClusterInfoResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| peer_id | [uint64](#uint64) |  | ID of this peer |
+| shard_count | [uint64](#uint64) |  | Total number of shards |
+| local_shards | [LocalShardInfo](#qdrant-LocalShardInfo) | repeated | Local shards |
+| remote_shards | [RemoteShardInfo](#qdrant-RemoteShardInfo) | repeated | Remote shards |
+| shard_transfers | [ShardTransferInfo](#qdrant-ShardTransferInfo) | repeated | Shard transfers |
 
 
 
@@ -525,6 +569,40 @@
 
 
 
+<a name="qdrant-LocalShardInfo"></a>
+
+### LocalShardInfo
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| points_count | [uint64](#uint64) |  | Number of points in the shard |
+| state | [ReplicaState](#qdrant-ReplicaState) |  | Is replica active |
+
+
+
+
+
+
+<a name="qdrant-MoveShard"></a>
+
+### MoveShard
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| from_peer_id | [uint64](#uint64) |  |  |
+| to_peer_id | [uint64](#uint64) |  |  |
+
+
+
+
+
+
 <a name="qdrant-OptimizerStatus"></a>
 
 ### OptimizerStatus
@@ -616,6 +694,23 @@ If indexation speed has more priority for you - make this parameter lower. If se
 
 
 
+<a name="qdrant-RemoteShardInfo"></a>
+
+### RemoteShardInfo
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| peer_id | [uint64](#uint64) |  | Remote peer id |
+| state | [ReplicaState](#qdrant-ReplicaState) |  | Is replica active |
+
+
+
+
+
+
 <a name="qdrant-RenameAlias"></a>
 
 ### RenameAlias
@@ -626,6 +721,22 @@ If indexation speed has more priority for you - make this parameter lower. If se
 | ----- | ---- | ----- | ----------- |
 | old_alias_name | [string](#string) |  | Name of the alias to rename |
 | new_alias_name | [string](#string) |  | Name of the alias |
+
+
+
+
+
+
+<a name="qdrant-Replica"></a>
+
+### Replica
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  |  |
+| peer_id | [uint64](#uint64) |  |  |
 
 
 
@@ -643,6 +754,24 @@ If indexation speed has more priority for you - make this parameter lower. If se
 | type | [QuantizationType](#qdrant-QuantizationType) |  | Type of quantization |
 | quantile | [float](#float) | optional | Number of bits to use for quantization |
 | always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
+
+
+
+
+
+
+<a name="qdrant-ShardTransferInfo"></a>
+
+### ShardTransferInfo
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| from | [uint64](#uint64) |  |  |
+| to | [uint64](#uint64) |  |  |
+| sync | [bool](#bool) |  | If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another |
 
 
 
@@ -679,6 +808,41 @@ If indexation speed has more priority for you - make this parameter lower. If se
 | optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | New configuration parameters for the collection |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 | params | [CollectionParamsDiff](#qdrant-CollectionParamsDiff) | optional | New configuration parameters for the collection |
+
+
+
+
+
+
+<a name="qdrant-UpdateCollectionClusterSetupRequest"></a>
+
+### UpdateCollectionClusterSetupRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| move_shard | [MoveShard](#qdrant-MoveShard) |  |  |
+| replicate_shard | [MoveShard](#qdrant-MoveShard) |  |  |
+| abort_transfer | [MoveShard](#qdrant-MoveShard) |  |  |
+| drop_replica | [Replica](#qdrant-Replica) |  |  |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+
+
+
+
+
+
+<a name="qdrant-UpdateCollectionClusterSetupResponse"></a>
+
+### UpdateCollectionClusterSetupResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [bool](#bool) |  |  |
 
 
 
@@ -824,6 +988,21 @@ If indexation speed has more priority for you - make this parameter lower. If se
 
 
 
+<a name="qdrant-ReplicaState"></a>
+
+### ReplicaState
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Active | 0 | Active and sound |
+| Dead | 1 | Failed for some reason |
+| Partial | 2 | The shard is partially loaded and is currently receiving data from other shards |
+| Initializing | 3 | Collection is being created |
+| Listener | 4 | A shard which receives data, but is not used for search; Useful for backup shards |
+
+
+
 <a name="qdrant-TokenizerType"></a>
 
 ### TokenizerType
@@ -873,6 +1052,8 @@ If indexation speed has more priority for you - make this parameter lower. If se
 | UpdateAliases | [ChangeAliases](#qdrant-ChangeAliases) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update Aliases of the existing collection |
 | ListCollectionAliases | [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for a collection |
 | ListAliases | [ListAliasesRequest](#qdrant-ListAliasesRequest) | [ListAliasesResponse](#qdrant-ListAliasesResponse) | Get list of all aliases for all existing collections |
+| CollectionClusterInfo | [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest) | [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse) | Get cluster information for a collection |
+| UpdateCollectionClusterSetup | [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest) | [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse) | Update cluster setup for a collection |
 
  
 

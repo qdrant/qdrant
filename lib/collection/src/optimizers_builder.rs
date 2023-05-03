@@ -124,7 +124,7 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
-            *hnsw_config,
+            hnsw_config.clone(),
             quantization_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
@@ -132,7 +132,7 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
-            *hnsw_config,
+            hnsw_config.clone(),
             quantization_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
@@ -142,7 +142,7 @@ pub fn build_optimizers(
             segments_path,
             temp_segments_path,
             collection_params.clone(),
-            *hnsw_config,
+            hnsw_config.clone(),
             quantization_config.clone(),
         )),
     ])

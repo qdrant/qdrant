@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master, dev ]
   pull_request:
-    branches: [ master, dev ]
+    branches: [ '**' ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -108,3 +108,24 @@ jobs:
         run: ./tests/grpc_consistency_check.sh
       - name: OpenAPI file consistency check
         run: ./tests/openapi_consistency_check.sh
+
+
+  test-low-ram:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: sudo apt-get install clang protobuf-compiler git-lfs jq
+      - name: Setup git-lfs
+        run: git lfs install
+      - name: Install minimal stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v3
+      - name: Run low RAM test
+        working-directory: ./tests/low-ram
+        shell: bash
+        run: ./low-ram.sh

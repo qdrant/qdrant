@@ -35,10 +35,14 @@ pub trait IdTracker {
     /// Drop mapping
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()>;
 
-    /// Iterate over all external ids
+    /// Iterate over all external IDs
+    ///
+    /// Count should match `available_point_count`.
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
-    /// Iterate over all internal ids
+    /// Iterate over all internal IDs
+    ///
+    /// Count should match `total_point_count`.
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
     /// Iterate starting from a given ID
@@ -47,17 +51,16 @@ pub trait IdTracker {
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
 
-    /// Number of unique records in the segment
-    fn points_count(&self) -> usize;
-
-    /// Iterate over all non-removed internal ids (offsets)
+    /// Iterate over internal IDs (offsets)
+    ///
+    /// - excludes removed points
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
     /// Iterate over internal IDs (offsets)
     ///
     /// - excludes removed points
     /// - excludes flagged items from `exclude_bitslice`
-    fn iter_ids_exluding<'a>(
+    fn iter_ids_excluding<'a>(
         &'a self,
         exclude_bitslice: &'a BitSlice,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -70,14 +73,26 @@ pub trait IdTracker {
         }))
     }
 
-    /// Total number of internal ids (offsets), including removed ones
-    fn internal_size(&self) -> usize;
-
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
 
     /// Flush points versions to disk
     fn versions_flusher(&self) -> Flusher;
+
+    /// Number of total points
+    ///
+    /// - includes soft deleted points
+    fn total_point_count(&self) -> usize;
+
+    /// Number of available points
+    ///
+    /// - excludes soft deleted points
+    fn available_point_count(&self) -> usize {
+        self.total_point_count() - self.deleted_point_count()
+    }
+
+    /// Number of deleted points
+    fn deleted_point_count(&self) -> usize;
 
     /// Get [`BitSlice`] representation for deleted points with deletion flags
     ///
@@ -85,12 +100,8 @@ pub trait IdTracker {
     /// vectors in this segment.
     fn deleted_point_bitslice(&self) -> &BitSlice;
 
+    /// Check whether the given point is soft deleted
     fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
-
-    /// Number of deleted points
-    fn deleted_point_count(&self) -> usize {
-        self.internal_size() - self.points_count()
-    }
 
     /// Iterator over `n` random IDs which are not deleted
     ///
@@ -98,16 +109,16 @@ pub trait IdTracker {
     /// vectors.
     fn sample_ids<'a>(
         &'a self,
-        deleted_vec_bitslice: Option<&'a BitSlice>,
+        deleted_vector_bitslice: Option<&'a BitSlice>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let total = self.internal_size() as PointOffsetType;
+        let total = self.total_point_count() as PointOffsetType;
         let mut rng = rand::thread_rng();
         Box::new(
             (0..total)
                 .map(move |_| rng.gen_range(0..total))
                 .filter(move |x| {
                     // Check for deleted vector first, as that is more likely
-                    !deleted_vec_bitslice
+                    !deleted_vector_bitslice
                         .and_then(|d| d.get(*x as usize).as_deref().copied())
                         .unwrap_or(false)
                     // Also check point deletion for integrity

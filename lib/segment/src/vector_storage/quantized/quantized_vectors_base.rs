@@ -112,7 +112,7 @@ impl QuantizedVectorsStorage {
     }
 
     pub fn create<'a>(
-        vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
+        vectors: impl Iterator<Item = &'a [f32]> + Clone,
         quantization_config: &QuantizationConfig,
         distance: Distance,
         dim: usize,

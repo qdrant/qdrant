@@ -134,7 +134,7 @@ mod tests {
         let mut segment = build_segment_3(dir.path());
 
         let exists = segment
-            .upsert_vector(
+            .upsert_point(
                 7,
                 1.into(),
                 &NamedVectors::from([
@@ -146,7 +146,7 @@ mod tests {
         assert!(exists, "this partial vector should overwrite existing");
 
         let exists = segment
-            .upsert_vector(
+            .upsert_point(
                 8,
                 6.into(),
                 &NamedVectors::from([
@@ -163,7 +163,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_segment_3(dir.path());
 
-        let result = segment.upsert_vector(
+        let result = segment.upsert_point(
             6,
             6.into(),
             &NamedVectors::from([

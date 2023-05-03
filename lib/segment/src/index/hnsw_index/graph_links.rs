@@ -64,29 +64,31 @@ struct GraphLinksFileHeader {
     pub total_offsets_len: u64,
 }
 
-fn reindex_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [PointOffsetType] {
+fn get_reindex_slice<'a>(
+    data: &'a [u8],
+    header: &'a GraphLinksFileHeader,
+) -> &'a [PointOffsetType] {
     let reindex_range = header.get_reindex_range();
     let reindex_byte_slice = &data[reindex_range];
     transmute_from_u8(reindex_byte_slice)
 }
 
-fn links_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [PointOffsetType] {
+fn get_links_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [PointOffsetType] {
     let links_range = header.get_links_range();
     let links_byte_slice = &data[links_range];
     transmute_from_u8(links_byte_slice)
 }
 
-fn offsets_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [u64] {
+fn get_offsets_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [u64] {
     let offsets_range = header.get_offsets_range();
     let offsets_byte_slice = &data[offsets_range];
     transmute_from_u8(offsets_byte_slice)
 }
 
-fn level_offsets(data: &[u8], header: &GraphLinksFileHeader) -> Vec<u64> {
+fn get_level_offsets<'a>(data: &'a [u8], header: &GraphLinksFileHeader) -> &'a [u64] {
     let level_offsets_range = header.get_level_offsets_range();
     let level_offsets_byte_slice = &data[level_offsets_range];
-    let level_offsets: &[u64] = transmute_from_u8(level_offsets_byte_slice);
-    level_offsets.to_vec()
+    transmute_from_u8(level_offsets_byte_slice)
 }
 
 impl GraphLinksFileHeader {
@@ -399,18 +401,38 @@ pub struct GraphLinksRam {
 }
 
 impl GraphLinksRam {
-    pub fn load_from_memory(data: &[u8]) -> Self {
+    pub fn load_from_memory(data: &[u8]) -> OperationResult<Self> {
         let header = GraphLinksFileHeader::deserialize_bytes_from(data);
-        let links = links_slice(data, &header).to_vec();
-        let offsets = offsets_slice(data, &header).to_vec();
-        let level_offsets = level_offsets(data, &header);
-        let reindex = reindex_slice(data, &header).to_vec();
-        Self {
+
+        let mut links: Vec<PointOffsetType> = Vec::new();
+        let mut offsets: Vec<u64> = Vec::new();
+        let mut level_offsets: Vec<u64> = Vec::new();
+        let mut reindex: Vec<PointOffsetType> = Vec::new();
+
+        let link_slice = get_links_slice(data, &header);
+        links.try_reserve_exact(link_slice.len())?;
+        links.extend_from_slice(link_slice);
+
+        let offsets_slice = get_offsets_slice(data, &header);
+        offsets.try_reserve_exact(offsets_slice.len())?;
+        offsets.extend_from_slice(offsets_slice);
+
+        let level_offsets_slice = get_level_offsets(data, &header);
+        level_offsets.try_reserve_exact(level_offsets_slice.len())?;
+        level_offsets.extend_from_slice(level_offsets_slice);
+
+        let reindex_slice = get_reindex_slice(data, &header);
+        reindex.try_reserve_exact(reindex_slice.len())?;
+        reindex.extend_from_slice(reindex_slice);
+
+        let graph_links = Self {
             links,
             offsets,
             level_offsets,
             reindex,
-        }
+        };
+
+        Ok(graph_links)
     }
 }
 
@@ -424,14 +446,15 @@ impl GraphLinks for GraphLinksRam {
 
         let mmap = unsafe { Mmap::map(&file)? };
 
-        Ok(Self::load_from_memory(&mmap))
+        Self::load_from_memory(&mmap)
     }
 
     fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self> {
         let mut data = vec![0; converter.data_size() as usize];
         converter.serialize_to(&mut data);
         drop(converter);
-        Ok(GraphLinksRam::load_from_memory(&data))
+
+        Self::load_from_memory(&data)
     }
 
     fn offsets_len(&self) -> usize {
@@ -475,7 +498,7 @@ pub struct GraphLinksMmap {
 impl GraphLinksMmap {
     fn get_reindex_slice(&self) -> &[PointOffsetType] {
         if let Some(mmap) = &self.mmap {
-            reindex_slice(mmap, &self.header)
+            get_reindex_slice(mmap, &self.header)
         } else {
             panic!("{}", MMAP_PANIC_MESSAGE);
         }
@@ -483,7 +506,7 @@ impl GraphLinksMmap {
 
     fn get_links_slice(&self) -> &[PointOffsetType] {
         if let Some(mmap) = &self.mmap {
-            links_slice(mmap, &self.header)
+            get_links_slice(mmap, &self.header)
         } else {
             panic!("{}", "Mmap links are not loaded");
         }
@@ -491,7 +514,7 @@ impl GraphLinksMmap {
 
     fn get_offsets_slice(&self) -> &[u64] {
         if let Some(mmap) = &self.mmap {
-            offsets_slice(mmap, &self.header)
+            get_offsets_slice(mmap, &self.header)
         } else {
             panic!("{}", MMAP_PANIC_MESSAGE);
         }
@@ -510,7 +533,7 @@ impl GraphLinks for GraphLinksMmap {
         madvise::madvise(&mmap, madvise::get_global())?;
 
         let header = GraphLinksFileHeader::deserialize_bytes_from(&mmap);
-        let level_offsets = level_offsets(&mmap, &header);
+        let level_offsets = get_level_offsets(&mmap, &header).to_vec();
 
         Ok(Self {
             mmap: Some(mmap),

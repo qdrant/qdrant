@@ -8,7 +8,6 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{RepeatedIntegers, RepeatedStrings};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -23,8 +22,9 @@ use crate::grpc::qdrant::{
     HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match,
     NamedVectors, PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams,
     PayloadSchemaInfo, PayloadSchemaType, PointId, QuantizationConfig, QuantizationSearchParams,
-    Range, ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType,
-    Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams,
+    Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector,
+    WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {

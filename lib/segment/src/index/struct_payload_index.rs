@@ -202,8 +202,11 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    pub fn total_points(&self) -> usize {
-        self.id_tracker.borrow().points_count()
+    /// Number of available points
+    ///
+    /// - excludes soft deleted points
+    pub fn available_point_count(&self) -> usize {
+        self.id_tracker.borrow().available_point_count()
     }
 
     fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
@@ -216,7 +219,7 @@ impl StructPayloadIndex {
             payload_provider,
             &self.field_indexes,
             &estimator,
-            self.total_points(),
+            self.available_point_count(),
         )
     }
 
@@ -224,7 +227,7 @@ impl StructPayloadIndex {
         match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
-                let total_points = self.total_points();
+                let available_points = self.available_point_count();
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&field.key) {
@@ -236,8 +239,8 @@ impl StructPayloadIndex {
                             is_empty: field.to_owned(),
                         })],
                         min: 0, // It is possible, that some non-empty payloads are not indexed
-                        exp: total_points.saturating_sub(indexed_points), // Expect field type consistency
-                        max: total_points.saturating_sub(indexed_points),
+                        exp: available_points.saturating_sub(indexed_points), // Expect field type consistency
+                        max: available_points.saturating_sub(indexed_points),
                     }
                 } else {
                     CardinalityEstimation {
@@ -245,13 +248,13 @@ impl StructPayloadIndex {
                             is_empty: field.to_owned(),
                         })],
                         min: 0,
-                        exp: total_points / 2,
-                        max: total_points,
+                        exp: available_points / 2,
+                        max: available_points,
                     }
                 }
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
-                let total_points = self.total_points();
+                let available_points = self.available_point_count();
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&field.key) {
@@ -263,8 +266,8 @@ impl StructPayloadIndex {
                             is_null: field.to_owned(),
                         })],
                         min: 0,
-                        exp: total_points.saturating_sub(indexed_points),
-                        max: total_points.saturating_sub(indexed_points),
+                        exp: available_points.saturating_sub(indexed_points),
+                        max: available_points.saturating_sub(indexed_points),
                     }
                 } else {
                     CardinalityEstimation {
@@ -272,8 +275,8 @@ impl StructPayloadIndex {
                             is_null: field.to_owned(),
                         })],
                         min: 0,
-                        exp: total_points / 2,
-                        max: total_points,
+                        exp: available_points / 2,
+                        max: available_points,
                     }
                 }
             }
@@ -294,7 +297,7 @@ impl StructPayloadIndex {
             }
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition)
-                .unwrap_or_else(|| CardinalityEstimation::unknown(self.total_points())),
+                .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
         }
     }
 
@@ -355,24 +358,21 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn estimate_cardinality(
-        &self,
-        query: &Filter,
-        available_points: Option<usize>,
-    ) -> CardinalityEstimation {
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
+        let available_points = self.available_point_count();
         let estimator = |condition: &Condition| self.condition_cardinality(condition);
-        let available_points = available_points.unwrap_or_else(|| self.total_points());
+
         estimate_filter(&estimator, query, available_points)
     }
 
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-        available_points: Option<usize>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
 
-        let query_cardinality = self.estimate_cardinality(query, available_points);
+        let query_cardinality = self.estimate_cardinality(query);
+
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator =
                 ArcAtomicRefCellIterator::new(self.id_tracker.clone(), |points_iterator| {
@@ -390,8 +390,10 @@ impl PayloadIndex for StructPayloadIndex {
             let struct_filtered_context = self.struct_filtered_context(query);
 
             // CPU-optimized strategy here: points are made unique before applying other filters.
-            // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
-            let mut visited_list = self.visited_pool.get(points_iterator_ref.internal_size());
+            // TODO: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
+            let mut visited_list = self
+                .visited_pool
+                .get(points_iterator_ref.total_point_count());
 
             #[allow(clippy::needless_collect)]
                 let preselected: Vec<PointOffsetType> = query_cardinality

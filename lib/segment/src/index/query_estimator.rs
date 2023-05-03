@@ -10,6 +10,77 @@ use itertools::Itertools;
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::types::{Condition, Filter};
 
+/// Re-estimate cardinality based on number of available vectors
+/// Assuming that deleted vectors are not correlated with the filter
+///
+/// # Arguments
+///
+/// * `estimation` - cardinality estimations of number of points selected by payload filter
+/// * `available_vectors` - number of available vectors for the named vector storage
+/// * `total_vectors` - total number of points in the segment
+///
+/// # Result
+///
+/// * `CardinalityEstimation` - new cardinality estimation
+///
+/// # Example
+///
+/// ```
+/// use segment::index::field_index::CardinalityEstimation;
+/// let estimation = CardinalityEstimation {
+///    primary_clauses: vec![],
+///   min: 0,
+///   exp: 64,
+///   max: 100
+/// };
+///
+/// let new_estimation = segment::index::query_estimator::adjust_to_available_vectors(
+///     estimation,
+///     50,
+///     200
+/// );
+///
+/// assert_eq!(new_estimation.min, 0);
+/// assert_eq!(new_estimation.exp, 16);
+/// assert_eq!(new_estimation.max, 50);
+///
+/// ```
+pub fn adjust_to_available_vectors(
+    estimation: CardinalityEstimation,
+    available_vectors: usize,
+    available_points: usize,
+) -> CardinalityEstimation {
+    if available_points == 0 || available_vectors == 0 {
+        return CardinalityEstimation {
+            primary_clauses: estimation.primary_clauses,
+            min: 0,
+            exp: 0,
+            max: 0,
+        };
+    }
+
+    let number_of_deleted_vectors = available_points.saturating_sub(available_vectors);
+
+    // It is possible, all deleted vectors are selected in worst case
+    let min = estimation.min.saturating_sub(number_of_deleted_vectors);
+    // Another extreme case - all deleted vectors are not selected
+    let max = estimation.max.min(available_vectors);
+
+    let availability_prob = available_vectors as f64 / available_points as f64;
+
+    let exp = (estimation.exp as f64 * availability_prob).round() as usize;
+
+    debug_assert!(min <= exp);
+    debug_assert!(exp <= max);
+
+    CardinalityEstimation {
+        primary_clauses: estimation.primary_clauses,
+        min,
+        exp,
+        max,
+    }
+}
+
 pub fn combine_should_estimations(
     estimations: &[CardinalityEstimation],
     total: usize,

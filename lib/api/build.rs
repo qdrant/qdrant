@@ -99,7 +99,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CollectionParams.vectors_config", ""),
             ("ChangeAliases.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("ListCollectionAliasesRequest.collection_name", "length(min = 1, max = 255)"),
-            ("HnswConfigDiff.m", "custom = \"crate::grpc::validate::validate_u64_range_min_4_max_10000\""),
             ("HnswConfigDiff.ef_construct", "custom = \"crate::grpc::validate::validate_u64_range_min_4\""),
             ("WalConfigDiff.wal_capacity_mb", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("OptimizersConfigDiff.deleted_threshold", "custom = \"crate::grpc::validate::validate_f64_range_1\""),
@@ -117,6 +116,8 @@ fn configure_validation(builder: Builder) -> Builder {
             "ListCollectionsRequest",
             "CollectionParamsDiff",
             "ListAliasesRequest",
+            "CollectionClusterInfoRequest",
+            "UpdateCollectionClusterSetupRequest",
         ])
         // Service: collections_internal.proto
         .validates(&[

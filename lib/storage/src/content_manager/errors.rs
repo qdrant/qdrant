@@ -82,6 +82,10 @@ impl StorageError {
             CollectionError::ForwardProxyError { error, .. } => {
                 Self::from_inconsistent_shard_failure(*error, overriding_description)
             }
+            CollectionError::OutOfMemory { .. } => StorageError::ServiceError {
+                description: overriding_description,
+                backtrace: None,
+            },
         }
     }
 }
@@ -116,6 +120,10 @@ impl From<CollectionError> for StorageError {
                 let full_description = format!("{error}");
                 StorageError::from_inconsistent_shard_failure(*error, full_description)
             }
+            CollectionError::OutOfMemory { .. } => StorageError::ServiceError {
+                description: format!("{err}"),
+                backtrace: None,
+            },
         }
     }
 }
