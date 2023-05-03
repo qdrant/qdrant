@@ -13,7 +13,6 @@ where
     pub(crate) point_deleted: &'a BitSlice,
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
     pub(crate) vec_deleted: &'a BitSlice,
-    // Total number of vectors including deleted ones
     pub quantized_data: &'a TEncodedVectors,
 }
 
