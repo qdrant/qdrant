@@ -12,13 +12,13 @@ use crate::payload_storage::nested_query_checker::{
 };
 use crate::types::{
     AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match,
-    MatchAny, MatchText, MatchValue, PointOffsetType, Range, ValueVariants,
+    MatchAny, MatchText, MatchValue, NestedContainer, PointOffsetType, Range, ValueVariants,
 };
 
 /// Payload element index
 pub type ElemIndex = usize;
 
-/// Given a point_id, returns the list of indices in the payload matching the condition
+/// Given a point_id, returns the list of nested indices matching the condition and the total number of nested elements in the payload
 pub type NestedMatchingIndicesFn<'a> = Box<dyn Fn(PointOffsetType) -> (Vec<ElemIndex>, usize) + 'a>;
 
 /// Merge several nested condition results into a single regular condition checker
@@ -75,7 +75,7 @@ pub fn find_indices_matching_none_conditions(
 ) -> (Vec<ElemIndex>, usize) {
     let mut not_matching = vec![];
     let mut len = 0;
-    // find all indices that have matched at least once
+    // find all indices that have matched at least one condition
     let match_at_least_once: HashSet<ElemIndex> = nested_checkers
         .iter()
         .flat_map(|f| {
@@ -162,37 +162,20 @@ pub fn nested_condition_converter<'a>(
         Condition::Nested(nested) => {
             Box::new(move |point_id| {
                 // `should` is not supported in nested queries as it corresponds to a non nested `should`
-                let must_matching = match &nested.filter().must {
-                    None => None,
-                    Some(musts_conditions) => {
-                        let full_path = nested_path.extend(&nested.array_key());
-                        let matching_indices = nested_conditions_converter(
-                            musts_conditions,
-                            field_indexes,
-                            payload_provider.clone(),
-                            full_path,
-                        );
-                        let matches =
-                            find_indices_matching_all_conditions(point_id, &matching_indices);
-                        Some(matches)
-                    }
-                };
-
-                let must_not_matching = match &nested.filter().must_not {
-                    None => None,
-                    Some(musts_not_conditions) => {
-                        let full_path = nested_path.extend(&nested.array_key());
-                        let matching_indices = nested_conditions_converter(
-                            musts_not_conditions,
-                            field_indexes,
-                            payload_provider.clone(),
-                            full_path,
-                        );
-                        let matches =
-                            find_indices_matching_none_conditions(point_id, &matching_indices);
-                        Some(matches)
-                    }
-                };
+                let must_matching = check_nested_must(
+                    point_id,
+                    nested,
+                    field_indexes,
+                    payload_provider.clone(),
+                    nested_path.clone(),
+                );
+                let must_not_matching = check_nested_must_not(
+                    point_id,
+                    nested,
+                    field_indexes,
+                    payload_provider.clone(),
+                    nested_path.clone(),
+                );
 
                 // combine results of `must` and `must_not`
                 match (must_matching, must_not_matching) {
@@ -200,7 +183,7 @@ pub fn nested_condition_converter<'a>(
                     (Some(must_matching), None) => must_matching,
                     (None, Some(must_not_matching)) => must_not_matching,
                     (Some((must_matching, len_1)), Some((must_not_matching, len_2))) => {
-                        assert_eq!(len_1, len_2);
+                        debug_assert_eq!(len_1, len_2);
                         // return intersection of `must_matching` and `must_not_matching`
                         let intersection = must_matching
                             .into_iter()
@@ -212,6 +195,52 @@ pub fn nested_condition_converter<'a>(
             })
         }
         Condition::Filter(_) => unreachable!(),
+    }
+}
+
+fn check_nested_must(
+    point_id: PointOffsetType,
+    nested: &NestedContainer,
+    field_indexes: &IndexesMap,
+    payload_provider: PayloadProvider,
+    nested_path: JsonPathPayload,
+) -> Option<(Vec<ElemIndex>, usize)> {
+    match &nested.filter().must {
+        None => None,
+        Some(musts_conditions) => {
+            let full_path = nested_path.extend(&nested.array_key());
+            let matching_indices = nested_conditions_converter(
+                musts_conditions,
+                field_indexes,
+                payload_provider,
+                full_path,
+            );
+            let matches = find_indices_matching_all_conditions(point_id, &matching_indices);
+            Some(matches)
+        }
+    }
+}
+
+fn check_nested_must_not(
+    point_id: PointOffsetType,
+    nested: &NestedContainer,
+    field_indexes: &IndexesMap,
+    payload_provider: PayloadProvider,
+    nested_path: JsonPathPayload,
+) -> Option<(Vec<ElemIndex>, usize)> {
+    match &nested.filter().must_not {
+        None => None,
+        Some(musts_not_conditions) => {
+            let full_path = nested_path.extend(&nested.array_key());
+            let matching_indices = nested_conditions_converter(
+                musts_not_conditions,
+                field_indexes,
+                payload_provider,
+                full_path,
+            );
+            let matches = find_indices_matching_none_conditions(point_id, &matching_indices);
+            Some(matches)
+        }
     }
 }
 
