@@ -21,6 +21,9 @@ use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
 
+use super::conversions::{
+    internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
+};
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
@@ -41,8 +44,6 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::RemoteShardTelemetry;
 use crate::shards::CollectionId;
-
-use super::conversions::{internal_update_vectors, internal_delete_vectors, internal_delete_vectors_by_filter};
 
 /// RemoteShard
 ///
@@ -234,7 +235,9 @@ impl RemoteShard {
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
-                        client.update_vectors(tonic::Request::new(request.clone())).await
+                        client
+                            .update_vectors(tonic::Request::new(request.clone()))
+                            .await
                     })
                     .await?
                     .into_inner()
@@ -246,10 +249,12 @@ impl RemoteShard {
                         ids.points,
                         vector_names.clone(),
                         wait,
-                        ordering
+                        ordering,
                     );
                     self.with_points_client(|mut client| async move {
-                        client.delete_vectors(tonic::Request::new(request.clone())).await
+                        client
+                            .delete_vectors(tonic::Request::new(request.clone()))
+                            .await
                     })
                     .await?
                     .into_inner()
@@ -264,7 +269,9 @@ impl RemoteShard {
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
-                        client.delete_vectors(tonic::Request::new(request.clone())).await
+                        client
+                            .delete_vectors(tonic::Request::new(request.clone()))
+                            .await
                     })
                     .await?
                     .into_inner()

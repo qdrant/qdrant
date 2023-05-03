@@ -1,9 +1,8 @@
 use segment::types::{Filter, PointIdType};
 
+use super::vector_ops;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::{point_ops, CollectionUpdateOperations};
-
-use super::vector_ops;
 
 /// Structure to define what part of the shard are affected by the operation
 pub enum OperationEffectArea {
