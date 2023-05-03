@@ -1,7 +1,8 @@
-pub mod chunked_mmap_vectors;
+pub mod appendable_mmap_vector_storage;
+mod chunked_mmap_vectors;
 mod chunked_utils;
 pub mod chunked_vectors;
-pub mod dynamic_mmap_flags;
+mod dynamic_mmap_flags;
 pub mod memmap_vector_storage;
 mod mmap_vectors;
 pub mod quantized;

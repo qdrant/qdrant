@@ -15,7 +15,7 @@ pub struct MmapStatus {
     pub len: usize,
 }
 
-fn status_file(directory: &Path) -> PathBuf {
+pub fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
@@ -77,16 +77,20 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapMut>> {
     Ok(result)
 }
 
+pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
+    let chunk_file_name = format!(
+        "{}{}{}",
+        MMAP_CHUNKS_PATTERN_START, chunk_id, MMAP_CHUNKS_PATTERN_END
+    );
+    directory.join(chunk_file_name)
+}
+
 pub fn create_chunk(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
 ) -> OperationResult<MmapMut> {
-    let chunk_file_name = format!(
-        "{}{}{}",
-        MMAP_CHUNKS_PATTERN_START, chunk_id, MMAP_CHUNKS_PATTERN_END
-    );
-    let chunk_file_path = directory.join(chunk_file_name);
+    let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     open_write_mmap(&chunk_file_path)
 }

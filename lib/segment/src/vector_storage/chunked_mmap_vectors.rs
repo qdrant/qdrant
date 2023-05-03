@@ -13,7 +13,7 @@ use crate::common::mmap_ops::{
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
 use crate::vector_storage::chunked_utils::{
-    create_chunk, ensure_status_file, read_mmaps, MmapStatus,
+    chunk_name, create_chunk, ensure_status_file, read_mmaps, status_file, MmapStatus,
 };
 
 #[cfg(test)]
@@ -117,8 +117,8 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
         self.status.len
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.status.len == 0
+    pub fn dim(&self) -> usize {
+        self.config.dim
     }
 
     fn add_chunk(&mut self) -> OperationResult<()> {
@@ -178,6 +178,16 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
         }
         self.status_mmap.flush()?;
         Ok(())
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        files.push(Self::config_file(&self.directory));
+        files.push(status_file(&self.directory));
+        for chunk_idx in 0..self.chunks.len() {
+            files.push(chunk_name(&self.directory, chunk_idx));
+        }
+        files
     }
 }
 

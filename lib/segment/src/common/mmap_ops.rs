@@ -1,7 +1,8 @@
 use std::fs::OpenOptions;
-use std::mem;
 use std::mem::size_of;
+use std::ops::DerefMut;
 use std::path::Path;
+use std::{mem, slice};
 
 use memmap2::{Mmap, MmapMut, MmapOptions};
 
@@ -48,6 +49,12 @@ pub fn transmute_from_u8<T>(data: &[u8]) -> &T {
     debug_assert!(data.len() == size_of::<T>());
     let ptr = data.as_ptr() as *const T;
     unsafe { &*ptr }
+}
+
+pub fn transmute_from_u8_to_mut<'a, T>(data: &[u8]) -> &'a mut T {
+    debug_assert!(data.len() == size_of::<T>());
+    let ptr = data.as_ptr() as *mut T;
+    unsafe { &mut *ptr }
 }
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
@@ -101,4 +108,14 @@ pub fn read_slice_from_mmap<T>(mmap: &MmapMut, offset: usize, len: usize) -> &[T
     let byte_len = len * size_of::<T>();
     let slice = &mmap[offset..offset + byte_len];
     transmute_from_u8_to_slice(slice)
+}
+
+pub fn mmap_to_mutable_slice<T>(mmap: &mut MmapMut) -> &mut T {
+    // Obtain static slice into mmap
+    let slice: &'static mut [u8] = unsafe {
+        let slice = mmap.deref_mut();
+        slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())
+    };
+
+    transmute_from_u8_to_mut(slice)
 }
