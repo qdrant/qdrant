@@ -26,6 +26,7 @@ use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberTyp
 pub struct FixtureIdTracker {
     ids: Vec<PointOffsetType>,
     deleted: BitVec,
+    deleted_count: usize,
 }
 
 impl FixtureIdTracker {
@@ -33,6 +34,7 @@ impl FixtureIdTracker {
         Self {
             ids: (0..num_points).map(|x| x as PointOffsetType).collect(),
             deleted: BitVec::repeat(false, num_points),
+            deleted_count: 0,
         }
     }
 }
@@ -75,7 +77,9 @@ impl IdTracker for FixtureIdTracker {
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         let internal_id = self.internal_id(external_id).unwrap() as usize;
-        self.deleted.set(internal_id, true);
+        if !self.deleted.replace(internal_id, true) {
+            self.deleted_count += 1;
+        }
         Ok(())
     }
 
@@ -113,8 +117,12 @@ impl IdTracker for FixtureIdTracker {
         )
     }
 
-    fn points_count(&self) -> usize {
+    fn total_point_count(&self) -> usize {
         self.ids.len()
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        self.deleted_count
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -122,12 +130,8 @@ impl IdTracker for FixtureIdTracker {
             self.ids
                 .iter()
                 .copied()
-                .filter(|id| !self.deleted[*id as usize]),
+                .filter(|id| !self.is_deleted_point(*id)),
         )
-    }
-
-    fn internal_size(&self) -> usize {
-        self.ids.len()
     }
 
     fn mapping_flusher(&self) -> Flusher {

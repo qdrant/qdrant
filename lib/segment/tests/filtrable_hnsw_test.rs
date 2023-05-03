@@ -18,7 +18,6 @@ mod tests {
         PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType,
         StorageType, VectorDataConfig,
     };
-    use segment::vector_storage::VectorStorage;
     use serde_json::json;
     use tempfile::Builder;
 
@@ -67,7 +66,7 @@ mod tests {
             let payload: Payload = json!({int_key:int_payload,}).into();
 
             segment
-                .upsert_vector(n as SeqNumberType, idx, &only_default_vector(&vector))
+                .upsert_point(n as SeqNumberType, idx, &only_default_vector(&vector))
                 .unwrap();
             segment
                 .set_full_payload(n as SeqNumberType, idx, &payload)
@@ -113,13 +112,11 @@ mod tests {
             );
         }
 
-        let vector_storage = vector_storage.borrow();
         let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
         let px = payload_index_ptr.borrow();
-        let available_vecs = vector_storage.available_vec_count();
         for block in &blocks {
             let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-            let points = px.query_points(&filter, Some(available_vecs));
+            let points = px.query_points(&filter);
             for point in points {
                 coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
             }

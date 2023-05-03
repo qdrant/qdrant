@@ -65,10 +65,10 @@ mod tests {
             let payload: Payload = generate_diverse_payload(&mut rnd);
 
             plain_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             struct_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             plain_segment
                 .set_full_payload(opnum, idx, &payload)
@@ -194,10 +194,10 @@ mod tests {
             let payload: Payload = generate_diverse_nested_payload(&mut rnd);
 
             plain_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             struct_segment
-                .upsert_vector(opnum, idx, &only_default_vector(&vector))
+                .upsert_point(opnum, idx, &only_default_vector(&vector))
                 .unwrap();
             plain_segment
                 .set_full_payload(opnum, idx, &payload)
@@ -260,17 +260,17 @@ mod tests {
         let estimation_struct = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter, None);
+            .estimate_cardinality(&filter);
 
         let estimation_plain = plain_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter, None);
+            .estimate_cardinality(&filter);
 
         let real_number = plain_segment
             .payload_index
             .borrow()
-            .query_points(&filter, None)
+            .query_points(&filter)
             .count();
 
         eprintln!("estimation_plain = {estimation_plain:#?}");
@@ -309,7 +309,7 @@ mod tests {
         let estimation = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter, None);
+            .estimate_cardinality(&filter);
 
         let payload_index = struct_segment.payload_index.borrow();
         let filter_context = payload_index.filter_context(&filter);
@@ -371,13 +371,13 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter, None);
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
-                "{estimation:#?}"
+                estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+                "{estimation:#?}",
             );
 
             // Perform additional sort to break ties by score
@@ -450,13 +450,13 @@ mod tests {
             let estimation = plain_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter, None);
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
-                "{estimation:#?}"
+                estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+                "{estimation:#?}",
             );
 
             let struct_result = struct_segment
@@ -474,13 +474,13 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter, None);
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
-                "{estimation:#?}"
+                estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+                "{estimation:#?}",
             );
 
             plain_result
@@ -542,13 +542,13 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter, None);
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
             assert!(
-                estimation.max <= struct_segment.id_tracker.borrow().points_count(),
-                "{estimation:#?}"
+                estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+                "{estimation:#?}",
             );
 
             // warning: report flakiness at https://github.com/qdrant/qdrant/issues/534

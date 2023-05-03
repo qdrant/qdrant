@@ -57,7 +57,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         key: PointOffsetType,
         vector: &[VectorElementType],
     ) -> OperationResult<()> {
-        self.vectors.insert(key, vector);
+        self.vectors.insert(key, vector)?;
         Ok(())
     }
 
@@ -94,19 +94,19 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         vec![]
     }
 
-    fn delete_vec(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         Ok(!self.deleted_vectors.replace(key as usize, true))
     }
 
-    fn is_deleted_vec(&self, key: PointOffsetType) -> bool {
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
         self.deleted_vectors[key as usize]
     }
 
-    fn deleted_vec_count(&self) -> usize {
+    fn deleted_vector_count(&self) -> usize {
         self.deleted_vectors.count_ones()
     }
 
-    fn deleted_vec_bitslice(&self) -> &BitSlice {
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
         &self.deleted_vectors
     }
 }
@@ -123,7 +123,7 @@ where
         for _ in 0..num_vectors {
             let rnd_vec = random_vector(rng, dim);
             let rnd_vec = TMetric::preprocess(&rnd_vec).unwrap_or(rnd_vec);
-            vectors.push(&rnd_vec);
+            vectors.push(&rnd_vec).unwrap();
         }
         TestRawScorerProducer::<TMetric> {
             vectors,
@@ -135,6 +135,6 @@ where
 
     pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         let query = TMetric::preprocess(&query).unwrap_or(query);
-        raw_scorer_impl(query, self, self.deleted_vec_bitslice())
+        raw_scorer_impl(query, self, self.deleted_vector_bitslice())
     }
 }

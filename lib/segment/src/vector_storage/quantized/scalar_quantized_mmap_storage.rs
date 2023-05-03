@@ -94,7 +94,7 @@ impl QuantizedMmapStorageBuilder {
 }
 
 pub fn create_scalar_quantized_vectors_mmap<'a>(
-    vectors: impl IntoIterator<Item = &'a [f32]> + Clone,
+    vectors: impl Iterator<Item = &'a [f32]> + Clone,
     config: &ScalarQuantizationConfig,
     vector_parameters: &quantization::VectorParameters,
     data_path: &Path,

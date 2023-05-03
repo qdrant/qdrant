@@ -30,7 +30,7 @@ mod tests {
 
         for i in 0..NUM_VECTORS_1 {
             segment1
-                .upsert_vector(
+                .upsert_point(
                     1,
                     i.into(),
                     &NamedVectors::from([
@@ -52,7 +52,7 @@ mod tests {
             };
 
             segment2
-                .upsert_vector(1, (NUM_VECTORS_1 + i).into(), &vectors)
+                .upsert_point(1, (NUM_VECTORS_1 + i).into(), &vectors)
                 .unwrap();
         }
 
@@ -96,7 +96,7 @@ mod tests {
 
         let merged_segment: Segment = builder.build(&stopped).unwrap();
 
-        let merged_points_count = merged_segment.points_count();
+        let merged_points_count = merged_segment.available_point_count();
 
         assert_eq!(
             merged_points_count,
@@ -109,14 +109,14 @@ mod tests {
             .unwrap()
             .vector_storage
             .borrow()
-            .available_vec_count();
+            .available_vector_count();
         let vec2_count = merged_segment
             .vector_data
             .get("vector2")
             .unwrap()
             .vector_storage
             .borrow()
-            .available_vec_count();
+            .available_vector_count();
 
         assert_ne!(vec1_count, vec2_count);
 
