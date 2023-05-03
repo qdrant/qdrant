@@ -303,7 +303,10 @@ mod tests {
             // < 8192 -> 1
             // < 16384 -> 0
             let expected_current_file_id = 1;
-            assert_eq!(dynamic_flags.status.current_file_id, expected_current_file_id);
+            assert_eq!(
+                dynamic_flags.status.current_file_id,
+                expected_current_file_id
+            );
 
             dynamic_flags.set_len(num_flags * 2).unwrap();
             for (i, flag) in random_flags.iter().enumerate() {
@@ -313,7 +316,10 @@ mod tests {
             }
 
             let expected_current_file_id = 0;
-            assert_eq!(dynamic_flags.status.current_file_id, expected_current_file_id);
+            assert_eq!(
+                dynamic_flags.status.current_file_id,
+                expected_current_file_id
+            );
 
             dynamic_flags.flush().unwrap();
         }
