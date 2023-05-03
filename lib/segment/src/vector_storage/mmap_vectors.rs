@@ -35,7 +35,7 @@ pub struct MmapVectors {
     /// Has an exact size to fit a header and an aligned `BitSlice` for `num_vectors` of vectors.
     ///
     /// This should never be accessed directly, because it shares a mutable reference with
-    /// [`deleted_bitslice`]. Use that instead. The sole purpouse of this is to keep ownership of
+    /// [`deleted_bitslice`]. Use that instead. The sole purpose of this is to keep ownership of
     /// the mmap, and to properly clean it up when this struct is dropped.
     _deleted_mmap: Arc<Mutex<MmapMut>>,
     /// A convenient [`BitSlice`] view into the deleted memory map file.
@@ -69,7 +69,7 @@ impl MmapVectors {
         }
 
         // Create convenient BitSlice view over it
-        let deleted = unsafe { mmap_to_bitslice(&mut deleted_mmap) };
+        let deleted = unsafe { mmap_to_bitslice(&mut deleted_mmap, HEADER_SIZE) };
         let deleted_count = deleted.count_ones();
 
         Ok(MmapVectors {
@@ -233,7 +233,7 @@ const fn deleted_mmap_data_start() -> usize {
 /// Calculate size for deleted mmap to hold the given number of vectors.
 ///
 /// The mmap will hold a file header and an aligned `BitSlice`.
-fn deleted_mmap_size(num: usize) -> usize {
+pub fn deleted_mmap_size(num: usize) -> usize {
     let unit_size = mem::size_of::<usize>();
     let num_bytes = div_ceil(num, 8);
     let num_usizes = div_ceil(num_bytes, unit_size);
@@ -250,7 +250,7 @@ fn deleted_mmap_size(num: usize) -> usize {
 /// - The mmap and BitSlice should never be mutated together.
 /// - The bitslice reference should never outlive the mmap.
 /// - The caller is responsible for handling this with care.
-unsafe fn mmap_to_bitslice<'a>(mmap: &mut MmapMut) -> &'a mut BitSlice {
+pub unsafe fn mmap_to_bitslice<'a>(mmap: &mut MmapMut, header_size: usize) -> &'a mut BitSlice {
     // Obtain static slice into mmap
     let slice: &'static mut [u8] = {
         let slice = mmap.deref_mut();
@@ -258,8 +258,9 @@ unsafe fn mmap_to_bitslice<'a>(mmap: &mut MmapMut) -> &'a mut BitSlice {
     };
 
     // Reslice to aligned data portion
-    let data_start = deleted_mmap_data_start();
-    let slice: &mut [u8] = &mut slice[data_start..];
+    let align = mem::align_of::<usize>();
+    let aligned_header_size = div_ceil(header_size, align) * align;
+    let slice: &mut [u8] = &mut slice[aligned_header_size..];
 
     // Create BitSlice view over data slice
     // Transmute: &mut [u8] -> &mut [usize] -> &mut BitSlice

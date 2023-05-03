@@ -1,5 +1,4 @@
 use std::cmp::max;
-use std::collections::HashMap;
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::marker::PhantomData;
@@ -8,12 +7,12 @@ use std::path::{Path, PathBuf};
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
-use crate::common::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, read_from_mmap, read_slice_from_mmap,
-    write_slice_to_mmap, write_to_mmap,
+use crate::common::mmap_ops::{read_from_mmap, read_slice_from_mmap,
+                              write_slice_to_mmap, write_to_mmap,
 };
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
+use crate::vector_storage::chunked_utils::{create_chunk, MmapStatus, ensure_status_file, read_mmaps};
 
 #[cfg(test)]
 const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
@@ -22,14 +21,6 @@ const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
 const DEFAULT_CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128Mb
 
 const CONFIG_FILE_NAME: &str = "config.json";
-const STATUS_FILE_NAME: &str = "status.json";
-
-const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
-const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
-
-struct ChunkedMmapStatus {
-    len: usize,
-}
 
 #[derive(Serialize, Deserialize)]
 struct ChunkedMmapConfig {
@@ -40,7 +31,7 @@ struct ChunkedMmapConfig {
 
 pub struct ChunkedMmapVectors<T> {
     config: ChunkedMmapConfig,
-    status: ChunkedMmapStatus,
+    status: MmapStatus,
     _phantom: PhantomData<T>,
     chunks: Vec<MmapMut>,
     status_mmap: MmapMut,
@@ -48,28 +39,8 @@ pub struct ChunkedMmapVectors<T> {
 }
 
 impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
-    fn status_file(directory: &Path) -> PathBuf {
-        directory.join(STATUS_FILE_NAME)
-    }
-
     fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
-    }
-
-    fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
-        let status_file = Self::status_file(directory);
-        if !status_file.exists() {
-            {
-                let length = std::mem::size_of::<usize>() as u64;
-                create_and_ensure_length(&status_file, length as usize)?;
-            }
-            let mut mmap = open_write_mmap(&status_file)?;
-            write_to_mmap(&mut mmap, 0, 0usize);
-            mmap.flush()?;
-            Ok(mmap)
-        } else {
-            open_write_mmap(&status_file)
-        }
     }
 
     fn ensure_config(directory: &Path, dim: usize) -> OperationResult<ChunkedMmapConfig> {
@@ -109,55 +80,13 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
         }
     }
 
-    /// Checks if the file name matches the pattern for mmap chunks
-    /// Return ID from the file name if it matches, None otherwise
-    fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
-        file_name
-            .strip_prefix(MMAP_CHUNKS_PATTERN_START)
-            .and_then(|file_name| file_name.strip_suffix(MMAP_CHUNKS_PATTERN_END))
-            .and_then(|file_name| file_name.parse::<usize>().ok())
-    }
-
-    fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapMut>> {
-        let mut result = Vec::new();
-        let mut mmap_files: HashMap<usize, _> = HashMap::new();
-        for entry in directory.read_dir()? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                let chunk_id = path
-                    .file_name()
-                    .and_then(|file_name| file_name.to_str())
-                    .and_then(Self::check_mmap_file_name_pattern);
-
-                if let Some(chunk_id) = chunk_id {
-                    mmap_files.insert(chunk_id, path);
-                }
-            }
-        }
-
-        let num_chunks = mmap_files.len();
-        for chunk_id in 0..num_chunks {
-            let mmap_file = mmap_files.remove(&chunk_id).ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "Missing mmap chunk {} in {}",
-                    chunk_id,
-                    directory.display()
-                ))
-            })?;
-            let mmap = open_write_mmap(&mmap_file)?;
-            result.push(mmap);
-        }
-        Ok(result)
-    }
-
     pub fn open(directory: &Path, dim: usize) -> OperationResult<Self> {
         create_dir_all(directory)?;
-        let status_mmap = Self::ensure_status_file(directory)?;
+        let status_mmap = ensure_status_file(directory)?;
         let len = *read_from_mmap(&status_mmap, 0);
-        let status = ChunkedMmapStatus { len };
+        let status = MmapStatus { len };
         let config = Self::ensure_config(directory, dim)?;
-        let chunks = Self::read_mmaps(directory)?;
+        let chunks = read_mmaps(directory)?;
 
         let vectors = Self {
             config,
@@ -191,15 +120,13 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
     }
 
     fn add_chunk(&mut self) -> OperationResult<()> {
-        let chunk_file_name = format!(
-            "{}{}{}",
-            MMAP_CHUNKS_PATTERN_START,
+        let mmap = create_chunk(
+            &self.directory,
             self.chunks.len(),
-            MMAP_CHUNKS_PATTERN_END
-        );
-        let chunk_file_path = self.directory.join(chunk_file_name);
-        create_and_ensure_length(&chunk_file_path, self.config.chunk_size_bytes)?;
-        self.chunks.push(open_write_mmap(&chunk_file_path)?);
+            self.config.chunk_size_bytes,
+        )?;
+
+        self.chunks.push(mmap);
         Ok(())
     }
 
