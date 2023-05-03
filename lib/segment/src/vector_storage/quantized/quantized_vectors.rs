@@ -229,7 +229,8 @@ impl QuantizedVectors {
             EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
         if in_ram {
-            let storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
+            let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
+            storage_builder.try_reserve_exact(vector_parameters.count)?;
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::encode(
                 vectors,
                 storage_builder,
@@ -269,7 +270,8 @@ impl QuantizedVectors {
             );
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
-            let storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
+            let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
+            storage_builder.try_reserve_exact(vector_parameters.count)?;
             Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
