@@ -219,6 +219,14 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<bool>;
 
+    fn update_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector_name: &str,
+        vector_data: &[VectorElementType],
+    ) -> OperationResult<bool>;
+
     fn delete_vector(
         &mut self,
         op_num: SeqNumberType,
