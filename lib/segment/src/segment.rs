@@ -766,12 +766,11 @@ impl SegmentEntry for Segment {
         }
     }
 
-    fn update_vector(
+    fn update_vectors(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector_name: &str,
-        vector: &[VectorElementType],
+        vectors: NamedVectors,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
@@ -779,13 +778,7 @@ impl SegmentEntry for Segment {
             None => Ok(false),
             Some(internal_id) => {
                 self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
-                    let vector_data = segment.vector_data.get(vector_name).ok_or(
-                        OperationError::VectorNameNotExists {
-                            received_name: vector_name.to_string(),
-                        },
-                    )?;
-                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.insert_vector(internal_id, vector)?;
+                    segment.update_vectors(internal_id, vectors)?;
                     Ok((true, Some(internal_id)))
                 })
             }
