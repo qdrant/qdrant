@@ -887,6 +887,28 @@ pub enum Match {
     Any(MatchAny),
 }
 
+impl Match {
+    #[cfg(test)]
+    fn new_value(value: ValueVariants) -> Self {
+        Self::Value(MatchValue { value })
+    }
+
+    #[cfg(test)]
+    fn new_text(text: &str) -> Self {
+        Self::Text(MatchText { text: text.into() })
+    }
+
+    pub fn new_any(any: AnyVariants) -> Self {
+        Self::Any(MatchAny { any })
+    }
+}
+
+impl From<AnyVariants> for Match {
+    fn from(any: AnyVariants) -> Self {
+        Self::Any(MatchAny { any })
+    }
+}
+
 impl From<MatchInterface> for Match {
     fn from(value: MatchInterface) -> Self {
         match value {
@@ -1123,6 +1145,14 @@ pub struct IsNullCondition {
     pub is_null: PayloadField,
 }
 
+impl From<String> for IsNullCondition {
+    fn from(key: String) -> Self {
+        IsNullCondition {
+            is_null: PayloadField { key },
+        }
+    }
+}
+
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
@@ -1318,7 +1348,7 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
@@ -1352,6 +1382,28 @@ impl Filter {
             should: None,
             must: None,
             must_not: Some(vec![condition]),
+        }
+    }
+
+    pub fn merge(&self, other: &Filter) -> Filter {
+        fn merge_component(
+            this: Option<Vec<Condition>>,
+            other: Option<Vec<Condition>>,
+        ) -> Option<Vec<Condition>> {
+            match (this, other) {
+                (None, None) => None,
+                (Some(this), None) => Some(this),
+                (None, Some(other)) => Some(other),
+                (Some(mut this), Some(other)) => {
+                    this.extend(other);
+                    Some(this)
+                }
+            }
+        }
+        Filter {
+            should: merge_component(self.should.clone(), other.should.clone()),
+            must: merge_component(self.must.clone(), other.must.clone()),
+            must_not: merge_component(self.must_not.clone(), other.must_not.clone()),
         }
     }
 }
@@ -1841,6 +1893,34 @@ mod tests {
         let query = r#""keyword""#;
         let field_type: PayloadSchemaType = serde_json::from_str(query).unwrap();
         eprintln!("field_type = {field_type:?}");
+    }
+
+    #[test]
+    fn merge_filters() {
+        let condition1 = Condition::Field(FieldCondition::new_match(
+            "summary".into(),
+            Match::new_text("Berlin"),
+        ));
+        let mut this = Filter::new_must(condition1.clone());
+        this.should = Some(vec![condition1.clone()]);
+
+        let condition2 = Condition::Field(FieldCondition::new_match(
+            "city".into(),
+            Match::new_value(ValueVariants::Keyword("Osaka".into())),
+        ));
+        let other = Filter::new_must(condition2.clone());
+
+        let merged = this.merge(&other);
+
+        assert!(merged.must.is_some());
+        assert!(merged.must.as_ref().unwrap().len() == 2);
+        assert!(merged.must_not.is_none());
+        assert!(merged.should.is_some());
+        assert!(merged.should.as_ref().unwrap().len() == 1);
+
+        assert!(merged.must.as_ref().unwrap().contains(&condition1));
+        assert!(merged.must.as_ref().unwrap().contains(&condition2));
+        assert!(merged.should.as_ref().unwrap().contains(&condition1));
     }
 }
 

@@ -927,7 +927,7 @@ impl Collection {
         Ok(top_results)
     }
 
-    async fn fill_search_result_with_payload(
+    pub(crate) async fn fill_search_result_with_payload(
         &self,
         search_result: Vec<ScoredPoint>,
         with_payload: Option<WithPayloadInterface>,
