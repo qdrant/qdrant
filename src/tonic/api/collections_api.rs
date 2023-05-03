@@ -3,10 +3,11 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
-    AliasDescription, ChangeAliases, CollectionOperationResponse, CreateCollection,
-    DeleteCollection, GetCollectionInfoRequest, GetCollectionInfoResponse, ListAliasesRequest,
-    ListAliasesResponse, ListCollectionAliasesRequest, ListCollectionsRequest,
-    ListCollectionsResponse, UpdateCollection,
+    AliasDescription, ChangeAliases, CollectionClusterInfoRequest, CollectionClusterInfoResponse,
+    CollectionOperationResponse, CreateCollection, DeleteCollection, GetCollectionInfoRequest,
+    GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
+    ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse,
+    UpdateCollection, UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::dispatcher::Dispatcher;
@@ -166,6 +167,49 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         self.list_aliases(request).await
     }
+
+    async fn collection_cluster_info(
+        &self,
+        request: Request<CollectionClusterInfoRequest>,
+    ) -> Result<Response<CollectionClusterInfoResponse>, Status> {
+        validate(request.get_ref())?;
+        let response = do_get_collection_cluster(
+            self.dispatcher.toc(),
+            request.into_inner().collection_name.as_str(),
+        )
+        .await
+        .map_err(error_to_status)?
+        .into();
+
+        Ok(Response::new(response))
+    }
+
+    async fn update_collection_cluster_setup(
+        &self,
+        request: Request<UpdateCollectionClusterSetupRequest>,
+    ) -> Result<Response<UpdateCollectionClusterSetupResponse>, Status> {
+        validate(request.get_ref())?;
+        let UpdateCollectionClusterSetupRequest {
+            collection_name,
+            operation,
+            timeout,
+            ..
+        } = request.into_inner();
+        let result = do_update_collection_cluster(
+            self.dispatcher.toc(),
+            collection_name,
+            operation
+                .ok_or(Status::new(tonic::Code::InvalidArgument, "empty operation"))?
+                .into(),
+            self.dispatcher.as_ref(),
+            timeout.map(std::time::Duration::from_secs),
+        )
+        .await
+        .map_err(error_to_status)?;
+        Ok(Response::new(UpdateCollectionClusterSetupResponse {
+            result,
+        }))
+    }
 }
 
 trait WithTimeout {
@@ -186,3 +230,4 @@ impl_with_timeout!(CreateCollection);
 impl_with_timeout!(UpdateCollection);
 impl_with_timeout!(DeleteCollection);
 impl_with_timeout!(ChangeAliases);
+impl_with_timeout!(UpdateCollectionClusterSetupRequest);

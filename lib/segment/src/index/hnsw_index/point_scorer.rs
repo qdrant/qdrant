@@ -20,14 +20,14 @@ impl<'a> FilteredScorer<'a> {
         }
     }
 
-    pub fn check_point(&self, point_id: PointOffsetType) -> bool {
+    pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
         match self.filter_context {
-            None => self.raw_scorer.check_point(point_id),
-            Some(f) => f.check(point_id) && self.raw_scorer.check_point(point_id),
+            None => self.raw_scorer.check_vector(point_id),
+            Some(f) => f.check(point_id) && self.raw_scorer.check_vector(point_id),
         }
     }
 
-    /// Method filters and calculates scores for the given slice of points
+    /// Method filters and calculates scores for the given slice of points IDs
     ///
     /// For performance reasons this function mutates input values.
     /// For result slice allocation this function mutates self.

@@ -1,6 +1,7 @@
 pub mod channel_service;
 pub mod collection_shard_distribution;
 mod conversions;
+pub mod dummy_shard;
 pub mod forward_proxy_shard;
 pub mod local_shard;
 pub mod local_shard_operations;

@@ -234,7 +234,7 @@ impl LocalShard {
         )
         .await;
 
-        collection.load_from_wal(collection_id);
+        collection.load_from_wal(collection_id)?;
 
         Ok(collection)
     }
@@ -385,7 +385,7 @@ impl LocalShard {
     }
 
     /// Loads latest collection operations from WAL
-    pub fn load_from_wal(&self, collection_id: CollectionId) {
+    pub fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
         let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());
 
@@ -398,21 +398,38 @@ impl LocalShard {
         let segments = self.segments();
         // ToDo: Start from minimal applied version
         for (op_num, update) in wal.read_all() {
-            // Panic only in case of internal error. If wrong formatting - skip
-            if let Err(CollectionError::ServiceError { error, backtrace }) =
-                CollectionUpdater::update(segments, op_num, update)
-            {
-                if let Some(backtrace) = backtrace {
-                    log::error!("Backtrace: {}", backtrace);
+            // Propagate `CollectionError::ServiceError`, but skip other error types.
+            match &CollectionUpdater::update(segments, op_num, update) {
+                Err(err @ CollectionError::ServiceError { error, backtrace }) => {
+                    let path = self.path.display();
+
+                    log::error!(
+                        "Can't apply WAL operation: {error}, \
+                         collection: {collection_id}, \
+                         shard: {path}, \
+                         op_num: {op_num}"
+                    );
+
+                    if let Some(backtrace) = &backtrace {
+                        log::error!("Backtrace: {}", backtrace);
+                    }
+
+                    return Err(err.clone());
                 }
-                let path = self.path.display();
-                panic!("Can't apply WAL operation: {error}, collection: {collection_id}, shard: {path}, op_num: {op_num}");
+                Err(err @ CollectionError::OutOfMemory { .. }) => {
+                    log::error!("{err}");
+                    return Err(err.clone());
+                }
+                Err(err) => log::error!("{err}"),
+                Ok(_) => (),
             }
             bar.inc(1);
         }
 
-        self.segments.read().flush_all(true).unwrap();
+        self.segments.read().flush_all(true)?;
         bar.finish();
+
+        Ok(())
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
@@ -588,7 +605,7 @@ impl LocalShard {
         }
         let cardinality = segments
             .iter()
-            .map(|(_id, segment)| segment.get().read().estimate_points_count(filter))
+            .map(|(_id, segment)| segment.get().read().estimate_point_count(filter))
             .fold(CardinalityEstimation::exact(0), |acc, x| {
                 CardinalityEstimation {
                     primary_clauses: vec![],

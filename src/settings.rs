@@ -4,11 +4,13 @@ use api::grpc::transport_channel_pool::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::operations::validation;
-use config::{Config, ConfigError, Environment, File};
+use config::{Config, ConfigError, Environment, File, FileFormat};
 use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
 use validator::Validate;
+
+const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
 
 #[derive(Debug, Deserialize, Validate, Clone)]
 pub struct ServiceConfig {
@@ -24,6 +26,7 @@ pub struct ServiceConfig {
     pub enable_tls: bool,
     #[serde(default)]
     pub verify_https_client_certificate: bool,
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default, Validate)]
@@ -95,6 +98,8 @@ pub struct TlsConfig {
     pub cert: String,
     pub key: String,
     pub ca_cert: String,
+    #[serde(default = "default_tls_cert_ttl")]
+    pub cert_ttl: u64,
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
@@ -113,6 +118,9 @@ pub struct Settings {
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
     pub tls: Option<TlsConfig>,
+    // Can't use `#[serde(skip)]` here. It prevents overriding the value later.
+    #[serde(default)]
+    pub found_config_files: bool,
 }
 
 impl Settings {
@@ -131,6 +139,10 @@ impl Settings {
 
     #[allow(dead_code)]
     pub fn validate_and_warn(&self) {
+        if !self.found_config_files {
+            log::warn!("Configuration files not found. Using default configuration.");
+        }
+
         if let Err(ref errs) = self.validate() {
             validation::warn_validation_errors("Settings configuration file", errs);
         }
@@ -182,15 +194,39 @@ fn default_message_timeout_tics() -> u64 {
     10
 }
 
+const fn default_tls_cert_ttl() -> u64 {
+    // Default one hour
+    3600
+}
+
 impl Settings {
     #[allow(dead_code)]
     pub fn new(config_path: Option<String>) -> Result<Self, ConfigError> {
         let config_path = config_path.unwrap_or_else(|| "config/config".into());
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
-        let s = Config::builder()
-            // Start off by merging in the "default" configuration file
+        if env::var("RUN_MODE").is_ok()
+            && Config::builder()
+                .add_source(File::with_name(&config_path))
+                .add_source(File::with_name(&format!("config/{env}")))
+                .build()
+                .is_err()
+        {
+            return Err(ConfigError::Message("`RUN_MODE` environment variable is set, but couldn't find matching configuration files".to_string()));
+        }
+
+        let mut s = Config::builder()
+            // Start with the default configuration file contents at compile time
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml));
+
+        let found_config_files = Config::builder()
             .add_source(File::with_name(&config_path))
+            .build()
+            .is_ok();
+
+        s = s
+            // Then merge in the default configuration file contents at run time
+            .add_source(File::with_name(&config_path).required(false))
             // Add in the current environment file
             // Default to 'development' env
             // Note that this file is _optional_
@@ -201,7 +237,9 @@ impl Settings {
             // Add in settings from the environment (with a prefix of APP)
             // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
             .add_source(Environment::with_prefix("QDRANT").separator("__"))
-            .build()?;
+            .set_override("found_config_files", found_config_files)?;
+
+        let s = s.build()?;
 
         // You can deserialize (and thus freeze) the entire configuration as
         s.try_deserialize()
@@ -225,17 +263,58 @@ pub fn max_web_workers(settings: &Settings) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use sealed_test::prelude::*;
+
     use super::*;
 
+    /// Ensure we can successfully deserialize into [`Settings`] with just the default configuration.
     #[test]
     fn test_default_config() {
+        Config::builder()
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
+            .build()
+            .expect("failed to build default config")
+            .try_deserialize::<Settings>()
+            .expect("failed to deserialize default config")
+            .validate()
+            .expect("failed to validate default config");
+    }
+
+    #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
+    fn test_runtime_development_config() {
+        // `sealed_test` copies files into the same directory as the test runs in.
+        // We need them in a subdirectory.
+        std::fs::create_dir("config").expect("failed to create `config` subdirectory.");
+        std::fs::copy("config.yaml", "config/config.yaml").expect("failed to copy `config.yaml`.");
+        std::fs::copy("development.yaml", "config/development.yaml")
+            .expect("failed to copy `development.yaml`.");
+
         let key = "RUN_MODE";
-        env::set_var(key, "TEST");
+        env::set_var(key, "development");
 
         // Read config
-        let config = Settings::new(None).unwrap();
+        let config = Settings::new(None).expect("failed to load development config at runtime");
 
         // Validate
-        config.validate().unwrap();
+        config
+            .validate()
+            .expect("failed to validate development config at runtime");
+        assert!(config.found_config_files)
+    }
+
+    #[sealed_test]
+    fn test_no_config_files() {
+        let non_existing_config_path = "config/non_existing_config".to_string();
+        env::remove_var("RUN_MODE");
+
+        // Read config
+        let config = Settings::new(Some(non_existing_config_path))
+            .expect("failed to load with non-existing runtime config");
+
+        // Validate
+        config
+            .validate()
+            .expect("failed to validate with non-existing runtime config");
+        assert!(!config.found_config_files)
     }
 }

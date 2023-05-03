@@ -33,9 +33,7 @@ pub trait StorageVersion {
         let current_version = Self::current();
         af.write(|f| f.write_all(current_version.as_bytes()))
             .map_err(|err| {
-                FileStorageError::generic_error(&format!(
-                    "Can't write {version_file:?}, error: {err}"
-                ))
+                FileStorageError::generic(format!("Can't write {version_file:?}, error: {err}"))
             })
     }
 }

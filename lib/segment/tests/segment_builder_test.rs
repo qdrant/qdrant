@@ -35,7 +35,7 @@ mod tests {
 
         // Include overlapping with segment1 to check the
         segment2
-            .upsert_vector(100, 3.into(), &only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(100, 3.into(), &only_default_vector(&[0., 0., 0., 0.]))
             .unwrap();
 
         builder.update_from(&segment1, &stopped).unwrap();
@@ -61,12 +61,16 @@ mod tests {
         assert_eq!(new_segment_count, 3);
 
         assert_eq!(
-            merged_segment.points_count(),
+            merged_segment.iter_points().count(),
+            merged_segment.available_point_count(),
+        );
+        assert_eq!(
+            merged_segment.available_point_count(),
             segment1
                 .iter_points()
                 .chain(segment2.iter_points())
                 .unique()
-                .count()
+                .count(),
         );
 
         assert_eq!(merged_segment.point_version(3.into()), Some(100));
@@ -127,7 +131,7 @@ mod tests {
 
         for idx in 0..1000 {
             segment
-                .upsert_vector(1, idx.into(), &only_default_vector(&[0., 0., 0., 0.]))
+                .upsert_point(1, idx.into(), &only_default_vector(&[0., 0., 0., 0.]))
                 .unwrap();
         }
 

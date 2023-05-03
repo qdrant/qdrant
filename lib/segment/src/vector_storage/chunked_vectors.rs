@@ -1,9 +1,11 @@
 use std::cmp::max;
+use std::collections::TryReserveError;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::mem;
 use std::path::Path;
 
+use super::div_ceil;
 use crate::types::PointOffsetType;
 
 // chunk size in bytes
@@ -50,26 +52,52 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         &chunk_data[idx..idx + self.dim]
     }
 
-    pub fn push(&mut self, vector: &[T]) -> PointOffsetType {
+    pub fn push(&mut self, vector: &[T]) -> Result<PointOffsetType, TryReserveError> {
         let new_id = self.len as PointOffsetType;
-        self.insert(new_id, vector);
-        new_id
+        self.insert(new_id, vector)?;
+        Ok(new_id)
     }
 
-    pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) {
+    pub fn try_reserve_exact(&mut self, num_vectors: usize) -> Result<(), TryReserveError> {
+        let num_chunks = div_ceil(num_vectors, self.chunk_capacity);
+        let last_chunk_idx = num_vectors / self.chunk_capacity;
+        self.chunks.try_reserve_exact(num_chunks)?;
+        self.chunks.resize(num_chunks, vec![]);
+        for chunk_idx in 0..num_chunks {
+            if chunk_idx == last_chunk_idx {
+                self.chunks[chunk_idx]
+                    .try_reserve_exact((num_vectors % self.chunk_capacity) * self.dim)?;
+            } else {
+                self.chunks[chunk_idx].try_reserve_exact(self.chunk_capacity * self.dim)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> Result<(), TryReserveError> {
         let key = key as usize;
         self.len = max(self.len, key + 1);
-        while self.chunks.len() * self.chunk_capacity < self.len {
-            self.chunks.push(vec![]);
-        }
+        self.chunks
+            .resize(div_ceil(self.len, self.chunk_capacity), vec![]);
 
-        let chunk_data = &mut self.chunks[key / self.chunk_capacity];
+        let chunk_idx = key / self.chunk_capacity;
+        let chunk_data = &mut self.chunks[chunk_idx];
         let idx = (key % self.chunk_capacity) * self.dim;
         if chunk_data.len() < idx + self.dim {
+            if chunk_idx == 0 {
+                // Do not overallocate the first chunk, because it is likely to be small
+                // and we don't want to waste memory.
+                chunk_data.try_reserve(idx + self.dim)?;
+            } else {
+                // Once we have more than one chunk, we don't want to overallocate
+                // and we keep the exact capacity of each chunk.
+                chunk_data.try_reserve_exact(self.chunk_capacity * self.dim)?;
+            }
             chunk_data.resize(idx + self.dim, T::default());
         }
         let data = &mut chunk_data[idx..idx + self.dim];
         data.copy_from_slice(vector);
+        Ok(())
     }
 }
 
@@ -84,10 +112,21 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         vectors_count: usize,
     ) -> std::io::Result<Self> {
         let mut vectors = Self::new(quantized_vector_size);
+        vectors.try_reserve_exact(vectors_count).map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::OutOfMemory,
+                format!("Failed to load quantized vectors from file: {}", err),
+            )
+        })?;
         let mut file = File::open(path)?;
         let mut buffer = vec![0u8; quantized_vector_size];
         while file.read_exact(&mut buffer).is_ok() {
-            vectors.push(&buffer);
+            vectors.push(&buffer).map_err(|err| {
+                std::io::Error::new(
+                    std::io::ErrorKind::OutOfMemory,
+                    format!("Failed to load quantized vectors from file: {}", err),
+                )
+            })?;
         }
         if vectors.len() == vectors_count {
             Ok(vectors)
@@ -118,6 +157,8 @@ impl quantization::EncodedStorageBuilder<ChunkedVectors<u8>> for ChunkedVectors<
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {
-        self.push(other);
+        // Memory for ChunkedVectors are already pre-allocated,
+        // so we do not expect any errors here.
+        self.push(other).unwrap();
     }
 }

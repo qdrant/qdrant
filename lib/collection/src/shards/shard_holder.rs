@@ -223,6 +223,7 @@ impl ShardHolder {
                 let mut require_migration = true;
                 match shard_type {
                     ShardType::Local => {
+                        // deprecated
                         let local_shard = LocalShard::load(
                             shard_id,
                             collection_id.clone(),
@@ -239,12 +240,14 @@ impl ShardHolder {
                             .unwrap();
                     }
                     ShardType::Remote { peer_id } => {
+                        // deprecated
                         replica_set
                             .add_remote(peer_id, ReplicaState::Active)
                             .await
                             .unwrap();
                     }
                     ShardType::Temporary => {
+                        // deprecated
                         let temp_shard = LocalShard::load(
                             shard_id,
                             collection_id.clone(),

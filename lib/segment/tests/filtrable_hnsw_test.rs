@@ -66,7 +66,7 @@ mod tests {
             let payload: Payload = json!({int_key:int_payload,}).into();
 
             segment
-                .upsert_vector(n as SeqNumberType, idx, &only_default_vector(&vector))
+                .upsert_point(n as SeqNumberType, idx, &only_default_vector(&vector))
                 .unwrap();
             segment
                 .set_full_payload(n as SeqNumberType, idx, &payload)
@@ -85,12 +85,11 @@ mod tests {
             payload_m: None,
         };
 
+        let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
         let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
             hnsw_dir.path(),
             segment.id_tracker.clone(),
-            segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .clone(),
+            vector_storage.clone(),
             payload_index_ptr.clone(),
             hnsw_config,
         )
@@ -114,8 +113,8 @@ mod tests {
         }
 
         let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
+        let px = payload_index_ptr.borrow();
         for block in &blocks {
-            let px = payload_index_ptr.borrow();
             let filter = Filter::new_must(Condition::Field(block.condition.clone()));
             let points = px.query_points(&filter);
             for point in points {

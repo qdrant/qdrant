@@ -3868,8 +3868,7 @@
             "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
             "type": "integer",
             "format": "uint",
-            "maximum": 10000,
-            "minimum": 4,
+            "minimum": 0,
             "nullable": true
           },
           "ef_construct": {
@@ -3968,8 +3967,7 @@
             "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
             "type": "integer",
             "format": "uint",
-            "maximum": 10000,
-            "minimum": 4
+            "minimum": 0
           },
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",

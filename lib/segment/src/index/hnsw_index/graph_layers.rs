@@ -201,7 +201,7 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
     ) -> Vec<ScoredPointOffset> {
         let entry_point = match self
             .entry_points
-            .get_entry_point(|point_id| points_scorer.check_point(point_id))
+            .get_entry_point(|point_id| points_scorer.check_vector(point_id))
         {
             None => return vec![],
             Some(ep) => ep,
@@ -226,6 +226,10 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
     pub fn get_links_path(path: &Path) -> PathBuf {
         path.join(HNSW_LINKS_FILE)
     }
+
+    pub fn num_points(&self) -> usize {
+        self.links.num_points()
+    }
 }
 
 impl<TGraphLinks> GraphLayers<TGraphLinks>
@@ -236,7 +240,7 @@ where
         let try_self: Result<Self, FileStorageError> = if links_path.exists() {
             read_bin(graph_path)
         } else {
-            Err(FileStorageError::generic_error(&format!(
+            Err(FileStorageError::generic(format!(
                 "Links file does not exists: {links_path:?}"
             )))
         };

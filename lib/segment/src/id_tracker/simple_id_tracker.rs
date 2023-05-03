@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use bincode;
-use bitvec::vec::BitVec;
+use bitvec::prelude::{BitSlice, BitVec};
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -325,16 +325,20 @@ impl IdTracker for SimpleIdTracker {
         }
     }
 
-    fn points_count(&self) -> usize {
+    fn total_point_count(&self) -> usize {
+        self.internal_to_external.len()
+    }
+
+    fn available_point_count(&self) -> usize {
         self.external_to_internal_num.len() + self.external_to_internal_uuid.len()
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        self.total_point_count() - self.available_point_count()
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         self.iter_internal()
-    }
-
-    fn internal_size(&self) -> usize {
-        self.internal_to_external.len()
     }
 
     fn mapping_flusher(&self) -> Flusher {
@@ -345,7 +349,7 @@ impl IdTracker for SimpleIdTracker {
         self.versions_db_wrapper.flusher()
     }
 
-    fn is_deleted(&self, key: PointOffsetType) -> bool {
+    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
         let key = key as usize;
         if key >= self.deleted.len() {
             return true;
@@ -353,7 +357,7 @@ impl IdTracker for SimpleIdTracker {
         self.deleted[key]
     }
 
-    fn deleted_bitvec(&self) -> &BitVec {
+    fn deleted_point_bitslice(&self) -> &BitSlice {
         &self.deleted
     }
 }

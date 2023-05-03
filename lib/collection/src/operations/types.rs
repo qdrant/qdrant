@@ -391,6 +391,8 @@ pub enum CollectionError {
     },
     #[error("Remote shard on {peer_id} failed during forward proxy operation: {error}")]
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
+    #[error("Out of memory, free: {free}, {description}")]
+    OutOfMemory { description: String, free: u64 },
 }
 
 impl CollectionError {
@@ -475,6 +477,9 @@ impl From<OperationError> for CollectionError {
             OperationError::TypeInferenceError { .. } => Self::BadInput {
                 description: format!("{err}"),
             },
+            OperationError::OutOfMemory { description, free } => {
+                Self::OutOfMemory { description, free }
+            }
         }
     }
 }
@@ -586,17 +591,7 @@ impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
 
 impl From<FileStorageError> for CollectionError {
     fn from(err: FileStorageError) -> Self {
-        match err {
-            FileStorageError::IoError { description } => {
-                CollectionError::service_error(description)
-            }
-            FileStorageError::UserAtomicIoError => {
-                CollectionError::service_error("Unknown atomic write error".to_string())
-            }
-            FileStorageError::GenericError { description } => {
-                CollectionError::service_error(description)
-            }
-        }
+        Self::service_error(err.to_string())
     }
 }
 

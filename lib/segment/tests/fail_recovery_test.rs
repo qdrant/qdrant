@@ -18,10 +18,10 @@ mod tests {
         let mut segment = empty_segment(dir.path());
 
         segment
-            .upsert_vector(1, 1.into(), &only_default_vector(&vec1))
+            .upsert_point(1, 1.into(), &only_default_vector(&vec1))
             .unwrap();
         segment
-            .upsert_vector(1, 2.into(), &only_default_vector(&vec1))
+            .upsert_point(1, 2.into(), &only_default_vector(&vec1))
             .unwrap();
 
         segment.error_status = Some(SegmentFailedState {

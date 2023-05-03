@@ -2,6 +2,7 @@ use core::marker::{Send, Sync};
 use std::path::Path;
 
 use crate::operations::types::CollectionResult;
+use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::proxy_shard::ProxyShard;
@@ -21,6 +22,7 @@ pub enum Shard {
     Local(LocalShard),
     Proxy(ProxyShard),
     ForwardProxy(ForwardProxyShard),
+    Dummy(DummyShard),
 }
 
 impl Shard {
@@ -29,6 +31,7 @@ impl Shard {
             Shard::Local(_) => "local shard",
             Shard::Proxy(_) => "proxy shard",
             Shard::ForwardProxy(_) => "forward proxy shard",
+            Shard::Dummy(_) => "dummy shard",
         }
     }
 
@@ -37,6 +40,7 @@ impl Shard {
             Shard::Local(local_shard) => local_shard,
             Shard::Proxy(proxy_shard) => proxy_shard,
             Shard::ForwardProxy(proxy_shard) => proxy_shard,
+            Shard::Dummy(dummy_shard) => dummy_shard,
         }
     }
 
@@ -45,6 +49,7 @@ impl Shard {
             Shard::Local(local_shard) => local_shard.before_drop().await,
             Shard::Proxy(proxy_shard) => proxy_shard.before_drop().await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.before_drop().await,
+            Shard::Dummy(_) => (), // `DummyShard` don't need (and don't have) `before_drop`
         }
     }
 
@@ -53,6 +58,7 @@ impl Shard {
             Shard::Local(local_shard) => local_shard.get_telemetry_data(),
             Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
             Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(),
+            Shard::Dummy(dummy_shard) => dummy_shard.get_telemetry_data(),
         };
         telemetry.variant_name = Some(self.variant_name().to_string());
         telemetry
@@ -69,6 +75,7 @@ impl Shard {
             Shard::ForwardProxy(proxy_shard) => {
                 proxy_shard.create_snapshot(target_path, save_wal).await
             }
+            Shard::Dummy(dummy_shard) => dummy_shard.create_snapshot(target_path, save_wal).await,
         }
     }
 
@@ -77,6 +84,7 @@ impl Shard {
             Shard::Local(local_shard) => local_shard.on_optimizer_config_update().await,
             Shard::Proxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
+            Shard::Dummy(dummy_shard) => dummy_shard.on_optimizer_config_update().await,
         }
     }
 }

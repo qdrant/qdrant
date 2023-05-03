@@ -54,11 +54,23 @@ pub struct StorageConfig {
     pub node_type: NodeType,
     #[serde(default)]
     pub update_queue_size: Option<usize>,
+    #[serde(default)]
+    pub handle_collection_load_errors: bool,
+    /// If provided - qdrant will start in recovery mode, which means that it will not accept any new data.
+    /// Only collection metadata will be available, and it will only process collection delete requests.
+    /// Provided value will be used error message for unavailable requests.
+    #[serde(default)]
+    pub recovery_mode: Option<String>,
 }
 
 impl StorageConfig {
     pub fn to_shared_storage_config(&self) -> SharedStorageConfig {
-        SharedStorageConfig::new(self.update_queue_size, self.node_type)
+        SharedStorageConfig::new(
+            self.update_queue_size,
+            self.node_type,
+            self.handle_collection_load_errors,
+            self.recovery_mode.clone(),
+        )
     }
 }
 

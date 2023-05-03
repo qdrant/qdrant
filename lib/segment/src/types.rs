@@ -303,7 +303,7 @@ pub struct SearchParams {
 }
 
 /// Vector index configuration of the segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
@@ -316,11 +316,10 @@ pub enum Indexes {
 }
 
 /// Config of HNSW index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
-    #[validate(range(min = 4, max = 10_000))]
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     #[validate(range(min = 4))]
@@ -505,6 +504,20 @@ impl SegmentConfig {
             .get(vector_name)
             .and_then(|v| v.quantization_config.as_ref())
             .or(self.quantization_config.as_ref())
+    }
+
+    pub fn is_vector_indexed(&self) -> bool {
+        match self.index {
+            Indexes::Plain {} => false,
+            Indexes::Hnsw(_) => true,
+        }
+    }
+
+    pub fn is_memmaped(&self) -> bool {
+        match self.storage_type {
+            StorageType::InMemory => false,
+            StorageType::Mmap => true,
+        }
     }
 }
 

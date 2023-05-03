@@ -152,23 +152,27 @@ fn focus_array_path<'a>(
         Some(Value::Array(array)) => {
             let mut values: MultiValue<_> = MultiValue::default();
             for (i, value) in array.iter().enumerate() {
-                if let Value::Object(map) = value {
-                    if let Some(array_index) = array_index {
-                        if i == array_index as usize {
-                            match rest_path {
-                                Some(rest_path) => {
-                                    values.extend(get_value_from_json_map(rest_path, map))
-                                }
-                                None => values.push(value),
-                            }
-                        }
-                    } else {
+                if let Some(array_index) = array_index {
+                    if i == array_index as usize {
                         match rest_path {
                             Some(rest_path) => {
-                                values.extend(get_value_from_json_map(rest_path, map))
+                                // expect an Object if there is a rest path
+                                if let Value::Object(map) = value {
+                                    values.extend(get_value_from_json_map(rest_path, map))
+                                }
                             }
                             None => values.push(value),
                         }
+                    }
+                } else {
+                    match rest_path {
+                        Some(rest_path) => {
+                            // expect an Object if there is a rest path
+                            if let Value::Object(map) = value {
+                                values.extend(get_value_from_json_map(rest_path, map))
+                            }
+                        }
+                        None => values.push(value),
                     }
                 }
             }
@@ -392,7 +396,8 @@ mod tests {
                         { "d": { "e": 3 } }
                     ]
                 },
-                "f": 3
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
             }
             "#,
         )
@@ -466,13 +471,25 @@ mod tests {
             )]))]
         );
 
-        // select scalar element from array different index
+        // select scalar object from array different index
         assert_eq!(
             get_value_from_json_map("a.b[1]", &map).values(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "c".to_string(),
                 Value::Number(2.into())
             )]))]
+        );
+
+        // select field element from array different index
+        assert_eq!(
+            get_value_from_json_map("a.b[1].c", &map).values(),
+            vec![&Value::Number(2.into())]
+        );
+
+        // select scalar element from array different index
+        assert_eq!(
+            get_value_from_json_map("g[2]", &map).values(),
+            vec![&Value::String("g2".to_string())]
         );
 
         // select object element from array

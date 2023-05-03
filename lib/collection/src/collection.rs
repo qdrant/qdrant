@@ -688,7 +688,11 @@ impl Collection {
                 .set_local(shard, Some(ReplicaState::Partial))
                 .await?;
         } else {
-            if !replica_set.is_local().await {
+            if replica_set.is_dummy().await {
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} is a \"dummy\" shard"
+                )));
+            } else if !replica_set.is_local().await {
                 // We have proxy or something, we need to unwrap it
                 log::warn!("Unwrapping proxy shard {}", shard_id);
                 replica_set.un_proxify_local().await?
@@ -1584,7 +1588,7 @@ impl Collection {
                 continue;
             }
 
-            if this_peer_state != Some(Dead) {
+            if this_peer_state != Some(Dead) || replica_set.is_dummy().await {
                 continue; // All good
             }
 

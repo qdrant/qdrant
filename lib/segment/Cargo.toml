@@ -30,9 +30,9 @@ serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_json = "~1.0"
 serde_cbor = "0.11.2"
 serde-value = "0.7"
-ordered-float = "3.6"
+ordered-float = "3.7"
 thiserror = "1.0"
-atomic_refcell = "0.1.9"
+atomic_refcell = "0.1.10"
 atomicwrites = "0.4.1"
 memmap2 = "0.5.10"
 schemars = { version = "0.8.12", features = ["uuid1", "preserve_order", "chrono"] }
@@ -51,6 +51,12 @@ tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
 chrono = { version = "0.4.24", features = ["serde"] }
+
+sysinfo = "0.28"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+cgroups-rs = "0.3"
+procfs = { version = "0.15", default-features = false }
 
 [[bench]]
 name = "vector_search"

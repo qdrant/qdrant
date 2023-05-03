@@ -2,7 +2,6 @@ use std::path::Path;
 use std::{fmt, fs};
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::utils;
 
 /// Move all files and directories from the `dir` directory to the `dest_dir` directory.
 ///
@@ -35,27 +34,29 @@ fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()
 
         let path = entry.path();
 
-        let name = utils::path::strip_prefix(&path, base)
-            .map_err(|err| failed_to_move_error(&path, dest_dir, err))?;
+        let name = path
+            .file_name()
+            .ok_or_else(|| failed_to_move_error(&path, dest_dir, "source path ends with .."))?;
 
-        let dest = dest_dir.join(name);
+        let dest_path = dest_dir.join(name);
 
-        if path.is_dir() && dest.exists() {
-            move_all_impl(base, &path, &dest)?;
+        if path.is_dir() && dest_path.exists() {
+            move_all_impl(base, &path, &dest_path)?;
         } else {
-            if let Some(dir) = dest.parent() {
+            if let Some(dir) = dest_path.parent() {
                 if !dir.exists() {
                     fs::create_dir_all(dir).map_err(|err| {
                         failed_to_move_error(
                             &path,
-                            &dest,
+                            &dest_path,
                             format!("failed to create {dir:?} directory: {err}"),
                         )
                     })?;
                 }
             }
 
-            fs::rename(&path, &dest).map_err(|err| failed_to_move_error(&path, &dest, err))?;
+            fs::rename(&path, &dest_path)
+                .map_err(|err| failed_to_move_error(&path, &dest_path, err))?;
         }
     }
 

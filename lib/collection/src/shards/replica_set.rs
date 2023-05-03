@@ -1,6 +1,7 @@
 use std::cmp;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -36,8 +37,9 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
+use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
-use crate::shards::shard::Shard::{ForwardProxy, Local};
+use crate::shards::shard::Shard::{Dummy, ForwardProxy, Local};
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation;
@@ -174,7 +176,12 @@ pub struct ShardReplicaSet {
 impl ShardReplicaSet {
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
-        matches!(*local_read, Some(Local(_)))
+        matches!(*local_read, Some(Local(_) | Dummy(_)))
+    }
+
+    pub async fn is_dummy(&self) -> bool {
+        let local_read = self.local.read().await;
+        matches!(*local_read, Some(Dummy(_)))
     }
 
     pub async fn has_local_shard(&self) -> bool {
@@ -433,7 +440,8 @@ impl ShardReplicaSet {
     /// Recovers shard from disk.
     ///
     /// WARN: This method intended to be used only on the initial start of the node.
-    /// It does not implement any logic to recover from a failure. Will panic if there is a failure.
+    /// It does not implement any logic to recover from a failure.
+    /// Will panic or load partial state if there is a failure.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         shard_id: ShardId,
@@ -473,20 +481,40 @@ impl ShardReplicaSet {
         );
 
         let local = if replica_state.read().is_local {
-            let shard = LocalShard::load(
-                shard_id,
-                collection_id.clone(),
-                shard_path,
-                collection_config.clone(),
-                shared_storage_config.clone(),
-                update_runtime.clone(),
-            )
-            .await
-            .map_err(|e| {
-                panic!("Failed to load local shard {shard_path:?}: {e}");
-            })
-            .unwrap();
-            Some(Local(shard))
+            let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
+                Dummy(DummyShard::new(recovery_reason))
+            } else {
+                let res = LocalShard::load(
+                    shard_id,
+                    collection_id.clone(),
+                    shard_path,
+                    collection_config.clone(),
+                    shared_storage_config.clone(),
+                    update_runtime.clone(),
+                )
+                .await;
+
+                match res {
+                    Ok(shard) => Local(shard),
+                    Err(err) => {
+                        if !shared_storage_config.handle_collection_load_errors {
+                            panic!("Failed to load local shard {shard_path:?}: {err}")
+                        }
+
+                        log::error!(
+                            "Failed to load local shard {shard_path:?}, \
+                         initializing \"dummy\" shard instead: \
+                         {err}"
+                        );
+
+                        Dummy(DummyShard::new(format!(
+                            "Failed to load local shard {shard_path:?}: {err}"
+                        )))
+                    }
+                }
+            };
+
+            Some(shard)
         } else {
             None
         };
@@ -675,11 +703,11 @@ impl ShardReplicaSet {
                 match read_operation_res {
                     Ok(_) => return read_operation_res,
                     res @ Err(CollectionError::ServiceError { .. }) => {
-                        log::debug!("Local read op. failed: {:?}", res.as_ref().err());
+                        log::debug!("Local read op. failed: {}", res.as_ref().err().unwrap());
                         local_result = Some(res);
                     }
                     res @ Err(CollectionError::Cancelled { .. }) => {
-                        log::debug!("Local read op. cancelled: {:?}", res.as_ref().err());
+                        log::debug!("Local read op. cancelled: {}", res.as_ref().err().unwrap());
                         local_result = Some(res);
                     }
                     res @ Err(_) => {
@@ -727,11 +755,11 @@ impl ShardReplicaSet {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
                 err @ Err(CollectionError::ServiceError { .. }) => {
-                    log::debug!("Remote read op. failed: {:?}", err.as_ref().err());
+                    log::debug!("Remote read op. failed: {}", err.as_ref().err().unwrap());
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(CollectionError::Cancelled { .. }) => {
-                    log::debug!("Remote read op. cancelled: {:?}", err.as_ref().err());
+                    log::debug!("Remote read op. cancelled: {}", err.as_ref().err().unwrap());
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(_) => return err, // Validation or user errors reported immediately
@@ -754,13 +782,16 @@ impl ShardReplicaSet {
             match result {
                 Ok(res) => return Ok(res), // We only need one successful result
                 err @ Err(CollectionError::ServiceError { .. }) => {
-                    log::debug!("Remote fallback read op. failed: {:?}", err.as_ref().err());
+                    log::debug!(
+                        "Remote fallback read op. failed: {}",
+                        err.as_ref().err().unwrap()
+                    );
                     captured_error = Some(err)
                 } // capture error for possible error reporting
                 err @ Err(CollectionError::Cancelled { .. }) => {
                     log::debug!(
-                        "Remote fallback read op. cancelled: {:?}",
-                        err.as_ref().err()
+                        "Remote fallback read op. cancelled: {}",
+                        err.as_ref().err().unwrap()
                     );
                     captured_error = Some(err)
                 } // capture error for possible error reporting
@@ -848,6 +879,7 @@ impl ShardReplicaSet {
             operations.by_ref().take(required_reads).collect();
 
         let mut responses = Vec::new();
+        let mut errors = Vec::new();
 
         while let Some(result) = pending_operations.next().await {
             match result {
@@ -861,6 +893,7 @@ impl ShardReplicaSet {
 
                     if is_transient {
                         log::debug!("Read operation failed: {err}");
+                        errors.push(err);
                     } else {
                         return Err(err);
                     }
@@ -890,9 +923,22 @@ impl ShardReplicaSet {
                 Ok(Res::resolve(responses, condition))
             }
         } else {
-            Err(CollectionError::service_error(
-                "Failed to complete read operation: too many replicas returned an error".into(),
-            ))
+            let success_count = responses.len();
+            let error_count = errors.len();
+
+            Err(CollectionError::service_error(format!(
+                "{error_count} of {} shards failed with: {}",
+                success_count + error_count,
+                errors.into_iter().fold(String::new(), |mut msg, err| {
+                    if msg.is_empty() {
+                        msg = err.to_string();
+                    } else {
+                        write!(&mut msg, ", {err}").unwrap(); // Writing into `String` never fails
+                    }
+
+                    msg
+                })
+            )))
         }
     }
 

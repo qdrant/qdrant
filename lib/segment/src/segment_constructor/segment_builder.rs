@@ -1,4 +1,4 @@
-use core::cmp;
+use std::cmp;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -53,125 +53,133 @@ impl SegmentBuilder {
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
     pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
-        match &mut self.segment {
-            None => Err(OperationError::service_error(
-                "Segment building error: created segment not found",
-            )),
-            Some(self_segment) => {
-                self_segment.version = Some(cmp::max(self_segment.version(), other.version()));
+        let self_segment = match &mut self.segment {
+            Some(segment) => segment,
+            None => {
+                return Err(OperationError::service_error(
+                    "Segment building error: created segment not found",
+                ))
+            }
+        };
+        self_segment.version = Some(cmp::max(self_segment.version(), other.version()));
 
-                let other_id_tracker = other.id_tracker.borrow();
-                let other_vector_storages: HashMap<_, _> = other
-                    .vector_data
-                    .iter()
-                    .map(|(vector_name, vector_data)| {
-                        (vector_name.to_owned(), vector_data.vector_storage.borrow())
-                    })
-                    .collect();
-                let other_payload_index = other.payload_index.borrow();
+        let other_id_tracker = other.id_tracker.borrow();
+        let other_vector_storages: HashMap<_, _> = other
+            .vector_data
+            .iter()
+            .map(|(vector_name, vector_data)| {
+                (vector_name.to_owned(), vector_data.vector_storage.borrow())
+            })
+            .collect();
+        let other_payload_index = other.payload_index.borrow();
 
-                let mut id_tracker = self_segment.id_tracker.borrow_mut();
-                let mut vector_storages: HashMap<_, _> = self_segment
-                    .vector_data
-                    .iter()
-                    .map(|(vector_name, vector_data)| {
-                        (
-                            vector_name.to_owned(),
-                            vector_data.vector_storage.borrow_mut(),
-                        )
-                    })
-                    .collect();
-                let mut payload_index = self_segment.payload_index.borrow_mut();
+        let mut id_tracker = self_segment.id_tracker.borrow_mut();
+        let mut vector_storages: HashMap<_, _> = self_segment
+            .vector_data
+            .iter()
+            .map(|(vector_name, vector_data)| {
+                (
+                    vector_name.to_owned(),
+                    vector_data.vector_storage.borrow_mut(),
+                )
+            })
+            .collect();
+        let mut payload_index = self_segment.payload_index.borrow_mut();
 
-                if vector_storages.len() != other_vector_storages.len() {
-                    return Err(OperationError::service_error(
-                        format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
-                    ));
-                }
+        if vector_storages.len() != other_vector_storages.len() {
+            return Err(OperationError::service_error(
+                format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
+            ));
+        }
 
-                let mut new_internal_range = None;
-                for (vector_name, vector_storage) in &mut vector_storages {
-                    check_process_stopped(stopped)?;
-                    let other_vector_storage = other_vector_storages.get(vector_name);
-                    if other_vector_storage.is_none() {
-                        return Err(OperationError::service_error(format!(
-                            "Cannot update from other segment because if missing vector name {vector_name}"
-                        )));
-                    }
-                    let other_vector_storage = other_vector_storage.unwrap();
-                    let internal_range = vector_storage.update_from(
-                        other_vector_storage,
-                        &mut other_id_tracker.iter_ids(),
-                        stopped,
-                    )?;
-                    match new_internal_range.clone() {
-                        Some(new_internal_range) => {
-                            if new_internal_range != internal_range {
-                                return Err(OperationError::service_error(
-                                    "Internal ids range mismatch between self segment vectors and other segment vectors",
-                                ));
-                            }
-                        }
-                        None => new_internal_range = Some(internal_range.clone()),
-                    }
-                }
-
-                if let Some(new_internal_range) = new_internal_range {
-                    let internal_id_iter = new_internal_range.zip(other_id_tracker.iter_ids());
-
-                    for (new_internal_id, old_internal_id) in internal_id_iter {
-                        check_process_stopped(stopped)?;
-
-                        let external_id = if let Some(external_id) =
-                            other_id_tracker.external_id(old_internal_id)
-                        {
-                            external_id
-                        } else {
-                            log::warn!("Cannot find external id for internal id {old_internal_id}, skipping");
-                            continue;
-                        };
-                        let other_version =
-                            other_id_tracker.internal_version(old_internal_id).unwrap();
-
-                        match id_tracker.internal_id(external_id) {
-                            None => {
-                                // New point, just insert
-                                id_tracker.set_link(external_id, new_internal_id)?;
-                                id_tracker.set_internal_version(new_internal_id, other_version)?;
-                                payload_index.assign(
-                                    new_internal_id,
-                                    &other_payload_index.payload(old_internal_id)?,
-                                )?;
-                            }
-                            Some(existing_internal_id) => {
-                                // Point exists in both: newly constructed and old segments, so we need to merge them
-                                // Based on version
-                                let existing_version =
-                                    id_tracker.internal_version(existing_internal_id).unwrap();
-                                if existing_version < other_version {
-                                    // Other version is the newest, remove the existing one and replace
-                                    id_tracker.drop(external_id)?;
-                                    id_tracker.set_link(external_id, new_internal_id)?;
-                                    id_tracker
-                                        .set_internal_version(new_internal_id, other_version)?;
-                                    payload_index.drop(existing_internal_id)?;
-                                    payload_index.assign(
-                                        new_internal_id,
-                                        &other_payload_index.payload(old_internal_id)?,
-                                    )?;
-                                }
-                            }
-                        }
+        let mut new_internal_range = None;
+        for (vector_name, vector_storage) in &mut vector_storages {
+            check_process_stopped(stopped)?;
+            let other_vector_storage = other_vector_storages.get(vector_name);
+            if other_vector_storage.is_none() {
+                return Err(OperationError::service_error(format!(
+                    "Cannot update from other segment because if missing vector name {vector_name}"
+                )));
+            }
+            let other_vector_storage = other_vector_storage.unwrap();
+            let internal_range = vector_storage.update_from(
+                other_vector_storage,
+                &mut other_id_tracker.iter_ids(),
+                stopped,
+            )?;
+            match new_internal_range.clone() {
+                Some(new_internal_range) => {
+                    if new_internal_range != internal_range {
+                        return Err(OperationError::service_error(
+                            "Internal ids range mismatch between self segment vectors and other segment vectors",
+                        ));
                     }
                 }
-
-                for (field, payload_schema) in other.payload_index.borrow().indexed_fields() {
-                    self.indexed_fields.insert(field, payload_schema);
-                }
-
-                Ok(true)
+                None => new_internal_range = Some(internal_range.clone()),
             }
         }
+
+        if let Some(new_internal_range) = new_internal_range {
+            let internal_id_iter = new_internal_range.zip(other_id_tracker.iter_ids());
+
+            for (new_internal_id, old_internal_id) in internal_id_iter {
+                check_process_stopped(stopped)?;
+
+                let external_id =
+                    if let Some(external_id) = other_id_tracker.external_id(old_internal_id) {
+                        external_id
+                    } else {
+                        log::warn!(
+                            "Cannot find external id for internal id {old_internal_id}, skipping"
+                        );
+                        continue;
+                    };
+                let other_version = other_id_tracker.internal_version(old_internal_id).unwrap();
+
+                match id_tracker.internal_id(external_id) {
+                    None => {
+                        // New point, just insert
+                        id_tracker.set_link(external_id, new_internal_id)?;
+                        id_tracker.set_internal_version(new_internal_id, other_version)?;
+                        payload_index.assign(
+                            new_internal_id,
+                            &other_payload_index.payload(old_internal_id)?,
+                        )?;
+                    }
+                    Some(existing_internal_id) => {
+                        // Point exists in both: newly constructed and old segments, so we need to merge them
+                        // Based on version
+                        let existing_version =
+                            id_tracker.internal_version(existing_internal_id).unwrap();
+                        let remove_id = if existing_version < other_version {
+                            // Other version is the newest, remove the existing one and replace
+                            id_tracker.drop(external_id)?;
+                            id_tracker.set_link(external_id, new_internal_id)?;
+                            id_tracker.set_internal_version(new_internal_id, other_version)?;
+                            payload_index.drop(existing_internal_id)?;
+                            payload_index.assign(
+                                new_internal_id,
+                                &other_payload_index.payload(old_internal_id)?,
+                            )?;
+                            existing_internal_id
+                        } else {
+                            // Old version is still good, do not move anything else
+                            // Mark newly added vector as removed
+                            new_internal_id
+                        };
+                        for vector_storage in vector_storages.values_mut() {
+                            vector_storage.delete_vector(remove_id)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (field, payload_schema) in other.payload_index.borrow().indexed_fields() {
+            self.indexed_fields.insert(field, payload_schema);
+        }
+
+        Ok(true)
     }
 
     pub fn build(mut self, stopped: &AtomicBool) -> Result<Segment, OperationError> {

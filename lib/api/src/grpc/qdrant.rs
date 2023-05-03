@@ -11,9 +11,11 @@ pub struct VectorParams {
     pub distance: i32,
     /// Configuration of vector HNSW graph. If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "3")]
+    #[validate]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of vector quantization config. If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "4")]
+    #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[derive(validator::Validate)]
@@ -96,7 +98,6 @@ pub struct HnswConfigDiff {
     ///
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     #[prost(uint64, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_4_max_10000")]
     pub m: ::core::option::Option<u64>,
     ///
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
@@ -194,6 +195,7 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "8")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScalarQuantization {
@@ -202,15 +204,18 @@ pub struct ScalarQuantization {
     pub r#type: i32,
     /// Number of bits to use for quantization
     #[prost(float, optional, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_f32_range_min_0_5_max_1")]
     pub quantile: ::core::option::Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "3")]
     pub always_ram: ::core::option::Option<bool>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
     #[prost(oneof = "quantization_config::Quantization", tags = "1")]
+    #[validate]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
 /// Nested message and enum types in `QuantizationConfig`.
@@ -266,6 +271,7 @@ pub struct CreateCollection {
     pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
     /// Quantization configuration of vector
     #[prost(message, optional, tag = "14")]
+    #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[derive(validator::Validate)]
@@ -312,6 +318,7 @@ pub struct CollectionOperationResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
@@ -323,6 +330,7 @@ pub struct CollectionParams {
     pub on_disk_payload: bool,
     /// Configuration for vectors
     #[prost(message, optional, tag = "5")]
+    #[validate]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
     /// Number of replicas of each shard that network tries to maintain
     #[prost(uint32, optional, tag = "6")]
@@ -342,14 +350,17 @@ pub struct CollectionParamsDiff {
     #[prost(uint32, optional, tag = "2")]
     pub write_consistency_factor: ::core::option::Option<u32>,
 }
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
     /// Collection parameters
     #[prost(message, optional, tag = "1")]
+    #[validate]
     pub params: ::core::option::Option<CollectionParams>,
     /// Configuration of vector index
     #[prost(message, optional, tag = "2")]
+    #[validate]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of the optimizers
     #[prost(message, optional, tag = "3")]
@@ -359,6 +370,7 @@ pub struct CollectionConfig {
     pub wal_config: ::core::option::Option<WalConfigDiff>,
     /// Configuration of the vector quantization
     #[prost(message, optional, tag = "5")]
+    #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -527,6 +539,131 @@ pub struct ListAliasesResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionClusterInfoRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LocalShardInfo {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    /// Number of points in the shard
+    #[prost(uint64, tag = "2")]
+    pub points_count: u64,
+    /// Is replica active
+    #[prost(enumeration = "ReplicaState", tag = "3")]
+    pub state: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoteShardInfo {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    /// Remote peer id
+    #[prost(uint64, tag = "2")]
+    pub peer_id: u64,
+    /// Is replica active
+    #[prost(enumeration = "ReplicaState", tag = "3")]
+    pub state: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardTransferInfo {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub from: u64,
+    #[prost(uint64, tag = "3")]
+    pub to: u64,
+    /// If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another
+    #[prost(bool, tag = "4")]
+    pub sync: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionClusterInfoResponse {
+    /// ID of this peer
+    #[prost(uint64, tag = "1")]
+    pub peer_id: u64,
+    /// Total number of shards
+    #[prost(uint64, tag = "2")]
+    pub shard_count: u64,
+    /// Local shards
+    #[prost(message, repeated, tag = "3")]
+    pub local_shards: ::prost::alloc::vec::Vec<LocalShardInfo>,
+    /// Remote shards
+    #[prost(message, repeated, tag = "4")]
+    pub remote_shards: ::prost::alloc::vec::Vec<RemoteShardInfo>,
+    /// Shard transfers
+    #[prost(message, repeated, tag = "5")]
+    pub shard_transfers: ::prost::alloc::vec::Vec<ShardTransferInfo>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MoveShard {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub from_peer_id: u64,
+    #[prost(uint64, tag = "3")]
+    pub to_peer_id: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Replica {
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub peer_id: u64,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateCollectionClusterSetupRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag = "6")]
+    pub timeout: ::core::option::Option<u64>,
+    #[prost(
+        oneof = "update_collection_cluster_setup_request::Operation",
+        tags = "2, 3, 4, 5"
+    )]
+    pub operation: ::core::option::Option<
+        update_collection_cluster_setup_request::Operation,
+    >,
+}
+/// Nested message and enum types in `UpdateCollectionClusterSetupRequest`.
+pub mod update_collection_cluster_setup_request {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Operation {
+        #[prost(message, tag = "2")]
+        MoveShard(super::MoveShard),
+        #[prost(message, tag = "3")]
+        ReplicateShard(super::MoveShard),
+        #[prost(message, tag = "4")]
+        AbortTransfer(super::MoveShard),
+        #[prost(message, tag = "5")]
+        DropReplica(super::Replica),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateCollectionClusterSetupResponse {
+    #[prost(bool, tag = "1")]
+    pub result: bool,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Distance {
@@ -686,6 +823,46 @@ impl TokenizerType {
             "Prefix" => Some(Self::Prefix),
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReplicaState {
+    /// Active and sound
+    Active = 0,
+    /// Failed for some reason
+    Dead = 1,
+    /// The shard is partially loaded and is currently receiving data from other shards
+    Partial = 2,
+    /// Collection is being created
+    Initializing = 3,
+    /// A shard which receives data, but is not used for search; Useful for backup shards
+    Listener = 4,
+}
+impl ReplicaState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ReplicaState::Active => "Active",
+            ReplicaState::Dead => "Dead",
+            ReplicaState::Partial => "Partial",
+            ReplicaState::Initializing => "Initializing",
+            ReplicaState::Listener => "Listener",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Active" => Some(Self::Active),
+            "Dead" => Some(Self::Dead),
+            "Partial" => Some(Self::Partial),
+            "Initializing" => Some(Self::Initializing),
+            "Listener" => Some(Self::Listener),
             _ => None,
         }
     }
@@ -982,6 +1159,62 @@ pub mod collections_client {
                 .insert(GrpcMethod::new("qdrant.Collections", "ListAliases"));
             self.inner.unary(req, path, codec).await
         }
+        ///
+        /// Get cluster information for a collection
+        pub async fn collection_cluster_info(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CollectionClusterInfoRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionClusterInfoResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/CollectionClusterInfo",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "CollectionClusterInfo"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Update cluster setup for a collection
+        pub async fn update_collection_cluster_setup(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateCollectionClusterSetupRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateCollectionClusterSetupResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/UpdateCollectionClusterSetup",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.Collections", "UpdateCollectionClusterSetup"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1061,6 +1294,24 @@ pub mod collections_server {
             request: tonic::Request<super::ListAliasesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListAliasesResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Get cluster information for a collection
+        async fn collection_cluster_info(
+            &self,
+            request: tonic::Request<super::CollectionClusterInfoRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionClusterInfoResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Update cluster setup for a collection
+        async fn update_collection_cluster_setup(
+            &self,
+            request: tonic::Request<super::UpdateCollectionClusterSetupRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateCollectionClusterSetupResponse>,
             tonic::Status,
         >;
     }
@@ -1486,6 +1737,101 @@ pub mod collections_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ListAliasesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/CollectionClusterInfo" => {
+                    #[allow(non_camel_case_types)]
+                    struct CollectionClusterInfoSvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<super::CollectionClusterInfoRequest>
+                    for CollectionClusterInfoSvc<T> {
+                        type Response = super::CollectionClusterInfoResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CollectionClusterInfoRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).collection_cluster_info(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CollectionClusterInfoSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/UpdateCollectionClusterSetup" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateCollectionClusterSetupSvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<
+                        super::UpdateCollectionClusterSetupRequest,
+                    > for UpdateCollectionClusterSetupSvc<T> {
+                        type Response = super::UpdateCollectionClusterSetupResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::UpdateCollectionClusterSetupRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).update_collection_cluster_setup(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateCollectionClusterSetupSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

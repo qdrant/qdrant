@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use bitvec::prelude::BitSlice;
 use ordered_float::OrderedFloat;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
@@ -41,8 +42,22 @@ pub trait VectorStorage {
 
     fn distance(&self) -> Distance;
 
-    /// Number of vectors, marked as deleted but still stored
+    /// Number of vectors
+    ///
+    /// - includes soft deleted vectors, as they are still stored
     fn total_vector_count(&self) -> usize;
+
+    /// Get the number of available vectors, considering deleted points and vectors
+    ///
+    /// This uses [`total_vector_count`] and [`deleted_vector_count`] internally.
+    ///
+    /// # Warning
+    ///
+    /// This number may not always be accurate. See warning in [`deleted_vector_count`] documentation.
+    fn available_vector_count(&self) -> usize {
+        self.total_vector_count()
+            .saturating_sub(self.deleted_vector_count())
+    }
 
     /// Number of all stored vectors including deleted
     fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType];
@@ -75,6 +90,36 @@ pub trait VectorStorage {
     fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage>;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    /// Flag the vector by the given key as deleted
+    ///
+    /// Returns true if the vector was not deleted before and is now deleted
+    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool>;
+
+    /// Check whether the vector at the given key is flagged as deleted
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool;
+
+    /// Get the number of deleted vectors, considering deleted points and vectors
+    ///
+    /// Vectors may be deleted at two levels, as point or as vector. Deleted points should
+    /// propagate to deleting the vectors. That means that the deleted vector count includes the
+    /// number of deleted points as well.
+    ///
+    /// This includes any vectors that were deleted at creation.
+    ///
+    /// # Warning
+    ///
+    /// In some very exceptional cases it is possible for this count not to include some deleted
+    /// points. That may happen when flushing a segment to disk fails. This should be recovered
+    /// when loading/recovering the segment, but that isn't guaranteed. You should therefore use
+    /// the deleted count with care.
+    fn deleted_vector_count(&self) -> usize;
+
+    /// Get [`BitSlice`] representation for deleted vectors with deletion flags
+    ///
+    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
+    /// vectors in this segment.
+    fn deleted_vector_bitslice(&self) -> &BitSlice;
 }
 
 pub enum VectorStorageEnum {
@@ -170,6 +215,34 @@ impl VectorStorage for VectorStorageEnum {
         match self {
             VectorStorageEnum::Simple(v) => v.files(),
             VectorStorageEnum::Memmap(v) => v.files(),
+        }
+    }
+
+    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+        match self {
+            VectorStorageEnum::Simple(v) => v.delete_vector(key),
+            VectorStorageEnum::Memmap(v) => v.delete_vector(key),
+        }
+    }
+
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        match self {
+            VectorStorageEnum::Simple(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::Memmap(v) => v.is_deleted_vector(key),
+        }
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::Simple(v) => v.deleted_vector_count(),
+            VectorStorageEnum::Memmap(v) => v.deleted_vector_count(),
+        }
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        match self {
+            VectorStorageEnum::Simple(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::Memmap(v) => v.deleted_vector_bitslice(),
         }
     }
 }

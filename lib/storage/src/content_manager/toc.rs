@@ -355,7 +355,7 @@ impl TableOfContent {
         };
 
         let hnsw_config = match hnsw_config_diff {
-            None => self.storage_config.hnsw_index,
+            None => self.storage_config.hnsw_index.clone(),
             Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
         };
 
@@ -746,6 +746,7 @@ impl TableOfContent {
                 .join(collection_name)
                 .with_extension(uuid);
             tokio::fs::rename(path, &deleted_path).await?;
+
             // At this point collection is removed from memory and moved to ".deleted" folder.
             // Next time we load service the collection will not appear in the list of collections.
             // We can take our time to delete the collection from disk.
