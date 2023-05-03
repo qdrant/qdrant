@@ -1406,10 +1406,7 @@ impl Filter {
     }
 
     pub fn merge(&self, other: &Filter) -> Filter {
-        fn merge_component(
-            this: Option<Vec<Condition>>,
-            other: Option<Vec<Condition>>,
-        ) -> Option<Vec<Condition>> {
+        let merge_component = |this, other| -> Option<Vec<Condition>> {
             match (this, other) {
                 (None, None) => None,
                 (Some(this), None) => Some(this),
@@ -1419,7 +1416,7 @@ impl Filter {
                     Some(this)
                 }
             }
-        }
+        };
         Filter {
             should: merge_component(self.should.clone(), other.should.clone()),
             must: merge_component(self.must.clone(), other.must.clone()),
