@@ -124,7 +124,7 @@ impl MmapVectors {
         data_path: &Path,
         distance: Distance,
     ) -> OperationResult<()> {
-        if QuantizedVectors::check_exists(data_path) {
+        if QuantizedVectors::config_exists(data_path) {
             self.lock_deleted_flags();
             self.quantized_vectors = Some(QuantizedVectors::load(data_path, true, distance)?);
         }

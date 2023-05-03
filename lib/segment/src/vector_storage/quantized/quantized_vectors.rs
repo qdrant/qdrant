@@ -164,7 +164,7 @@ impl QuantizedVectors {
         Ok(quantized_vectors)
     }
 
-    pub fn check_exists(path: &Path) -> bool {
+    pub fn config_exists(path: &Path) -> bool {
         path.join(QUANTIZED_CONFIG_PATH).exists()
     }
 

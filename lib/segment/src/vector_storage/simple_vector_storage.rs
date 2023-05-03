@@ -201,7 +201,7 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn load_quantization(&mut self, path: &Path) -> OperationResult<()> {
-        if QuantizedVectors::check_exists(path) {
+        if QuantizedVectors::config_exists(path) {
             self.quantized_vectors = Some(QuantizedVectors::load(path, false, self.distance)?);
         }
         Ok(())
