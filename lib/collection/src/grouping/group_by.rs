@@ -118,7 +118,7 @@ pub struct GroupRequest {
 
     /// Path to the field to group by
     pub group_by: String,
-    
+
     /// Limit of points to return per group
     #[validate(range(min = 1))]
     pub top: usize,
