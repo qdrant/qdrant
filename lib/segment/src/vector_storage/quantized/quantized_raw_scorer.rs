@@ -8,11 +8,11 @@ pub struct QuantizedRawScorer<'a, TEncodedQuery, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
-    pub(crate) query: TEncodedQuery,
+    pub(super) query: TEncodedQuery,
     /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
-    pub(crate) point_deleted: &'a BitSlice,
+    pub(super) point_deleted: &'a BitSlice,
     /// [`BitSlice`] defining flags for deleted vectors in this segment.
-    pub(crate) vec_deleted: &'a BitSlice,
+    pub(super) vec_deleted: &'a BitSlice,
     pub quantized_data: &'a TEncodedVectors,
 }
 
