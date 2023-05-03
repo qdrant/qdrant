@@ -338,73 +338,80 @@ mod unit_tests {
             }
         });
 
+        // assert final groups
         assert_eq!(aggregator.full_groups.len(), 3);
 
-        assert_eq!(
-            aggregator.groups(),
-            HashMap::from([
-                (
-                    GroupKey::from("a"),
-                    [
-                        ScoredPoint {
-                            id: 1.into(),
-                            version: 0,
-                            score: 1.0,
-                            payload: None,
-                            vector: None,
-                        },
-                        ScoredPoint {
-                            id: 2.into(),
-                            version: 0,
-                            score: 1.0,
-                            payload: None,
-                            vector: None,
-                        },
-                    ]
-                    .to_vec(),
-                ),
-                (
-                    GroupKey::from("b"),
-                    [
-                        ScoredPoint {
-                            id: 4.into(),
-                            version: 0,
-                            score: 1.0,
-                            payload: None,
-                            vector: None,
-                        },
-                        ScoredPoint {
-                            id: 7.into(),
-                            version: 0,
-                            score: 1.0,
-                            payload: None,
-                            vector: None,
-                        },
-                    ]
-                    .to_vec(),
-                ),
-                (
-                    GroupKey(json!(3)),
-                    [
-                        ScoredPoint {
-                            id: 5.into(),
-                            version: 0,
-                            score: 1.0,
-                            payload: None,
-                            vector: None,
-                        },
-                        ScoredPoint {
-                            id: 10.into(),
-                            version: 0,
-                            score: 1.0,
-                            payload: None,
-                            vector: None,
-                        },
-                    ]
-                    .to_vec(),
-                ),
-            ])
-        );
+        let groups = aggregator.groups();
+
+        [
+            (
+                GroupKey::from("a"),
+                [
+                    ScoredPoint {
+                        id: 1.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                    ScoredPoint {
+                        id: 2.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                ],
+            ),
+            (
+                GroupKey::from("b"),
+                [
+                    ScoredPoint {
+                        id: 4.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                    ScoredPoint {
+                        id: 7.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                ],
+            ),
+            (
+                GroupKey(json!(3)),
+                [
+                    ScoredPoint {
+                        id: 5.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                    ScoredPoint {
+                        id: 10.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                ],
+            ),
+        ]
+        .iter()
+        .for_each(|(key, points)| {
+            let group = groups.get(key).unwrap();
+
+            for point in points {
+                assert!(group.contains(point));
+            }
+
+            assert_eq!(group.len(), points.len());
+        });
     }
 
     #[test]
