@@ -198,13 +198,6 @@ impl PartialEq for ScoredPoint {
     }
 }
 
-impl Hash for ScoredPoint {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-        self.version.hash(state);
-    }
-}
-
 /// Type of segment
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

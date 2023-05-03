@@ -1,46 +1,12 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
 
 use segment::types::{ExtendedPointId, ScoredPoint};
 use serde_json::Value;
-use AggregatorError::*;
 
-#[derive(PartialEq, Debug)]
-pub(super) enum AggregatorError {
-    AllGroupsFull,
-    BadKeyType,
-    KeyNotFound,
-    GroupFull,
-    EnoughGroups,
-}
+use super::types::AggregatorError::{self, *};
+use super::types::{GroupKey, HashablePoint};
 
-/// Abstraction over serde_json::Value to be used as a key in a HashMap/HashSet
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub(super) struct GroupKey(pub serde_json::Value);
-
-impl TryFrom<serde_json::Value> for GroupKey {
-    type Error = AggregatorError;
-
-    /// Only allows Strings and Numbers to be converted into GroupKey
-    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
-        match value {
-            serde_json::Value::String(_) | serde_json::Value::Number(_) => Ok(Self(value)),
-            _ => Err(BadKeyType),
-        }
-    }
-}
-
-impl Hash for GroupKey {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match &self.0 {
-            Value::Number(n) => n.hash(state),
-            Value::String(s) => s.hash(state),
-            _ => unreachable!("GroupKey should only be a number or a string"),
-        }
-    }
-}
-
-type Hits = HashSet<ScoredPoint>;
+type Hits = HashSet<HashablePoint>;
 
 #[allow(dead_code)] // temporary
 pub(super) struct GroupsAggregator {
@@ -92,7 +58,7 @@ impl GroupsAggregator {
             .entry(group_key.clone())
             .or_insert_with(|| HashSet::with_capacity(self.max_group_size));
 
-        group.insert(point.clone());
+        group.insert(HashablePoint::minimal_from(point));
 
         if group.len() == self.max_group_size {
             self.full_groups.insert(group_key);
@@ -136,20 +102,32 @@ impl GroupsAggregator {
             .collect()
     }
 
-    pub(super) fn groups(&self) -> &HashMap<GroupKey, Hits> {
-        &self.groups
+    pub(super) fn groups(&self) -> HashMap<GroupKey, Vec<ScoredPoint>> {
+        self.groups
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    v.iter().map(ScoredPoint::from).collect::<Vec<_>>(),
+                )
+            })
+            .collect()
     }
 
     pub(super) fn flatten(&self) -> Vec<ScoredPoint> {
-        self.groups.values().flatten().cloned().collect()
+        self.groups
+            .values()
+            .flatten()
+            .map(ScoredPoint::from)
+            .collect()
     }
 
     /// Copies the payload and vector from the provided points to the points inside of each of the groups
     pub(super) fn hydrate_from(&mut self, points: &[ScoredPoint]) {
         for point in points {
             self.groups.iter_mut().for_each(|(_, ps)| {
-                if ps.contains(point) {
-                    ps.replace(point.clone());
+                if ps.take(&HashablePoint::minimal_from(point)).is_some() {
+                    ps.insert(point.into());
                 }
             });
         }
@@ -188,11 +166,11 @@ mod unit_tests {
                 },
                 // key
                 json!("a"),
-                // group size
+                // expected group size
                 1,
-                // groups count
+                // expected groups count
                 1,
-                // result
+                // expected result
                 Ok(()),
             ),
             (
@@ -364,7 +342,7 @@ mod unit_tests {
 
         assert_eq!(
             aggregator.groups(),
-            &HashMap::from([
+            HashMap::from([
                 (
                     GroupKey::from("a"),
                     [
@@ -372,20 +350,18 @@ mod unit_tests {
                             id: 1.into(),
                             version: 0,
                             score: 1.0,
-                            payload: Some(Payload::from(serde_json::json!({"docId": "a"}))),
+                            payload: None,
                             vector: None,
                         },
                         ScoredPoint {
                             id: 2.into(),
                             version: 0,
                             score: 1.0,
-                            payload: Some(Payload::from(serde_json::json!({"docId": "a"}))),
+                            payload: None,
                             vector: None,
                         },
                     ]
-                    .iter()
-                    .cloned()
-                    .collect(),
+                    .to_vec(),
                 ),
                 (
                     GroupKey::from("b"),
@@ -394,20 +370,18 @@ mod unit_tests {
                             id: 4.into(),
                             version: 0,
                             score: 1.0,
-                            payload: Some(Payload::from(serde_json::json!({"docId": "b"}))),
+                            payload: None,
                             vector: None,
                         },
                         ScoredPoint {
                             id: 7.into(),
                             version: 0,
                             score: 1.0,
-                            payload: Some(Payload::from(serde_json::json!({"docId": "b"}))),
+                            payload: None,
                             vector: None,
                         },
                     ]
-                    .iter()
-                    .cloned()
-                    .collect(),
+                    .to_vec(),
                 ),
                 (
                     GroupKey(json!(3)),
@@ -416,20 +390,18 @@ mod unit_tests {
                             id: 5.into(),
                             version: 0,
                             score: 1.0,
-                            payload: Some(Payload::from(serde_json::json!({"docId": 3}))),
+                            payload: None,
                             vector: None,
                         },
                         ScoredPoint {
                             id: 10.into(),
                             version: 0,
                             score: 1.0,
-                            payload: Some(Payload::from(serde_json::json!({"docId": 3}))),
+                            payload: None,
                             vector: None,
                         },
                     ]
-                    .iter()
-                    .cloned()
-                    .collect(),
+                    .to_vec(),
                 ),
             ])
         );
@@ -442,20 +414,20 @@ mod unit_tests {
         aggregator.groups.insert(
             GroupKey::from("a"),
             [
-                ScoredPoint {
+                HashablePoint(ScoredPoint {
                     id: 1.into(),
                     version: 0,
                     score: 1.0,
                     payload: None,
                     vector: None,
-                },
-                ScoredPoint {
+                }),
+                HashablePoint(ScoredPoint {
                     id: 2.into(),
                     version: 0,
                     score: 1.0,
                     payload: None,
                     vector: None,
-                },
+                }),
             ]
             .into(),
         );
@@ -463,20 +435,20 @@ mod unit_tests {
         aggregator.groups.insert(
             GroupKey::from("b"),
             [
-                ScoredPoint {
+                HashablePoint(ScoredPoint {
                     id: 3.into(),
                     version: 0,
                     score: 1.0,
                     payload: None,
                     vector: None,
-                },
-                ScoredPoint {
+                }),
+                HashablePoint(ScoredPoint {
                     id: 4.into(),
                     version: 0,
                     score: 1.0,
                     payload: None,
                     vector: None,
-                },
+                }),
             ]
             .into(),
         );
