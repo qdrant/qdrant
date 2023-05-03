@@ -103,11 +103,13 @@ impl QuantizedVectors {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        let mut result = vec![self.path.join(QUANTIZED_CONFIG_PATH)];
-        let storage_files: Vec<PathBuf> =
-            vec![QUANTIZED_DATA_PATH.into(), QUANTIZED_META_PATH.into()];
-        result.extend(storage_files.into_iter().map(|file| self.path.join(file)));
-        result
+        vec![
+            // Config files
+            self.path.join(QUANTIZED_CONFIG_PATH),
+            // Storage files
+            self.path.join(QUANTIZED_DATA_PATH),
+            self.path.join(QUANTIZED_META_PATH),
+        ]
     }
 
     #[allow(clippy::too_many_arguments)]
