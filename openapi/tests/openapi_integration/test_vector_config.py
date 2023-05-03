@@ -145,6 +145,7 @@ def test_retrieve_vector_specific_quantization():
     assert config['quantization_config']['scalar']['type'] == "int8"
     assert config['quantization_config']['scalar']['quantile'] == 0.5
 
+@pytest.mark.timeout(3)
 def test_disable_indexing():
     indexed_name = 'test_collection_indexed'
     unindexed_name = 'test_collection_unindexed'
@@ -168,7 +169,7 @@ def test_disable_indexing():
             }
         )
         assert response.ok
-        
+    
     amount_of_vectors = 10
     
     # Collection with indexing enabled
@@ -178,29 +179,34 @@ def test_disable_indexing():
     # Collection with indexing disabled
     create_collection(unindexed_name, 0)
     insert_vectors(unindexed_name, amount_of_vectors)
-    
-    # Get info indexed
-    sleep(0.5) # wait for indexing to finish
-    response = request_with_validation(
-        method='GET',
-        api='/collections/{collection_name}',
-        path_params={'collection_name': indexed_name},
-    )
-    assert response.ok
-    
-    assert response.json()['result']['vectors_count'] == amount_of_vectors
-    assert response.json()['result']['indexed_vectors_count'] > 0
-    
-    # Get info unindexed
-    response = request_with_validation(
-        method='GET',
-        api='/collections/{collection_name}',
-        path_params={'collection_name': unindexed_name},
-    )
-    assert response.ok
-    assert response.json()['result']['vectors_count'] == amount_of_vectors
-    assert response.json()['result']['indexed_vectors_count'] == 0
-    
+
+    while True:
+        try:
+            # Get info indexed
+            response = request_with_validation(
+                method='GET',
+                api='/collections/{collection_name}',
+                path_params={'collection_name': indexed_name},
+            )
+            assert response.ok
+            
+            assert response.json()['result']['vectors_count'] == amount_of_vectors
+            assert response.json()['result']['indexed_vectors_count'] > 0
+            
+            # Get info unindexed
+            response = request_with_validation(
+                method='GET',
+                api='/collections/{collection_name}',
+                path_params={'collection_name': unindexed_name},
+            )
+            assert response.ok
+            assert response.json()['result']['vectors_count'] == amount_of_vectors
+            assert response.json()['result']['indexed_vectors_count'] == 0
+            break
+        except AssertionError:
+            sleep(0.1)
+            continue
+        
     # Cleanup
     drop_collection(collection_name=indexed_name)
     drop_collection(collection_name=unindexed_name)
