@@ -117,7 +117,6 @@ pub struct OptimizersConfigDiff {
     ///
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "memmap_threshold_kb")]
-    #[validate(range(min = 1000))]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
     ///

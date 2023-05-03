@@ -44,15 +44,13 @@ def test_validation():
                 "distance": "Dot"
             },
             "optimizers_config": {
-                "memmap_threshold": 100,
-                "indexing_threshold": 100,
+                "max_optimization_threads": 0,
             },
         }
     )
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]
-    assert 'optimizers_config.memmap_threshold' in response.json()["status"]["error"]
-    assert 'optimizers_config.indexing_threshold' in response.json()["status"]["error"]
+    assert 'optimizers_config.max_optimization_threads' in response.json()["status"]["error"]
 
     # Illegal URL parameters must trigger a validation error
     response = request_with_validation(
