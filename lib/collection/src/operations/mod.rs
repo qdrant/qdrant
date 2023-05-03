@@ -9,6 +9,7 @@ pub mod shared_storage_config;
 pub mod snapshot_ops;
 pub mod types;
 pub mod validation;
+pub mod vector_ops;
 
 use std::collections::HashMap;
 
