@@ -15,7 +15,7 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::vector_ops::UpdateVectors;
+use crate::operations::vector_ops::{UpdateVectors, VectorOperations};
 use crate::operations::FieldIndexOperations;
 
 pub(crate) fn check_unprocessed_points(
@@ -445,6 +445,24 @@ pub(crate) fn process_point_operation(
                 &operation.points,
             )?;
             Ok(deleted + new + updated)
+        }
+    }
+}
+
+pub(crate) fn process_vector_operation(
+    segments: &RwLock<SegmentHolder>,
+    op_num: SeqNumberType,
+    vector_operation: VectorOperations,
+) -> CollectionResult<usize> {
+    match vector_operation {
+        VectorOperations::UpdateVectors(operation) => {
+            update_vectors(&segments.read(), op_num, operation)
+        }
+        VectorOperations::DeleteVectors(ids, vector_names) => {
+            delete_vectors(&segments.read(), op_num, &ids.points, &vector_names)
+        }
+        VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
+            delete_vectors_by_filter(&segments.read(), op_num, &filter, &vector_names)
         }
     }
 }

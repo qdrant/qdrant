@@ -41,6 +41,7 @@ pub enum FieldIndexOperations {
 #[serde(untagged)]
 pub enum CollectionUpdateOperations {
     PointOperation(point_ops::PointOperations),
+    VectorOperation(vector_ops::VectorOperations),
     PayloadOperation(payload_ops::PayloadOps),
     FieldIndexOperation(FieldIndexOperations),
 }
@@ -100,6 +101,7 @@ impl Validate for CollectionUpdateOperations {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             CollectionUpdateOperations::PointOperation(operation) => operation.validate(),
+            CollectionUpdateOperations::VectorOperation(operation) => operation.validate(),
             CollectionUpdateOperations::PayloadOperation(operation) => operation.validate(),
             CollectionUpdateOperations::FieldIndexOperation(operation) => operation.validate(),
         }
@@ -146,6 +148,9 @@ impl SplitByShard for CollectionUpdateOperations {
             CollectionUpdateOperations::PointOperation(operation) => operation
                 .split_by_shard(ring)
                 .map(CollectionUpdateOperations::PointOperation),
+            CollectionUpdateOperations::VectorOperation(operation) => operation
+                .split_by_shard(ring)
+                .map(CollectionUpdateOperations::VectorOperation),
             CollectionUpdateOperations::PayloadOperation(operation) => operation
                 .split_by_shard(ring)
                 .map(CollectionUpdateOperations::PayloadOperation),
@@ -160,6 +165,9 @@ impl CollectionUpdateOperations {
     pub fn is_write_operation(&self) -> bool {
         match self {
             CollectionUpdateOperations::PointOperation(operation) => operation.is_write_operation(),
+            CollectionUpdateOperations::VectorOperation(operation) => {
+                operation.is_write_operation()
+            }
             CollectionUpdateOperations::PayloadOperation(operation) => {
                 operation.is_write_operation()
             }

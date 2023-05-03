@@ -3,14 +3,16 @@ use std::sync::Arc;
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
-    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, GetPoints, GetResponse,
-    PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse,
-    SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
+    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, GetPoints,
+    GetResponse, PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse,
+    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints,
+    SearchBatchResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpdatePointVectors,
+    UpsertPoints,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
+use super::points_common::{delete_vectors, update_vectors};
 use super::validate;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
@@ -49,6 +51,22 @@ impl Points for PointsService {
     async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         validate(request.get_ref())?;
         get(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
+    async fn update_vectors(
+        &self,
+        request: Request<UpdatePointVectors>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate(request.get_ref())?;
+        update_vectors(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
+    async fn delete_vectors(
+        &self,
+        request: Request<DeletePointVectors>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate(request.get_ref())?;
+        delete_vectors(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn set_payload(
