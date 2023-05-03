@@ -62,10 +62,10 @@ impl MmapVectors {
         let mut deleted_mmap =
             mmap_ops::open_write_mmap(deleted_path).describe("Open mmap deleted for writing")?;
 
-        // Advice kernel that we'll need this page soon so the kernel can prepare
+        // Advise kernel that we'll need this page soon so the kernel can prepare
         #[cfg(unix)]
         if let Err(err) = deleted_mmap.advise(memmap2::Advice::WillNeed) {
-            log::error!("Failed to advice MADV_WILLNEED for deleted flags: {}", err,);
+            log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
         }
 
         // Create convenient BitSlice view over it
