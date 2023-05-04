@@ -689,7 +689,7 @@ If indexation speed has more priority for you - make this parameter lower. If se
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| compression | [CompressionRatio](#qdrant-CompressionRatio) |  | compression ratio |
+| compression | [CompressionRatio](#qdrant-CompressionRatio) |  | Compression ratio |
 | always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
 
 
