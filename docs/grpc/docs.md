@@ -1347,7 +1347,7 @@ The JSON representation for `Value` is a JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
-| vector_names | [string](#string) | repeated | List of vector names to delete |
+| vectors | [VectorsSelector](#qdrant-VectorsSelector) |  | List of vector names to delete |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
@@ -2129,8 +2129,8 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
-| id | [PointId](#qdrant-PointId) |  |  |
-| vectors | [NamedVectors](#qdrant-NamedVectors) |  |  |
+| id | [PointId](#qdrant-PointId) |  | ID to update vectors for |
+| vectors | [NamedVectors](#qdrant-NamedVectors) |  | Named vectors to update, leave others intact |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 

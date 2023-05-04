@@ -214,13 +214,17 @@ pub async fn delete_vectors(
         collection_name,
         wait,
         points_selector,
-        vector_names,
+        vectors,
         ordering,
     } = delete_point_vectors;
 
     let point_selector = match points_selector {
         Some(points_selector) => points_selector.try_into()?,
         None => return Err(Status::invalid_argument("points_selector is expected")),
+    };
+    let vector_names = match vectors {
+        Some(vectors) => vectors.names,
+        None => return Err(Status::invalid_argument("vectors is expected")),
     };
 
     let operation = DeleteVectors {

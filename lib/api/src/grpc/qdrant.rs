@@ -2502,8 +2502,10 @@ pub struct UpdatePointVectors {
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
+    /// ID to update vectors for
     #[prost(message, optional, tag = "3")]
     pub id: ::core::option::Option<PointId>,
+    /// Named vectors to update, leave others intact
     #[prost(message, optional, tag = "4")]
     #[validate(
         custom(
@@ -2531,9 +2533,8 @@ pub struct DeletePointVectors {
     #[prost(message, optional, tag = "3")]
     pub points_selector: ::core::option::Option<PointsSelector>,
     /// List of vector names to delete
-    #[prost(string, repeated, tag = "4")]
-    #[validate(length(min = 1, message = "must specify vector names to delete"))]
-    pub vector_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "4")]
+    pub vectors: ::core::option::Option<VectorsSelector>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "5")]
     pub ordering: ::core::option::Option<WriteOrdering>,

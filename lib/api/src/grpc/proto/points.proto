@@ -74,8 +74,8 @@ message GetPoints {
 message UpdatePointVectors {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
-  PointId id = 3;
-  NamedVectors vectors = 4;
+  PointId id = 3; // ID to update vectors for
+  NamedVectors vectors = 4; // Named vectors to update, leave others intact
   optional WriteOrdering ordering = 5; // Write ordering guarantees
 }
 
@@ -83,7 +83,7 @@ message DeletePointVectors {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   PointsSelector points_selector = 3; // Affected points
-  repeated string vector_names = 4; // List of vector names to delete
+  VectorsSelector vectors = 4; // List of vector names to delete
   optional WriteOrdering ordering = 5; // Write ordering guarantees
 }
 

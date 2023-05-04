@@ -7,7 +7,7 @@ use api::grpc::qdrant::{
     DeletePointVectors, DeletePoints, DeletePointsInternal, DeleteVectorsInternal, NamedVectors,
     PointsIdsList, PointsSelector, SetPayloadPoints, SetPayloadPointsInternal, SyncPoints,
     SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
-    UpsertPointsInternal,
+    UpsertPointsInternal, VectorsSelector,
 };
 use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
 use tonic::Status;
@@ -154,7 +154,9 @@ pub fn internal_delete_vectors(
                     ids: ids.into_iter().map(|id| id.into()).collect(),
                 })),
             }),
-            vector_names,
+            vectors: Some(VectorsSelector {
+                names: vector_names,
+            }),
             ordering: ordering.map(write_ordering_to_proto),
         }),
     }
@@ -176,7 +178,9 @@ pub fn internal_delete_vectors_by_filter(
             points_selector: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
             }),
-            vector_names,
+            vectors: Some(VectorsSelector {
+                names: vector_names,
+            }),
             ordering: ordering.map(write_ordering_to_proto),
         }),
     }
