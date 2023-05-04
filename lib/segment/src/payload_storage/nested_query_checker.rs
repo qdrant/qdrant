@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
 use serde_json::Value;
@@ -9,7 +9,7 @@ use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
 };
 
-fn check_all_nested_conditions<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
+fn check_nested_must_conditions<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
 where
     F: Fn(&Condition) -> (Vec<usize>, usize),
 {
@@ -27,6 +27,43 @@ where
                         acc
                     });
             matches.iter().any(|(_, count)| *count == condition_count)
+        }
+    }
+}
+
+fn check_nested_must_not_conditions<F>(checker: &F, must_not: &Option<Vec<Condition>>) -> bool
+where
+    F: Fn(&Condition) -> (Vec<usize>, usize),
+{
+    match must_not {
+        None => true,
+        Some(conditions) => {
+            let mut len = 0;
+            // find all indices that have matched at least one condition
+            let match_at_least_once: HashSet<usize> = conditions
+                .iter()
+                .flat_map(|condition| {
+                    let (matches, len_) = checker(condition);
+                    len = len_; // all len are the same for all
+                    matches
+                })
+                .fold(HashSet::new(), |mut acc, inner| {
+                    acc.insert(inner);
+                    acc
+                });
+
+            if len == 0 {
+                return true;
+            }
+
+            for i in 1..len {
+                // index is 0 based, so we need to substract 1 from len based index
+                let index = i - 1;
+                if !match_at_least_once.contains(&index) {
+                    return true;
+                }
+            }
+            false
         }
     }
 }
@@ -57,13 +94,12 @@ where
     nested_filter_checker(&nested_checker, nested_filter)
 }
 
-/// Warning only `must` conditions are supported for those tests
 pub fn nested_filter_checker<F>(matching_paths: &F, nested_filter: &Filter) -> bool
 where
     F: Fn(&Condition) -> (Vec<usize>, usize),
 {
-    // TODO add check_nested_should and check_nested_must_not
-    check_all_nested_conditions(matching_paths, &nested_filter.must)
+    check_nested_must_conditions(matching_paths, &nested_filter.must)
+        && check_nested_must_not_conditions(matching_paths, &nested_filter.must_not)
 }
 
 /// Return element indices matching the condition in the payload
@@ -197,6 +233,7 @@ mod tests {
         let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
+        let germany_id: u32 = 0;
         let payload_germany: Payload = json!(
         {
             "country": {
@@ -235,6 +272,7 @@ mod tests {
         })
         .into();
 
+        let japan_id: u32 = 1;
         let payload_japan: Payload = json!(
         {
             "country": {
@@ -273,6 +311,7 @@ mod tests {
         })
         .into();
 
+        let boring_id: u32 = 2;
         let payload_boring: Payload = json!(
         {
             "country": {
@@ -293,15 +332,15 @@ mod tests {
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();
 
         // point 0 - Germany
-        id_tracker.set_link(0.into(), 0).unwrap();
+        id_tracker.set_link((germany_id as u64).into(), 0).unwrap();
         payload_storage.assign(0, &payload_germany).unwrap();
 
         // point 1 - Japan
-        id_tracker.set_link(1.into(), 1).unwrap();
+        id_tracker.set_link((japan_id as u64).into(), 1).unwrap();
         payload_storage.assign(1, &payload_japan).unwrap();
 
         // point 2 - Boring
-        id_tracker.set_link(2.into(), 2).unwrap();
+        id_tracker.set_link((boring_id as u64).into(), 2).unwrap();
         payload_storage.assign(2, &payload_boring).unwrap();
 
         let payload_checker = SimpleConditionChecker::new(
@@ -309,7 +348,7 @@ mod tests {
             Arc::new(AtomicRefCell::new(id_tracker)),
         );
 
-        // single range condition nested field in array
+        // single must range condition nested field in array
         let population_range_condition = Filter::new_must(Condition::new_nested(
             "country.cities".to_string(),
             Filter::new_must(Condition::Field(FieldCondition::new_range(
@@ -323,11 +362,29 @@ mod tests {
             ))),
         ));
 
-        assert!(!payload_checker.check(0, &population_range_condition));
-        assert!(payload_checker.check(1, &population_range_condition));
-        assert!(!payload_checker.check(2, &population_range_condition));
+        assert!(!payload_checker.check(germany_id, &population_range_condition));
+        assert!(payload_checker.check(japan_id, &population_range_condition));
+        assert!(!payload_checker.check(boring_id, &population_range_condition));
 
-        // single values_count condition nested field in array
+        // single must_not range condition nested field in array
+        let population_range_condition = Filter::new_must(Condition::new_nested(
+            "country.cities".to_string(),
+            Filter::new_must_not(Condition::Field(FieldCondition::new_range(
+                "population".to_string(),
+                Range {
+                    lt: None,
+                    gt: Some(8.0),
+                    gte: None,
+                    lte: None,
+                },
+            ))),
+        ));
+
+        assert!(payload_checker.check(germany_id, &population_range_condition)); // all cities less than 8.0
+        assert!(payload_checker.check(japan_id, &population_range_condition)); // tokyo is 13.5
+        assert!(payload_checker.check(!boring_id, &population_range_condition)); // has no cities
+
+        // single must values_count condition nested field in array
         let sightseeing_value_count_condition = Filter::new_must(Condition::new_nested(
             "country.cities".to_string(),
             Filter::new_must(Condition::Field(FieldCondition::new_values_count(
@@ -341,9 +398,27 @@ mod tests {
             ))),
         ));
 
-        assert!(!payload_checker.check(0, &sightseeing_value_count_condition));
-        assert!(payload_checker.check(1, &sightseeing_value_count_condition));
-        assert!(!payload_checker.check(2, &sightseeing_value_count_condition));
+        assert!(!payload_checker.check(germany_id, &sightseeing_value_count_condition));
+        assert!(payload_checker.check(japan_id, &sightseeing_value_count_condition));
+        assert!(!payload_checker.check(boring_id, &sightseeing_value_count_condition));
+
+        // single must_not values_count condition nested field in array
+        let sightseeing_value_count_condition = Filter::new_must(Condition::new_nested(
+            "country.cities".to_string(),
+            Filter::new_must_not(Condition::Field(FieldCondition::new_values_count(
+                "sightseeing".to_string(),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(3),
+                    lte: None,
+                },
+            ))),
+        ));
+
+        assert!(payload_checker.check(germany_id, &sightseeing_value_count_condition));
+        assert!(payload_checker.check(japan_id, &sightseeing_value_count_condition));
+        assert!(!payload_checker.check(boring_id, &sightseeing_value_count_condition));
 
         // single IsEmpty condition nested field in array
         let is_empty_condition = Filter::new_must(Condition::new_nested(
@@ -355,9 +430,9 @@ mod tests {
             })),
         ));
 
-        assert!(!payload_checker.check(0, &is_empty_condition));
-        assert!(!payload_checker.check(1, &is_empty_condition));
-        assert!(payload_checker.check(2, &is_empty_condition));
+        assert!(!payload_checker.check(germany_id, &is_empty_condition));
+        assert!(!payload_checker.check(japan_id, &is_empty_condition));
+        assert!(payload_checker.check(boring_id, &is_empty_condition));
 
         // single IsNull condition nested field in array
         let is_empty_condition = Filter::new_must(Condition::new_nested(
@@ -369,9 +444,9 @@ mod tests {
             })),
         ));
 
-        assert!(!payload_checker.check(0, &is_empty_condition));
-        assert!(!payload_checker.check(1, &is_empty_condition));
-        assert!(payload_checker.check(2, &is_empty_condition));
+        assert!(!payload_checker.check(germany_id, &is_empty_condition));
+        assert!(!payload_checker.check(japan_id, &is_empty_condition));
+        assert!(payload_checker.check(boring_id, &is_empty_condition));
 
         // single geo-bounding box in nested field in array
         let location_close_to_berlin_box_condition = Filter::new_must(Condition::new_nested(
@@ -392,9 +467,9 @@ mod tests {
         ));
 
         // Germany has a city whose location is within the box
-        assert!(payload_checker.check(0, &location_close_to_berlin_box_condition));
-        assert!(!payload_checker.check(1, &location_close_to_berlin_box_condition));
-        assert!(!payload_checker.check(2, &location_close_to_berlin_box_condition));
+        assert!(payload_checker.check(germany_id, &location_close_to_berlin_box_condition));
+        assert!(!payload_checker.check(japan_id, &location_close_to_berlin_box_condition));
+        assert!(!payload_checker.check(boring_id, &location_close_to_berlin_box_condition));
 
         // single geo-bounding box in nested field in array
         let location_close_to_berlin_radius_condition = Filter::new_must(Condition::new_nested(
@@ -412,8 +487,8 @@ mod tests {
         ));
 
         // Germany has a city whose location is within the radius
-        assert!(payload_checker.check(0, &location_close_to_berlin_radius_condition));
-        assert!(!payload_checker.check(1, &location_close_to_berlin_radius_condition));
-        assert!(!payload_checker.check(2, &location_close_to_berlin_radius_condition));
+        assert!(payload_checker.check(germany_id, &location_close_to_berlin_radius_condition));
+        assert!(!payload_checker.check(japan_id, &location_close_to_berlin_radius_condition));
+        assert!(!payload_checker.check(boring_id, &location_close_to_berlin_radius_condition));
     }
 }
