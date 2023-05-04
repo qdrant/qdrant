@@ -106,5 +106,6 @@ async fn grouped_recommend_points(
 // Configure services
 pub fn config_recommend_api(cfg: &mut web::ServiceConfig) {
     cfg.service(recommend_points)
-        .service(recommend_batch_points);
+        .service(recommend_batch_points)
+        .service(grouped_recommend_points);
 }

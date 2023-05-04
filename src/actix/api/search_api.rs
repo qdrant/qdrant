@@ -85,5 +85,5 @@ async fn grouped_search_points(
 
 // Configure services
 pub fn config_search_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(search_points).service(batch_search_points);
+    cfg.service(search_points).service(batch_search_points).service(grouped_search_points);
 }
