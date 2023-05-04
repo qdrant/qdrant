@@ -178,7 +178,7 @@ pub struct OptimizersConfigDiff {
     ///
     /// Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
     ///
-    /// To disable memmap storage, set this to `0`. Internally it will use the largest threshold possible.
+    /// To disable memmap storage, set this to `0`.
     ///
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "5")]
@@ -188,7 +188,7 @@ pub struct OptimizersConfigDiff {
     ///
     /// Default value is 20,000, based on <<https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.>
     ///
-    /// To disable vector indexing, set to `0`. Internally it will use the largest threshold possible.
+    /// To disable vector indexing, set to `0`.
     ///
     /// Note: 1kB = 1 vector of size 256.
     #[prost(uint64, optional, tag = "6")]
