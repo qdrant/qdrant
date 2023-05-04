@@ -12,9 +12,9 @@ mod tests {
     use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Distance, HnswConfig, Indexes, ProductQuantizationConfig, QuantizationConfig,
-        ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType, StorageType,
-        VectorDataConfig, CompressionRatio,
+        CompressionRatio, Distance, HnswConfig, Indexes, ProductQuantizationConfig,
+        QuantizationConfig, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
+        StorageType, VectorDataConfig,
     };
     use segment::vector_storage::{ScoredPointOffset, VectorStorage};
     use tempfile::Builder;
