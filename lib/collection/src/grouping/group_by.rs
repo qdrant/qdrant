@@ -1,12 +1,13 @@
 use std::future::Future;
 
 use itertools::Itertools;
+use schemars::JsonSchema;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, ScoredPoint,
     WithPayloadInterface, WithVector,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tokio::sync::RwLockReadGuard;
 use validator::Validate;
 
@@ -143,20 +144,25 @@ impl GroupRequest {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Group {
     pub hits: Vec<ScoredPoint>,
-    pub group_id: Value,
+    pub group_id: Map<String, Value>,
 }
 
 impl From<GroupsAggregator> for Vec<Group> {
     fn from(groups: GroupsAggregator) -> Self {
+        let grouped_by = groups.grouped_by().clone();
         groups
             .groups()
             .iter()
-            .map(|(group_id, hits)| Group {
-                hits: hits.iter().cloned().sorted().rev().collect(),
-                group_id: group_id.0.clone(),
+            .map(|(id, hits)| {
+                let mut group_id = Map::new();
+                group_id.insert(grouped_by.clone(), id.0.clone());
+                Group {
+                    hits: hits.iter().cloned().sorted().rev().collect(),
+                    group_id,
+                }
             })
             .sorted_by_key(|g| g.hits[0].clone())
             .rev()
