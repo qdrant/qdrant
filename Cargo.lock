@@ -906,9 +906,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.2.6"
+version = "4.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d70680e56dc65cb226c361aaa4e4a16d1f7e082bfed9ffceaee39c2012384ec"
+checksum = "34d21f9bf1b425d2968943631ec91202fe5e837264063503708b83013f8fc938"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -917,9 +917,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.2.6"
+version = "4.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fad499d5e07338414687350c5fdb82b1ab0001e9b26aa6275deccb684b14164"
+checksum = "914c8c79fb560f238ef6429439a30023c862f7a28e688c58f7203f12b29970bd"
 dependencies = [
  "anstream",
  "anstyle",
@@ -3051,7 +3051,7 @@ dependencies = [
  "api",
  "atty",
  "chrono",
- "clap 4.2.6",
+ "clap 4.2.7",
  "collection",
  "colored",
  "config",
