@@ -3971,19 +3971,27 @@
       "ProductQuantizationConfig": {
         "type": "object",
         "required": [
-          "bucket_size"
+          "compression"
         ],
         "properties": {
-          "bucket_size": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1
+          "compression": {
+            "$ref": "#/components/schemas/CompressionRatio"
           },
           "always_ram": {
             "type": "boolean",
             "nullable": true
           }
         }
+      },
+      "CompressionRatio": {
+        "type": "string",
+        "enum": [
+          "x4",
+          "x8",
+          "x16",
+          "x32",
+          "x64"
+        ]
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
