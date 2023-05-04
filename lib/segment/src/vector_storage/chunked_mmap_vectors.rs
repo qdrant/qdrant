@@ -8,15 +8,13 @@ use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use crate::common::mmap_ops::{
-    create_and_ensure_length, open_write_mmap,
-    transmute_from_u8_to_mut,
+    create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut,
 };
 use crate::common::Flusher;
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
-use crate::vector_storage::chunked_utils::{
-    chunk_name, create_chunk, read_mmaps, MmapChunk,
-};
+use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
 
 #[cfg(test)]
 const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
@@ -39,15 +37,15 @@ struct ChunkedMmapConfig {
     dim: usize,
 }
 
-pub struct ChunkedMmapVectors<T> {
+pub struct ChunkedMmapVectors {
     config: ChunkedMmapConfig,
     _status_mmap: Arc<MmapMut>,
     status: &'static mut MmapStatus,
-    chunks: Vec<MmapChunk<T>>,
+    chunks: Vec<MmapChunk>,
     directory: PathBuf,
 }
 
-impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
+impl ChunkedMmapVectors {
     fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
     }
@@ -63,7 +61,7 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
                 let length = std::mem::size_of::<usize>() as u64;
                 create_and_ensure_length(&status_file, length as usize)?;
             }
-            let mut mmap = open_write_mmap(&status_file)?;
+            let mmap = open_write_mmap(&status_file)?;
             Ok(mmap)
         } else {
             open_write_mmap(&status_file)
@@ -74,7 +72,7 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
         let config_file = Self::config_file(directory);
         if !config_file.exists() {
             let chunk_size_bytes = DEFAULT_CHUNK_SIZE;
-            let vector_size_bytes = dim * std::mem::size_of::<T>();
+            let vector_size_bytes = dim * std::mem::size_of::<VectorElementType>();
             let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
             let corrected_chunk_size_bytes = chunk_size_vectors * vector_size_bytes;
 
@@ -113,7 +111,7 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
 
         let status = transmute_from_u8_to_mut(&mut status_mmap);
         let config = Self::ensure_config(directory, dim)?;
-        let chunks = read_mmaps::<T>(directory)?;
+        let chunks = read_mmaps(directory)?;
 
         let vectors = Self {
             _status_mmap: Arc::new(status_mmap),
@@ -156,7 +154,11 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
         Ok(())
     }
 
-    pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> OperationResult<()> {
+    pub fn insert(
+        &mut self,
+        key: PointOffsetType,
+        vector: &[VectorElementType],
+    ) -> OperationResult<()> {
         let key = key as usize;
         let chunk_idx = self.get_chunk_index(key);
         let chunk_offset = self.get_chunk_offset(key);
@@ -178,13 +180,13 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
         Ok(())
     }
 
-    pub fn push(&mut self, vector: &[T]) -> OperationResult<PointOffsetType> {
+    pub fn push(&mut self, vector: &[VectorElementType]) -> OperationResult<PointOffsetType> {
         let new_id = self.status.len as PointOffsetType;
         self.insert(new_id, vector)?;
         Ok(new_id)
     }
 
-    pub fn get<TKey>(&self, key: TKey) -> &[T]
+    pub fn get<TKey>(&self, key: TKey) -> &[VectorElementType]
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
@@ -197,7 +199,7 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
 
     pub fn flush(&mut self) -> OperationResult<()> {
         for chunk in &mut self.chunks {
-            chunk.flush()?;
+            chunk._mmap.flush()?;
         }
         self._status_mmap.flush()?;
         Ok(())
@@ -212,10 +214,9 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
                 .map(|chunk| chunk._mmap.clone())
                 .collect();
             move || {
-                chunks_flushers
-                    .iter()
-                    .map(|chunk| chunk.flush())
-                    .collect::<OperationResult<Vec<_>>>()?;
+                for chunk in &chunks_flushers {
+                    chunk.flush()?;
+                }
                 status_mmap.flush()?;
                 Ok(())
             }
@@ -240,7 +241,6 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::random_vector;
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
+            let mut chunked_mmap: ChunkedMmapVectors =
                 ChunkedMmapVectors::open(dir.path(), dim).unwrap();
 
             for vec in &vectors {
@@ -276,7 +276,7 @@ mod tests {
         }
 
         {
-            let chunked_mmap: ChunkedMmapVectors<VectorElementType> =
+            let chunked_mmap: ChunkedMmapVectors =
                 ChunkedMmapVectors::open(dir.path(), dim).unwrap();
 
             assert_eq!(chunked_mmap.len(), vectors.len());

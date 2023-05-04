@@ -7,14 +7,15 @@ use memmap2::MmapMut;
 use crate::common::mmap_ops::{
     create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut_slice,
 };
+use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
-pub struct MmapChunk<T> {
+pub struct MmapChunk {
     pub _mmap: Arc<MmapMut>,
-    pub data: &'static mut [T],
+    pub data: &'static mut [VectorElementType],
 }
 
 /// Checks if the file name matches the pattern for mmap chunks
@@ -26,7 +27,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_mmaps<T>(directory: &Path) -> OperationResult<Vec<MmapChunk<T>>> {
+pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
     let mut result = Vec::new();
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
@@ -54,7 +55,7 @@ pub fn read_mmaps<T>(directory: &Path) -> OperationResult<Vec<MmapChunk<T>>> {
             ))
         })?;
         let mut mmap = open_write_mmap(&mmap_file)?;
-        let data: &'static mut [T] = transmute_from_u8_to_mut_slice(&mut mmap);
+        let data = transmute_from_u8_to_mut_slice(&mut mmap);
         let chunk = MmapChunk {
             _mmap: Arc::new(mmap),
             data,
@@ -72,15 +73,15 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     directory.join(chunk_file_name)
 }
 
-pub fn create_chunk<T>(
+pub fn create_chunk(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-) -> OperationResult<MmapChunk<T>> {
+) -> OperationResult<MmapChunk> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mut mmap = open_write_mmap(&chunk_file_path)?;
-    let data: &'static mut [T] = transmute_from_u8_to_mut_slice(&mut mmap);
+    let data = transmute_from_u8_to_mut_slice(&mut mmap);
     let chunk = MmapChunk {
         _mmap: Arc::new(mmap),
         data,
