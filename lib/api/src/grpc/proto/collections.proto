@@ -176,7 +176,7 @@ message ScalarQuantization {
 }
 
 message ProductQuantization {
-  CompressionRatio compression = 1; // compression ratio
+  CompressionRatio compression = 1; // Compression ratio
   optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
