@@ -77,10 +77,8 @@ impl SplitByShard for VectorOperations {
                 )])
             }
             VectorOperations::DeleteVectors(ids, vector_names) => {
-                split_iter_by_shard(ids.points, |id| *id, ring).map(|ids| {
-                    let points_ids_list = PointIdsList { points: ids };
-                    VectorOperations::DeleteVectors(points_ids_list, vector_names.clone())
-                })
+                split_iter_by_shard(ids.points, |id| *id, ring)
+                    .map(|ids| VectorOperations::DeleteVectors(ids.into(), vector_names.clone()))
             }
             by_filter @ VectorOperations::DeleteVectorsByFilter(..) => {
                 OperationToShard::to_all(by_filter)
