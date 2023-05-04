@@ -5,3 +5,4 @@
 /snapshots
 /consensus_test_logs
 *.log
+.qdrant-initialized
