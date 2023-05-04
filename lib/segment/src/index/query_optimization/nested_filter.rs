@@ -464,10 +464,14 @@ mod tests {
             Box::new(|_point_id: PointOffsetType| (vec![], 0)),
         ];
 
-        let merged = merge_nested_matching_indices(matching_indices_fn, false);
+        let (all_matching, len) = find_indices_matching_all_conditions(0, &matching_indices_fn);
         // none of the conditions are matching anything
-        let result: bool = merged(0);
-        assert!(!result);
+        assert!(all_matching.is_empty());
+        assert_eq!(len, 0);
+
+        let (none_matching, len) = find_indices_matching_none_conditions(0, &matching_indices_fn);
+        assert!(none_matching.is_empty());
+        assert_eq!(len, 0);
     }
 
     #[test]
@@ -478,9 +482,15 @@ mod tests {
             Box::new(|_point_id: PointOffsetType| (vec![0], 1)),
         ];
 
-        let merged = merge_nested_matching_indices(matching_indices_fn, false);
-        let result: bool = merged(0);
-        assert!(result);
+        let (all_matching, len) = find_indices_matching_all_conditions(0, &matching_indices_fn);
+        // index 0 is matching all the conditions
+        assert!(!all_matching.is_empty());
+        assert_eq!(all_matching, vec![0]);
+        assert_eq!(len, 1);
+
+        let (none_matching, len) = find_indices_matching_none_conditions(0, &matching_indices_fn);
+        assert!(none_matching.is_empty());
+        assert_eq!(len, 1);
     }
 
     #[test]
@@ -501,7 +511,7 @@ mod tests {
         let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
             Box::new(|_point_id: PointOffsetType| (vec![0, 1], 2)),
             Box::new(|_point_id: PointOffsetType| (vec![0, 1], 2)),
-            Box::new(|_point_id: PointOffsetType| (vec![0], 1)),
+            Box::new(|_point_id: PointOffsetType| (vec![0], 2)),
         ];
 
         let merged = merge_nested_matching_indices(matching_indices_fn, false);
