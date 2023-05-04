@@ -2428,6 +2428,7 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
@@ -2504,6 +2505,12 @@ pub struct UpdatePointVectors {
     #[prost(message, optional, tag = "3")]
     pub id: ::core::option::Option<PointId>,
     #[prost(message, optional, tag = "4")]
+    #[validate(
+        custom(
+            function = "crate::grpc::validate::validate_named_vectors_not_empty",
+            message = "must specify vectors to update"
+        )
+    )]
     pub vectors: ::core::option::Option<NamedVectors>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "5")]
@@ -2525,6 +2532,7 @@ pub struct DeletePointVectors {
     pub points_selector: ::core::option::Option<PointsSelector>,
     /// List of vector names to delete
     #[prost(string, repeated, tag = "4")]
+    #[validate(length(min = 1, message = "must specify vector names to delete"))]
     pub vector_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "5")]
@@ -2668,6 +2676,7 @@ pub mod with_payload_selector {
         Exclude(super::PayloadExcludeSelector),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectors {

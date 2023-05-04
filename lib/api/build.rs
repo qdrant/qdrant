@@ -129,7 +129,9 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpsertPoints.collection_name", "length(min = 1, max = 255)"),
             ("DeletePoints.collection_name", "length(min = 1, max = 255)"),
             ("UpdatePointVectors.collection_name", "length(min = 1, max = 255)"),
+            ("UpdatePointVectors.vectors", "custom(function = \"crate::grpc::validate::validate_named_vectors_not_empty\", message = \"must specify vectors to update\")"),
             ("DeletePointVectors.collection_name", "length(min = 1, max = 255)"),
+            ("DeletePointVectors.vector_names", "length(min = 1, message = \"must specify vector names to delete\")"),
             ("GetPoints.collection_name", "length(min = 1, max = 255)"),
             ("SetPayloadPoints.collection_name", "length(min = 1, max = 255)"),
             ("DeletePayloadPoints.collection_name", "length(min = 1, max = 255)"),
@@ -150,6 +152,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendBatchPoints.recommend_points", ""),
             ("CountPoints.collection_name", "length(min = 1, max = 255)"),
         ], &[])
+        .type_attribute("NamedVectors", "#[derive(serde::Serialize)]")
+        .type_attribute("Vector", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
             ("UpsertPointsInternal.upsert_points", ""),

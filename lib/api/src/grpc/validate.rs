@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use serde::Serialize;
 use validator::{Validate, ValidationError, ValidationErrors};
 
+use super::qdrant::NamedVectors;
+
 pub trait ValidateExt {
     fn validate(&self) -> Result<(), ValidationErrors>;
 }
@@ -166,6 +168,22 @@ where
     if let Some(max) = max {
         err.add_param(Cow::from("max"), &max);
     }
+    Err(err)
+}
+
+/// Validate the list of named vectors is not empty.
+pub fn validate_named_vectors_not_empty(
+    value: &Option<NamedVectors>,
+) -> Result<(), ValidationError> {
+    // If length is non-zero, we're good
+    if let Some(vectors) = value {
+        if !vectors.vectors.is_empty() {
+            return Ok(());
+        }
+    }
+
+    let mut err = ValidationError::new("length");
+    err.add_param(Cow::from("min"), &1);
     Err(err)
 }
 
