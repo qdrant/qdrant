@@ -27,6 +27,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
+use crate::grouping::group_by::{GroupRequest, SourceRequest};
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
@@ -785,4 +786,72 @@ pub enum NodeType {
     /// This is useful for nodes that are only used for writing data
     /// and backup purposes
     Listener,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct GroupedRecommendRequest {
+    /// Recommend request to use
+    pub recommend: RecommendRequest,
+
+    /// Payload field to group by
+    pub group_by: String,
+
+    /// Limit of points to return per group
+    #[validate(range(min = 1))]
+    pub top: usize,
+
+    /// Optional. Limit of groups to return, will use the limit in the recommend request if not set
+    #[validate(range(min = 1))]
+    #[serde(default)]
+    pub groups: Option<usize>,
+}
+
+impl From<GroupedRecommendRequest> for GroupRequest  {
+    fn from(request: GroupedRecommendRequest) -> Self {
+        if let Some(groups) = request.groups {
+            GroupRequest {
+                request: SourceRequest::Recommend(request.recommend),
+                group_by: request.group_by,
+                top: request.top,
+                groups,
+            }
+        } else {
+            // use groups = limit in source request
+            GroupRequest::new(SourceRequest::Recommend(request.recommend), request.group_by, request.top)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct GroupedSearchRequest {
+    /// Search request to use
+    pub search: SearchRequest,
+
+    /// Payload field to group by
+    pub group_by: String,
+
+    /// Limit of points to return per group
+    #[validate(range(min = 1))]
+    pub top: usize,
+    
+    /// Optional. Limit of groups to return. Will use the limit in the search request if not set
+    #[validate(range(min = 1))]
+    #[serde(default)]
+    pub groups: Option<usize>,
+}
+
+impl From<GroupedSearchRequest> for GroupRequest  {
+    fn from(request: GroupedSearchRequest) -> Self {
+        if let Some(groups) = request.groups {
+            GroupRequest {
+                request: SourceRequest::Search(request.search),
+                group_by: request.group_by,
+                top: request.top,
+                groups,
+            }
+        } else {
+            // use groups = limit in source request
+            GroupRequest::new(SourceRequest::Search(request.search), request.group_by, request.top)
+        }
+    }
 }

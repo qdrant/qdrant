@@ -2,7 +2,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::grouping::group_by::{Group, GroupRequest};
-use collection::operations::types::{SearchRequest, SearchRequestBatch};
+use collection::operations::types::{SearchRequest, SearchRequestBatch, GroupedSearchRequest};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
@@ -56,10 +56,10 @@ async fn batch_search_points(
 async fn do_grouped_search_points(
     toc: &TableOfContent,
     collection_name: &str,
-    request: GroupRequest,
+    request: GroupedSearchRequest,
     params: Query<ReadParams>,
 ) -> Result<Vec<Group>, StorageError> {
-    toc.group(collection_name, request, params.consistency, None)
+    toc.group(collection_name, request.into(), params.consistency, None)
         .await
 }
 
@@ -67,7 +67,7 @@ async fn do_grouped_search_points(
 async fn grouped_search_points(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    request: Json<GroupRequest>,
+    request: Json<GroupedSearchRequest>,
     params: Query<ReadParams>,
 ) -> impl Responder {
     let timing = Instant::now();
