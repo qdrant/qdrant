@@ -344,37 +344,53 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 #[test]
 fn test_delete_points_in_simple_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
 
-    do_test_delete_points(storage);
+    {
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+        do_test_delete_points(storage);
+    }
+    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+    let _storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
 }
 
 #[test]
 fn test_update_from_delete_points_simple_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+    {
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+        do_test_update_from_delete_points(storage);
+    }
 
-    do_test_update_from_delete_points(storage);
+    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+    let _storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
 }
 
 #[test]
 fn test_score_points_in_simple_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+    {
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+        do_test_score_points(storage);
+    }
 
-    do_test_score_points(storage);
+    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+    let _storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
 }
 
 #[test]
 fn test_score_quantized_points_simple_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+    {
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+        test_score_quantized_points(storage);
+    }
 
-    test_score_quantized_points(storage);
+    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+    let _storage = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
 }
 
 // ----------------------------------------------
@@ -382,31 +398,45 @@ fn test_score_quantized_points_simple_vector_storages() {
 #[test]
 fn test_delete_points_in_appendable_memmap_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+    {
+        let storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        do_test_delete_points(storage.clone());
+        // storage.borrow().flusher()().unwrap();
+    }
 
-    do_test_delete_points(storage);
+    let _storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
 }
 
 #[test]
 fn test_update_from_delete_points_appendable_memmap_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+    {
+        let storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
 
-    do_test_update_from_delete_points(storage);
+        do_test_update_from_delete_points(storage);
+    }
+
+    let _storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
 }
 
 #[test]
 fn test_score_points_in_appendable_memmap_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+    {
+        let storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        do_test_score_points(storage);
+    }
 
-    do_test_score_points(storage);
+    let _storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
 }
 
 #[test]
 fn test_score_quantized_points_appendable_memmap_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+    {
+        let storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        test_score_quantized_points(storage);
+    }
 
-    test_score_quantized_points(storage);
+    let _storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
 }
