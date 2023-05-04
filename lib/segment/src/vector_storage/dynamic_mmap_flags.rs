@@ -26,7 +26,7 @@ const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 const FLAGS_FILE_A: &str = "flags_a.dat";
 const FLAGS_FILE_B: &str = "flags_b.dat";
 
-const STATUS_FILE_NAME: &str = "status.json";
+const STATUS_FILE_NAME: &str = "status.dat";
 
 pub fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)

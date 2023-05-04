@@ -23,7 +23,7 @@ const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
 const DEFAULT_CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128Mb
 
 const CONFIG_FILE_NAME: &str = "config.json";
-const STATUS_FILE_NAME: &str = "status.json";
+const STATUS_FILE_NAME: &str = "status.dat";
 
 #[repr(C)]
 pub struct MmapStatus {
