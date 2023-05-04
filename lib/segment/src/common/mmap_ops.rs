@@ -75,6 +75,22 @@ pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
 
+/// Transmute a `&mut [u8]` and `&mut [T]` and share mutable reference
+///
+/// # Unsafe
+///
+/// This is unsafe because this creates a second mutable reference to the given `data`.
+///
+/// The caller must ensure that:
+/// - the two mutable references are never mutably accessed at the same time
+/// - the returned reference never outlives `data`
+pub unsafe fn transmute_from_u8_to_mut_slice_shared<'a, T>(data: &mut [u8]) -> &'a mut [T] {
+    debug_assert!(data.len() % size_of::<T>() == 0);
+    let len = data.len() / size_of::<T>();
+    let ptr = data.as_mut_ptr() as *mut T;
+    std::slice::from_raw_parts_mut(ptr, len)
+}
+
 pub fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, mem::size_of_val(v)) }
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use memmap2::MmapMut;
 
 use crate::common::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut_slice,
+    create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut_slice_shared,
 };
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -14,7 +14,15 @@ const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
 pub struct MmapChunk {
+    /// Memory mapped file for chunk data.
+    ///
+    /// This should never be accessed directly, because it shares a mutable reference with
+    /// [`data`]. Use that instead. The sole purpose of this is to keep ownership of
+    /// the mmap, and to properly clean it up when this struct is dropped.
     pub _mmap: Arc<MmapMut>,
+    /// A convenient `&mut [VectorElementType]` view into the memory map file.
+    ///
+    /// This has the same lifetime as this struct, a borrow must never be leased out for longer.
     pub data: &'static mut [VectorElementType],
 }
 
@@ -55,7 +63,7 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
             ))
         })?;
         let mut mmap = open_write_mmap(&mmap_file)?;
-        let data = transmute_from_u8_to_mut_slice(&mut mmap);
+        let data = unsafe { transmute_from_u8_to_mut_slice_shared(&mut mmap) };
         let chunk = MmapChunk {
             _mmap: Arc::new(mmap),
             data,
@@ -81,7 +89,7 @@ pub fn create_chunk(
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mut mmap = open_write_mmap(&chunk_file_path)?;
-    let data = transmute_from_u8_to_mut_slice(&mut mmap);
+    let data = unsafe { transmute_from_u8_to_mut_slice_shared(&mut mmap) };
     let chunk = MmapChunk {
         _mmap: Arc::new(mmap),
         data,
