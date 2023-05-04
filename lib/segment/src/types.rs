@@ -339,6 +339,16 @@ fn default_max_indexing_threads() -> usize {
     0
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum CompressionRatio {
+    X4,
+    X8,
+    X16,
+    X32,
+    X64,
+}
+
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ScalarType {
@@ -378,8 +388,7 @@ impl PartialEq for ScalarQuantizationConfig {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct ProductQuantizationConfig {
-    #[validate(range(min = 1))]
-    pub bucket_size: usize,
+    pub compression: CompressionRatio,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,

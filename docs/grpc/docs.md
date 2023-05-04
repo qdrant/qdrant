@@ -52,6 +52,7 @@
     - [WalConfigDiff](#qdrant-WalConfigDiff)
   
     - [CollectionStatus](#qdrant-CollectionStatus)
+    - [CompressionRatio](#qdrant-CompressionRatio)
     - [Distance](#qdrant-Distance)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
@@ -688,7 +689,7 @@ If indexation speed has more priority for you - make this parameter lower. If se
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| bucket_size | [uint64](#uint64) |  | maximum centroid dimension |
+| compression | [CompressionRatio](#qdrant-CompressionRatio) |  | Compression ratio |
 | always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
 
 
@@ -961,6 +962,21 @@ If indexation speed has more priority for you - make this parameter lower. If se
 | Green | 1 | All segments are ready |
 | Yellow | 2 | Optimization in process |
 | Red | 3 | Something went wrong |
+
+
+
+<a name="qdrant-CompressionRatio"></a>
+
+### CompressionRatio
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| x4 | 0 |  |
+| x8 | 1 |  |
+| x16 | 2 |  |
+| x32 | 3 |  |
+| x64 | 4 |  |
 
 
 

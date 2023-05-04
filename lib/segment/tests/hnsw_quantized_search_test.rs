@@ -12,9 +12,9 @@ mod tests {
     use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Distance, HnswConfig, Indexes, ProductQuantizationConfig, QuantizationConfig,
-        ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType, StorageType,
-        VectorDataConfig,
+        CompressionRatio, Distance, HnswConfig, Indexes, ProductQuantizationConfig,
+        QuantizationConfig, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
+        StorageType, VectorDataConfig,
     };
     use segment::vector_storage::{ScoredPointOffset, VectorStorage};
     use tempfile::Builder;
@@ -159,7 +159,7 @@ mod tests {
             Distance::Cosine,
             1003,
             ProductQuantizationConfig {
-                bucket_size: 1,
+                compression: CompressionRatio::X4,
                 always_ram: Some(true),
             }
             .into(),
@@ -172,7 +172,7 @@ mod tests {
             Distance::Euclid,
             1003,
             ProductQuantizationConfig {
-                bucket_size: 1,
+                compression: CompressionRatio::X4,
                 always_ram: Some(true),
             }
             .into(),

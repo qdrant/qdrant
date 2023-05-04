@@ -8,6 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
+use super::qdrant::CompressionRatio;
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -519,7 +520,13 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
             }) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Product(
                     super::qdrant::ProductQuantization {
-                        bucket_size: config.bucket_size as u64,
+                        compression: match config.compression {
+                            segment::types::CompressionRatio::X4 => CompressionRatio::X4 as i32,
+                            segment::types::CompressionRatio::X8 => CompressionRatio::X8 as i32,
+                            segment::types::CompressionRatio::X16 => CompressionRatio::X16 as i32,
+                            segment::types::CompressionRatio::X32 => CompressionRatio::X32 as i32,
+                            segment::types::CompressionRatio::X64 => CompressionRatio::X64 as i32,
+                        },
                         always_ram: config.always_ram,
                     },
                 )),
@@ -561,7 +568,18 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             super::qdrant::quantization_config::Quantization::Product(config) => Ok(
                 segment::types::QuantizationConfig::Product(segment::types::ProductQuantization {
                     product: segment::types::ProductQuantizationConfig {
-                        bucket_size: config.bucket_size as usize,
+                        compression: match CompressionRatio::from_i32(config.compression) {
+                            None => {
+                                return Err(Status::invalid_argument(
+                                    "Error converting compression ratio: None",
+                                ));
+                            }
+                            Some(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
+                            Some(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
+                            Some(CompressionRatio::X16) => segment::types::CompressionRatio::X16,
+                            Some(CompressionRatio::X32) => segment::types::CompressionRatio::X32,
+                            Some(CompressionRatio::X64) => segment::types::CompressionRatio::X64,
+                        },
                         always_ram: config.always_ram,
                     },
                 }),
