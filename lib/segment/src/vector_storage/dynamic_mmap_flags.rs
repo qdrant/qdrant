@@ -253,8 +253,8 @@ impl DynamicMmapFlags {
             let status_mmap = self._status_mmap.clone();
             let flags_mmap = self._flags_mmap.clone();
             move || {
-                status_mmap.flush()?;
                 flags_mmap.flush()?;
+                status_mmap.flush()?;
                 Ok(())
             }
         })

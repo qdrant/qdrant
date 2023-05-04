@@ -1,38 +1,20 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use memmap2::MmapMut;
 
-use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap, write_to_mmap};
+use crate::common::mmap_ops::{
+    create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut_slice,
+};
 use crate::entry::entry_point::{OperationError, OperationResult};
-
-const STATUS_FILE_NAME: &str = "status.json";
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
-pub struct MmapStatus {
-    pub len: usize,
-}
-
-pub fn status_file(directory: &Path) -> PathBuf {
-    directory.join(STATUS_FILE_NAME)
-}
-
-pub fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
-    let status_file = status_file(directory);
-    if !status_file.exists() {
-        {
-            let length = std::mem::size_of::<usize>() as u64;
-            create_and_ensure_length(&status_file, length as usize)?;
-        }
-        let mut mmap = open_write_mmap(&status_file)?;
-        write_to_mmap(&mut mmap, 0, 0usize);
-        mmap.flush()?;
-        Ok(mmap)
-    } else {
-        open_write_mmap(&status_file)
-    }
+pub struct MmapChunk<T> {
+    pub _mmap: Arc<MmapMut>,
+    pub data: &'static mut [T],
 }
 
 /// Checks if the file name matches the pattern for mmap chunks
@@ -44,7 +26,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapMut>> {
+pub fn read_mmaps<T>(directory: &Path) -> OperationResult<Vec<MmapChunk<T>>> {
     let mut result = Vec::new();
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
@@ -71,8 +53,13 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapMut>> {
                 directory.display()
             ))
         })?;
-        let mmap = open_write_mmap(&mmap_file)?;
-        result.push(mmap);
+        let mut mmap = open_write_mmap(&mmap_file)?;
+        let data: &'static mut [T] = transmute_from_u8_to_mut_slice(&mut mmap);
+        let chunk = MmapChunk {
+            _mmap: Arc::new(mmap),
+            data,
+        };
+        result.push(chunk);
     }
     Ok(result)
 }
@@ -85,12 +72,18 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     directory.join(chunk_file_name)
 }
 
-pub fn create_chunk(
+pub fn create_chunk<T>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-) -> OperationResult<MmapMut> {
+) -> OperationResult<MmapChunk<T>> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
-    open_write_mmap(&chunk_file_path)
+    let mut mmap = open_write_mmap(&chunk_file_path)?;
+    let data: &'static mut [T] = transmute_from_u8_to_mut_slice(&mut mmap);
+    let chunk = MmapChunk {
+        _mmap: Arc::new(mmap),
+        data,
+    };
+    Ok(chunk)
 }

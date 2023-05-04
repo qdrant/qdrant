@@ -1,19 +1,21 @@
 use std::cmp::max;
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
-use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use crate::common::mmap_ops::{
-    read_from_mmap, read_slice_from_mmap, write_slice_to_mmap, write_to_mmap,
+    create_and_ensure_length, open_write_mmap,
+    transmute_from_u8_to_mut,
 };
+use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
 use crate::vector_storage::chunked_utils::{
-    chunk_name, create_chunk, ensure_status_file, read_mmaps, status_file, MmapStatus,
+    chunk_name, create_chunk, read_mmaps, MmapChunk,
 };
 
 #[cfg(test)]
@@ -23,6 +25,12 @@ const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
 const DEFAULT_CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128Mb
 
 const CONFIG_FILE_NAME: &str = "config.json";
+const STATUS_FILE_NAME: &str = "status.json";
+
+#[repr(C)]
+pub struct MmapStatus {
+    pub len: usize,
+}
 
 #[derive(Serialize, Deserialize)]
 struct ChunkedMmapConfig {
@@ -33,16 +41,33 @@ struct ChunkedMmapConfig {
 
 pub struct ChunkedMmapVectors<T> {
     config: ChunkedMmapConfig,
-    status: MmapStatus,
-    _phantom: PhantomData<T>,
-    chunks: Vec<MmapMut>,
-    status_mmap: MmapMut,
+    _status_mmap: Arc<MmapMut>,
+    status: &'static mut MmapStatus,
+    chunks: Vec<MmapChunk<T>>,
     directory: PathBuf,
 }
 
 impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
     fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
+    }
+
+    pub fn status_file(directory: &Path) -> PathBuf {
+        directory.join(STATUS_FILE_NAME)
+    }
+
+    pub fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
+        let status_file = Self::status_file(directory);
+        if !status_file.exists() {
+            {
+                let length = std::mem::size_of::<usize>() as u64;
+                create_and_ensure_length(&status_file, length as usize)?;
+            }
+            let mut mmap = open_write_mmap(&status_file)?;
+            Ok(mmap)
+        } else {
+            open_write_mmap(&status_file)
+        }
     }
 
     fn ensure_config(directory: &Path, dim: usize) -> OperationResult<ChunkedMmapConfig> {
@@ -84,18 +109,17 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
 
     pub fn open(directory: &Path, dim: usize) -> OperationResult<Self> {
         create_dir_all(directory)?;
-        let status_mmap = ensure_status_file(directory)?;
-        let len = *read_from_mmap(&status_mmap, 0);
-        let status = MmapStatus { len };
+        let mut status_mmap = Self::ensure_status_file(directory)?;
+
+        let status = transmute_from_u8_to_mut(&mut status_mmap);
         let config = Self::ensure_config(directory, dim)?;
-        let chunks = read_mmaps(directory)?;
+        let chunks = read_mmaps::<T>(directory)?;
 
         let vectors = Self {
-            config,
+            _status_mmap: Arc::new(status_mmap),
             status,
-            _phantom: Default::default(),
+            config,
             chunks,
-            status_mmap,
             directory: directory.to_owned(),
         };
         Ok(vectors)
@@ -110,7 +134,7 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
     #[inline]
     fn get_chunk_offset(&self, key: usize) -> usize {
         let chunk_vector_idx = key % self.config.chunk_size_vectors;
-        chunk_vector_idx * self.config.dim * std::mem::size_of::<T>()
+        chunk_vector_idx * self.config.dim
     }
 
     pub fn len(&self) -> usize {
@@ -122,13 +146,13 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
     }
 
     fn add_chunk(&mut self) -> OperationResult<()> {
-        let mmap = create_chunk(
+        let chunk = create_chunk(
             &self.directory,
             self.chunks.len(),
             self.config.chunk_size_bytes,
         )?;
 
-        self.chunks.push(mmap);
+        self.chunks.push(chunk);
         Ok(())
     }
 
@@ -144,12 +168,11 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
 
         let chunk = &mut self.chunks[chunk_idx];
 
-        write_slice_to_mmap(chunk, chunk_offset, vector);
+        chunk.data[chunk_offset..chunk_offset + vector.len()].copy_from_slice(vector);
 
         let new_len = max(self.status.len, key + 1);
 
         if new_len > self.status.len {
-            write_to_mmap(&mut self.status_mmap, 0, new_len);
             self.status.len = new_len;
         }
         Ok(())
@@ -169,21 +192,40 @@ impl<T: Copy + Clone + Default> ChunkedMmapVectors<T> {
         let chunk_idx = self.get_chunk_index(key);
         let chunk_offset = self.get_chunk_offset(key);
         let chunk = &self.chunks[chunk_idx];
-        read_slice_from_mmap(chunk, chunk_offset, self.config.dim)
+        &chunk.data[chunk_offset..chunk_offset + self.config.dim]
     }
 
     pub fn flush(&mut self) -> OperationResult<()> {
         for chunk in &mut self.chunks {
             chunk.flush()?;
         }
-        self.status_mmap.flush()?;
+        self._status_mmap.flush()?;
         Ok(())
+    }
+
+    pub fn flusher(&self) -> Flusher {
+        Box::new({
+            let status_mmap = self._status_mmap.clone();
+            let chunks_flushers: Vec<_> = self
+                .chunks
+                .iter()
+                .map(|chunk| chunk._mmap.clone())
+                .collect();
+            move || {
+                chunks_flushers
+                    .iter()
+                    .map(|chunk| chunk.flush())
+                    .collect::<OperationResult<Vec<_>>>()?;
+                status_mmap.flush()?;
+                Ok(())
+            }
+        })
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
         files.push(Self::config_file(&self.directory));
-        files.push(status_file(&self.directory));
+        files.push(Self::status_file(&self.directory));
         for chunk_idx in 0..self.chunks.len() {
             files.push(chunk_name(&self.directory, chunk_idx));
         }
