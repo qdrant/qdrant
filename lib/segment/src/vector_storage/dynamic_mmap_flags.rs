@@ -16,10 +16,10 @@ use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::vector_storage::div_ceil;
 use crate::vector_storage::mmap_vectors::mmap_to_bitslice;
 
-#[cfg(test)]
+#[cfg(debug_assertions)]
 const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
 
-#[cfg(not(test))]
+#[cfg(not(debug_assertions))]
 const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
 // We need to switch between files to prevent loss of mmap in case of a error.
@@ -328,11 +328,11 @@ mod tests {
 
     #[test]
     fn test_capacity() {
-        assert_eq!(mmap_capacity_bytes(0), 1024);
-        assert_eq!(mmap_capacity_bytes(1), 1024);
-        assert_eq!(mmap_capacity_bytes(1023), 1024);
-        assert_eq!(mmap_capacity_bytes(1024), 1024);
-        assert_eq!(mmap_capacity_bytes(1025), 1024);
+        assert_eq!(mmap_capacity_bytes(0), 128);
+        assert_eq!(mmap_capacity_bytes(1), 128);
+        assert_eq!(mmap_capacity_bytes(1023), 128);
+        assert_eq!(mmap_capacity_bytes(1024), 128);
+        assert_eq!(mmap_capacity_bytes(1025), 256);
         assert_eq!(mmap_capacity_bytes(10000), 2048);
     }
 }
