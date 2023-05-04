@@ -878,7 +878,6 @@ mod grouping {
     }
 
     #[tokio::test]
-    #[ignore = "Takes more than second to run, too slow for CI"]
     async fn big_limit_groups() {
         let Resources {
             collection,
@@ -923,7 +922,6 @@ mod grouping {
     }
 
     #[tokio::test]
-    #[ignore = "Takes more than a second to run, too slow for CI"]
     async fn big_top_groups() {
         let Resources {
             collection,
