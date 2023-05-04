@@ -200,6 +200,7 @@ Examples and/or documentation of Qdrant integrations:
 - [LangChain](https://python.langchain.com/en/latest/ecosystem/qdrant.html) ([blogpost](https://qdrant.tech/articles/langchain-integration/)) - Use Qdrant as a memory backend for LangChain.
 - [LlamaIndex](https://gpt-index.readthedocs.io/en/latest/reference/indices/composability_query.html#gpt_index.data_structs.struct_type.IndexStructType.QDRANT) - Use Qdrant as a memory backend for LlamaIndex.
 - [OpenAI - ChatGPT retrieval plugin](https://github.com/openai/chatgpt-retrieval-plugin/blob/main/docs/providers/qdrant/setup.md) - Use Qdrant as a memory backend for ChatGPT
+- [Microsoft Semantic Kernel](https://devblogs.microsoft.com/semantic-kernel/the-power-of-persistent-memory-with-semantic-kernel-and-qdrant-vector-database/) - Use Qdrant as persistent memory with Semantic Kernel 
 
 ## Contacts
 
