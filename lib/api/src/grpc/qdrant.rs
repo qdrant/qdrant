@@ -214,7 +214,7 @@ pub struct ScalarQuantization {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProductQuantization {
-    /// compression ratio
+    /// Compression ratio
     #[prost(enumeration = "CompressionRatio", tag = "1")]
     pub compression: i32,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
