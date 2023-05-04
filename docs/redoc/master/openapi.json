@@ -3265,6 +3265,97 @@
         }
       }
     },
+    "/collections/{collection_name}/points/search/group": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Grouped search points",
+        "description": "Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field",
+        "operationId": "grouped_search_points",
+        "requestBody": {
+          "description": "Search request with optional filtering, grouped by a payload field",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupedSearchRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Group"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/points/recommend": {
       "post": {
         "tags": [
@@ -3440,6 +3531,97 @@
                         "items": {
                           "$ref": "#/components/schemas/ScoredPoint"
                         }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/points/recommend/group": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Grouped recommend points",
+        "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.",
+        "operationId": "grouped_recommend_points",
+        "requestBody": {
+          "description": "Request points based on positive and negative examples, grouped by a payload field.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupedRecommendRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Group"
                       }
                     }
                   }
@@ -7310,6 +7492,87 @@
           "quorum",
           "all"
         ]
+      },
+      "Group": {
+        "type": "object",
+        "required": [
+          "group_id",
+          "hits"
+        ],
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScoredPoint"
+            }
+          },
+          "group_id": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "GroupedSearchRequest": {
+        "type": "object",
+        "required": [
+          "group_by",
+          "search",
+          "top"
+        ],
+        "properties": {
+          "search": {
+            "$ref": "#/components/schemas/SearchRequest"
+          },
+          "group_by": {
+            "description": "Payload field to group by",
+            "type": "string"
+          },
+          "top": {
+            "description": "Limit of points to return per group",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1
+          },
+          "groups": {
+            "description": "Optional. Limit of groups to return. Will use the limit in the search request if not set",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "GroupedRecommendRequest": {
+        "type": "object",
+        "required": [
+          "group_by",
+          "recommend",
+          "top"
+        ],
+        "properties": {
+          "recommend": {
+            "$ref": "#/components/schemas/RecommendRequest"
+          },
+          "group_by": {
+            "description": "Payload field to group by",
+            "type": "string"
+          },
+          "top": {
+            "description": "Limit of points to return per group",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1
+          },
+          "groups": {
+            "description": "Optional. Limit of groups to return, will use the limit in the recommend request if not set",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
       }
     }
   }

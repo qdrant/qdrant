@@ -1,8 +1,8 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::grouping::group_by::{Group, GroupRequest};
-use collection::operations::types::{SearchRequest, SearchRequestBatch, GroupedSearchRequest};
+use collection::grouping::group_by::Group;
+use collection::operations::types::{GroupedSearchRequest, SearchRequest, SearchRequestBatch};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 

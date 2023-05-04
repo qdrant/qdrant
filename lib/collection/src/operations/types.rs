@@ -806,7 +806,7 @@ pub struct GroupedRecommendRequest {
     pub groups: Option<usize>,
 }
 
-impl From<GroupedRecommendRequest> for GroupRequest  {
+impl From<GroupedRecommendRequest> for GroupRequest {
     fn from(request: GroupedRecommendRequest) -> Self {
         if let Some(groups) = request.groups {
             GroupRequest {
@@ -817,7 +817,11 @@ impl From<GroupedRecommendRequest> for GroupRequest  {
             }
         } else {
             // use groups = limit in source request
-            GroupRequest::new(SourceRequest::Recommend(request.recommend), request.group_by, request.top)
+            GroupRequest::new(
+                SourceRequest::Recommend(request.recommend),
+                request.group_by,
+                request.top,
+            )
         }
     }
 }
@@ -833,14 +837,14 @@ pub struct GroupedSearchRequest {
     /// Limit of points to return per group
     #[validate(range(min = 1))]
     pub top: usize,
-    
+
     /// Optional. Limit of groups to return. Will use the limit in the search request if not set
     #[validate(range(min = 1))]
     #[serde(default)]
     pub groups: Option<usize>,
 }
 
-impl From<GroupedSearchRequest> for GroupRequest  {
+impl From<GroupedSearchRequest> for GroupRequest {
     fn from(request: GroupedSearchRequest) -> Self {
         if let Some(groups) = request.groups {
             GroupRequest {
@@ -851,7 +855,11 @@ impl From<GroupedSearchRequest> for GroupRequest  {
             }
         } else {
             // use groups = limit in source request
-            GroupRequest::new(SourceRequest::Search(request.search), request.group_by, request.top)
+            GroupRequest::new(
+                SourceRequest::Search(request.search),
+                request.group_by,
+                request.top,
+            )
         }
     }
 }

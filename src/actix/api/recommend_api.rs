@@ -1,9 +1,11 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::grouping::group_by::{Group, GroupRequest};
+use collection::grouping::group_by::Group;
 use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::types::{RecommendRequest, RecommendRequestBatch, GroupedRecommendRequest};
+use collection::operations::types::{
+    GroupedRecommendRequest, RecommendRequest, RecommendRequestBatch,
+};
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;

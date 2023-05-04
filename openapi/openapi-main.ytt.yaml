@@ -326,6 +326,35 @@ paths:
             $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(array(reference("ScoredPoint"))))
 
+  /collections/{collection_name}/points/search/group:
+    post:
+      tags:
+        - points
+      summary: Grouped search points
+      description: Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field
+      operationId: grouped_search_points
+      requestBody:
+        description: Search request with optional filtering, grouped by a payload field
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupedSearchRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+      responses: #@ response(array(reference("Group")))
+
   /collections/{collection_name}/points/recommend:
     post:
       tags:
@@ -383,6 +412,35 @@ paths:
           schema:
             $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(array(reference("ScoredPoint"))))
+
+  /collections/{collection_name}/points/recommend/group:
+    post:
+      tags:
+        - points
+      summary: Grouped recommend points
+      description: Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.
+      operationId: grouped_recommend_points
+      requestBody:
+        description: Request points based on positive and negative examples, grouped by a payload field.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupedRecommendRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+      responses: #@ response(array(reference("Group")))
 
   /collections/{collection_name}/points/count:
     post:

@@ -1,4 +1,5 @@
 use api::grpc::models::CollectionsResponse;
+use collection::grouping::group_by::Group;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
@@ -6,8 +7,9 @@ use collection::operations::point_ops::{PointInsertOperations, PointsSelector, W
 use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
-    CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
-    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
+    CountRequest, CountResult, GroupedRecommendRequest, GroupedSearchRequest, PointRequest,
+    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
+    SearchRequestBatch, UpdateResult,
 };
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
@@ -63,6 +65,9 @@ struct AllDefinitions {
     ay: AliasDescription,
     az: WriteOrdering,
     b1: ReadConsistency,
+    b2: Group,
+    b3: GroupedSearchRequest,
+    b4: GroupedRecommendRequest,
 }
 
 fn save_schema<T: JsonSchema>() {
