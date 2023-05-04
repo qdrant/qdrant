@@ -216,6 +216,9 @@ impl DynamicMmapFlags {
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
         let key: usize = key.as_();
+        if key >= self.status.len {
+            return false;
+        }
         self.flags.as_ref().map(|flags| flags[key]).unwrap_or(false)
     }
 
