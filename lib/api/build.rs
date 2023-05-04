@@ -111,7 +111,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("VectorParams.quantization_config", ""),
             ("QuantizationConfig.quantization", ""),
             ("ScalarQuantization.quantile", "custom = \"crate::grpc::validate::validate_f32_range_min_0_5_max_1\""),
-            ("ProductQuantization.bucket_size", "custom = \"crate::grpc::validate::validate_required_u64_range_min_1\""),
             ("VectorParamsMap.map", ""),
         ], &[
             "ListCollectionsRequest",
@@ -119,6 +118,7 @@ fn configure_validation(builder: Builder) -> Builder {
             "ListAliasesRequest",
             "CollectionClusterInfoRequest",
             "UpdateCollectionClusterSetupRequest",
+            "ProductQuantization",
         ])
         // Service: collections_internal.proto
         .validates(&[

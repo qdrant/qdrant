@@ -8,7 +8,9 @@ use super::quantized_raw_scorer::QuantizedRawScorer;
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
-use crate::types::{Distance, ProductQuantization, QuantizationConfig, ScalarQuantization};
+use crate::types::{
+    CompressionRatio, Distance, ProductQuantization, QuantizationConfig, ScalarQuantization,
+};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
@@ -265,10 +267,11 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         max_threads: usize,
     ) -> OperationResult<QuantizedVectorStorage> {
+        let bucket_size = Self::get_bucket_size(pq_config.compression);
         let quantized_vector_size =
             EncodedVectorsPQ::<QuantizedMmapStorage>::get_quantized_vector_size(
                 vector_parameters,
-                pq_config.bucket_size,
+                bucket_size,
             );
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
@@ -278,7 +281,7 @@ impl QuantizedVectors {
                 vectors,
                 storage_builder,
                 vector_parameters,
-                pq_config.bucket_size,
+                bucket_size,
                 max_threads,
             )?))
         } else {
@@ -292,7 +295,7 @@ impl QuantizedVectors {
                 vectors,
                 storage_builder,
                 vector_parameters,
-                pq_config.bucket_size,
+                bucket_size,
                 max_threads,
             )?))
         }
@@ -316,6 +319,16 @@ impl QuantizedVectors {
                 Distance::Dot => quantization::DistanceType::Dot,
             },
             invert: distance == Distance::Euclid,
+        }
+    }
+
+    fn get_bucket_size(compression: CompressionRatio) -> usize {
+        match compression {
+            CompressionRatio::X4 => 1,
+            CompressionRatio::X8 => 2,
+            CompressionRatio::X16 => 4,
+            CompressionRatio::X32 => 8,
+            CompressionRatio::X64 => 16,
         }
     }
 }
