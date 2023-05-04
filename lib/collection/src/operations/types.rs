@@ -676,6 +676,10 @@ pub struct VectorParams {
     )]
     #[validate]
     pub quantization_config: Option<QuantizationConfig>,
+    /// If true, vectors are served from disk, improving RAM usage at the cost of latency
+    /// Default: false
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_disk: Option<bool>,
 }
 
 impl Anonymize for VectorParams {

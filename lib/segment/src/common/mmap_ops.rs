@@ -77,7 +77,7 @@ pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
 
 /// Transmute a `&mut [u8]` and `&mut [T]` and share mutable reference
 ///
-/// # Unsafe
+/// # Safety
 ///
 /// This is unsafe because this creates a second mutable reference to the given `data`.
 ///

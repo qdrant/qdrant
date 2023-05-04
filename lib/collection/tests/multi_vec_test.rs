@@ -44,12 +44,14 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
         distance: Distance::Dot,
         hnsw_config: None,
         quantization_config: None,
+        on_disk: None,
     };
     let vector_params2 = VectorParams {
         size: NonZeroU64::new(4).unwrap(),
         distance: Distance::Dot,
         hnsw_config: None,
         quantization_config: None,
+        on_disk: None,
     };
 
     let mut vectors_config = BTreeMap::new();

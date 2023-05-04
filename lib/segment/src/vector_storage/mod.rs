@@ -10,6 +10,9 @@ pub mod raw_scorer;
 pub mod simple_vector_storage;
 mod vector_storage_base;
 
+#[cfg(test)]
+mod tests;
+
 pub use raw_scorer::*;
 pub use vector_storage_base::*;
 

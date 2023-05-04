@@ -1023,6 +1023,7 @@ mod tests {
                                 distance: Distance::Cosine,
                                 hnsw_config: None,
                                 quantization_config: None,
+                                on_disk: None,
                             }
                             .into(),
                             hnsw_config: None,

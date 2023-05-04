@@ -107,9 +107,9 @@ impl ChunkedMmapVectors {
 
     pub fn open(directory: &Path, dim: usize) -> OperationResult<Self> {
         create_dir_all(directory)?;
-        let mut status_mmap = Self::ensure_status_file(directory)?;
+        let status_mmap = Self::ensure_status_file(directory)?;
+        let status = transmute_from_u8_to_mut(&status_mmap);
 
-        let status = transmute_from_u8_to_mut(&mut status_mmap);
         let config = Self::ensure_config(directory, dim)?;
         let chunks = read_mmaps(directory)?;
 
@@ -197,14 +197,6 @@ impl ChunkedMmapVectors {
         &chunk.data[chunk_offset..chunk_offset + self.config.dim]
     }
 
-    pub fn flush(&mut self) -> OperationResult<()> {
-        for chunk in &mut self.chunks {
-            chunk._mmap.flush()?;
-        }
-        self._status_mmap.flush()?;
-        Ok(())
-    }
-
     pub fn flusher(&self) -> Flusher {
         Box::new({
             let status_mmap = self._status_mmap.clone();
@@ -272,7 +264,7 @@ mod tests {
             chunked_mmap.insert(44, &vectors[44]).unwrap();
             chunked_mmap.insert(999, &vectors[999]).unwrap();
 
-            chunked_mmap.flush().unwrap();
+            chunked_mmap.flusher()().unwrap();
         }
 
         {

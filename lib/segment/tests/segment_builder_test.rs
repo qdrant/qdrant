@@ -90,6 +90,7 @@ mod tests {
                     distance: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                     hnsw_config: None,
                     quantization_config: None,
+                    on_disk: None,
                 },
             )]),
             index: Indexes::Hnsw(Default::default()),

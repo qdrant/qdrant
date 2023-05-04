@@ -60,7 +60,7 @@ pub fn open_appendable_memmap_vector_storage(
     };
 
     Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::AppendableMemmap(storage),
+        VectorStorageEnum::AppendableMemmap(Box::new(storage)),
     )))
 }
 
@@ -130,16 +130,15 @@ impl VectorStorage for AppendableMmapVectorStorage {
     }
 
     fn flusher(&self) -> Flusher {
-        todo!();
-        // Box::new({
-        //     let vectors = self.vectors.clone();
-        //     let deleted_flusher = self.deleted.flusher();
-        //     move || {
-        //         vectors.read().flush()?;
-        //         deleted_flusher()?;
-        //         Ok(())
-        //     }
-        // })
+        Box::new({
+            let vectors_flusher = self.vectors.flusher();
+            let deleted_flusher = self.deleted.flusher();
+            move || {
+                vectors_flusher()?;
+                deleted_flusher()?;
+                Ok(())
+            }
+        })
     }
 
     fn quantize(

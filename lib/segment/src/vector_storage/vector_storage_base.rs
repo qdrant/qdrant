@@ -126,7 +126,7 @@ pub trait VectorStorage {
 pub enum VectorStorageEnum {
     Simple(SimpleVectorStorage),
     Memmap(Box<MemmapVectorStorage>),
-    AppendableMemmap(AppendableMmapVectorStorage),
+    AppendableMemmap(Box<AppendableMmapVectorStorage>),
 }
 
 impl VectorStorage for VectorStorageEnum {

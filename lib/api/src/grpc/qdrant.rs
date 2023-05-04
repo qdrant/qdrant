@@ -17,6 +17,9 @@ pub struct VectorParams {
     #[prost(message, optional, tag = "4")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
+    #[prost(bool, optional, tag = "5")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]

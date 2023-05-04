@@ -115,12 +115,11 @@ impl DynamicMmapFlags {
     }
 
     fn current_to_file(&self, current: usize) -> PathBuf {
-        let path = match current {
+        match current {
             0 => Self::mmap_file_path_a(&self.directory),
             1 => Self::mmap_file_path_b(&self.directory),
             _ => unreachable!("current can be only 0 or 1"),
-        };
-        path
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -129,8 +128,8 @@ impl DynamicMmapFlags {
 
     pub fn open(directory: &Path) -> OperationResult<Self> {
         create_dir_all(directory)?;
-        let mut status_mmap = ensure_status_file(directory)?;
-        let status = transmute_from_u8_to_mut(&mut status_mmap);
+        let status_mmap = ensure_status_file(directory)?;
+        let status = transmute_from_u8_to_mut(&status_mmap);
 
         let mut flags = Self {
             _status_mmap: Arc::new(status_mmap),
@@ -163,8 +162,7 @@ impl DynamicMmapFlags {
         // Very important, that this section is not interrupted by any errors.
         // Otherwise we can end up with inconsistent state
         {
-            let res = self.flags.take(); // Drop the bit slice. Important to do before dropping the mmap
-            drop(res); // Drop explicitly to make it visible.
+            self.flags.take(); // Drop the bit slice. Important to do before dropping the mmap
             self._flags_mmap.drop_mmap(); // Drop the mmap
             self._flags_mmap.set_mmap(flags_mmap);
             self.flags = Some(flags);
@@ -203,7 +201,7 @@ impl DynamicMmapFlags {
             self._flags_mmap.flush()?;
 
             // copy the old file to the new one
-            std::fs::copy(&old_mmap_file, &new_mmap_file)?;
+            std::fs::copy(old_mmap_file, new_mmap_file)?;
 
             self.reopen_mmap(new_len, new_file_id)?;
             self.status.current_file_id = new_file_id;
@@ -240,12 +238,6 @@ impl DynamicMmapFlags {
         }
 
         false
-    }
-
-    pub fn flush(&self) -> OperationResult<()> {
-        self._status_mmap.flush()?;
-        self._flags_mmap.flush()?;
-        Ok(())
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -321,7 +313,7 @@ mod tests {
                 expected_current_file_id
             );
 
-            dynamic_flags.flush().unwrap();
+            dynamic_flags.flusher()().unwrap();
         }
 
         {

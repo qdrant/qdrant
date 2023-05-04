@@ -304,6 +304,7 @@ mod tests {
                     distance: Distance::Dot,
                     hnsw_config: None,
                     quantization_config: None,
+                    on_disk: None,
                 }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
@@ -396,6 +397,7 @@ mod tests {
                         distance: Distance::Dot,
                         hnsw_config: None,
                         quantization_config: None,
+                        on_disk: None,
                     },
                 ),
                 (
@@ -405,6 +407,7 @@ mod tests {
                         distance: Distance::Dot,
                         hnsw_config: None,
                         quantization_config: None,
+                        on_disk: None,
                     },
                 ),
             ])),
