@@ -176,10 +176,9 @@ pub fn validate_named_vectors_not_empty(
     value: &Option<NamedVectors>,
 ) -> Result<(), ValidationError> {
     // If length is non-zero, we're good
-    if let Some(vectors) = value {
-        if !vectors.vectors.is_empty() {
-            return Ok(());
-        }
+    match value {
+        Some(vectors) if !vectors.vectors.is_empty() => return Ok(()),
+        Some(_) | None => {}
     }
 
     let mut err = ValidationError::new("length");

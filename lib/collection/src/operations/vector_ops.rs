@@ -1,10 +1,11 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use schemars::JsonSchema;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{Filter, PointIdType};
 use serde::{Deserialize, Serialize};
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 use super::point_ops::{PointIdsList, PointsSelector};
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
@@ -17,6 +18,10 @@ pub struct UpdateVectors {
     pub id: PointIdType,
     /// Vectors
     #[serde(alias = "vectors")]
+    #[validate(custom(
+        function = "validate_vector_struct_not_empty",
+        message = "must specify vectors to update"
+    ))]
     pub vector: VectorStruct,
 }
 
@@ -24,9 +29,9 @@ pub struct UpdateVectors {
 pub struct DeleteVectors {
     /// Point selector
     pub point_selector: PointsSelector,
-    /// Vectors
+    /// Vector names
     #[serde(alias = "vectors")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1, message = "must specify vector names to delete"))]
     pub vector: HashSet<String>,
 }
 
@@ -82,4 +87,17 @@ impl SplitByShard for VectorOperations {
             }
         }
     }
+}
+
+/// Validate the vector struct is not empty.
+pub fn validate_vector_struct_not_empty(value: &VectorStruct) -> Result<(), ValidationError> {
+    // If any vector is specified we're good
+    match value {
+        VectorStruct::Multi(vectors) if vectors.is_empty() => {}
+        VectorStruct::Single(_) | VectorStruct::Multi(_) => return Ok(()),
+    }
+
+    let mut err = ValidationError::new("length");
+    err.add_param(Cow::from("min"), &1);
+    Err(err)
 }
