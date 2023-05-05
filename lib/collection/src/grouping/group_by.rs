@@ -289,12 +289,11 @@ where
 
 /// Uses the set of values to create a Match::Any, if possible
 fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
-    match values[..] {
-        [Value::Number(_)] |
-        [Value::Number(_), ..] => Some(Match::new_any(AnyVariants::Integers(
+    match values.first() {
+        Some(Value::Number(_)) => Some(Match::new_any(AnyVariants::Integers(
             values.into_iter().filter_map(|v| v.as_i64()).collect(),
         ))),
-        [Value::String(_), ..] => Some(Match::new_any(AnyVariants::Keywords(
+        Some(Value::String(_)) => Some(Match::new_any(AnyVariants::Keywords(
             values
                 .into_iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_owned()))
