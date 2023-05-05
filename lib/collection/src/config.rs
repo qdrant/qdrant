@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::num::NonZeroU32;
@@ -147,7 +147,7 @@ impl CollectionConfig {
         }
     }
 
-    pub fn get_quantization_named_configs(&self) -> HashMap<String, Option<QuantizationConfig>> {
+    pub fn get_quantization_named_configs(&self) -> BTreeMap<String, Option<QuantizationConfig>> {
         match &self.params.vectors {
             VectorsConfig::Single(_) => Default::default(),
             VectorsConfig::Multi(configs) => configs
@@ -178,7 +178,7 @@ impl CollectionParams {
     pub fn get_all_vector_params(
         &self,
         collection_hnsw: &HnswConfig,
-        collection_quantization: Option<&QuantizationConfig>,
+        collection_quantization: Option<&BTreeMap<String, Option<QuantizationConfig>>>,
     ) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         Ok(self
             .vectors
@@ -192,11 +192,9 @@ impl CollectionParams {
                         hnsw_config: params
                             .hnsw_config
                             .and_then(|c| c.update(collection_hnsw).ok()),
-                        quantization_config: params
-                            .quantization_config
-                            .as_ref()
-                            .or(collection_quantization)
-                            .cloned(),
+                        quantization_config: collection_quantization
+                            .and_then(|c| c.get(name).cloned())
+                            .flatten(),
                     },
                 )
             })

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -29,7 +29,7 @@ pub struct IndexingOptimizer {
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
-    quantization_named_configs: HashMap<String, Option<QuantizationConfig>>,
+    quantization_named_configs: BTreeMap<String, Option<QuantizationConfig>>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
@@ -41,7 +41,7 @@ impl IndexingOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
-        quantization_named_configs: HashMap<String, Option<QuantizationConfig>>,
+        quantization_named_configs: BTreeMap<String, Option<QuantizationConfig>>,
     ) -> Self {
         IndexingOptimizer {
             thresholds_config,
@@ -220,8 +220,8 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.quantization_config.clone()
     }
 
-    fn quantization_named_config(&self, name: &str) -> Option<QuantizationConfig> {
-        self.quantization_named_configs.get(name).cloned().flatten()
+    fn quantization_named_config(&self) -> &BTreeMap<String, Option<QuantizationConfig>> {
+        &self.quantization_named_configs
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {

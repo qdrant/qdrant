@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -108,7 +108,7 @@ pub fn build_optimizers(
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
-    quantization_named_configs: &HashMap<String, Option<QuantizationConfig>>,
+    quantization_named_configs: &BTreeMap<String, Option<QuantizationConfig>>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let segments_path = shard_path.join("segments");
     let temp_segments_path = shard_path.join("temp_segments");

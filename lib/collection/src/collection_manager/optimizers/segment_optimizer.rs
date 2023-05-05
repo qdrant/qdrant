@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -58,7 +58,7 @@ pub trait SegmentOptimizer {
     fn quantization_config(&self) -> Option<QuantizationConfig>;
 
     /// Get named quantization config
-    fn quantization_named_config(&self, name: &str) -> Option<QuantizationConfig>;
+    fn quantization_named_config(&self) -> &BTreeMap<String, Option<QuantizationConfig>>;
 
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
@@ -151,14 +151,15 @@ pub trait SegmentOptimizer {
         let is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
-        let quantization_config = if is_indexed {
-            self.quantization_config()
-        } else {
-            Default::default()
-        };
         let optimized_config = SegmentConfig {
-            vector_data: collection_params
-                .get_all_vector_params(self.hnsw_config(), quantization_config.as_ref())?,
+            vector_data: collection_params.get_all_vector_params(
+                self.hnsw_config(),
+                if is_indexed {
+                    Some(self.quantization_named_config())
+                } else {
+                    None
+                },
+            )?,
             index: if is_indexed {
                 Indexes::Hnsw(self.hnsw_config().clone())
             } else {
@@ -173,7 +174,11 @@ pub trait SegmentOptimizer {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,
             },
-            quantization_config,
+            quantization_config: if is_indexed {
+                self.quantization_config()
+            } else {
+                Default::default()
+            },
         };
 
         Ok(SegmentBuilder::new(
