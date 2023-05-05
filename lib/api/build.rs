@@ -103,8 +103,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("WalConfigDiff.wal_capacity_mb", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("OptimizersConfigDiff.deleted_threshold", "custom = \"crate::grpc::validate::validate_f64_range_1\""),
             ("OptimizersConfigDiff.vacuum_min_vector_number", "custom = \"crate::grpc::validate::validate_u64_range_min_100\""),
-            ("OptimizersConfigDiff.memmap_threshold", "custom = \"crate::grpc::validate::validate_u64_range_min_1000\""),
-            ("OptimizersConfigDiff.indexing_threshold", "custom = \"crate::grpc::validate::validate_u64_range_min_1000\""),
             ("VectorsConfig.config", ""),
             ("VectorParams.size", "range(min = 1)"),
             ("VectorParams.hnsw_config", ""),
