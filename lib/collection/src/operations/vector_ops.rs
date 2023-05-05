@@ -15,6 +15,7 @@ use crate::shards::shard::ShardId;
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct UpdateVectors {
     /// Points with named vectors
+    #[validate]
     #[validate(length(min = 1, message = "must specify points to update"))]
     pub points: Vec<PointVectors>,
 }
