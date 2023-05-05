@@ -8,38 +8,118 @@ on:
       - '*'           # Push events to every tag not containing /
 
 jobs:
-
-  build:
-
-    runs-on: ubuntu-latest
-
+  build-amd:
+    # runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: buildjet-8vcpu-ubuntu-2204
     steps:
-    - uses: actions/checkout@v3
-    - uses: Swatinem/rust-cache@v2
-    - name: Get current tag
-      id: vars
-      run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
-    - name: Build the Docker image
-      env:
-        RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
-      run: |
-        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        docker buildx create --use
+      - name: Get current tag
+        id: vars
+        run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
 
-        docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Checkout source
+        uses: actions/checkout@v3
 
-        DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
-        TAGS="-t ${DOCKERHUB_TAG}"
+      - name: Install packages
+        run: sudo apt-get install -y protobuf-compiler
 
-        DOCKERHUB_TAG_LATEST="qdrant/qdrant:latest"
-        TAGS="${TAGS} -t ${DOCKERHUB_TAG_LATEST}"
+      - name: "Install toolchain: AMD"
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: "x86_64-unknown-linux-gnu"
 
-        GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
+      - name: Restore rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: dependencies-amd
 
-        docker buildx build --platform='linux/amd64,linux/arm64' $TAGS --push .
+      - name: Build cargo
+        run: |
+          cargo build --target "x86_64-unknown-linux-gnu" --release --bin qdrant
 
-        docker pull $DOCKERHUB_TAG
+      - name: Build the Docker image
+        env:
+          RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+        run: |
+          # docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
 
-        docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
-        docker tag $DOCKERHUB_TAG $GITHUB_TAG
-        docker push $GITHUB_TAG
+          DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
+          TAGS="-t ${DOCKERHUB_TAG}"
+
+          DOCKERHUB_TAG_LATEST="qdrant/qdrant:latest"
+          TAGS="${TAGS} -t ${DOCKERHUB_TAG_LATEST}"
+
+          # docker pull $DOCKERHUB_TAG
+
+          GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
+
+          docker build --build-arg="TARGET=x86_64-unknown-linux-gnu" $TAGS .
+
+          # docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
+          # docker tag $DOCKERHUB_TAG $GITHUB_TAG
+          # docker push $GITHUB_TAG
+
+  build-arm:
+    # runs-on: buildjet-4vcpu-ubuntu-2204-arm
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
+    steps:
+      - name: Get current tag
+        id: vars
+        run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Install packages
+        run: sudo apt-get install -y clang cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu protobuf-compiler
+
+      - name: "Install toolchain: ARM"
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: "aarch64-unknown-linux-gnu"
+
+      - name: Restore rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: dependencies-arm
+
+      - name: Build cargo
+        run: |
+          cargo build --target "aarch64-unknown-linux-gnu" --release --verbose --bin qdrant
+
+      - name: Build the Docker image
+        env:
+          RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+        run: |
+          # docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
+
+          DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
+          TAGS="-t ${DOCKERHUB_TAG}"
+
+          DOCKERHUB_TAG_LATEST="qdrant/qdrant:latest"
+          TAGS="${TAGS} -t ${DOCKERHUB_TAG_LATEST}"
+
+          # docker pull $DOCKERHUB_TAG
+
+          GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
+
+          docker build --build-arg="TARGET=aarch64-unknown-linux-gnu" $TAGS .
+
+          # docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
+          # docker tag $DOCKERHUB_TAG $GITHUB_TAG
+          # docker push $GITHUB_TAG
+
+
+
+#       - name: Build the Docker image
+#         env:
+#           RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+#         run: |
+#           DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
+#           TAGS="-t ${DOCKERHUB_TAG}"
+# 
+#           DOCKERHUB_TAG_LATEST="qdrant/qdrant:latest"
+#           TAGS="${TAGS} -t ${DOCKERHUB_TAG_LATEST}"
+# 
+#           GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
