@@ -377,7 +377,7 @@ def delete_unknown_vectors():
         query_params={'wait': 'true'},
         body={
             "point_selector": {"points": [1, 2]},
-            "vector": ["a", "b", "c"]
+            "vector": ["a"]
         }
     )
 
