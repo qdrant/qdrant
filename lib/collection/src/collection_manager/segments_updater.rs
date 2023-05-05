@@ -1,3 +1,5 @@
+//! A collection of functions for updating points and payloads stored in segments
+
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
@@ -13,9 +15,8 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::vector_ops::{PointVectors, VectorOperations};
 use crate::operations::FieldIndexOperations;
-
-/// A collection of functions for updating points and payloads stored in segments
 
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
@@ -49,6 +50,54 @@ pub(crate) fn delete_points(
             write_segment.delete_point(op_num, id)
         })
         .map_err(Into::into)
+}
+
+/// Update the specified named vectors of a point, keeping unspecified vectors intact.
+pub(crate) fn update_vectors(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    points: &[PointVectors],
+) -> CollectionResult<usize> {
+    let points_map: HashMap<PointIdType, &PointVectors> =
+        points.iter().map(|p| (p.id, p)).collect();
+    let ids: Vec<PointIdType> = points_map.keys().copied().collect();
+
+    let updated_points =
+        segments.apply_points_to_appendable(op_num, &ids, |id, write_segment| {
+            let vectors = points_map[&id].vector.clone().into_all_vectors();
+            write_segment.update_vectors(op_num, id, vectors)
+        })?;
+    check_unprocessed_points(&ids, &updated_points)?;
+    Ok(updated_points.len())
+}
+
+/// Delete the given named vectors for the given points, keeping other vectors intact.
+pub(crate) fn delete_vectors(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    points: &[PointIdType],
+    vector_names: &[String],
+) -> CollectionResult<usize> {
+    segments
+        .apply_points(points, |id, _idx, write_segment| {
+            let mut res = true;
+            for name in vector_names {
+                res &= write_segment.delete_vector(op_num, id, name)?;
+            }
+            Ok(res)
+        })
+        .map_err(Into::into)
+}
+
+/// Delete the given named vectors for points matching the given filter, keeping otehr vectors intact.
+pub(crate) fn delete_vectors_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    filter: &Filter,
+    vector_names: &[String],
+) -> CollectionResult<usize> {
+    let affected_points = points_by_filter(segments, filter)?;
+    delete_vectors(segments, op_num, &affected_points, vector_names)
 }
 
 pub(crate) fn overwrite_payload(
@@ -399,6 +448,24 @@ pub(crate) fn process_point_operation(
                 &operation.points,
             )?;
             Ok(deleted + new + updated)
+        }
+    }
+}
+
+pub(crate) fn process_vector_operation(
+    segments: &RwLock<SegmentHolder>,
+    op_num: SeqNumberType,
+    vector_operation: VectorOperations,
+) -> CollectionResult<usize> {
+    match vector_operation {
+        VectorOperations::UpdateVectors(operation) => {
+            update_vectors(&segments.read(), op_num, &operation.points)
+        }
+        VectorOperations::DeleteVectors(ids, vector_names) => {
+            delete_vectors(&segments.read(), op_num, &ids.points, &vector_names)
+        }
+        VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
+            delete_vectors_by_filter(&segments.read(), op_num, &filter, &vector_names)
         }
     }
 }

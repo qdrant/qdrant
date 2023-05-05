@@ -54,6 +54,9 @@ impl CollectionUpdater {
             CollectionUpdateOperations::PointOperation(point_operation) => {
                 process_point_operation(segments, op_num, point_operation)
             }
+            CollectionUpdateOperations::VectorOperation(vector_operation) => {
+                process_vector_operation(segments, op_num, vector_operation)
+            }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                 process_payload_operation(segments, op_num, payload_operation)
             }

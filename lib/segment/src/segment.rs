@@ -87,9 +87,20 @@ pub struct VectorData {
 }
 
 impl Segment {
-    /// Change vector in-place.
-    /// WARN: Available for appendable segments only
-    fn update_vectors(
+    /// Replace vectors in-place
+    ///
+    /// This replaces all named vectors for this point with the given set of named vectors.
+    ///
+    /// - new named vectors are inserted
+    /// - existing named vectors are replaced
+    /// - existing named vectors not specified are deleted
+    ///
+    /// This differs with [`update_vectors`], because this deletes unspecified vectors.
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only.
+    fn replace_all_vectors(
         &mut self,
         internal_id: PointOffsetType,
         vectors: NamedVectors,
@@ -109,6 +120,35 @@ impl Segment {
                     vector_storage.delete_vector(internal_id)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Update vectors in-place
+    ///
+    /// This updates all specified named vectors for this point with the given set of named vectors, leaving unspecified vectors untouched.
+    ///
+    /// - new named vectors are inserted
+    /// - existing named vectors are replaced
+    /// - existing named vectors not specified are untouched and kept as-is
+    ///
+    /// This differs with [`replace_all_vectors`], because this keeps unspecified vectors as-is.
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only.
+    fn update_vectors(
+        &mut self,
+        internal_id: PointOffsetType,
+        vectors: NamedVectors,
+    ) -> OperationResult<()> {
+        debug_assert!(self.is_appendable());
+        check_vectors_set(&vectors, &self.segment_config)?;
+        for (vector_name, new_vector) in vectors {
+            self.vector_data[vector_name.as_ref()]
+                .vector_storage
+                .borrow_mut()
+                .insert_vector(internal_id, new_vector.as_ref())?;
         }
         Ok(())
     }
@@ -730,7 +770,7 @@ impl SegmentEntry for Segment {
             }
 
             if let Some(existing_internal_id) = stored_internal_point {
-                segment.update_vectors(existing_internal_id, processed_vectors)?;
+                segment.replace_all_vectors(existing_internal_id, processed_vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
                 let new_index = segment.insert_new_vectors(point_id, processed_vectors)?;
@@ -766,6 +806,26 @@ impl SegmentEntry for Segment {
         }
     }
 
+    fn update_vectors(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: NamedVectors,
+    ) -> OperationResult<bool> {
+        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        match internal_id {
+            None => Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            }),
+            Some(internal_id) => {
+                self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
+                    segment.update_vectors(internal_id, vectors)?;
+                    Ok((true, Some(internal_id)))
+                })
+            }
+        }
+    }
+
     fn delete_vector(
         &mut self,
         op_num: SeqNumberType,
@@ -774,8 +834,9 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
-            // Point does already not exist anymore
-            None => Ok(false),
+            None => Err(OperationError::PointIdError {
+                missed_point_id: point_id,
+            }),
             Some(internal_id) => {
                 self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
                     let vector_data = segment.vector_data.get(vector_name).ok_or(

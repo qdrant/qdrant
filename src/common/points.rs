@@ -7,6 +7,7 @@ use collection::operations::types::{
     CountRequest, CountResult, PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
     SearchRequestBatch, UpdateResult,
 };
+use collection::operations::vector_ops::{DeleteVectors, UpdateVectors, VectorOperations};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
@@ -60,6 +61,54 @@ pub async fn do_delete_points(
         }
     };
     let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
+    toc.update(
+        collection_name,
+        collection_operation,
+        shard_selection,
+        wait,
+        ordering,
+    )
+    .await
+}
+
+pub async fn do_update_vectors(
+    toc: &TableOfContent,
+    collection_name: &str,
+    operation: UpdateVectors,
+    shard_selection: Option<ShardId>,
+    wait: bool,
+    ordering: WriteOrdering,
+) -> Result<UpdateResult, StorageError> {
+    let collection_operation =
+        CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(operation));
+    toc.update(
+        collection_name,
+        collection_operation,
+        shard_selection,
+        wait,
+        ordering,
+    )
+    .await
+}
+
+pub async fn do_delete_vectors(
+    toc: &TableOfContent,
+    collection_name: &str,
+    operation: DeleteVectors,
+    shard_selection: Option<ShardId>,
+    wait: bool,
+    ordering: WriteOrdering,
+) -> Result<UpdateResult, StorageError> {
+    let vector_names = operation.vector.into_iter().collect();
+    let vectors_operation = match operation.point_selector {
+        PointsSelector::PointIdsSelector(points) => {
+            VectorOperations::DeleteVectors(points, vector_names)
+        }
+        PointsSelector::FilterSelector(filter) => {
+            VectorOperations::DeleteVectorsByFilter(filter.filter, vector_names)
+        }
+    };
+    let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
     toc.update(
         collection_name,
         collection_operation,

@@ -10,6 +10,8 @@ service PointsInternal {
   rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponse) {}
   rpc Sync (SyncPointsInternal) returns (PointsOperationResponse) {}
   rpc Delete (DeletePointsInternal) returns (PointsOperationResponse) {}
+  rpc UpdateVectors (UpdateVectorsInternal) returns (PointsOperationResponse) {}
+  rpc DeleteVectors (DeleteVectorsInternal) returns (PointsOperationResponse) {}
   rpc SetPayload (SetPayloadPointsInternal) returns (PointsOperationResponse) {}
   rpc OverwritePayload (SetPayloadPointsInternal) returns (PointsOperationResponse) {}
   rpc DeletePayload (DeletePayloadPointsInternal) returns (PointsOperationResponse) {}
@@ -46,6 +48,16 @@ message UpsertPointsInternal {
 
 message DeletePointsInternal {
   DeletePoints delete_points = 1;
+  optional uint32 shard_id = 2;
+}
+
+message UpdateVectorsInternal {
+  UpdatePointVectors update_vectors = 1;
+  optional uint32 shard_id = 2;
+}
+
+message DeleteVectorsInternal {
+  DeletePointVectors delete_vectors = 1;
   optional uint32 shard_id = 2;
 }
 
