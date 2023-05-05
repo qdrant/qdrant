@@ -132,10 +132,10 @@ paths:
       tags:
         - points
       summary: Update vectors
-      description: Update specified named vectors of a point, keep other vectors intact.
+      description: Update specified named vectors on points, keep unspecified vectors intact.
       operationId: update_vectors
       requestBody:
-        description: Update named vectors on point
+        description: Update named vectors on points
         content:
           application/json:
             schema:
