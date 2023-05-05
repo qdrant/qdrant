@@ -437,10 +437,9 @@ impl SplitByShard for PointOperations {
                 OperationToShard::to_all(by_filter)
             }
             PointOperations::SyncPoints(_) => {
-                debug_assert!(
-                    false,
-                    "SyncPoints operation is intended to by applied to specific shard only"
-                );
+                #[cfg(debug_assertions)]
+                panic!("SyncPoints operation is intended to by applied to specific shard only");
+                #[cfg(not(debug_assertions))]
                 OperationToShard::by_shard(vec![])
             }
         }

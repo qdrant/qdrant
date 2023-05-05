@@ -134,7 +134,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     pub fn record_message_send_failure<E: Error>(&self, peer_address: &Uri, error: E) {
         let mut message_send_failures = self.message_send_failures.write();
-        let mut entry = message_send_failures
+        let entry = message_send_failures
             .entry(peer_address.to_string())
             .or_insert_with(Default::default);
         // Log only first error

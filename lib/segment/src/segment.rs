@@ -89,7 +89,7 @@ pub struct VectorData {
 impl Segment {
     /// Change vector in-place.
     /// WARN: Available for appendable segments only
-    fn update_vector(
+    fn update_vectors(
         &mut self,
         internal_id: PointOffsetType,
         vectors: NamedVectors,
@@ -730,7 +730,7 @@ impl SegmentEntry for Segment {
             }
 
             if let Some(existing_internal_id) = stored_internal_point {
-                segment.update_vector(existing_internal_id, processed_vectors)?;
+                segment.update_vectors(existing_internal_id, processed_vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
                 let new_index = segment.insert_new_vectors(point_id, processed_vectors)?;
