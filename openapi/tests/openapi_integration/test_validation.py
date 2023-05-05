@@ -43,14 +43,14 @@ def test_validation():
                 "size": 4,
                 "distance": "Dot"
             },
-            "optimizers_config": {
-                "max_optimization_threads": 0,
-            },
+            "hnsw_config": {
+                "ef_construct": 0,
+            }
         }
     )
     assert not response.ok
     assert 'Validation error' in response.json()["status"]["error"]
-    assert 'optimizers_config.max_optimization_threads' in response.json()["status"]["error"]
+    assert 'hnsw_config.ef_construct' in response.json()["status"]["error"]
 
     # Illegal URL parameters must trigger a validation error
     response = request_with_validation(
