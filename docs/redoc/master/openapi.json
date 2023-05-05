@@ -5351,7 +5351,7 @@
             "description": "Maximum available threads for optimization workers",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           }
         }
