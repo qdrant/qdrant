@@ -99,6 +99,7 @@
     - [PointId](#qdrant-PointId)
     - [PointStruct](#qdrant-PointStruct)
     - [PointStruct.PayloadEntry](#qdrant-PointStruct-PayloadEntry)
+    - [PointVectors](#qdrant-PointVectors)
     - [PointsIdsList](#qdrant-PointsIdsList)
     - [PointsOperationResponse](#qdrant-PointsOperationResponse)
     - [PointsSelector](#qdrant-PointsSelector)
@@ -1684,6 +1685,22 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-PointVectors"></a>
+
+### PointVectors
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [PointId](#qdrant-PointId) |  | ID to update vectors for |
+| vectors | [NamedVectors](#qdrant-NamedVectors) |  | Named vectors to update, leave others intact |
+
+
+
+
+
+
 <a name="qdrant-PointsIdsList"></a>
 
 ### PointsIdsList
@@ -2129,8 +2146,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
-| id | [PointId](#qdrant-PointId) |  | ID to update vectors for |
-| vectors | [NamedVectors](#qdrant-NamedVectors) |  | Named vectors to update, leave others intact |
+| points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 
 
