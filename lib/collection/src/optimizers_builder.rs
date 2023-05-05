@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -107,6 +108,7 @@ pub fn build_optimizers(
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
+    quantization_named_configs: &HashMap<String, Option<QuantizationConfig>>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let segments_path = shard_path.join("segments");
     let temp_segments_path = shard_path.join("temp_segments");
@@ -126,6 +128,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             hnsw_config.clone(),
             quantization_config.clone(),
+            quantization_named_configs.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
             threshold_config.clone(),
@@ -134,6 +137,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             hnsw_config.clone(),
             quantization_config.clone(),
+            quantization_named_configs.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
@@ -144,6 +148,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             hnsw_config.clone(),
             quantization_config.clone(),
+            quantization_named_configs.clone(),
         )),
     ])
 }

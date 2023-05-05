@@ -146,6 +146,16 @@ impl CollectionConfig {
             validation::warn_validation_errors("Collection configuration file", errs);
         }
     }
+
+    pub fn get_quantization_named_configs(&self) -> HashMap<String, Option<QuantizationConfig>> {
+        match &self.params.vectors {
+            VectorsConfig::Single(_) => Default::default(),
+            VectorsConfig::Multi(configs) => configs
+                .iter()
+                .map(|(name, config)| (name.clone(), config.quantization_config.clone()))
+                .collect(),
+        }
+    }
 }
 
 impl CollectionParams {

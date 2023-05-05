@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -29,6 +29,7 @@ pub struct IndexingOptimizer {
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
+    quantization_named_configs: HashMap<String, Option<QuantizationConfig>>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
@@ -40,6 +41,7 @@ impl IndexingOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        quantization_named_configs: HashMap<String, Option<QuantizationConfig>>,
     ) -> Self {
         IndexingOptimizer {
             thresholds_config,
@@ -48,6 +50,7 @@ impl IndexingOptimizer {
             collection_params,
             hnsw_config,
             quantization_config,
+            quantization_named_configs,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
@@ -217,6 +220,10 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.quantization_config.clone()
     }
 
+    fn quantization_named_config(&self, name: &str) -> Option<QuantizationConfig> {
+        self.quantization_named_configs.get(name).cloned().flatten()
+    }
+
     fn threshold_config(&self) -> &OptimizerThresholds {
         &self.thresholds_config
     }
@@ -325,6 +332,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            Default::default(),
         );
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
 
@@ -426,6 +434,7 @@ mod tests {
                 write_consistency_factor: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
             },
+            Default::default(),
             Default::default(),
             Default::default(),
         );

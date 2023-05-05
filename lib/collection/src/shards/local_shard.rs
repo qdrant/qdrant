@@ -213,12 +213,14 @@ impl LocalShard {
             log::debug!("Deduplicated {} points", res);
         }
 
+        let quantization_named_configs = collection_config_read.get_quantization_named_configs();
         let optimizers = build_optimizers(
             shard_path,
             &collection_config_read.params,
             &collection_config_read.optimizer_config,
             &collection_config_read.hnsw_config,
             &collection_config_read.quantization_config,
+            &quantization_named_configs,
         );
 
         drop(collection_config_read); // release `shared_config` from borrow checker
@@ -350,12 +352,14 @@ impl LocalShard {
         let wal: SerdeWal<CollectionUpdateOperations> =
             SerdeWal::new(wal_path.to_str().unwrap(), (&config.wal_config).into())?;
 
+        let quantization_named_configs = config.get_quantization_named_configs();
         let optimizers = build_optimizers(
             shard_path,
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,
             &config.quantization_config,
+            &quantization_named_configs,
         );
 
         drop(config); // release `shared_config` from borrow checker
@@ -444,12 +448,14 @@ impl LocalShard {
         update_handler.stop_flush_worker();
 
         update_handler.wait_workers_stops().await?;
+        let quantization_named_configs = config.get_quantization_named_configs();
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,
             &config.quantization_config,
+            &quantization_named_configs,
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;

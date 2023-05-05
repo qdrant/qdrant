@@ -57,6 +57,9 @@ pub trait SegmentOptimizer {
     /// Get quantization config
     fn quantization_config(&self) -> Option<QuantizationConfig>;
 
+    /// Get named quantization config
+    fn quantization_named_config(&self, name: &str) -> Option<QuantizationConfig>;
+
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
 

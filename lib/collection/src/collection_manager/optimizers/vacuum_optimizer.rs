@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -35,6 +35,7 @@ pub struct VacuumOptimizer {
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
+    quantization_named_configs: HashMap<String, Option<QuantizationConfig>>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
@@ -49,6 +50,7 @@ impl VacuumOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        quantization_named_configs: HashMap<String, Option<QuantizationConfig>>,
     ) -> Self {
         VacuumOptimizer {
             deleted_threshold,
@@ -59,6 +61,7 @@ impl VacuumOptimizer {
             collection_params,
             hnsw_config,
             quantization_config,
+            quantization_named_configs,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
@@ -182,6 +185,10 @@ impl SegmentOptimizer for VacuumOptimizer {
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
         self.quantization_config.clone()
+    }
+
+    fn quantization_named_config(&self, name: &str) -> Option<QuantizationConfig> {
+        self.quantization_named_configs.get(name).cloned().flatten()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -310,6 +317,7 @@ mod tests {
                 replication_factor: NonZeroU32::new(1).unwrap(),
                 write_consistency_factor: NonZeroU32::new(1).unwrap(),
             },
+            Default::default(),
             Default::default(),
             Default::default(),
         );
@@ -451,6 +459,7 @@ mod tests {
             collection_params.clone(),
             hnsw_config.clone(),
             Default::default(),
+            Default::default(),
         );
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
@@ -460,6 +469,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params,
             hnsw_config,
+            Default::default(),
             Default::default(),
         );
 
