@@ -64,6 +64,14 @@ fn create_segment(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
+    let segment_type = match config.index {
+        Indexes::Plain {} => SegmentType::Plain,
+        Indexes::Hnsw { .. } => SegmentType::Indexed,
+    };
+
+    let appendable_flag =
+        segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
+
     let vector_db_names: Vec<String> = config
         .vector_data
         .keys()
@@ -108,7 +116,7 @@ fn create_segment(
             )?,
         };
 
-        if config.quantization_config(vector_name).is_some() {
+        if config.quantization_config(vector_name).is_some() && !appendable_flag {
             let quantized_data_path = vector_storage_path;
             // Try to load quantization data from disk, if exists
             // If not exists or it's a new segment, just ignore it
@@ -156,14 +164,6 @@ fn create_segment(
             },
         );
     }
-
-    let segment_type = match config.index {
-        Indexes::Plain {} => SegmentType::Plain,
-        Indexes::Hnsw { .. } => SegmentType::Indexed,
-    };
-
-    let appendable_flag =
-        segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
     Ok(Segment {
         version,
