@@ -9,6 +9,7 @@ use collection::operations::types::{
     CountRequest, CountResult, PointRequest, RecommendRequest, RecommendRequestBatch, Record,
     ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, UpdateResult,
 };
+use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
 use segment::types::ScoredPoint;
@@ -63,6 +64,8 @@ struct AllDefinitions {
     ay: AliasDescription,
     az: WriteOrdering,
     b1: ReadConsistency,
+    b2: UpdateVectors,
+    b3: DeleteVectors,
 }
 
 fn save_schema<T: JsonSchema>() {

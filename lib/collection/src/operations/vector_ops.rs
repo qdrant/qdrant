@@ -113,11 +113,9 @@ impl SplitByShard for VectorOperations {
 }
 
 /// Validate the vector struct is not empty.
-pub fn validate_vector_struct_not_empty(value: &VectorStruct) -> Result<(), ValidationError> {
-    // If any vector is specified we're good
-    match value {
-        VectorStruct::Multi(vectors) if vectors.is_empty() => {}
-        VectorStruct::Single(_) | VectorStruct::Multi(_) => return Ok(()),
+fn validate_vector_struct_not_empty(value: &VectorStruct) -> Result<(), ValidationError> {
+    if !value.is_empty() {
+        return Ok(());
     }
 
     let mut err = ValidationError::new("length");
