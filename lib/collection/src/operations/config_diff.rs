@@ -124,7 +124,6 @@ pub struct OptimizersConfigDiff {
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,
     /// Maximum available threads for optimization workers
-    #[validate(range(min = 1))]
     pub max_optimization_threads: Option<usize>,
 }
 
