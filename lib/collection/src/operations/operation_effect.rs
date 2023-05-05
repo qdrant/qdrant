@@ -69,7 +69,8 @@ impl EstimateOperationEffectArea for vector_ops::VectorOperations {
     fn estimate_effect_area(&self) -> OperationEffectArea {
         match self {
             vector_ops::VectorOperations::UpdateVectors(update_operation) => {
-                OperationEffectArea::Points(vec![update_operation.id])
+                let ids = update_operation.points.iter().map(|p| p.id).collect();
+                OperationEffectArea::Points(ids)
             }
             vector_ops::VectorOperations::DeleteVectors(ids, _) => {
                 OperationEffectArea::Points(ids.points.clone())

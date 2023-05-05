@@ -15,7 +15,7 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::vector_ops::{UpdateVectors, VectorOperations};
+use crate::operations::vector_ops::{PointVectors, VectorOperations};
 use crate::operations::FieldIndexOperations;
 
 pub(crate) fn check_unprocessed_points(
@@ -56,12 +56,15 @@ pub(crate) fn delete_points(
 pub(crate) fn update_vectors(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
-    point: UpdateVectors,
+    points: &[PointVectors],
 ) -> CollectionResult<usize> {
-    let ids = [point.id];
+    let points_map: HashMap<PointIdType, &PointVectors> =
+        points.iter().map(|p| (p.id, p)).collect();
+    let ids: Vec<PointIdType> = points_map.keys().copied().collect();
+
     let updated_points =
         segments.apply_points_to_appendable(op_num, &ids, |id, write_segment| {
-            let vectors = point.vector.clone().into_all_vectors();
+            let vectors = points_map[&id].vector.clone().into_all_vectors();
             write_segment.update_vectors(op_num, id, vectors)
         })?;
     check_unprocessed_points(&ids, &updated_points)?;
@@ -456,7 +459,7 @@ pub(crate) fn process_vector_operation(
 ) -> CollectionResult<usize> {
     match vector_operation {
         VectorOperations::UpdateVectors(operation) => {
-            update_vectors(&segments.read(), op_num, operation)
+            update_vectors(&segments.read(), op_num, &operation.points)
         }
         VectorOperations::DeleteVectors(ids, vector_names) => {
             delete_vectors(&segments.read(), op_num, &ids.points, &vector_names)

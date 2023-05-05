@@ -5,8 +5,8 @@ use api::grpc::qdrant::{
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollection,
     DeleteFieldIndexCollectionInternal, DeletePayloadPoints, DeletePayloadPointsInternal,
     DeletePointVectors, DeletePoints, DeletePointsInternal, DeleteVectorsInternal, NamedVectors,
-    PointsIdsList, PointsSelector, SetPayloadPoints, SetPayloadPointsInternal, SyncPoints,
-    SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
+    PointVectors, PointsIdsList, PointsSelector, SetPayloadPoints, SetPayloadPointsInternal,
+    SyncPoints, SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
     UpsertPointsInternal, VectorsSelector,
 };
 use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
@@ -122,15 +122,21 @@ pub fn internal_update_vectors(
         update_vectors: Some(UpdatePointVectors {
             collection_name,
             wait: Some(wait),
-            id: Some(update_vectors.id.into()),
-            vectors: Some(NamedVectors {
-                vectors: update_vectors
-                    .vector
-                    .into_all_vectors()
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.to_vec().into()))
-                    .collect(),
-            }),
+            points: update_vectors
+                .points
+                .into_iter()
+                .map(|point| PointVectors {
+                    id: Some(point.id.into()),
+                    vectors: Some(NamedVectors {
+                        vectors: point
+                            .vector
+                            .into_all_vectors()
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.to_vec().into()))
+                            .collect(),
+                    }),
+                })
+                .collect(),
             ordering: ordering.map(write_ordering_to_proto),
         }),
     }

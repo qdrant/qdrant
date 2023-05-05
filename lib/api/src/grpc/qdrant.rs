@@ -2502,21 +2502,22 @@ pub struct UpdatePointVectors {
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
+    /// List of points and vectors to update
+    #[prost(message, repeated, tag = "3")]
+    pub points: ::prost::alloc::vec::Vec<PointVectors>,
+    /// Write ordering guarantees
+    #[prost(message, optional, tag = "4")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointVectors {
     /// ID to update vectors for
     #[prost(message, optional, tag = "3")]
     pub id: ::core::option::Option<PointId>,
     /// Named vectors to update, leave others intact
     #[prost(message, optional, tag = "4")]
-    #[validate(
-        custom(
-            function = "crate::grpc::validate::validate_named_vectors_not_empty",
-            message = "must specify vectors to update"
-        )
-    )]
     pub vectors: ::core::option::Option<NamedVectors>,
-    /// Write ordering guarantees
-    #[prost(message, optional, tag = "5")]
-    pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]

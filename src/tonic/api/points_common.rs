@@ -20,7 +20,7 @@ use collection::operations::types::{
     default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
     SearchRequestBatch,
 };
-use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
+use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
 use segment::data_types::named_vectors::NamedVectors;
@@ -163,31 +163,35 @@ pub async fn update_vectors(
     let UpdatePointVectors {
         collection_name,
         wait,
-        id,
-        vectors,
+        points,
         ordering,
     } = update_point_vectors;
 
-    let id = match id {
-        Some(id) => id.try_into()?,
-        None => return Err(Status::invalid_argument("id is expected")),
-    };
-    let vector = match vectors {
-        Some(vectors) => {
-            let vectors = vectors
-                .vectors
-                .into_iter()
-                .map(|(k, v)| (k, v.data))
-                .collect();
-            NamedVectors::from_map(vectors)
-        }
-        None => return Err(Status::invalid_argument("vectors is expected")),
-    };
+    // Build list of operation points
+    let mut op_points = Vec::with_capacity(points.len());
+    for point in points {
+        let id = match point.id {
+            Some(id) => id.try_into()?,
+            None => return Err(Status::invalid_argument("id is expected")),
+        };
+        let vector = match point.vectors {
+            Some(vectors) => {
+                let vectors = vectors
+                    .vectors
+                    .into_iter()
+                    .map(|(k, v)| (k, v.data))
+                    .collect();
+                NamedVectors::from_map(vectors)
+            }
+            None => return Err(Status::invalid_argument("vectors is expected")),
+        };
+        op_points.push(PointVectors {
+            id,
+            vector: vector.into(),
+        });
+    }
 
-    let operation = UpdateVectors {
-        id,
-        vector: vector.into(),
-    };
+    let operation = UpdateVectors { points: op_points };
 
     let timing = Instant::now();
     let result = do_update_vectors(
