@@ -2513,10 +2513,10 @@ pub struct UpdatePointVectors {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointVectors {
     /// ID to update vectors for
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "1")]
     pub id: ::core::option::Option<PointId>,
     /// Named vectors to update, leave others intact
-    #[prost(message, optional, tag = "4")]
+    #[prost(message, optional, tag = "2")]
     pub vectors: ::core::option::Option<NamedVectors>,
 }
 #[derive(validator::Validate)]
