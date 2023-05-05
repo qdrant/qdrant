@@ -91,10 +91,14 @@ def update_vectors():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "id": 1,
-            "vector": {
-                "text": text_vector,
-            },
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "text": text_vector,
+                    }
+                }
+            ]
         }
     )
     assert response.ok
@@ -116,11 +120,15 @@ def update_vectors():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "id": 1,
-            "vector": {
-                "text": text_vector,
-                "image": image_vector,
-            },
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "text": text_vector,
+                        "image": image_vector,
+                    }
+                }
+            ]
         }
     )
     assert response.ok
@@ -142,10 +150,14 @@ def update_vectors():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "id": 1,
-            "vector": {
-                "image": image_vector,
-            },
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "image": image_vector,
+                    }
+                }
+            ]
         }
     )
     assert response.ok
@@ -199,10 +211,14 @@ def update_empty_vectors():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "id": 1,
-            "vector": {
-                "text": text_vector,
-            },
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "text": text_vector,
+                    }
+                }
+            ]
         }
     )
     assert response.ok
@@ -224,10 +240,14 @@ def update_empty_vectors():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "id": 1,
-            "vector": {
-                "image": image_vector,
-            },
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "image": image_vector,
+                    }
+                }
+            ]
         }
     )
     assert response.ok
@@ -254,8 +274,12 @@ def update_no_vectors():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "id": 1,
-            "vector": {},
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {},
+                }
+            ]
         }
     )
     assert not response.ok
