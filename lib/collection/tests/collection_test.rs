@@ -582,7 +582,7 @@ mod grouping {
         let result = group_by(
             resources.request.clone(),
             &resources.collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             resources.read_consistency,
             resources.shard_selection,
         )
@@ -636,7 +636,7 @@ mod grouping {
         let result = group_by(
             request.clone(),
             &resources.collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             resources.read_consistency,
             resources.shard_selection,
         )
@@ -699,7 +699,7 @@ mod grouping {
         let result = group_by(
             group_by_request,
             &resources.collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             resources.read_consistency,
             resources.shard_selection,
         )
@@ -734,7 +734,7 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &resources.collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             resources.read_consistency,
             resources.shard_selection,
         )
@@ -780,7 +780,7 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
         )
@@ -824,7 +824,7 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
         )
@@ -864,7 +864,7 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
         )
@@ -904,7 +904,7 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
         )
@@ -948,7 +948,7 @@ mod grouping {
         let result = group_by(
             group_by_request.clone(),
             &collection,
-            Some(|_name| async { unreachable!() }),
+            |_name| async { unreachable!() },
             read_consistency,
             shard_selection,
         )

@@ -12,7 +12,7 @@ use collection::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams,
 };
-use collection::grouping::group_by::{group_by, Group, GroupRequest, SourceRequest};
+use collection::grouping::group_by::{group_by, Group, GroupRequest};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
@@ -1188,10 +1188,7 @@ impl TableOfContent {
     ) -> Result<Vec<Group>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
 
-        let collection_by_name = match request.request {
-            SourceRequest::Recommend(_) => Some(|name| self.get_collection_opt(name)),
-            SourceRequest::Search(_) => None,
-        };
+        let collection_by_name = |name| self.get_collection_opt(name);
 
         group_by(
             request,

@@ -14,8 +14,7 @@ use validator::Validate;
 use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::types::{
-    CollectionError, CollectionResult, RecommendRequest, SearchRequest,
+use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest,
 };
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
@@ -35,7 +34,7 @@ impl SourceRequest {
         &self,
         collection: &Collection,
         // only used for recommend
-        collection_by_name: Option<F>,
+        collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
         include_key: String,
@@ -77,12 +76,6 @@ impl SourceRequest {
                 // We're enriching the final results at the end, so we'll keep this minimal
                 request.with_payload = only_group_by_key;
                 request.with_vector = None;
-
-                let collection_by_name =
-                    collection_by_name.ok_or(CollectionError::ServiceError {
-                        error: "programmer: collection_by_name is required for recommend".into(),
-                        backtrace: None,
-                    })?;
 
                 recommend_by(request, collection, collection_by_name, read_consistency).await
             }
@@ -178,7 +171,7 @@ pub async fn group_by<'a, F, Fut>(
     request: GroupRequest,
     collection: &Collection,
     // Obligatory for recommend
-    collection_by_name: Option<F>,
+    collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 ) -> CollectionResult<Vec<Group>>
