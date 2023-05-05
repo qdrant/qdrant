@@ -194,7 +194,9 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
             }
 
-            Self::update_quantization(&segment, stopped)?;
+            if !segment.appendable_flag {
+                Self::update_quantization(&segment, stopped)?;
+            }
 
             for vector_data in segment.vector_data.values_mut() {
                 vector_data.vector_index.borrow_mut().build_index(stopped)?;
