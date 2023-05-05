@@ -1,3 +1,4 @@
 schemathesis~=3.19.0
 requests
 pytest==7.2.2
+pytest-timeout==2.1.0

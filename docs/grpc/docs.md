@@ -634,11 +634,23 @@
 - Amount of stored points. - Current write RPS.
 
 It is recommended to select the default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. |
-| max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.
+| max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.
 
-If indexation speed has more priority for you - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 |
-| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as a read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 |
-| indexing_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256 |
+If indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs. |
+| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.
+
+Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
+
+To disable memmap storage, set this to `0`.
+
+Note: 1Kb = 1 vector of size 256 |
+| indexing_threshold | [uint64](#uint64) | optional | Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
+
+Default value is 20,000, based on &lt;https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md&gt;.
+
+To disable vector indexing, set to `0`.
+
+Note: 1kB = 1 vector of size 256. |
 | flush_interval_sec | [uint64](#uint64) | optional | Interval between forced flushes. |
 | max_optimization_threads | [uint64](#uint64) | optional | Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used |
 

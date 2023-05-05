@@ -162,29 +162,36 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "3")]
     pub default_segment_number: ::core::option::Option<u64>,
     ///
-    /// Do not create segments larger this size (in KiloBytes).
+    /// Do not create segments larger this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
-    /// If indexation speed has more priority for you - make this parameter lower.
+    /// If indexing speed is more important - make this parameter lower.
     /// If search speed is more important - make this parameter higher.
     /// Note: 1Kb = 1 vector of size 256
+    /// If not set, will be automatically selected considering the number of available CPUs.
     #[prost(uint64, optional, tag = "4")]
     pub max_segment_size: ::core::option::Option<u64>,
     ///
-    /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-    /// Segments larger than this threshold will be stored as a read-only memmaped file.
-    /// To enable memmap storage, lower the threshold
+    /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
+    /// Segments larger than this threshold will be stored as read-only memmaped file.
+    ///
+    /// Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
+    ///
+    /// To disable memmap storage, set this to `0`.
+    ///
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "5")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1000")]
     pub memmap_threshold: ::core::option::Option<u64>,
     ///
-    /// Maximum size (in KiloBytes) of vectors allowed for plain index.
-    /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
-    /// Note: 1Kb = 1 vector of size 256
+    /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
+    ///
+    /// Default value is 20,000, based on <<https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.>
+    ///
+    /// To disable vector indexing, set to `0`.
+    ///
+    /// Note: 1kB = 1 vector of size 256.
     #[prost(uint64, optional, tag = "6")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1000")]
     pub indexing_threshold: ::core::option::Option<u64>,
     ///
     /// Interval between forced flushes.
