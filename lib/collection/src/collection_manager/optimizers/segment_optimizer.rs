@@ -75,8 +75,7 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
-            vector_data: collection_params
-                .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?,
+            vector_data: collection_params.get_all_vector_params(self.hnsw_config(), None)?,
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
@@ -149,9 +148,14 @@ pub trait SegmentOptimizer {
         let is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
+        let quantization_config = if is_indexed {
+            self.quantization_config()
+        } else {
+            Default::default()
+        };
         let optimized_config = SegmentConfig {
             vector_data: collection_params
-                .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?,
+                .get_all_vector_params(self.hnsw_config(), quantization_config.as_ref())?,
             index: if is_indexed {
                 Indexes::Hnsw(self.hnsw_config().clone())
             } else {
@@ -166,12 +170,7 @@ pub trait SegmentOptimizer {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,
             },
-            quantization_config: if is_indexed {
-                // TODO: separate config for applying quantization
-                self.quantization_config()
-            } else {
-                Default::default()
-            },
+            quantization_config,
         };
 
         Ok(SegmentBuilder::new(
