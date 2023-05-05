@@ -57,11 +57,6 @@ mod tests {
         }
 
         for i in 0..NUM_VECTORS_2 {
-            if i % 2 == 0 {
-                segment2
-                    .delete_point(2, (NUM_VECTORS_1 + i).into())
-                    .unwrap();
-            }
             if i % 3 == 0 {
                 segment2
                     .delete_vector(2, (NUM_VECTORS_1 + i).into(), "vector1")
@@ -73,6 +68,11 @@ mod tests {
             if i % 3 == 1 {
                 segment2
                     .delete_vector(2, (NUM_VECTORS_1 + i).into(), "vector2")
+                    .unwrap();
+            }
+            if i % 2 == 0 {
+                segment2
+                    .delete_point(2, (NUM_VECTORS_1 + i).into())
                     .unwrap();
             }
         }

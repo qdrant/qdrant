@@ -78,6 +78,7 @@
     - [CreateFieldIndexCollection](#qdrant-CreateFieldIndexCollection)
     - [DeleteFieldIndexCollection](#qdrant-DeleteFieldIndexCollection)
     - [DeletePayloadPoints](#qdrant-DeletePayloadPoints)
+    - [DeletePointVectors](#qdrant-DeletePointVectors)
     - [DeletePoints](#qdrant-DeletePoints)
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
@@ -98,6 +99,7 @@
     - [PointId](#qdrant-PointId)
     - [PointStruct](#qdrant-PointStruct)
     - [PointStruct.PayloadEntry](#qdrant-PointStruct-PayloadEntry)
+    - [PointVectors](#qdrant-PointVectors)
     - [PointsIdsList](#qdrant-PointsIdsList)
     - [PointsOperationResponse](#qdrant-PointsOperationResponse)
     - [PointsSelector](#qdrant-PointsSelector)
@@ -123,6 +125,7 @@
     - [SearchResponse](#qdrant-SearchResponse)
     - [SetPayloadPoints](#qdrant-SetPayloadPoints)
     - [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry)
+    - [UpdatePointVectors](#qdrant-UpdatePointVectors)
     - [UpdateResult](#qdrant-UpdateResult)
     - [UpsertPoints](#qdrant-UpsertPoints)
     - [ValuesCount](#qdrant-ValuesCount)
@@ -1346,6 +1349,25 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-DeletePointVectors"></a>
+
+### DeletePointVectors
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | name of the collection |
+| wait | [bool](#bool) | optional | Wait until the changes have been applied? |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
+| vectors | [VectorsSelector](#qdrant-VectorsSelector) |  | List of vector names to delete |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+
+
+
+
+
+
 <a name="qdrant-DeletePoints"></a>
 
 ### DeletePoints
@@ -1669,6 +1691,22 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-PointVectors"></a>
+
+### PointVectors
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [PointId](#qdrant-PointId) |  | ID to update vectors for |
+| vectors | [NamedVectors](#qdrant-NamedVectors) |  | Named vectors to update, leave others intact |
 
 
 
@@ -2110,6 +2148,24 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-UpdatePointVectors"></a>
+
+### UpdatePointVectors
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | name of the collection |
+| wait | [bool](#bool) | optional | Wait until the changes have been applied? |
+| points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+
+
+
+
+
+
 <a name="qdrant-UpdateResult"></a>
 
 ### UpdateResult
@@ -2342,6 +2398,8 @@ The JSON representation for `Value` is a JSON value.
 | Upsert | [UpsertPoints](#qdrant-UpsertPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Perform insert &#43; updates on points. If a point with a given ID already exists - it will be overwritten. |
 | Delete | [DeletePoints](#qdrant-DeletePoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete points |
 | Get | [GetPoints](#qdrant-GetPoints) | [GetResponse](#qdrant-GetResponse) | Retrieve points |
+| UpdateVectors | [UpdatePointVectors](#qdrant-UpdatePointVectors) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Update named vectors for point |
+| DeleteVectors | [DeletePointVectors](#qdrant-DeletePointVectors) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete named vectors for points |
 | SetPayload | [SetPayloadPoints](#qdrant-SetPayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Set payload for points |
 | OverwritePayload | [SetPayloadPoints](#qdrant-SetPayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Overwrite payload for points |
 | DeletePayload | [DeletePayloadPoints](#qdrant-DeletePayloadPoints) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete specified key payload for points |

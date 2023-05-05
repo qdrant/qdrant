@@ -95,10 +95,16 @@ impl Batch {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {
     pub points: Vec<PointIdType>,
+}
+
+impl From<Vec<PointIdType>> for PointIdsList {
+    fn from(points: Vec<PointIdType>) -> Self {
+        Self { points }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]

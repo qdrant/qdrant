@@ -4,8 +4,10 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollection,
     DeleteFieldIndexCollectionInternal, DeletePayloadPoints, DeletePayloadPointsInternal,
-    DeletePoints, DeletePointsInternal, PointsIdsList, PointsSelector, SetPayloadPoints,
-    SetPayloadPointsInternal, SyncPoints, SyncPointsInternal, UpsertPoints, UpsertPointsInternal,
+    DeletePointVectors, DeletePoints, DeletePointsInternal, DeleteVectorsInternal, NamedVectors,
+    PointVectors, PointsIdsList, PointsSelector, SetPayloadPoints, SetPayloadPointsInternal,
+    SyncPoints, SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
+    UpsertPointsInternal, VectorsSelector,
 };
 use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
 use tonic::Status;
@@ -14,6 +16,7 @@ use crate::operations::conversions::write_ordering_to_proto;
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
 use crate::operations::point_ops::{PointInsertOperations, PointSyncOperation, WriteOrdering};
 use crate::operations::types::CollectionResult;
+use crate::operations::vector_ops::UpdateVectors;
 use crate::operations::CreateIndex;
 use crate::shards::shard::ShardId;
 
@@ -101,6 +104,88 @@ pub fn internal_delete_points_by_filter(
             wait: Some(wait),
             points: Some(PointsSelector {
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
+            }),
+            ordering: ordering.map(write_ordering_to_proto),
+        }),
+    }
+}
+
+pub fn internal_update_vectors(
+    shard_id: Option<ShardId>,
+    collection_name: String,
+    update_vectors: UpdateVectors,
+    wait: bool,
+    ordering: Option<WriteOrdering>,
+) -> UpdateVectorsInternal {
+    UpdateVectorsInternal {
+        shard_id,
+        update_vectors: Some(UpdatePointVectors {
+            collection_name,
+            wait: Some(wait),
+            points: update_vectors
+                .points
+                .into_iter()
+                .map(|point| PointVectors {
+                    id: Some(point.id.into()),
+                    vectors: Some(NamedVectors {
+                        vectors: point
+                            .vector
+                            .into_all_vectors()
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.to_vec().into()))
+                            .collect(),
+                    }),
+                })
+                .collect(),
+            ordering: ordering.map(write_ordering_to_proto),
+        }),
+    }
+}
+
+pub fn internal_delete_vectors(
+    shard_id: Option<ShardId>,
+    collection_name: String,
+    ids: Vec<PointIdType>,
+    vector_names: Vec<String>,
+    wait: bool,
+    ordering: Option<WriteOrdering>,
+) -> DeleteVectorsInternal {
+    DeleteVectorsInternal {
+        shard_id,
+        delete_vectors: Some(DeletePointVectors {
+            collection_name,
+            wait: Some(wait),
+            points_selector: Some(PointsSelector {
+                points_selector_one_of: Some(PointsSelectorOneOf::Points(PointsIdsList {
+                    ids: ids.into_iter().map(|id| id.into()).collect(),
+                })),
+            }),
+            vectors: Some(VectorsSelector {
+                names: vector_names,
+            }),
+            ordering: ordering.map(write_ordering_to_proto),
+        }),
+    }
+}
+
+pub fn internal_delete_vectors_by_filter(
+    shard_id: Option<ShardId>,
+    collection_name: String,
+    filter: Filter,
+    vector_names: Vec<String>,
+    wait: bool,
+    ordering: Option<WriteOrdering>,
+) -> DeleteVectorsInternal {
+    DeleteVectorsInternal {
+        shard_id,
+        delete_vectors: Some(DeletePointVectors {
+            collection_name,
+            wait: Some(wait),
+            points_selector: Some(PointsSelector {
+                points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
+            }),
+            vectors: Some(VectorsSelector {
+                names: vector_names,
             }),
             ordering: ordering.map(write_ordering_to_proto),
         }),
