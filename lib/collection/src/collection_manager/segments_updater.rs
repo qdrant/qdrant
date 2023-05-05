@@ -44,10 +44,11 @@ pub(crate) fn delete_points(
     op_num: SeqNumberType,
     ids: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let res = segments.apply_points(ids, |id, _idx, write_segment| {
-        write_segment.delete_point(op_num, id)
-    })?;
-    Ok(res)
+    segments
+        .apply_points(ids, |id, _idx, write_segment| {
+            write_segment.delete_point(op_num, id)
+        })
+        .map_err(Into::into)
 }
 
 pub(crate) fn overwrite_payload(
@@ -125,7 +126,7 @@ pub(crate) fn delete_payload(
         segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
             let mut res = true;
             for key in keys {
-                res = write_segment.delete_payload(op_num, id, key)? && res;
+                res &= write_segment.delete_payload(op_num, id, key)?;
             }
             Ok(res)
         })?;
@@ -181,10 +182,11 @@ pub(crate) fn create_field_index(
     field_name: PayloadKeyTypeRef,
     field_schema: Option<&PayloadFieldSchema>,
 ) -> CollectionResult<usize> {
-    let res = segments.apply_segments(|write_segment| {
-        write_segment.create_field_index(op_num, field_name, field_schema)
-    })?;
-    Ok(res)
+    segments
+        .apply_segments(|write_segment| {
+            write_segment.create_field_index(op_num, field_name, field_schema)
+        })
+        .map_err(Into::into)
 }
 
 pub(crate) fn delete_field_index(
@@ -192,9 +194,9 @@ pub(crate) fn delete_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
-    let res = segments
-        .apply_segments(|write_segment| write_segment.delete_field_index(op_num, field_name))?;
-    Ok(res)
+    segments
+        .apply_segments(|write_segment| write_segment.delete_field_index(op_num, field_name))
+        .map_err(Into::into)
 }
 
 ///

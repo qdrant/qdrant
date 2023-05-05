@@ -55,13 +55,7 @@ impl<'a> From<NamedVectors<'a>> for VectorStruct {
 impl VectorStruct {
     pub fn get(&self, name: &str) -> Option<&VectorType> {
         match self {
-            VectorStruct::Single(v) => {
-                if name == DEFAULT_VECTOR_NAME {
-                    Some(v)
-                } else {
-                    None
-                }
-            }
+            VectorStruct::Single(v) => (name == DEFAULT_VECTOR_NAME).then_some(v),
             VectorStruct::Multi(v) => v.get(name),
         }
     }
