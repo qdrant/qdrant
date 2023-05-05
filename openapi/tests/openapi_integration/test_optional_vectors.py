@@ -267,7 +267,7 @@ def test_update_empty_vectors():
     update_empty_vectors()
 
 
-def update_no_vectors():
+def no_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
         method="PUT",
@@ -285,11 +285,11 @@ def update_no_vectors():
     assert not response.ok
     assert response.status_code == 422
     error = response.json()["status"]["error"]
-    assert error.__contains__("Validation error in JSON body: [vector: must specify vectors to update]")
+    assert error.__contains__("Validation error in JSON body: [points[0].vector: must specify vectors to update for point]")
 
 
-def test_update_no_vectors():
-    update_no_vectors()
+def test_no_vectors():
+    no_vectors()
 
 
 def delete_vectors():
