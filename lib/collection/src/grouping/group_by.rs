@@ -20,6 +20,9 @@ use crate::operations::types::{
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
 
+const MAX_GET_GROUPS_REQUESTS: usize = 5;
+const MAX_GROUP_FILLING_REQUESTS: usize = 5;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SourceRequest {
@@ -186,7 +189,7 @@ where
     let mut groups = GroupsAggregator::new(request.groups, request.top, request.group_by.clone());
 
     // Try to complete amount of groups
-    for _ in 0..3 {
+    for _ in 0..MAX_GET_GROUPS_REQUESTS {
         let enough_groups = (request.groups - groups.len()) == 0;
         if enough_groups {
             break;
@@ -229,7 +232,7 @@ where
     }
 
     // Try to fill up groups
-    for _ in 0..3 {
+    for _ in 0..MAX_GROUP_FILLING_REQUESTS {
         let unsatisfied_groups = groups.keys_of_unfilled_groups();
         if unsatisfied_groups.is_empty() {
             break;
@@ -294,6 +297,7 @@ where
 /// Uses the set of values to create a Match::Any, if possible
 fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
     match values[..] {
+        [Value::Number(_)] |
         [Value::Number(_), ..] => Some(Match::new_any(AnyVariants::Integers(
             values.into_iter().filter_map(|v| v.as_i64()).collect(),
         ))),
