@@ -335,3 +335,49 @@ def test_nesting_nested_payload_query_operations():
     assert response.ok
     assert len(response.json()['result']['points']) == 1
     assert response.json()['result']['points'][0]['id'] == 1
+
+    # Search doubly nested field with and without payload index
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "nested": {
+                            "key": "arr1",
+                            "filter": {
+                                "must": [
+                                    {
+                                        "nested": {
+                                            "key": "arr2",
+                                            "filter": {
+                                                "should": [
+                                                    {
+                                                        "key": "a",
+                                                        "match": {
+                                                            "value": 5
+                                                        }
+                                                    },
+                                                    {
+                                                        "key": "b",
+                                                        "match": {
+                                                            "value": 6
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 2
