@@ -48,3 +48,9 @@ impl IntoIterator for PostingList {
         self.list.into_iter()
     }
 }
+
+impl From<Vec<u32>> for PostingList {
+    fn from(value: Vec<u32>) -> Self {
+        Self { list: value }
+    }
+}
