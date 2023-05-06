@@ -108,7 +108,8 @@ fn create_segment(
             )?,
         };
 
-        if config.quantization_config(vector_name).is_some() {
+        if config.quantization_config(vector_name).is_some() && config.quantization_config.is_some()
+        {
             let quantized_data_path = vector_storage_path;
             // Try to load quantization data from disk, if exists
             // If not exists or it's a new segment, just ignore it
