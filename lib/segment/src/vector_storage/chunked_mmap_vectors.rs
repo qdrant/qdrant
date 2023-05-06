@@ -170,7 +170,7 @@ impl ChunkedMmapVectors {
 
         let chunk = &mut self.chunks[chunk_idx];
 
-        chunk.data[chunk_offset..chunk_offset + vector.len()].copy_from_slice(vector);
+        chunk.data_mut()[chunk_offset..chunk_offset + vector.len()].copy_from_slice(vector);
 
         let new_len = max(self.status.len, key + 1);
 
@@ -194,20 +194,16 @@ impl ChunkedMmapVectors {
         let chunk_idx = self.get_chunk_index(key);
         let chunk_offset = self.get_chunk_offset(key);
         let chunk = &self.chunks[chunk_idx];
-        &chunk.data[chunk_offset..chunk_offset + self.config.dim]
+        &chunk.data()[chunk_offset..chunk_offset + self.config.dim]
     }
 
     pub fn flusher(&self) -> Flusher {
         Box::new({
             let status_mmap = self._status_mmap.clone();
-            let chunks_flushers: Vec<_> = self
-                .chunks
-                .iter()
-                .map(|chunk| chunk._mmap.clone())
-                .collect();
+            let chunks_flushers: Vec<_> = self.chunks.iter().map(|chunk| chunk.flusher()).collect();
             move || {
-                for chunk in &chunks_flushers {
-                    chunk.flush()?;
+                for flusher in chunks_flushers {
+                    flusher()?;
                 }
                 status_mmap.flush()?;
                 Ok(())
