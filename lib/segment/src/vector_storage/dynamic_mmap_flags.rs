@@ -128,8 +128,8 @@ impl DynamicMmapFlags {
 
     pub fn open(directory: &Path) -> OperationResult<Self> {
         create_dir_all(directory)?;
-        let status_mmap = ensure_status_file(directory)?;
-        let status = transmute_from_u8_to_mut(&status_mmap);
+        let mut status_mmap = ensure_status_file(directory)?;
+        let status = transmute_from_u8_to_mut(&mut status_mmap);
 
         let mut flags = Self {
             _status_mmap: Arc::new(status_mmap),

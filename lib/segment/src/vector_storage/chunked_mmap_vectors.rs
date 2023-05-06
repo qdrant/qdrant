@@ -107,8 +107,8 @@ impl ChunkedMmapVectors {
 
     pub fn open(directory: &Path, dim: usize) -> OperationResult<Self> {
         create_dir_all(directory)?;
-        let status_mmap = Self::ensure_status_file(directory)?;
-        let status = transmute_from_u8_to_mut(&status_mmap);
+        let mut status_mmap = Self::ensure_status_file(directory)?;
+        let status = transmute_from_u8_to_mut(&mut status_mmap);
 
         let config = Self::ensure_config(directory, dim)?;
         let chunks = read_mmaps(directory)?;

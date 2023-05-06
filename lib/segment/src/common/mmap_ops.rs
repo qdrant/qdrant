@@ -51,7 +51,7 @@ pub fn transmute_from_u8<T>(data: &[u8]) -> &T {
     unsafe { &*ptr }
 }
 
-pub fn transmute_from_u8_to_mut<'a, T>(data: &[u8]) -> &'a mut T {
+pub fn transmute_from_u8_to_mut<'a, T>(data: &mut [u8]) -> &'a mut T {
     debug_assert!(data.len() == size_of::<T>());
     let ptr = data.as_ptr() as *mut T;
     unsafe { &mut *ptr }
