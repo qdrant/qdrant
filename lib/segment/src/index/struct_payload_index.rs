@@ -62,7 +62,7 @@ impl StructPayloadIndex {
         self.field_indexes.get(&full_path.path).and_then(|indexes| {
             // rewrite condition with fullpath to enable cardinality estimation
             let full_path_condition = FieldCondition {
-                key: full_path.path.clone(),
+                key: full_path.path,
                 ..condition.clone()
             };
             let mut result_estimation: Option<CardinalityEstimation> = None;
