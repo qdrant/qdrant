@@ -1,23 +1,29 @@
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Index;
+use std::sync::Arc;
 
 use bitvec::view::AsBits;
 use itertools::Itertools;
+use parking_lot::RwLock;
+use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
-use super::inverted_index::{Document, TokenId, ParsedQuery};
+use super::inverted_index::{Document, ParsedQuery, TokenId};
 use super::posting_list::PostingList;
-use super::postings_iterator::intersect_postings_iterator;
+use super::postings_iterator::{intersect_postings_iterator, intersect_postings_iterator_owned};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
-
 pub fn db_encode_tokens(data: &[u32]) -> Vec<u8> {
-    let mut res = Vec::with_capacity(data.len() * 4);
+    if data.len() == 0 {
+        return vec![];
+    }
+    let mut res = vec![0; data.len() * 4];
     for i in 0..data.len() {
-        res[4*i..][..4].copy_from_slice(&data[i].to_be_bytes());
+        res[4 * i..][..4].copy_from_slice(&data[i].to_be_bytes());
     }
     res
 }
@@ -26,8 +32,8 @@ pub fn db_decode_tokens(data: &[u8]) -> Vec<u32> {
     if data.len() == 0 {
         return vec![];
     }
-    let token_count = data.len() / 4 + 1;
-    let mut res = Vec::<u32>::with_capacity(token_count);
+    let token_count = data.len() / 4 + if data.len() % 4 == 0 { 0 } else { 1 };
+    let mut res = vec![0; token_count];
     for (chunk, i) in data.windows(4).step_by(4).zip(0..token_count) {
         res[i] = u32::from_be_bytes(chunk.try_into().unwrap());
     }
@@ -42,6 +48,25 @@ pub struct InvertedIndex {
 }
 
 impl InvertedIndex {
+    pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
+        let db_postings = DatabaseColumnWrapper::new(db.clone(), &format!("{field}_postings_iidx"));
+        let db_vocab = DatabaseColumnWrapper::new(db.clone(), &format!("{field}_vocab_iidx"));
+        let db_point_to_docs =
+            DatabaseColumnWrapper::new(db, &format!("{field}_point_to_docs_iidx"));
+        Self {
+            postings: db_postings,
+            vocab: db_vocab,
+            point_to_docs: db_point_to_docs,
+            points_count: Default::default(),
+        }
+    }
+
+    pub fn recreate(&self) -> OperationResult<()> {
+        self.postings.recreate_column_family()?;
+        self.vocab.recreate_column_family()?;
+        self.point_to_docs.recreate_column_family()
+    }
+
     fn store_key(id: &PointOffsetType) -> Vec<u8> {
         bincode::serialize(&id).unwrap()
     }
@@ -66,24 +91,35 @@ impl InvertedIndex {
         struct StoredDocument {
             tokens: BTreeSet<String>,
         }
-        match serde_cbor::from_slice::<StoredDocument>(data)
-        {
+        match serde_cbor::from_slice::<StoredDocument>(data) {
             Ok(doc) => self.document_from_tokens(&doc.tokens),
-            Err(e) => Err(OperationError::service_error(format!("Failed to deserialize document: {e}")))
-        } 
+            Err(e) => Err(OperationError::service_error(format!(
+                "Failed to deserialize document: {e}"
+            ))),
+        }
     }
 
-    pub fn document_from_tokens(&self, tokens: &BTreeSet<String>) -> Result<Document, OperationError> {
+    pub fn document_from_tokens(
+        &self,
+        tokens: &BTreeSet<String>,
+    ) -> Result<Document, OperationError> {
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab
-            let vocab_idx = match self.vocab.get_pinned(token.as_bytes(), |raw| serde_cbor::from_slice(raw))? {
-                    Some(cbor_result) => cbor_result?,
-                    None => {
-                        let next_token_id = self.vocab.lock_db().iter()?.count() as TokenId;
-                        self.vocab.put(token.as_bytes(), next_token_id.to_be_bytes());
-                        next_token_id
-                    }
+            let vocab_idx = match self
+                .vocab
+                .get_pinned(token.as_bytes(), |raw| db_decode_tokens(raw))?
+            {
+                Some(cbor_result) => cbor_result
+                    .get(0)
+                    .ok_or(OperationError::service_error("No tokens to decode"))?
+                    .clone(),
+                None => {
+                    let next_token_id = self.vocab.lock_db().iter()?.count() as TokenId;
+                    self.vocab
+                        .put(token.as_bytes(), db_encode_tokens(&vec![next_token_id]))?;
+                    next_token_id
+                }
             };
             document_tokens.push(vocab_idx);
         }
@@ -91,25 +127,30 @@ impl InvertedIndex {
         Ok(Document::new(document_tokens))
     }
 
-    pub fn index_document(&mut self, idx: PointOffsetType, document: Document) -> Result<(), OperationError> {
+    pub fn index_document(
+        &mut self,
+        idx: PointOffsetType,
+        document: Document,
+    ) -> Result<(), OperationError> {
         self.points_count += 1;
 
         for token_idx in document.tokens() {
-            let mut posting = self
+            let posting = self
                 .postings
                 .get_pinned(&Self::store_key(&token_idx), |raw| db_decode_tokens(raw))
                 .expect("posting must exist even if with None");
             let new_posting = match posting {
                 None => vec![idx],
-                Some(vec) => {
+                Some(mut vec) => {
                     vec.push(idx);
                     vec
-                },
+                }
             };
-            self.postings.put(Self::store_key(&token_idx), db_encode_tokens(&new_posting));
+            self.postings
+                .put(Self::store_key(&token_idx), db_encode_tokens(&new_posting))?;
         }
         let db_document = db_encode_tokens(document.tokens());
-        self.point_to_docs.put(Self::store_key(&idx), db_document);
+        self.point_to_docs.put(Self::store_key(&idx), db_document)?;
         Ok(())
     }
 
@@ -118,7 +159,12 @@ impl InvertedIndex {
             return Ok(None); // Already removed or never actually existed
         }
         let db_idx = Self::store_key(&idx);
-        let tokens = self.point_to_docs.get_pinned(&db_idx, |raw| db_decode_tokens(raw))?.ok_or(OperationError::service_error(format!("Document to be deleted is empty {idx}")))?;
+        let tokens = self
+            .point_to_docs
+            .get_pinned(&db_idx, |raw| db_decode_tokens(raw))?
+            .ok_or(OperationError::service_error(format!(
+                "Document to be deleted is empty {idx}"
+            )))?;
         self.point_to_docs.put(&db_idx, vec![])?;
 
         self.points_count -= 1;
@@ -126,8 +172,10 @@ impl InvertedIndex {
         for removed_token in tokens {
             // unwrap safety: posting list exists and contains the document id
             let db_key = Self::store_key(&removed_token);
-            let posting = self.postings.get_pinned(&db_key, |raw| db_decode_tokens(raw))?;
-            if let Some(vec) = posting {
+            let posting = self
+                .postings
+                .get_pinned(&db_key, |raw| db_decode_tokens(raw))?;
+            if let Some(mut vec) = posting {
                 if let Ok(removal_idx) = vec.binary_search(&idx) {
                     vec.remove(removal_idx);
                     self.postings.put(&db_key, db_encode_tokens(&vec))?;
@@ -137,29 +185,37 @@ impl InvertedIndex {
         Ok(Some(()))
     }
 
-    pub fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let postings_opt: Option<Vec<_>> = query
-            .tokens
-            .iter()
-            .map(|&vocab_idx| match vocab_idx {
-                None => None,
-                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
-                // dictionary. Posting list entry can be None but it exists.
-                Some(idx) => Some(PostingList::from(self.postings.get_pinned(&Self::store_key(&idx), |raw| db_decode_tokens(raw)))),
-            })
-            
-            .collect();
-        if postings_opt.is_none() {
-            // There are unseen tokens -> no matches
-            return Box::new(vec![].into_iter());
+    pub fn filter(
+        &self,
+        query: &ParsedQuery,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        let mut postings = vec![];
+        for &vocab_idx in query.tokens.iter() {
+            if let Some(idx) = vocab_idx {
+                let res = self
+                    .postings
+                    .get_pinned(&Self::store_key(&idx), |raw| db_decode_tokens(raw))?;
+                if let Some(tokens) = res {
+                    postings.push(PostingList::from(tokens));
+                } else {
+                    return Ok(Box::new(vec![].into_iter()));
+                }
+            } else {
+                // There are unseen tokens -> no matches
+                return Ok(Box::new(vec![].into_iter()));
+            }
         }
-        let postings = postings_opt.unwrap();
         if postings.is_empty() {
             // Empty request -> no matches
-            return Box::new(vec![].into_iter());
+            return Ok(Box::new(vec![].into_iter()));
         }
-        let postings = postings.iter().collect_vec();
-        intersect_postings_iterator(postings)
+        Ok(intersect_postings_iterator_owned(postings))
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        self.postings.flusher()()?;
+        self.vocab.flusher()()?;
+        self.point_to_docs.flusher()()
     }
 
     // pub fn estimate_cardinality(
@@ -257,4 +313,129 @@ impl InvertedIndex {
     //             }),
     //     )
     // }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeSet, HashSet};
+
+    use tempfile::Builder;
+
+    use crate::{
+        common::{rocksdb_wrapper::open_db_with_existing_cf, utils::MultiValue},
+        data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType},
+        index::field_index::full_text_index::{
+            inverted_index::{Document, ParsedQuery},
+            inverted_index_on_disk::{db_encode_tokens, InvertedIndex},
+            tokenizers::Tokenizer,
+        },
+    };
+
+    use super::db_decode_tokens;
+    fn parse_query(index: &InvertedIndex, config: &TextIndexParams, text: &str) -> ParsedQuery {
+        let mut tokens = HashSet::new();
+        Tokenizer::tokenize_query(text, &config, |token| {
+            tokens.insert(
+                index
+                    .vocab
+                    .get_pinned(token.as_bytes(), |raw| {
+                        db_decode_tokens(raw).get(0).unwrap().clone()
+                    })
+                    .unwrap(),
+            );
+        });
+        ParsedQuery {
+            tokens: tokens.into_iter().collect(),
+        }
+    }
+
+    #[test]
+    fn test_codec_roundtrip() {
+        let tokens = vec![102, 105, 114, 115, 116];
+        assert_eq!(db_decode_tokens(&db_encode_tokens(&tokens)), tokens);
+
+        let tokens = vec![0, 0, 0, 31];
+        assert_eq!(db_encode_tokens(&db_decode_tokens(&tokens)), tokens);
+    }
+
+    #[test]
+    fn test_inverted_index() {
+        let payloads = vec![
+            "The celebration had a long way to go and even in the silent depths of Multivac's underground chambers, it hung in the air.".to_string(),
+            "If nothing else, there was the mere fact of isolation and silence.".to_string(),
+            "For the first time in a decade, technicians were not scurrying about the vitals of the giant computer, the soft lights did not wink out their erratic patterns, the flow of information in and out had halted.".to_string(),
+            "It would not be halted long, of course, for the needs of peace would be pressing.".to_string(),
+            "Yet now, for a day, perhaps for a week, even Multivac might celebrate the great time, and rest.".to_string(),
+        ];
+
+        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let config = TextIndexParams {
+            r#type: TextIndexType::Text,
+            tokenizer: TokenizerType::Word,
+            min_token_len: None,
+            max_token_len: None,
+            lowercase: None,
+        };
+
+        {
+            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+
+            let mut index = InvertedIndex::new(db, "text");
+
+            index.recreate().unwrap();
+
+            for (idx, payload) in payloads.iter().enumerate() {
+                let mut tokens: BTreeSet<String> = BTreeSet::new();
+
+                Tokenizer::tokenize_doc(&payload, &config, |token| {
+                    tokens.insert(token.to_owned());
+                });
+                index
+                    .index_document(idx as u32, index.document_from_tokens(&tokens).unwrap())
+                    .unwrap();
+            }
+
+            assert_eq!(
+                index.point_to_docs.lock_db().iter().unwrap().count(),
+                payloads.len()
+            );
+
+            assert_eq!(index.points_count, payloads.len());
+
+            let query = parse_query(&index, &config, "multivac");
+            let search_res: Vec<_> = index.filter(&query).unwrap().collect();
+            assert_eq!(search_res, vec![0, 4]);
+
+            let query = parse_query(&index, &config, "giant computer");
+            let search_res: Vec<_> = index.filter(&query).unwrap().collect();
+            assert_eq!(search_res, vec![2]);
+
+            let query = parse_query(&index, &config, "the great time");
+            let search_res: Vec<_> = index.filter(&query).unwrap().collect();
+            assert_eq!(search_res, vec![4]);
+
+            index.remove_document(2).unwrap();
+            index.remove_document(3).unwrap();
+
+            let filter_condition = parse_query(&index, &config, "giant computer");
+            assert!(index.filter(&filter_condition).unwrap().next().is_none());
+
+            assert_eq!(index.points_count, payloads.len() - 2);
+
+            // let payload = serde_json::json!([
+            //     "The last question was asked for the first time, half in jest, on May 21, 2061,",
+            //     "at a time when humanity first stepped into the light."
+            // ]);
+            // index.add_point(3, &MultiValue::one(&payload)).unwrap();
+
+            // let payload = serde_json::json!([
+            //     "The question came about as a result of a five dollar bet over highballs, and it happened this way: "
+            // ]);
+            // index.add_point(4, &MultiValue::one(&payload)).unwrap();
+
+            // assert_eq!(index.count_indexed_points(), payloads.len() - 1);
+
+            index.flush().unwrap();
+        }
+    }
 }

@@ -19,6 +19,24 @@ pub fn intersect_postings_iterator<'a>(
     Box::new(and_iter)
 }
 
+pub fn intersect_postings_iterator_owned(
+    mut postings: Vec<PostingList>,
+) -> Box<dyn Iterator<Item = PointOffsetType>> {
+    let smallest_posting_idx = postings
+        .iter()
+        .enumerate()
+        .min_by_key(|(_idx, posting)| posting.len())
+        .map(|(idx, _posting)| idx)
+        .unwrap();
+    let smallest_posting = postings.remove(smallest_posting_idx);
+
+    let and_iter = smallest_posting
+        .into_iter()
+        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)));
+
+    Box::new(and_iter)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
