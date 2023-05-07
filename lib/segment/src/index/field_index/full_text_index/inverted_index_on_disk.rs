@@ -1,24 +1,19 @@
-use std::collections::{BTreeSet, HashMap};
-use std::ops::Index;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use bitvec::view::AsBits;
-use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
 use super::inverted_index::{Document, ParsedQuery, TokenId};
 use super::posting_list::PostingList;
-use super::postings_iterator::{intersect_postings_iterator, intersect_postings_iterator_owned};
+use super::postings_iterator::intersect_postings_iterator_owned;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
+use crate::types::PointOffsetType;
 
 pub fn db_encode_tokens(data: &[u32]) -> Vec<u8> {
-    if data.len() == 0 {
+    if data.is_empty() {
         return vec![];
     }
     let mut res = vec![0; data.len() * 4];
@@ -29,7 +24,7 @@ pub fn db_encode_tokens(data: &[u32]) -> Vec<u8> {
 }
 
 pub fn db_decode_tokens(data: &[u8]) -> Vec<u32> {
-    if data.len() == 0 {
+    if data.is_empty() {
         return vec![];
     }
     let token_count = data.len() / 4 + if data.len() % 4 == 0 { 0 } else { 1 };
@@ -106,18 +101,15 @@ impl InvertedIndex {
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab
-            let vocab_idx = match self
-                .vocab
-                .get_pinned(token.as_bytes(), |raw| db_decode_tokens(raw))?
-            {
+            let vocab_idx = match self.vocab.get_pinned(token.as_bytes(), db_decode_tokens)? {
                 Some(cbor_result) => cbor_result
-                    .get(0)
+                    .first()
                     .ok_or(OperationError::service_error("No tokens to decode"))?
                     .clone(),
                 None => {
                     let next_token_id = self.vocab.lock_db().iter()?.count() as TokenId;
                     self.vocab
-                        .put(token.as_bytes(), db_encode_tokens(&vec![next_token_id]))?;
+                        .put(token.as_bytes(), db_encode_tokens(&[next_token_id]))?;
                     next_token_id
                 }
             };
@@ -137,7 +129,7 @@ impl InvertedIndex {
         for token_idx in document.tokens() {
             let posting = self
                 .postings
-                .get_pinned(&Self::store_key(&token_idx), |raw| db_decode_tokens(raw))
+                .get_pinned(&Self::store_key(token_idx), db_decode_tokens)
                 .expect("posting must exist even if with None");
             let new_posting = match posting {
                 None => vec![idx],
@@ -147,7 +139,7 @@ impl InvertedIndex {
                 }
             };
             self.postings
-                .put(Self::store_key(&token_idx), db_encode_tokens(&new_posting))?;
+                .put(Self::store_key(token_idx), db_encode_tokens(&new_posting))?;
         }
         let db_document = db_encode_tokens(document.tokens());
         self.point_to_docs.put(Self::store_key(&idx), db_document)?;
@@ -161,7 +153,7 @@ impl InvertedIndex {
         let db_idx = Self::store_key(&idx);
         let tokens = self
             .point_to_docs
-            .get_pinned(&db_idx, |raw| db_decode_tokens(raw))?
+            .get_pinned(&db_idx, db_decode_tokens)?
             .ok_or(OperationError::service_error(format!(
                 "Document to be deleted is empty {idx}"
             )))?;
@@ -172,9 +164,7 @@ impl InvertedIndex {
         for removed_token in tokens {
             // unwrap safety: posting list exists and contains the document id
             let db_key = Self::store_key(&removed_token);
-            let posting = self
-                .postings
-                .get_pinned(&db_key, |raw| db_decode_tokens(raw))?;
+            let posting = self.postings.get_pinned(&db_key, db_decode_tokens)?;
             if let Some(mut vec) = posting {
                 if let Ok(removal_idx) = vec.binary_search(&idx) {
                     vec.remove(removal_idx);
@@ -194,7 +184,7 @@ impl InvertedIndex {
             if let Some(idx) = vocab_idx {
                 let res = self
                     .postings
-                    .get_pinned(&Self::store_key(&idx), |raw| db_decode_tokens(raw))?;
+                    .get_pinned(&Self::store_key(&idx), db_decode_tokens)?;
                 if let Some(tokens) = res {
                     postings.push(PostingList::from(tokens));
                 } else {
@@ -321,17 +311,14 @@ mod tests {
 
     use tempfile::Builder;
 
-    use crate::{
-        common::{rocksdb_wrapper::open_db_with_existing_cf, utils::MultiValue},
-        data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType},
-        index::field_index::full_text_index::{
-            inverted_index::{Document, ParsedQuery},
-            inverted_index_on_disk::{db_encode_tokens, InvertedIndex},
-            tokenizers::Tokenizer,
-        },
-    };
-
     use super::db_decode_tokens;
+    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
+    use crate::data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType};
+    use crate::index::field_index::full_text_index::inverted_index::ParsedQuery;
+    use crate::index::field_index::full_text_index::inverted_index_on_disk::{
+        db_encode_tokens, InvertedIndex,
+    };
+    use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
     fn parse_query(index: &InvertedIndex, config: &TextIndexParams, text: &str) -> ParsedQuery {
         let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, &config, |token| {
@@ -339,7 +326,7 @@ mod tests {
                 index
                     .vocab
                     .get_pinned(token.as_bytes(), |raw| {
-                        db_decode_tokens(raw).get(0).unwrap().clone()
+                        db_decode_tokens(raw).first().unwrap().clone()
                     })
                     .unwrap(),
             );
