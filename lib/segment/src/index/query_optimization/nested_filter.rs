@@ -405,11 +405,11 @@ mod tests {
         let bits = find_indices_matching_all_conditions(0, &matching_indices_fn);
         // index 0 is matching all the conditions
         assert_eq!(bits.len(), 1);
-        assert_eq!(bits[0], true);
+        assert!(bits[0]);
 
         let bits = find_indices_matching_none_conditions(0, &matching_indices_fn);
         assert_eq!(bits.len(), 1);
-        assert_eq!(bits[0], false);
+        assert!(!bits[0]);
     }
 
     #[test]

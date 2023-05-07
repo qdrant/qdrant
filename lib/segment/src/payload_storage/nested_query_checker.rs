@@ -22,7 +22,7 @@ where
         None => true,
         Some(conditions) => conditions
             .iter()
-            .map(|condition| checker(condition))
+            .map(checker)
             .reduce(|acc, matches| acc & matches)
             .map(|matches: BitVec| matches.count_ones() > 0)
             .unwrap_or(true),
@@ -38,7 +38,7 @@ where
         Some(conditions) => {
             conditions
                 .iter()
-                .map(|condition| checker(condition))
+                .map(checker)
                 .reduce(|acc, matches| acc | matches)
                 // There is at least one sub-object that does not match any of the conditions
                 .map(|matches: BitVec| matches.count_zeros() > 0)
