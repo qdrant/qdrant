@@ -40,7 +40,8 @@ RUN mkdir -p ${APP}
 
 COPY --from=builder /qdrant/qdrant ${APP}/qdrant
 COPY --from=builder /qdrant/config ${APP}/config
+COPY --from=builder /qdrant/tools/entrypoint.sh ${APP}/entrypoint.sh
 
 WORKDIR ${APP}
 
-CMD ["./qdrant"]
+CMD ["./entrypoint.sh"]
