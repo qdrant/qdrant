@@ -1,6 +1,4 @@
-use std::collections::{HashMap, HashSet};
-
-use itertools::Itertools;
+use bitvec::prelude::*;
 
 use crate::common::utils::JsonPathPayload;
 use crate::index::field_index::FieldIndex;
@@ -15,11 +13,8 @@ use crate::types::{
     MatchAny, MatchText, MatchValue, NestedContainer, PointOffsetType, Range, ValueVariants,
 };
 
-/// Payload element index
-pub type ElemIndex = usize;
-
 /// Given a point_id, returns the list of nested indices matching the condition and the total number of nested elements in the payload
-pub type NestedMatchingIndicesFn<'a> = Box<dyn Fn(PointOffsetType) -> (Vec<ElemIndex>, usize) + 'a>;
+type NestedMatchingIndicesFn<'a> = Box<dyn Fn(PointOffsetType) -> BitVec + 'a>;
 
 /// Merge several nested condition results into a single regular condition checker
 ///
@@ -30,13 +25,13 @@ pub fn merge_nested_matching_indices(
 ) -> ConditionCheckerFn {
     Box::new(move |point_id: PointOffsetType| {
         if nested_negate {
-            let not_matching = find_indices_matching_none_conditions(point_id, &nested_checkers).0;
+            let not_matching = find_indices_matching_none_conditions(point_id, &nested_checkers);
             // if they are no nested path not matching ANY nested conditions
-            not_matching.is_empty()
+            not_matching.count_ones() == 0
         } else {
-            let matches = find_indices_matching_all_conditions(point_id, &nested_checkers).0;
+            let matches = find_indices_matching_all_conditions(point_id, &nested_checkers);
             // if any of the nested path is matching for ALL nested condition
-            !matches.is_empty()
+            matches.count_ones() > 0
         }
     })
 }
@@ -44,62 +39,28 @@ pub fn merge_nested_matching_indices(
 /// Apply `point_id` to `nested_checkers` and return the list of indices in the payload matching all conditions
 pub fn find_indices_matching_all_conditions(
     point_id: PointOffsetType,
-    nested_checkers: &Vec<NestedMatchingIndicesFn>,
-) -> (Vec<ElemIndex>, usize) {
-    let condition_len = nested_checkers.len();
-    let mut len = 0;
-    let matches: HashMap<ElemIndex, usize> = nested_checkers
+    nested_checkers: &[NestedMatchingIndicesFn],
+) -> BitVec {
+    nested_checkers
         .iter()
-        .flat_map(|f| {
-            let (matches, len_) = f(point_id);
-            len = len_; // all len are the same for all
-            matches
-        })
-        .fold(HashMap::new(), |mut acc, inner| {
-            *acc.entry(inner).or_insert(0) += 1;
-            acc
-        });
-    // gather all indices that have matched all conditions
-    let match_all = matches
-        .iter()
-        .filter(|(_, &count)| count == condition_len)
-        .map(|(index, _)| *index)
-        .collect();
-    (match_all, len)
+        .map(|checker| checker(point_id))
+        .reduce(|acc: BitVec, x: BitVec| acc & x)
+        .unwrap_or_default()
 }
 
 /// Apply `point_id` to `nested_checkers` and return the list of indices in the payload matching none of the conditions
 pub fn find_indices_matching_none_conditions(
     point_id: PointOffsetType,
     nested_checkers: &[NestedMatchingIndicesFn],
-) -> (Vec<ElemIndex>, usize) {
-    let mut not_matching = vec![];
-    let mut len = 0;
-    // find all indices that have matched at least one condition
-    let match_at_least_once: HashSet<ElemIndex> = nested_checkers
+) -> BitVec {
+    let combined_mask = nested_checkers
         .iter()
-        .flat_map(|f| {
-            let (matches, len_) = f(point_id);
-            len = len_; // all len are the same for all
-            matches
-        })
-        .fold(HashSet::new(), |mut acc, inner| {
-            acc.insert(inner);
-            acc
-        });
+        .map(|checker| checker(point_id))
+        .reduce(|acc: BitVec, x: BitVec| acc | x);
 
-    if len == 0 {
-        return (not_matching, len);
-    }
+    debug_assert!(combined_mask.is_some(), "combined_mask should be Some");
 
-    for i in 1..len {
-        // index is 0 based, so we need to substract 1 from len based index
-        let index = i - 1;
-        if !match_at_least_once.contains(&index) {
-            not_matching.push(index);
-        }
-    }
-    (not_matching, len)
+    combined_mask.map(|mask| !mask).unwrap_or_default()
 }
 
 pub fn nested_conditions_converter<'a>(
@@ -157,7 +118,7 @@ pub fn nested_condition_converter<'a>(
         }),
         Condition::HasId(_) => {
             // No support for has_id in nested queries
-            Box::new(move |_| (vec![], 0))
+            Box::new(move |_| BitVec::default())
         }
         Condition::Nested(nested) => {
             Box::new(move |point_id| {
@@ -179,17 +140,12 @@ pub fn nested_condition_converter<'a>(
 
                 // combine results of `must` and `must_not`
                 match (must_matching, must_not_matching) {
-                    (None, None) => (vec![], 0),
+                    (None, None) => BitVec::default(),
                     (Some(must_matching), None) => must_matching,
                     (None, Some(must_not_matching)) => must_not_matching,
-                    (Some((must_matching, len_1)), Some((must_not_matching, len_2))) => {
-                        debug_assert_eq!(len_1, len_2);
-                        // return intersection of `must_matching` and `must_not_matching`
-                        let intersection = must_matching
-                            .into_iter()
-                            .filter(|index| must_not_matching.contains(index))
-                            .collect();
-                        (intersection, len_1)
+                    (Some(must_matching), Some(must_not_matching)) => {
+                        debug_assert_eq!(must_matching.len(), must_not_matching.len());
+                        must_matching & must_not_matching
                     }
                 }
             })
@@ -204,18 +160,18 @@ fn check_nested_must(
     field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
     nested_path: JsonPathPayload,
-) -> Option<(Vec<ElemIndex>, usize)> {
+) -> Option<BitVec> {
     match &nested.filter().must {
         None => None,
         Some(musts_conditions) => {
             let full_path = nested_path.extend(&nested.array_key());
-            let matching_indices = nested_conditions_converter(
+            let nested_checkers = nested_conditions_converter(
                 musts_conditions,
                 field_indexes,
                 payload_provider,
                 full_path,
             );
-            let matches = find_indices_matching_all_conditions(point_id, &matching_indices);
+            let matches = find_indices_matching_all_conditions(point_id, &nested_checkers);
             Some(matches)
         }
     }
@@ -227,7 +183,7 @@ fn check_nested_must_not(
     field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
     nested_path: JsonPathPayload,
-) -> Option<(Vec<ElemIndex>, usize)> {
+) -> Option<BitVec> {
     match &nested.filter().must_not {
         None => None,
         Some(musts_not_conditions) => {
@@ -292,15 +248,11 @@ pub fn get_nested_geo_radius_checkers(
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match geo_index.get_values(point_id) {
-                None => (vec![], 0),
-                Some(values) => {
-                    let len = values.len();
-                    let matching = values
-                        .iter()
-                        .positions(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
-                        .collect();
-                    (matching, len)
-                }
+                None => BitVec::default(),
+                Some(values) => values
+                    .iter()
+                    .map(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
+                    .collect(),
             }
         })),
         _ => None,
@@ -314,17 +266,11 @@ pub fn get_nested_geo_bounding_box_checkers(
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match geo_index.get_values(point_id) {
-                None => (vec![], 0),
-                Some(values) => {
-                    let len = values.len();
-                    let matching = values
-                        .iter()
-                        .positions(|geo_point| {
-                            geo_bounding_box.check_point(geo_point.lon, geo_point.lat)
-                        })
-                        .collect();
-                    (matching, len)
-                }
+                None => BitVec::default(),
+                Some(values) => values
+                    .iter()
+                    .map(|geo_point| geo_bounding_box.check_point(geo_point.lon, geo_point.lat))
+                    .collect(),
             }
         })),
         _ => None,
@@ -338,30 +284,22 @@ pub fn get_nested_range_checkers(
     match index {
         FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match num_index.get_values(point_id) {
-                None => (vec![], 0),
-                Some(values) => {
-                    let len = values.len();
-                    let matching = values
-                        .iter()
-                        .copied()
-                        .positions(|i| range.check_range(i as FloatPayloadType))
-                        .collect();
-                    (matching, len)
-                }
+                None => BitVec::default(),
+                Some(values) => values
+                    .iter()
+                    .copied()
+                    .map(|i| range.check_range(i as FloatPayloadType))
+                    .collect(),
             }
         })),
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match num_index.get_values(point_id) {
-                None => (vec![], 0),
-                Some(values) => {
-                    let len = values.len();
-                    let matching = values
-                        .iter()
-                        .copied()
-                        .positions(|i| range.check_range(i))
-                        .collect();
-                    (matching, len)
-                }
+                None => BitVec::default(),
+                Some(values) => values
+                    .iter()
+                    .copied()
+                    .map(|i| range.check_range(i))
+                    .collect(),
             }
         })),
         _ => None,
@@ -379,24 +317,16 @@ pub fn get_nested_match_checkers(
             (ValueVariants::Keyword(keyword), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     match index.get_values(point_id) {
-                        None => (vec![], 0),
-                        Some(values) => {
-                            let len = values.len();
-                            let matching = values.iter().positions(|k| k == &keyword).collect();
-                            (matching, len)
-                        }
+                        None => BitVec::default(),
+                        Some(values) => values.iter().map(|k| k == &keyword).collect(),
                     }
                 }))
             }
             (ValueVariants::Integer(value), FieldIndex::IntMapIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     match index.get_values(point_id) {
-                        None => (vec![], 0),
-                        Some(values) => {
-                            let len = values.len();
-                            let matching = values.iter().positions(|i| i == &value).collect();
-                            (matching, len)
-                        }
+                        None => BitVec::default(),
+                        Some(values) => values.iter().map(|i| i == &value).collect(),
                     }
                 }))
             }
@@ -407,14 +337,14 @@ pub fn get_nested_match_checkers(
                 let parsed_query = full_text_index.parse_query(&text);
                 Some(Box::new(
                     move |point_id: PointOffsetType| match full_text_index.get_doc(point_id) {
-                        None => (vec![], 0),
+                        None => BitVec::default(),
                         Some(doc) => {
                             let res = parsed_query.check_match(doc);
                             // Not sure it is entirely correct
                             if res {
-                                (vec![0], 1)
+                                bitvec![1; 1]
                             } else {
-                                (vec![], 0)
+                                BitVec::default()
                             }
                         }
                     },
@@ -426,24 +356,16 @@ pub fn get_nested_match_checkers(
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     match index.get_values(point_id) {
-                        None => (vec![], 0),
-                        Some(values) => {
-                            let len = values.len();
-                            let matching = values.iter().positions(|k| list.contains(k)).collect();
-                            (matching, len)
-                        }
+                        None => BitVec::default(),
+                        Some(values) => values.iter().map(|k| list.contains(k)).collect(),
                     }
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     match index.get_values(point_id) {
-                        None => (vec![], 0),
-                        Some(values) => {
-                            let len = values.len();
-                            let matching = values.iter().positions(|i| list.contains(i)).collect();
-                            (matching, len)
-                        }
+                        None => BitVec::default(),
+                        Some(values) => values.iter().map(|i| list.contains(i)).collect(),
                     }
                 }))
             }
@@ -459,46 +381,43 @@ mod tests {
     #[test]
     fn zero_matching_merge_nested_matching_indices() {
         let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
-            Box::new(|_point_id: PointOffsetType| (vec![], 0)),
-            Box::new(|_point_id: PointOffsetType| (vec![], 0)),
-            Box::new(|_point_id: PointOffsetType| (vec![], 0)),
+            Box::new(|_point_id: PointOffsetType| BitVec::default()),
+            Box::new(|_point_id: PointOffsetType| BitVec::default()),
+            Box::new(|_point_id: PointOffsetType| BitVec::default()),
         ];
 
-        let (all_matching, len) = find_indices_matching_all_conditions(0, &matching_indices_fn);
+        let bits = find_indices_matching_all_conditions(0, &matching_indices_fn);
         // none of the conditions are matching anything
-        assert!(all_matching.is_empty());
-        assert_eq!(len, 0);
+        assert!(bits.is_empty());
 
-        let (none_matching, len) = find_indices_matching_none_conditions(0, &matching_indices_fn);
-        assert!(none_matching.is_empty());
-        assert_eq!(len, 0);
+        let bits = find_indices_matching_none_conditions(0, &matching_indices_fn);
+        assert!(bits.is_empty());
     }
 
     #[test]
     fn single_matching_merge_merge_nested_matching_indices() {
         let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
-            Box::new(|_point_id: PointOffsetType| (vec![0], 1)),
-            Box::new(|_point_id: PointOffsetType| (vec![0], 1)),
-            Box::new(|_point_id: PointOffsetType| (vec![0], 1)),
+            Box::new(|_point_id: PointOffsetType| bitvec![1 ; 1]),
+            Box::new(|_point_id: PointOffsetType| bitvec![1 ; 1]),
+            Box::new(|_point_id: PointOffsetType| bitvec![1 ; 1]),
         ];
 
-        let (all_matching, len) = find_indices_matching_all_conditions(0, &matching_indices_fn);
+        let bits = find_indices_matching_all_conditions(0, &matching_indices_fn);
         // index 0 is matching all the conditions
-        assert!(!all_matching.is_empty());
-        assert_eq!(all_matching, vec![0]);
-        assert_eq!(len, 1);
+        assert_eq!(bits.len(), 1);
+        assert_eq!(bits[0], true);
 
-        let (none_matching, len) = find_indices_matching_none_conditions(0, &matching_indices_fn);
-        assert!(none_matching.is_empty());
-        assert_eq!(len, 1);
+        let bits = find_indices_matching_none_conditions(0, &matching_indices_fn);
+        assert_eq!(bits.len(), 1);
+        assert_eq!(bits[0], false);
     }
 
     #[test]
     fn single_non_matching_merge_nested_matching_indices() {
         let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
-            Box::new(|_point_id: PointOffsetType| (vec![0], 1)),
-            Box::new(|_point_id: PointOffsetType| (vec![0], 1)),
-            Box::new(|_point_id: PointOffsetType| (vec![1], 1)),
+            Box::new(|_point_id: PointOffsetType| bitvec![1, 0]),
+            Box::new(|_point_id: PointOffsetType| bitvec![1, 0]),
+            Box::new(|_point_id: PointOffsetType| bitvec![0, 1]),
         ];
         let merged = merge_nested_matching_indices(matching_indices_fn, false);
         // does not because all the checkers are not matching the same path
@@ -509,9 +428,9 @@ mod tests {
     #[test]
     fn many_matching_merge_nested_matching_indices() {
         let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
-            Box::new(|_point_id: PointOffsetType| (vec![0, 1], 2)),
-            Box::new(|_point_id: PointOffsetType| (vec![0, 1], 2)),
-            Box::new(|_point_id: PointOffsetType| (vec![0], 2)),
+            Box::new(|_point_id: PointOffsetType| bitvec![1, 1]),
+            Box::new(|_point_id: PointOffsetType| bitvec![1, 1]),
+            Box::new(|_point_id: PointOffsetType| bitvec![1, 0]),
         ];
 
         let merged = merge_nested_matching_indices(matching_indices_fn, false);

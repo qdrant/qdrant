@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
+use bitvec::bitvec;
+use bitvec::prelude::BitVec;
 use serde_json::Value;
 
 use crate::common::utils::{JsonPathPayload, MultiValue};
@@ -9,61 +10,39 @@ use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
 };
 
+/// Executes condition checks for all `must` conditions of the nester objects.
+/// If there is at least one nested object that matches all `must` conditions, returns `true`.
+/// If there are no conditions, returns `true`.
+/// If there are no nested objects, returns `false`.
 fn check_nested_must_conditions<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
 where
-    F: Fn(&Condition) -> (Vec<usize>, usize),
+    F: Fn(&Condition) -> BitVec,
 {
     match must {
         None => true,
-        Some(conditions) => {
-            let condition_count = conditions.len();
-            // Count the number of matches per element index
-            let matches: HashMap<usize, usize> =
-                conditions
-                    .iter()
-                    .flat_map(|c| checker(c).0)
-                    .fold(HashMap::new(), |mut acc, m| {
-                        *acc.entry(m).or_insert(0) += 1;
-                        acc
-                    });
-            matches.iter().any(|(_, count)| *count == condition_count)
-        }
+        Some(conditions) => conditions
+            .iter()
+            .map(|condition| checker(condition))
+            .reduce(|acc, matches| acc & matches)
+            .map(|matches: BitVec| matches.count_ones() > 0)
+            .unwrap_or(true),
     }
 }
 
 fn check_nested_must_not_conditions<F>(checker: &F, must_not: &Option<Vec<Condition>>) -> bool
 where
-    F: Fn(&Condition) -> (Vec<usize>, usize),
+    F: Fn(&Condition) -> BitVec,
 {
     match must_not {
         None => true,
         Some(conditions) => {
-            let mut len = 0;
-            // find all indices that have matched at least one condition
-            let match_at_least_once: HashSet<usize> = conditions
+            conditions
                 .iter()
-                .flat_map(|condition| {
-                    let (matches, len_) = checker(condition);
-                    len = len_; // all len are the same for all
-                    matches
-                })
-                .fold(HashSet::new(), |mut acc, inner| {
-                    acc.insert(inner);
-                    acc
-                });
-
-            if len == 0 {
-                return true;
-            }
-
-            for i in 1..len {
-                // index is 0 based, so we need to substract 1 from len based index
-                let index = i - 1;
-                if !match_at_least_once.contains(&index) {
-                    return true;
-                }
-            }
-            false
+                .map(|condition| checker(condition))
+                .reduce(|acc, matches| acc | matches)
+                // There is at least one sub-object that does not match any of the conditions
+                .map(|matches: BitVec| matches.count_zeros() > 0)
+                .unwrap_or(true)
         }
     }
 }
@@ -96,7 +75,7 @@ where
 
 pub fn nested_filter_checker<F>(matching_paths: &F, nested_filter: &Filter) -> bool
 where
-    F: Fn(&Condition) -> (Vec<usize>, usize),
+    F: Fn(&Condition) -> BitVec,
 {
     check_nested_must_conditions(matching_paths, &nested_filter.must)
         && check_nested_must_not_conditions(matching_paths, &nested_filter.must_not)
@@ -107,20 +86,18 @@ pub fn check_nested_is_empty_condition(
     nested_path: &JsonPathPayload,
     is_empty: &IsEmptyCondition,
     payload: &Payload,
-) -> (Vec<usize>, usize) {
+) -> BitVec {
     let full_path = nested_path.extend(&is_empty.is_empty.key);
-    let field_values = payload.get_value(&full_path.path);
-    let mut field_len = 0;
-    let mut matching_indices = vec![];
-    for (index, p) in field_values.values().iter().enumerate() {
-        field_len += 1;
+    let field_values = payload.get_value(&full_path.path).values();
+    let mut result = BitVec::with_capacity(field_values.len());
+    for p in field_values {
         match p {
-            Value::Null => matching_indices.push(index),
-            Value::Array(vec) if vec.is_empty() => matching_indices.push(index),
-            _ => (),
+            Value::Null => result.push(true),
+            Value::Array(vec) if vec.is_empty() => result.push(true),
+            _ => result.push(false),
         }
     }
-    (matching_indices, field_len)
+    result
 }
 
 /// Return element indices matching the condition in the payload
@@ -128,35 +105,29 @@ pub fn check_nested_is_null_condition(
     nested_path: &JsonPathPayload,
     is_null: &IsNullCondition,
     payload: &Payload,
-) -> (Vec<usize>, usize) {
+) -> BitVec {
     let full_path = nested_path.extend(&is_null.is_null.key);
     let field_values = payload.get_value(&full_path.path);
-    let mut field_len = 0;
     match field_values {
-        MultiValue::Single(None) => (vec![0], field_len),
+        MultiValue::Single(None) => bitvec![1; 1],
         MultiValue::Single(Some(v)) => {
-            field_len += 1;
             if v.is_null() {
-                (vec![0], field_len)
+                bitvec![1; 1]
             } else {
-                (vec![], field_len)
+                bitvec![0; 1]
             }
         }
         MultiValue::Multiple(multiple_values) => {
-            let mut paths = vec![];
-            for (index, p) in multiple_values.iter().enumerate() {
-                field_len += 1;
-                match p {
-                    Value::Null => paths.push(index),
-                    Value::Array(vec) => {
-                        if vec.iter().any(|val| val.is_null()) {
-                            paths.push(index)
-                        }
-                    }
-                    _ => (),
-                }
+            let mut paths = BitVec::with_capacity(multiple_values.len());
+            for p in multiple_values {
+                let check_res = match p {
+                    Value::Null => true,
+                    Value::Array(vec) => vec.iter().any(|val| val.is_null()),
+                    _ => false,
+                };
+                paths.push(check_res);
             }
-            (paths, field_len)
+            paths
         }
     }
 }
@@ -166,14 +137,12 @@ pub fn nested_check_field_condition(
     field_condition: &FieldCondition,
     payload: &Payload,
     nested_path: &JsonPathPayload,
-) -> (Vec<usize>, usize) {
+) -> BitVec {
     let full_path = nested_path.extend(&field_condition.key);
-    let field_values = payload.get_value(&full_path.path);
-    let mut field_len = 0;
-    let mut matching_indices = vec![];
+    let field_values = payload.get_value(&full_path.path).values();
+    let mut result = BitVec::with_capacity(field_values.len());
 
-    for (index, p) in field_values.values().iter().enumerate() {
-        field_len += 1;
+    for p in field_values {
         let mut res = false;
         // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
         res = res
@@ -201,11 +170,9 @@ pub fn nested_check_field_condition(
                 .values_count
                 .as_ref()
                 .map_or(false, |condition| condition.check(p));
-        if res {
-            matching_indices.push(index);
-        }
+        result.push(res);
     }
-    (matching_indices, field_len)
+    result
 }
 
 #[cfg(test)]
