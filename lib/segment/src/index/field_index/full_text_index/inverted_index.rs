@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
@@ -57,6 +58,9 @@ impl ParsedQuery {
 }
 
 pub(crate) trait InvertedIndex {
+    type Document<'a>: Borrow<Document>
+    where
+        Self: 'a;
     fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> OperationResult<Document>;
     fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()>;
     fn remove_document(&mut self, idx: PointOffsetType) -> OperationResult<Option<()>>;
@@ -65,6 +69,8 @@ pub(crate) trait InvertedIndex {
         query: &ParsedQuery,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>>;
     fn get_points_count(&self) -> usize;
+    fn get_doc(&self, idx: PointOffsetType) -> Option<Self::Document<'_>>;
+    fn get_token_id(&self, token: &str) -> OperationResult<Option<u32>>;
 }
 
 #[derive(Default)]
@@ -178,6 +184,7 @@ impl InvertedIndexInMemory {
 }
 
 impl InvertedIndex for InvertedIndexInMemory {
+    type Document<'a> = &'a Document;
     fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> OperationResult<Document> {
         let mut document_tokens = vec![];
         for token in tokens {
@@ -272,5 +279,17 @@ impl InvertedIndex for InvertedIndexInMemory {
 
     fn get_points_count(&self) -> usize {
         self.points_count
+    }
+
+    fn get_doc(&self, idx: PointOffsetType) -> Option<Self::Document<'_>> {
+        if let Some(doc) = self.point_to_docs.get(idx as usize) {
+            doc.as_ref()
+        } else {
+            None
+        }
+    }
+
+    fn get_token_id(&self, token: &str) -> OperationResult<Option<u32>> {
+        Ok(self.vocab.get(token).copied())
     }
 }

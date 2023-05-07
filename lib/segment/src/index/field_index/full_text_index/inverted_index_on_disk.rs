@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rocksdb::DB;
-use serde::{Deserialize, Serialize};
 
 use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId};
 use super::posting_list::PostingList;
@@ -69,138 +68,6 @@ impl InvertedIndexOnDisk {
 
     fn restore_key(data: &[u8]) -> PointOffsetType {
         bincode::deserialize(data).unwrap()
-    }
-
-    fn serialize_document_tokens(&self, tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
-        #[derive(Serialize)]
-        struct StoredDocument {
-            tokens: BTreeSet<String>,
-        }
-        let doc = StoredDocument { tokens };
-        serde_cbor::to_vec(&doc).map_err(|e| {
-            OperationError::service_error(format!("Failed to serialize document: {e}"))
-        })
-    }
-
-    fn deserialize_document(&self, data: &[u8]) -> OperationResult<Document> {
-        #[derive(Deserialize)]
-        struct StoredDocument {
-            tokens: BTreeSet<String>,
-        }
-        match serde_cbor::from_slice::<StoredDocument>(data) {
-            Ok(doc) => self.document_from_tokens(&doc.tokens),
-            Err(e) => Err(OperationError::service_error(format!(
-                "Failed to deserialize document: {e}"
-            ))),
-        }
-    }
-
-    pub fn document_from_tokens(
-        &self,
-        tokens: &BTreeSet<String>,
-    ) -> Result<Document, OperationError> {
-        let mut document_tokens = vec![];
-        for token in tokens {
-            // check if in vocab
-            let vocab_idx = match self.vocab.get_pinned(token.as_bytes(), db_decode_tokens)? {
-                Some(cbor_result) => cbor_result
-                    .first()
-                    .ok_or(OperationError::service_error("No tokens to decode"))?
-                    .clone(),
-                None => {
-                    let next_token_id = self.vocab.lock_db().iter()?.count() as TokenId;
-                    self.vocab
-                        .put(token.as_bytes(), db_encode_tokens(&[next_token_id]))?;
-                    next_token_id
-                }
-            };
-            document_tokens.push(vocab_idx);
-        }
-
-        Ok(Document::new(document_tokens))
-    }
-
-    pub fn index_document(
-        &mut self,
-        idx: PointOffsetType,
-        document: Document,
-    ) -> Result<(), OperationError> {
-        self.points_count += 1;
-
-        for token_idx in document.tokens() {
-            let posting = self
-                .postings
-                .get_pinned(&Self::store_key(token_idx), db_decode_tokens)
-                .expect("posting must exist even if with None");
-            let new_posting = match posting {
-                None => vec![idx],
-                Some(mut vec) => {
-                    vec.push(idx);
-                    vec
-                }
-            };
-            self.postings
-                .put(Self::store_key(token_idx), db_encode_tokens(&new_posting))?;
-        }
-        let db_document = db_encode_tokens(document.tokens());
-        self.point_to_docs.put(Self::store_key(&idx), db_document)?;
-        Ok(())
-    }
-
-    pub fn remove_document(&mut self, idx: PointOffsetType) -> OperationResult<Option<()>> {
-        if self.point_to_docs.lock_db().iter()?.count() <= idx as usize {
-            return Ok(None); // Already removed or never actually existed
-        }
-        let db_idx = Self::store_key(&idx);
-        let tokens = self
-            .point_to_docs
-            .get_pinned(&db_idx, db_decode_tokens)?
-            .ok_or(OperationError::service_error(format!(
-                "Document to be deleted is empty {idx}"
-            )))?;
-        self.point_to_docs.put(&db_idx, vec![])?;
-
-        self.points_count -= 1;
-
-        for removed_token in tokens {
-            // unwrap safety: posting list exists and contains the document id
-            let db_key = Self::store_key(&removed_token);
-            let posting = self.postings.get_pinned(&db_key, db_decode_tokens)?;
-            if let Some(mut vec) = posting {
-                if let Ok(removal_idx) = vec.binary_search(&idx) {
-                    vec.remove(removal_idx);
-                    self.postings.put(&db_key, db_encode_tokens(&vec))?;
-                }
-            }
-        }
-        Ok(Some(()))
-    }
-
-    pub fn filter(
-        &self,
-        query: &ParsedQuery,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let mut postings = vec![];
-        for &vocab_idx in query.tokens.iter() {
-            if let Some(idx) = vocab_idx {
-                let res = self
-                    .postings
-                    .get_pinned(&Self::store_key(&idx), db_decode_tokens)?;
-                if let Some(tokens) = res {
-                    postings.push(PostingList::from(tokens));
-                } else {
-                    return Ok(Box::new(vec![].into_iter()));
-                }
-            } else {
-                // There are unseen tokens -> no matches
-                return Ok(Box::new(vec![].into_iter()));
-            }
-        }
-        if postings.is_empty() {
-            // Empty request -> no matches
-            return Ok(Box::new(vec![].into_iter()));
-        }
-        Ok(intersect_postings_iterator_owned(postings))
     }
 
     fn flusher(&self) -> Flusher {
@@ -312,6 +179,7 @@ impl InvertedIndexOnDisk {
 }
 
 impl InvertedIndex for InvertedIndexOnDisk {
+    type Document<'a> = Document;
     fn document_from_tokens(
         &mut self,
         tokens: &BTreeSet<String>,
@@ -421,7 +289,30 @@ impl InvertedIndex for InvertedIndexOnDisk {
     }
 
     fn get_points_count(&self) -> usize {
-        todo!()
+        self.points_count
+    }
+
+    fn get_doc(&self, idx: PointOffsetType) -> Option<Self::Document<'_>> {
+        let db_idx = Self::store_key(&idx);
+        if let Some(doc) = self
+            .point_to_docs
+            .get_pinned(&db_idx, |raw| Document::new(db_decode_tokens(raw)))
+            .unwrap()
+        {
+            Some(doc)
+        } else {
+            None
+        }
+    }
+
+    fn get_token_id(&self, token: &str) -> OperationResult<Option<u32>> {
+        let maybe_tokens = self.vocab.get_pinned(token.as_bytes(), db_decode_tokens)?;
+        let maybe_token_id = if let Some(tokens) = maybe_tokens {
+            tokens.first().copied()
+        } else {
+            None
+        };
+        Ok(maybe_token_id)
     }
 }
 
@@ -434,7 +325,7 @@ mod tests {
     use super::db_decode_tokens;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType};
-    use crate::index::field_index::full_text_index::inverted_index::ParsedQuery;
+    use crate::index::field_index::full_text_index::inverted_index::{InvertedIndex, ParsedQuery};
     use crate::index::field_index::full_text_index::inverted_index_on_disk::{
         db_encode_tokens, InvertedIndexOnDisk,
     };
@@ -501,9 +392,8 @@ mod tests {
                 Tokenizer::tokenize_doc(&payload, &config, |token| {
                     tokens.insert(token.to_owned());
                 });
-                index
-                    .index_document(idx as u32, index.document_from_tokens(&tokens).unwrap())
-                    .unwrap();
+                let document = index.document_from_tokens(&tokens).unwrap();
+                index.index_document(idx as u32, document).unwrap();
             }
 
             assert_eq!(

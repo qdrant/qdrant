@@ -75,10 +75,7 @@ impl FullTextIndex {
     }
 
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
-        match self.inverted_index.point_to_docs.get(idx as usize) {
-            Some(Some(doc)) => Some(doc),
-            _ => None,
-        }
+        self.inverted_index.get_doc(idx)
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
@@ -97,7 +94,7 @@ impl FullTextIndex {
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
         let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, &self.config, |token| {
-            tokens.insert(self.inverted_index.vocab.get(token).copied());
+            tokens.insert(self.inverted_index.get_token_id(token).unwrap());
         });
         ParsedQuery {
             tokens: tokens.into_iter().collect(),
