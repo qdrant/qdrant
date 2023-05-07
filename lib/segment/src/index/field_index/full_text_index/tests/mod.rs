@@ -172,7 +172,7 @@ fn test_prefix_search() {
             .unwrap();
     }
 
-    let res: Vec<_> = index.query("ROBO").collect();
+    let res: Vec<_> = index.query("ROBO").unwrap().collect();
 
     let query = index.parse_query("ROBO");
 
@@ -183,7 +183,7 @@ fn test_prefix_search() {
 
     assert_eq!(res.len(), 3);
 
-    let res: Vec<_> = index.query("q231").collect();
+    let res: Vec<_> = index.query("q231").unwrap().collect();
 
     let query = index.parse_query("q231");
 

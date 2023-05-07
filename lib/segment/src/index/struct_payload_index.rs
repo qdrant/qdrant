@@ -77,20 +77,26 @@ impl StructPayloadIndex {
         })
     }
 
-    fn query_field<'a>(
-        &'a self,
-        field_condition: &'a FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        let indexes = self
-            .field_indexes
-            .get(&field_condition.key)
-            .and_then(|indexes| {
-                indexes
-                    .iter()
-                    .map(|field_index| field_index.filter(field_condition))
-                    .find_map(|filter_iter| filter_iter)
-            });
-        indexes
+    fn query_field(
+        &self,
+        field_condition: &FieldCondition,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + '_>>> {
+        let indexes = if let Some(indexes) = self.field_indexes.get(&field_condition.key) {
+            let mut maybe_indexes = None;
+            for filter_result in indexes
+                .iter()
+                .map(|field_index| field_index.filter(field_condition))
+            {
+                if let Some(filter_index) = filter_result? {
+                    maybe_indexes = Some(filter_index);
+                    break;
+                }
+            }
+            maybe_indexes
+        } else {
+            None
+        };
+        Ok(indexes)
     }
 
     fn config_path(&self) -> PathBuf {
@@ -425,7 +431,7 @@ impl PayloadIndex for StructPayloadIndex {
                 .flat_map(|clause| {
                     match clause {
                         PrimaryCondition::Condition(field_condition) => {
-                            self.query_field(field_condition).unwrap_or_else(
+                            self.query_field(field_condition).unwrap().unwrap_or_else(
                                 || points_iterator_ref.iter_ids(), /* index is not built */
                             )
                         }

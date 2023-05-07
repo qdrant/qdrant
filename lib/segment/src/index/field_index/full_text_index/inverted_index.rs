@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
+use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
@@ -55,105 +56,28 @@ impl ParsedQuery {
     }
 }
 
+pub(crate) trait InvertedIndex {
+    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> OperationResult<Document>;
+    fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()>;
+    fn remove_document(&mut self, idx: PointOffsetType) -> OperationResult<Option<()>>;
+    fn filter(
+        &self,
+        query: &ParsedQuery,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>>;
+    fn get_points_count(&self) -> usize;
+}
+
 #[derive(Default)]
-pub struct InvertedIndex {
+pub struct InvertedIndexInMemory {
     postings: Vec<Option<PostingList>>,
     pub vocab: HashMap<String, TokenId>,
     pub point_to_docs: Vec<Option<Document>>,
-    pub points_count: usize,
+    points_count: usize,
 }
 
-impl InvertedIndex {
-    pub fn new() -> InvertedIndex {
+impl InvertedIndexInMemory {
+    pub fn new() -> InvertedIndexInMemory {
         Default::default()
-    }
-
-    pub fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
-        let mut document_tokens = vec![];
-        for token in tokens {
-            // check if in vocab
-            let vocab_idx = match self.vocab.get(token) {
-                Some(&idx) => idx,
-                None => {
-                    let next_token_id = self.vocab.len() as TokenId;
-                    self.vocab.insert(token.to_string(), next_token_id);
-                    next_token_id
-                }
-            };
-            document_tokens.push(vocab_idx);
-        }
-
-        Document::new(document_tokens)
-    }
-
-    pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
-        self.points_count += 1;
-        if self.point_to_docs.len() <= idx as usize {
-            self.point_to_docs
-                .resize(idx as usize + 1, Default::default());
-        }
-
-        for token_idx in document.tokens() {
-            let token_idx_usize = *token_idx as usize;
-            if self.postings.len() <= token_idx_usize {
-                self.postings
-                    .resize(token_idx_usize + 1, Default::default());
-            }
-            let posting = self
-                .postings
-                .get_mut(token_idx_usize)
-                .expect("posting must exist even if with None");
-            match posting {
-                None => *posting = Some(PostingList::new(idx)),
-                Some(vec) => vec.insert(idx),
-            }
-        }
-        self.point_to_docs[idx as usize] = Some(document);
-    }
-
-    pub fn remove_document(&mut self, idx: PointOffsetType) -> Option<Document> {
-        if self.point_to_docs.len() <= idx as usize {
-            return None; // Already removed or never actually existed
-        }
-
-        let removed_doc = match std::mem::take(&mut self.point_to_docs[idx as usize]) {
-            Some(doc) => doc,
-            None => return None,
-        };
-
-        self.points_count -= 1;
-
-        for removed_token in removed_doc.tokens() {
-            // unwrap safety: posting list exists and contains the document id
-            let posting = self.postings.get_mut(*removed_token as usize).unwrap();
-            if let Some(vec) = posting {
-                vec.remove(idx);
-            }
-        }
-        Some(removed_doc)
-    }
-
-    pub fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let postings_opt: Option<Vec<_>> = query
-            .tokens
-            .iter()
-            .map(|&vocab_idx| match vocab_idx {
-                None => None,
-                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
-                // dictionary. Posting list entry can be None but it exists.
-                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
-            })
-            .collect();
-        if postings_opt.is_none() {
-            // There are unseen tokens -> no matches
-            return Box::new(vec![].into_iter());
-        }
-        let postings = postings_opt.unwrap();
-        if postings.is_empty() {
-            // Empty request -> no matches
-            return Box::new(vec![].into_iter());
-        }
-        intersect_postings_iterator(postings)
     }
 
     pub fn estimate_cardinality(
@@ -250,5 +174,103 @@ impl InvertedIndex {
                     cardinality: posting.len(),
                 }),
         )
+    }
+}
+
+impl InvertedIndex for InvertedIndexInMemory {
+    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> OperationResult<Document> {
+        let mut document_tokens = vec![];
+        for token in tokens {
+            // check if in vocab
+            let vocab_idx = match self.vocab.get(token) {
+                Some(&idx) => idx,
+                None => {
+                    let next_token_id = self.vocab.len() as TokenId;
+                    self.vocab.insert(token.to_string(), next_token_id);
+                    next_token_id
+                }
+            };
+            document_tokens.push(vocab_idx);
+        }
+
+        Ok(Document::new(document_tokens))
+    }
+
+    fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()> {
+        self.points_count += 1;
+        if self.point_to_docs.len() <= idx as usize {
+            self.point_to_docs
+                .resize(idx as usize + 1, Default::default());
+        }
+
+        for token_idx in document.tokens() {
+            let token_idx_usize = *token_idx as usize;
+            if self.postings.len() <= token_idx_usize {
+                self.postings
+                    .resize(token_idx_usize + 1, Default::default());
+            }
+            let posting = self
+                .postings
+                .get_mut(token_idx_usize)
+                .expect("posting must exist even if with None");
+            match posting {
+                None => *posting = Some(PostingList::new(idx)),
+                Some(vec) => vec.insert(idx),
+            }
+        }
+        self.point_to_docs[idx as usize] = Some(document);
+        Ok(())
+    }
+
+    fn remove_document(&mut self, idx: PointOffsetType) -> OperationResult<Option<()>> {
+        if self.point_to_docs.len() <= idx as usize {
+            return Ok(None); // Already removed or never actually existed
+        }
+
+        let removed_doc = match std::mem::take(&mut self.point_to_docs[idx as usize]) {
+            Some(doc) => doc,
+            None => return Ok(None),
+        };
+
+        self.points_count -= 1;
+
+        for removed_token in removed_doc.tokens() {
+            // unwrap safety: posting list exists and contains the document id
+            let posting = self.postings.get_mut(*removed_token as usize).unwrap();
+            if let Some(vec) = posting {
+                vec.remove(idx);
+            }
+        }
+        Ok(Some(()))
+    }
+
+    fn filter(
+        &self,
+        query: &ParsedQuery,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        let postings_opt: Option<Vec<_>> = query
+            .tokens
+            .iter()
+            .map(|&vocab_idx| match vocab_idx {
+                None => None,
+                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
+                // dictionary. Posting list entry can be None but it exists.
+                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
+            })
+            .collect();
+        if postings_opt.is_none() {
+            // There are unseen tokens -> no matches
+            return Ok(Box::new(vec![].into_iter()));
+        }
+        let postings = postings_opt.unwrap();
+        if postings.is_empty() {
+            // Empty request -> no matches
+            return Ok(Box::new(vec![].into_iter()));
+        }
+        Ok(intersect_postings_iterator(postings))
+    }
+
+    fn get_points_count(&self) -> usize {
+        self.points_count
     }
 }
