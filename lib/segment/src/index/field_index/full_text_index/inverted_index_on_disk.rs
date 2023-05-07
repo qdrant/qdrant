@@ -10,7 +10,8 @@ use super::postings_iterator::intersect_postings_iterator_owned;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::PointOffsetType;
+use crate::index::field_index::PayloadBlockCondition;
+use crate::types::{PayloadKeyType, PointOffsetType};
 
 pub fn db_encode_tokens(data: &[u32]) -> Vec<u8> {
     if data.is_empty() {
@@ -139,43 +140,45 @@ impl InvertedIndexOnDisk {
     //     };
     // }
 
-    // pub fn payload_blocks(
-    //     &self,
-    //     threshold: usize,
-    //     key: PayloadKeyType,
-    // ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-    //     // It might be very hard to predict possible combinations of conditions,
-    //     // so we only build it for individual tokens
-    //     Box::new(
-    //         self.vocab
-    //             .lock_db().iter().unwrap()
-    //             .filter(|(_token, &posting_idx)| self.postings[posting_idx as usize].is_some())
-    //             .filter(move |(_token, &posting_idx)| {
-    //                 // unwrap crash safety: all tokens that passes the first filter should have postings
-    //                 self.postings[posting_idx as usize].as_ref().unwrap().len() >= threshold
-    //             })
-    //             .map(|(token, &posting_idx)| {
-    //                 (
-    //                     token,
-    //                     // same as the above case
-    //                     self.postings[posting_idx as usize].as_ref().unwrap(),
-    //                 )
-    //             })
-    //             .map(move |(token, posting)| PayloadBlockCondition {
-    //                 condition: FieldCondition {
-    //                     key: key.clone(),
-    //                     r#match: Some(Match::Text(MatchText {
-    //                         text: token.clone(),
-    //                     })),
-    //                     range: None,
-    //                     geo_bounding_box: None,
-    //                     geo_radius: None,
-    //                     values_count: None,
-    //                 },
-    //                 cardinality: posting.len(),
-    //             }),
-    //     )
-    // }
+    pub fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+        // It might be very hard to predict possible combinations of conditions,
+        // so we only build it for individual tokens
+        Box::new(
+            self.vocab
+                .lock_db()
+                .iter()
+                .unwrap()
+                .filter(|(_token, posting_idx)| self.postings[posting_idx as usize].is_some())
+                .filter(move |(_token, posting_idx)| {
+                    // unwrap crash safety: all tokens that passes the first filter should have postings
+                    self.postings[posting_idx as usize].as_ref().unwrap().len() >= threshold
+                })
+                .map(|(token, posting_idx)| {
+                    (
+                        token,
+                        // same as the above case
+                        self.postings[posting_idx as usize].as_ref().unwrap(),
+                    )
+                })
+                .map(move |(token, posting)| PayloadBlockCondition {
+                    condition: FieldCondition {
+                        key: key.clone(),
+                        r#match: Some(Match::Text(MatchText {
+                            text: token.clone(),
+                        })),
+                        range: None,
+                        geo_bounding_box: None,
+                        geo_radius: None,
+                        values_count: None,
+                    },
+                    cardinality: posting.len(),
+                }),
+        )
+    }
 }
 
 impl InvertedIndex for InvertedIndexOnDisk {
@@ -205,27 +208,17 @@ impl InvertedIndex for InvertedIndexOnDisk {
         Ok(Document::new(document_tokens))
     }
 
-    fn index_document(
-        &mut self,
-        idx: PointOffsetType,
-        document: Document,
-    ) -> Result<(), OperationError> {
+    fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()> {
         self.points_count += 1;
 
         for token_idx in document.tokens() {
-            let posting = self
+            let mut posting = self
                 .postings
-                .get_pinned(&Self::store_key(token_idx), db_decode_tokens)
-                .expect("posting must exist even if with None");
-            let new_posting = match posting {
-                None => vec![idx],
-                Some(mut vec) => {
-                    vec.push(idx);
-                    vec
-                }
-            };
+                .get_pinned(&Self::store_key(token_idx), db_decode_tokens)?
+                .expect("posting must exist even if it's empty");
+            posting.push(idx);
             self.postings
-                .put(Self::store_key(token_idx), db_encode_tokens(&new_posting))?;
+                .put(Self::store_key(token_idx), db_encode_tokens(&posting))?;
         }
         let db_document = db_encode_tokens(document.tokens());
         self.point_to_docs.put(Self::store_key(&idx), db_document)?;
