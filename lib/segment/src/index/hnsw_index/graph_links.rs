@@ -363,7 +363,7 @@ pub trait GraphLinks: Default {
                     return level - 1;
                 }
             } else {
-                // incorrect level because this level is larger that avaliable levels
+                // incorrect level because this level is larger that available levels
                 return level - 1;
             }
         }
