@@ -73,10 +73,8 @@ pub struct DynamicMmapStatus {
 fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
     let status_file = status_file(directory);
     if !status_file.exists() {
-        {
-            let length = std::mem::size_of::<DynamicMmapStatus>();
-            create_and_ensure_length(&status_file, length)?;
-        }
+        let length = std::mem::size_of::<DynamicMmapStatus>();
+        create_and_ensure_length(&status_file, length)?;
         let mmap = open_write_mmap(&status_file)?;
         Ok(mmap)
     } else {
