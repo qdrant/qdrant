@@ -35,7 +35,7 @@ function run_with_retry()
 }
 
 # Prevent double building in docker-compose
-docker build ../../ --tag=qdrant_tls
+docker buildx build --load ../../ --tag=qdrant_tls
 docker compose down --volumes
 docker compose up -d --force-recreate
 trap clear_after_tests EXIT
