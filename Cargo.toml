@@ -91,7 +91,7 @@ exclude = ["benches/search-points"]
 lto = "fat"
 
 # Inherit from release, because we are not rebuilding often,
-# and we don't want the huge binary sizes from debug builds
+# and we don't want the huge binary sizes from debug builds.
 [profile.ci]
 inherits = "release"
 lto = false
