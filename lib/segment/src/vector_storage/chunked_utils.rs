@@ -3,12 +3,11 @@ use std::path::{Path, PathBuf};
 
 use memmap2::MmapMut;
 
+use super::mmap_type::MmapSlice;
 use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
-
-use super::mmap_type::MmapSlice;
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";

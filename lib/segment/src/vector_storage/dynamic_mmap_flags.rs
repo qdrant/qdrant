@@ -7,13 +7,12 @@ use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
 use parking_lot::Mutex;
 
+use super::mmap_type::{MmapBitSlice, MmapType};
 use crate::common::error_logging::LogError;
 use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::vector_storage::div_ceil;
-
-use super::mmap_type::{MmapBitSlice, MmapType};
 
 #[cfg(debug_assertions)]
 const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
