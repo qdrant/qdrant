@@ -4,13 +4,12 @@ use std::mem::{self, size_of, transmute};
 use std::ops::DerefMut;
 use std::path::Path;
 use std::slice;
-use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::{Mmap, MmapMut};
-use parking_lot::Mutex;
 
 use super::div_ceil;
+use super::mmap_type::MmapBitSlice;
 use crate::common::error_logging::LogError;
 use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
@@ -30,18 +29,8 @@ pub struct MmapVectors {
     ///
     /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Mmap,
-    /// Memory mapped file for deletion flags
-    ///
-    /// Has an exact size to fit a header and an aligned `BitSlice` for `num_vectors` of vectors.
-    ///
-    /// This should never be accessed directly, because it shares a mutable reference with
-    /// [`deleted_bitslice`]. Use that instead. The sole purpose of this is to keep ownership of
-    /// the mmap, and to properly clean it up when this struct is dropped.
-    _deleted_mmap: Arc<Mutex<MmapMut>>,
-    /// A convenient [`BitSlice`] view into the deleted memory map file.
-    ///
-    /// This has the same lifetime as this struct, a borrow must never be leased out for longer.
-    deleted: &'static mut BitSlice,
+    /// Memory mapped deletion flags
+    deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
     pub quantized_vectors: Option<QuantizedVectorsStorage>,
@@ -59,7 +48,7 @@ impl MmapVectors {
         let deleted_mmap_size = deleted_mmap_size(num_vectors);
         ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
             .describe("Create mmap deleted file")?;
-        let mut deleted_mmap =
+        let deleted_mmap =
             mmap_ops::open_write_mmap(deleted_path).describe("Open mmap deleted for writing")?;
 
         // Advise kernel that we'll need this page soon so the kernel can prepare
@@ -68,15 +57,14 @@ impl MmapVectors {
             log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
         }
 
-        // Create convenient BitSlice view over it
-        let deleted = unsafe { mmap_to_bitslice(&mut deleted_mmap, HEADER_SIZE) };
+        // Transform into mmap BitSlice
+        let deleted = MmapBitSlice::from(deleted_mmap, deleted_mmap_data_start());
         let deleted_count = deleted.count_ones();
 
         Ok(MmapVectors {
             dim,
             num_vectors,
             mmap,
-            _deleted_mmap: Arc::new(Mutex::new(deleted_mmap)),
             deleted,
             deleted_count,
             quantized_vectors: None,
@@ -84,13 +72,7 @@ impl MmapVectors {
     }
 
     pub fn flusher(&self) -> Flusher {
-        Box::new({
-            let mmap = self._deleted_mmap.clone();
-            move || {
-                mmap.lock().flush()?;
-                Ok(())
-            }
-        })
+        self.deleted.flusher()
     }
 
     pub fn quantize(
@@ -175,7 +157,7 @@ impl MmapVectors {
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
     pub fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted
+        &self.deleted
     }
 
     /// Lock memory map of deleted flags into RAM for optimal access performance
@@ -186,13 +168,14 @@ impl MmapVectors {
     ///
     /// This is only supported on Unix.
     fn lock_deleted_flags(&mut self) {
-        #[cfg(unix)]
-        if let Err(err) = self._deleted_mmap.lock().lock() {
-            log::error!(
-                "Failed to lock deleted flags for quantized mmap segment in memory: {}",
-                err,
-            );
-        }
+        // TODO: reimplement this
+        // #[cfg(unix)]
+        // if let Err(err) = self.deleted.lock().lock() {
+        //     log::error!(
+        //         "Failed to lock deleted flags for quantized mmap segment in memory: {}",
+        //         err,
+        //     );
+        // }
     }
 }
 

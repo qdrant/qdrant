@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::{mem, slice};
 
+use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
 
 use crate::common::Flusher;
@@ -69,7 +70,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn slice_from(mut mmap: MmapMut) -> Self {
-        let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap) };
+        let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap, 0) };
         let mmap = Arc::new(mmap);
         Self { r#type, mmap }
     }
@@ -162,6 +163,57 @@ impl<T> DerefMut for MmapSlice<T> {
     }
 }
 
+/// [`BitSlice`] on a memory mapped file
+///
+/// This implements [`Deref`] and [`DerefMut`], so this type may be used as if it is a
+/// [`BitSlice`].
+pub struct MmapBitSlice {
+    mmap: MmapType<BitSlice>,
+}
+
+impl MmapBitSlice {
+    /// Transform a mmap into a [`BitSlice`].
+    ///
+    /// A (non-zero) header size in bytes may be provided to omit from the BitSlice data.
+    ///
+    /// # Panics
+    ///
+    /// - panics when the size of the mmap isn't a multiple of the inner [`BitSlice`] type
+    /// - panics when the mmap data is not correctly aligned to the inner [`BitSlice`] type
+    /// - panics when the header size isn't a multiple of the inner [`BitSlice`] type
+    /// - See: [`mmap_to_slice_unbounded`]
+    pub fn from(mut mmap: MmapMut, header_size: usize) -> Self {
+        let data = unsafe { mmap_to_slice_unbounded(&mut mmap, header_size) };
+        let bitslice = BitSlice::from_slice_mut(data);
+        let mmap = Arc::new(mmap);
+
+        Self {
+            mmap: MmapType {
+                r#type: bitslice,
+                mmap,
+            },
+        }
+    }
+
+    pub fn flusher(&self) -> Flusher {
+        self.mmap.flusher()
+    }
+}
+
+impl Deref for MmapBitSlice {
+    type Target = BitSlice;
+
+    fn deref(&self) -> &BitSlice {
+        &self.mmap
+    }
+}
+
+impl DerefMut for MmapBitSlice {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.mmap
+    }
+}
+
 /// Get a second mutable reference for type `T` from the given mmap
 ///
 /// # Warning
@@ -198,6 +250,8 @@ where
 
 /// Get a second mutable reference for a slice of type `T` from the given mmap
 ///
+/// A (non-zero) header size in bytes may be provided to omit from the BitSlice data.
+///
 /// # Warning
 ///
 /// The returned reference is unbounded. The user must ensure it never outlives the `mmap` type.
@@ -211,19 +265,28 @@ where
 ///
 /// - panics when the size of the mmap isn't a multiple of size `T`
 /// - panics when the mmap data is not correctly aligned for type `T`
-unsafe fn mmap_to_slice_unbounded<'unbnd, T>(mmap: &mut MmapMut) -> &'unbnd mut [T]
+/// - panics when the header size isn't a multiple of size `T`
+unsafe fn mmap_to_slice_unbounded<'unbnd, T>(
+    mmap: &mut MmapMut,
+    header_size: usize,
+) -> &'unbnd mut [T]
 where
     T: Sized,
 {
     // Obtain unbounded bytes slice into mmap
     let bytes: &'unbnd mut [u8] = {
         let slice = mmap.deref_mut();
-        slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())
+        &mut slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())[header_size..]
     };
 
     // Assert alignment and size
     assert_alignment::<_, T>(bytes);
-    debug_assert_eq!(mmap.len(), bytes.len());
+    debug_assert_eq!(mmap.len(), bytes.len() + header_size);
+    debug_assert_eq!(
+        header_size % mem::size_of::<T>(),
+        0,
+        "header not multiple of size T",
+    );
     assert_eq!(
         bytes.len() % mem::size_of::<T>(),
         0,
