@@ -19,7 +19,7 @@ use crate::operations::types::CollectionError;
 pub type SegmentId = usize;
 
 const DROP_SPIN_TIMEOUT: Duration = Duration::from_millis(10);
-const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60);
+const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 /// Object, which unifies the access to different types of segments, but still allows to
 /// access the original type of the segment if it is required for more efficient operations.
@@ -73,7 +73,7 @@ impl LockedSegment {
                 match try_unwrap_with_timeout(proxy, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
                     Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
                     Err(locked_segment) => Err(OperationError::service_error(format!(
-                        "Removing segment which is still in use: {:?}",
+                        "Removing proxy segment which is still in use: {:?}",
                         locked_segment.read().data_path()
                     ))),
                 }
