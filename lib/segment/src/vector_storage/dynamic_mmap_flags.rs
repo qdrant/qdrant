@@ -267,6 +267,8 @@ impl DynamicMmapFlags {
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use tempfile::Builder;
@@ -279,7 +281,7 @@ mod tests {
         let num_flags = 5000;
         let mut rng = StdRng::seed_from_u64(42);
 
-        let random_flags: Vec<bool> = (0..num_flags).map(|_| rng.gen_bool(0.5)).collect();
+        let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(num_flags).collect();
 
         {
             let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
