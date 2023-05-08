@@ -259,6 +259,11 @@ mod tests {
             chunked_mmap.insert(44, &vectors[44]).unwrap();
             chunked_mmap.insert(999, &vectors[999]).unwrap();
 
+            assert!(
+                chunked_mmap.chunks.len() > 1,
+                "must have multiple chunks to test",
+            );
+
             chunked_mmap.flusher()().unwrap();
         }
 
@@ -266,6 +271,10 @@ mod tests {
             let chunked_mmap: ChunkedMmapVectors =
                 ChunkedMmapVectors::open(dir.path(), dim).unwrap();
 
+            assert!(
+                chunked_mmap.chunks.len() > 1,
+                "must have multiple chunks to test",
+            );
             assert_eq!(chunked_mmap.len(), vectors.len());
 
             for (i, vec) in vectors.iter().enumerate() {
