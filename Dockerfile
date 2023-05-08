@@ -24,9 +24,10 @@ WORKDIR /qdrant
 
 COPY ./tools/mold_arch.sh ./mold_arch.sh
 
-RUN curl -L https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz | tar zxf \
-     && mv mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux /qdrant/mold \
-     && chmod +x /qdrant/mold/bin/mold
+RUN wget https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz \
+    && tar -xf mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz  \
+    && mv mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux /qdrant/mold \
+    && chmod +x /qdrant/mold/bin/mold
 
 COPY ./tools/target_arch.sh ./target_arch.sh
 RUN echo "Building for $TARGETARCH, arch: $(bash target_arch.sh)"
