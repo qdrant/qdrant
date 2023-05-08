@@ -42,6 +42,7 @@ pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 pub struct StructPayloadIndex {
     /// Payload storage
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
+    /// Used for `has_id` condition and estimating cardinality
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Indexes, associated with fields
     pub field_indexes: IndexesMap,

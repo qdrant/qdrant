@@ -74,6 +74,18 @@ jobs:
           python-version: '3.10'
       - name: Install requests python lib
         run: pip install requests
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Docker build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          tags: qdrant_consensus
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
       - name: Run integration tests - multiple peers - compose
         run: ./test_restart.sh
         working-directory: ./tests/consensus_tests
@@ -84,6 +96,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Docker build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          tags: qdrant_tls
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
       - name: Run integration tests
         run: ./test_tls.sh
         working-directory: ./tests/tls
@@ -100,6 +124,18 @@ jobs:
           toolchain: stable
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Docker build
+        uses: docker/build-push-action@v4
+        with:
+          context: tools/schema2openapi
+          tags: schema2openapi
+          cache-from: |
+            type=gha,scope=${{ github.ref }}-schema2openapi
+            type=gha,scope=${{ github.base_ref }}-schema2openapi
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}-schema2openapi
+          load: true
       - name: Install Protoc
         uses: arduino/setup-protoc@v1
         with:
@@ -125,6 +161,18 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Docker build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          tags: qdrant-recovery
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
       - name: Run low RAM test
         working-directory: ./tests/low-ram
         shell: bash
