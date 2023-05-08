@@ -58,10 +58,39 @@ impl RemovableMmap {
     }
 }
 
+/// Identifies A/B variant of file being used.
+#[derive(Clone, Copy, Eq, PartialEq, Default, Debug)]
+#[repr(usize)]
+pub enum FileId {
+    // Must be 0usize because default value of mmap file on disk is all zeroes.
+    #[default]
+    A = 0,
+    B = 1,
+}
+
+impl FileId {
+    /// Rotate to the next file variant.
+    #[must_use = "rotated FileID is returned, not mutated in-place"]
+    pub fn rotate(self) -> Self {
+        match self {
+            Self::A => Self::B,
+            Self::B => Self::A,
+        }
+    }
+
+    /// Get filename for this FileId.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Self::A => FLAGS_FILE_A,
+            Self::B => FLAGS_FILE_B,
+        }
+    }
+}
+
 #[repr(C)]
 pub struct DynamicMmapStatus {
     pub len: usize,
-    pub current_file_id: usize, // use usize for alignment
+    pub current_file_id: FileId,
 }
 
 fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
@@ -98,20 +127,8 @@ fn mmap_max_current_size(len: usize) -> usize {
 }
 
 impl DynamicMmapFlags {
-    fn mmap_file_path_a(directory: &Path) -> PathBuf {
-        directory.join(FLAGS_FILE_A)
-    }
-
-    fn mmap_file_path_b(directory: &Path) -> PathBuf {
-        directory.join(FLAGS_FILE_B)
-    }
-
-    fn current_to_file(&self, current: usize) -> PathBuf {
-        match current {
-            0 => Self::mmap_file_path_a(&self.directory),
-            1 => Self::mmap_file_path_b(&self.directory),
-            _ => unreachable!("current can be only 0 or 1"),
-        }
+    fn file_id_to_file(&self, file_id: FileId) -> PathBuf {
+        self.directory.join(file_id.file_name())
     }
 
     pub fn len(&self) -> usize {
@@ -136,13 +153,19 @@ impl DynamicMmapFlags {
         Ok(flags)
     }
 
-    pub fn reopen_mmap(&mut self, num_flags: usize, current_file: usize) -> OperationResult<()> {
+    pub fn reopen_mmap(
+        &mut self,
+        num_flags: usize,
+        current_file_id: FileId,
+    ) -> OperationResult<()> {
         // We can only open file which is not currently used
         // self._flags_mmap.is_empty() - means that no files are open, we can open any file
-        debug_assert!(self._flags_mmap.is_empty() || current_file != self.status.current_file_id);
+        debug_assert!(
+            self._flags_mmap.is_empty() || current_file_id != self.status.current_file_id
+        );
 
         let capacity_bytes = mmap_capacity_bytes(num_flags);
-        let mmap_path = self.current_to_file(current_file);
+        let mmap_path = self.file_id_to_file(current_file_id);
         create_and_ensure_length(&mmap_path, capacity_bytes)?;
         let mut flags_mmap = open_write_mmap(&mmap_path).describe("Open mmap flags for writing")?;
         #[cfg(unix)]
@@ -182,13 +205,11 @@ impl DynamicMmapFlags {
         let current_capacity = mmap_max_current_size(self.status.len);
 
         if new_len > current_capacity {
-            // 0 -> 1
-            // 1 -> 0
-            // (CC), copilot
-            let new_file_id = (self.status.current_file_id + 1) % 2;
+            let old_file_id = self.status.current_file_id;
+            let new_file_id = old_file_id.rotate();
 
-            let old_mmap_file = self.current_to_file(self.status.current_file_id);
-            let new_mmap_file = self.current_to_file(new_file_id);
+            let old_mmap_file = self.file_id_to_file(old_file_id);
+            let new_mmap_file = self.file_id_to_file(new_file_id);
 
             self._flags_mmap.flush()?;
 
@@ -254,7 +275,7 @@ impl DynamicMmapFlags {
     pub fn files(&self) -> Vec<PathBuf> {
         vec![
             status_file(&self.directory),
-            self.current_to_file(self.status.current_file_id),
+            self.file_id_to_file(self.status.current_file_id),
         ]
     }
 }
@@ -286,15 +307,15 @@ mod tests {
                 }
             }
             // File swapping happens every 1024 (MINIMAL_MMAP_SIZE) flags
-            // < 1024 -> 0
-            // < 2048 -> 1
-            // < 4096 -> 0
-            // < 8192 -> 1
-            // < 16384 -> 0
-            let expected_current_file_id = 1;
+            // < 1024 -> A
+            // < 2048 -> B
+            // < 4096 -> A
+            // < 8192 -> B
+            // < 16384 -> A
+            let expected_current_file_id = FileId::B;
             assert_eq!(
                 dynamic_flags.status.current_file_id,
-                expected_current_file_id
+                expected_current_file_id,
             );
 
             dynamic_flags.set_len(num_flags * 2).unwrap();
@@ -304,10 +325,10 @@ mod tests {
                 }
             }
 
-            let expected_current_file_id = 0;
+            let expected_current_file_id = FileId::A;
             assert_eq!(
                 dynamic_flags.status.current_file_id,
-                expected_current_file_id
+                expected_current_file_id,
             );
 
             dynamic_flags.flusher()().unwrap();
