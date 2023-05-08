@@ -4,7 +4,7 @@
 FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.69.0 AS chef
 WORKDIR /qdrant
 
-ARG RUST_BUILD_PROFILE=ci
+ARG RUST_BUILD_PROFILE=release
 
 ARG MOLD_VERSION=1.11.0
 
@@ -24,10 +24,9 @@ WORKDIR /qdrant
 
 COPY ./tools/mold_arch.sh ./mold_arch.sh
 
-RUN if [ "${RUST_BUILD_PROFILE}" ] = "ci"; then \
-     curl -L https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz | tar zxf \
+RUN curl -L https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz | tar zxf \
      && mv mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux /qdrant/mold \
-     && chmod +x /qdrant/mold/bin/mold ; fi
+     && chmod +x /qdrant/mold/bin/mold
 
 COPY ./tools/target_arch.sh ./target_arch.sh
 RUN echo "Building for $TARGETARCH, arch: $(bash target_arch.sh)"
