@@ -63,7 +63,6 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
 }
 
 pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
-    let mut result = Vec::new();
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
         let entry = entry?;
@@ -81,6 +80,7 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
     }
 
     let num_chunks = mmap_files.len();
+    let mut result = Vec::with_capacity(num_chunks);
     for chunk_id in 0..num_chunks {
         let mmap_file = mmap_files.remove(&chunk_id).ok_or_else(|| {
             OperationError::service_error(format!(
