@@ -96,4 +96,3 @@ lto = "fat"
 inherits = "release"
 lto = false
 opt-level = 0
-linker = "mold/bin/mold"
