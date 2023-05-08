@@ -94,10 +94,9 @@ impl ChunkedMmapVectors {
 
             if config.dim != dim {
                 return Err(OperationError::service_error(format!(
-                    "Wrong configuration in {}: expected {}, found {}",
+                    "Wrong configuration in {}: expected {}, found {dim}",
                     config_file.display(),
                     config.dim,
-                    dim
                 )));
             }
 

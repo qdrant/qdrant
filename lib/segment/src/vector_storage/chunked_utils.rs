@@ -84,9 +84,8 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
     for chunk_id in 0..num_chunks {
         let mmap_file = mmap_files.remove(&chunk_id).ok_or_else(|| {
             OperationError::service_error(format!(
-                "Missing mmap chunk {} in {}",
-                chunk_id,
-                directory.display()
+                "Missing mmap chunk {chunk_id} in {}",
+                directory.display(),
             ))
         })?;
         let mmap = open_write_mmap(&mmap_file)?;
@@ -97,11 +96,9 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
 }
 
 pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
-    let chunk_file_name = format!(
-        "{}{}{}",
-        MMAP_CHUNKS_PATTERN_START, chunk_id, MMAP_CHUNKS_PATTERN_END
-    );
-    directory.join(chunk_file_name)
+    directory.join(format!(
+        "{MMAP_CHUNKS_PATTERN_START}{chunk_id}{MMAP_CHUNKS_PATTERN_END}",
+    ))
 }
 
 pub fn create_chunk(

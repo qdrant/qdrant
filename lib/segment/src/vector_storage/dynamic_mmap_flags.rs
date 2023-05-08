@@ -182,8 +182,8 @@ impl DynamicMmapFlags {
 
         if new_len < self.status.len {
             return Err(OperationError::service_error(format!(
-                "Cannot shrink the mmap flags from {} to {}",
-                self.status.len, new_len
+                "Cannot shrink the mmap flags from {} to {new_len}",
+                self.status.len,
             )));
         }
 
