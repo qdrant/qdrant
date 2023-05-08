@@ -16,8 +16,8 @@ use crate::vector_storage::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
-pub const VECTORS_DIR_PATH: &str = "vectors";
-pub const DELETED_DIR_PATH: &str = "deleted";
+const VECTORS_DIR_PATH: &str = "vectors";
+const DELETED_DIR_PATH: &str = "deleted";
 
 pub struct AppendableMmapVectorStorage {
     vectors: ChunkedMmapVectors,

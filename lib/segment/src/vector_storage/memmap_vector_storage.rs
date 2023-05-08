@@ -18,8 +18,8 @@ use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::VectorStorage;
 
-pub const VECTORS_PATH: &str = "matrix.dat";
-pub const DELETED_PATH: &str = "deleted.dat";
+const VECTORS_PATH: &str = "matrix.dat";
+const DELETED_PATH: &str = "deleted.dat";
 
 /// Stores all vectors in mem-mapped file
 ///

@@ -233,7 +233,7 @@ const fn deleted_mmap_data_start() -> usize {
 /// Calculate size for deleted mmap to hold the given number of vectors.
 ///
 /// The mmap will hold a file header and an aligned `BitSlice`.
-pub fn deleted_mmap_size(num: usize) -> usize {
+fn deleted_mmap_size(num: usize) -> usize {
     let unit_size = mem::size_of::<usize>();
     let num_bytes = div_ceil(num, 8);
     let num_usizes = div_ceil(num_bytes, unit_size);
@@ -250,7 +250,10 @@ pub fn deleted_mmap_size(num: usize) -> usize {
 /// - The mmap and BitSlice should never be mutated together.
 /// - The bitslice reference should never outlive the mmap.
 /// - The caller is responsible for handling this with care.
-pub unsafe fn mmap_to_bitslice<'a>(mmap: &mut MmapMut, header_size: usize) -> &'a mut BitSlice {
+pub(super) unsafe fn mmap_to_bitslice<'a>(
+    mmap: &mut MmapMut,
+    header_size: usize,
+) -> &'a mut BitSlice {
     // Obtain static slice into mmap
     let slice: &'static mut [u8] = {
         let slice = mmap.deref_mut();
