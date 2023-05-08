@@ -89,3 +89,11 @@ exclude = ["benches/search-points"]
 
 [profile.release]
 lto = "fat"
+
+# Inherit from release, because we are not rebuilding often,
+# and we don't want the huge binary sizes from debug builds.
+[profile.ci]
+inherits = "release"
+lto = false
+opt-level = 0
+linker = "mold/bin/mold"

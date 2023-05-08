@@ -49,6 +49,7 @@ pub struct StructPayloadIndex {
     config: PayloadConfig,
     /// Root of index persistence dir
     path: PathBuf,
+    /// Used to select unique point ids
     visited_pool: VisitedPool,
     db: Arc<RwLock<DB>>,
 }
