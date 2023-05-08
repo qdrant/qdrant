@@ -42,11 +42,8 @@ impl RemovableMmap {
         self.mmap.lock().is_none()
     }
 
-    fn drop_mmap(&self) {
-        self.mmap.lock().take();
-    }
-
-    fn set_mmap(&self, mmap: MmapMut) {
+    /// Replace the mmap, dropping the old one.
+    fn replace_mmap(&self, mmap: MmapMut) {
         self.mmap.lock().replace(mmap);
     }
 
@@ -178,8 +175,7 @@ impl DynamicMmapFlags {
         // Otherwise we can end up with inconsistent state
         {
             self.flags.take(); // Drop the bit slice. Important to do before dropping the mmap
-            self._flags_mmap.drop_mmap(); // Drop the mmap
-            self._flags_mmap.set_mmap(flags_mmap);
+            self._flags_mmap.replace_mmap(flags_mmap);
             self.flags.replace(flags);
         }
 
