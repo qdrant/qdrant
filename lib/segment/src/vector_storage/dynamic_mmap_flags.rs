@@ -85,8 +85,8 @@ pub struct DynamicMmapFlags {
 }
 
 /// Based on the number of flags determines the size of the mmap file.
-fn mmap_capacity_bytes(len: usize) -> usize {
-    let number_of_bytes = div_ceil(len, 8);
+fn mmap_capacity_bytes(num_flags: usize) -> usize {
+    let number_of_bytes = div_ceil(num_flags, 8);
 
     max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two())
 }
@@ -136,12 +136,12 @@ impl DynamicMmapFlags {
         Ok(flags)
     }
 
-    pub fn reopen_mmap(&mut self, length: usize, current_file: usize) -> OperationResult<()> {
+    pub fn reopen_mmap(&mut self, num_flags: usize, current_file: usize) -> OperationResult<()> {
         // We can only open file which is not currently used
         // self._flags_mmap.is_empty() - means that no files are open, we can open any file
         debug_assert!(self._flags_mmap.is_empty() || current_file != self.status.current_file_id);
 
-        let capacity_bytes = mmap_capacity_bytes(length);
+        let capacity_bytes = mmap_capacity_bytes(num_flags);
         let mmap_path = self.current_to_file(current_file);
         create_and_ensure_length(&mmap_path, capacity_bytes)?;
         let mut flags_mmap = open_write_mmap(&mmap_path).describe("Open mmap flags for writing")?;
