@@ -157,7 +157,7 @@ impl DynamicMmapFlags {
             self.flags.take(); // Drop the bit slice. Important to do before dropping the mmap
             self._flags_mmap.drop_mmap(); // Drop the mmap
             self._flags_mmap.set_mmap(flags_mmap);
-            self.flags = Some(flags);
+            self.flags.replace(flags);
         }
 
         Ok(())
