@@ -53,14 +53,22 @@ pub fn find_indices_matching_none_conditions(
     point_id: PointOffsetType,
     nested_checkers: &[NestedMatchingIndicesFn],
 ) -> BitVec {
-    let combined_mask = nested_checkers
-        .iter()
-        .map(|checker| checker(point_id))
-        .reduce(|acc: BitVec, x: BitVec| acc | x);
+    let combined_mask = find_indices_matching_any_conditions(point_id, nested_checkers);
 
     debug_assert!(combined_mask.is_some(), "combined_mask should be Some");
 
     combined_mask.map(|mask| !mask).unwrap_or_default()
+}
+
+/// Apply `point_id` to `nested_checkers` and return the list of indices in the payload matching any of the conditions
+pub fn find_indices_matching_any_conditions(
+    point_id: PointOffsetType,
+    nested_checkers: &[NestedMatchingIndicesFn],
+) -> Option<BitVec> {
+    nested_checkers
+        .iter()
+        .map(|checker| checker(point_id))
+        .reduce(|acc: BitVec, x: BitVec| acc | x)
 }
 
 pub fn nested_conditions_converter<'a>(
@@ -122,7 +130,9 @@ pub fn nested_condition_converter<'a>(
         }
         Condition::Nested(nested) => {
             Box::new(move |point_id| {
-                // `should` is not supported in nested queries as it corresponds to a non nested `should`
+                let mut bitvecs = Vec::with_capacity(3);
+
+                // must
                 let must_matching = check_nested_must(
                     point_id,
                     nested,
@@ -130,6 +140,11 @@ pub fn nested_condition_converter<'a>(
                     payload_provider.clone(),
                     nested_path.clone(),
                 );
+                if let Some(must_matching) = must_matching {
+                    bitvecs.push(must_matching);
+                }
+
+                // must_not
                 let must_not_matching = check_nested_must_not(
                     point_id,
                     nested,
@@ -137,17 +152,30 @@ pub fn nested_condition_converter<'a>(
                     payload_provider.clone(),
                     nested_path.clone(),
                 );
-
-                // combine results of `must` and `must_not`
-                match (must_matching, must_not_matching) {
-                    (None, None) => BitVec::default(),
-                    (Some(must_matching), None) => must_matching,
-                    (None, Some(must_not_matching)) => must_not_matching,
-                    (Some(must_matching), Some(must_not_matching)) => {
-                        debug_assert_eq!(must_matching.len(), must_not_matching.len());
-                        must_matching & must_not_matching
-                    }
+                if let Some(must_not_matching) = must_not_matching {
+                    bitvecs.push(must_not_matching);
                 }
+
+                // should
+                let should_matching = check_nested_should(
+                    point_id,
+                    nested,
+                    field_indexes,
+                    payload_provider.clone(),
+                    nested_path.clone(),
+                );
+                if let Some(should_matching) = should_matching {
+                    bitvecs.push(should_matching);
+                }
+
+                // combine all bitvecs
+                bitvecs
+                    .into_iter()
+                    .reduce(|acc, x| {
+                        debug_assert_eq!(acc.len(), x.len());
+                        acc & x
+                    })
+                    .unwrap_or_default()
             })
         }
         Condition::Filter(_) => unreachable!(),
@@ -196,6 +224,28 @@ fn check_nested_must_not(
             );
             let matches = find_indices_matching_none_conditions(point_id, &matching_indices);
             Some(matches)
+        }
+    }
+}
+
+fn check_nested_should(
+    point_id: PointOffsetType,
+    nested: &NestedContainer,
+    field_indexes: &IndexesMap,
+    payload_provider: PayloadProvider,
+    nested_path: JsonPathPayload,
+) -> Option<BitVec> {
+    match &nested.filter().should {
+        None => None,
+        Some(musts_not_conditions) => {
+            let full_path = nested_path.extend(&nested.array_key());
+            let matching_indices = nested_conditions_converter(
+                musts_not_conditions,
+                field_indexes,
+                payload_provider,
+                full_path,
+            );
+            find_indices_matching_any_conditions(point_id, &matching_indices)
         }
     }
 }
