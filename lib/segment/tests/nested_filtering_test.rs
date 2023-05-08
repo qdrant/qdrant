@@ -9,7 +9,7 @@ mod tests {
     use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
     use segment::payload_storage::PayloadStorage;
     use segment::types::{
-        Condition, FieldCondition, Filter, Payload, PayloadSchemaType, PointOffsetType,
+        Condition, FieldCondition, Filter, Match, Payload, PayloadSchemaType, PointOffsetType,
     };
     use serde_json::json;
     use tempfile::Builder;
@@ -22,11 +22,11 @@ mod tests {
             let payload: Payload = json!(
                 {
                     "arr1": [
-                        {"a": 1, "b": i % 10 + 1, "c": i % 2 + 1, "d": i % 3 },
-                        {"a": 2, "b": i % 10 + 2, "c": i % 2 + 1, "d": i % 3 },
-                        {"a": 3, "b": i % 10 + 3, "c": i % 2 + 2, "d": i % 3 },
-                        {"a": 4, "b": i % 10 + 4, "c": i % 2 + 2, "d": i % 3 },
-                        {"a": 5, "b": i % 10 + 5, "c": i % 2 + 2, "d": i % 3 },
+                        {"a": 1, "b": i % 10 + 1, "c": i % 2 + 1, "d": i % 3, "text": format!("a1 b{} c{} d{}", i, i % 10 + 1,  i % 3) },
+                        {"a": 2, "b": i % 10 + 2, "c": i % 2 + 1, "d": i % 3, "text": format!("a2 b{} c{} d{}", i, i % 10 + 2,  i % 3) },
+                        {"a": 3, "b": i % 10 + 3, "c": i % 2 + 2, "d": i % 3, "text": format!("a3 b{} c{} d{}", i, i % 10 + 3,  i % 3) },
+                        {"a": 4, "b": i % 10 + 4, "c": i % 2 + 2, "d": i % 3, "text": format!("a4 b{} c{} d{}", i, i % 10 + 4,  i % 3) },
+                        {"a": 5, "b": i % 10 + 5, "c": i % 2 + 2, "d": i % 3, "text": format!("a5 b{} c{} d{}", i, i % 10 + 5,  i % 3) },
                     ],
                     "f": i % 10
                 }
@@ -73,6 +73,9 @@ mod tests {
         index
             .set_indexed("arr1[].d", PayloadSchemaType::Integer.into())
             .unwrap();
+        index
+            .set_indexed("arr1[].text", PayloadSchemaType::Text.into())
+            .unwrap();
 
         let nested_condition_1 = Condition::new_nested(
             "arr1",
@@ -102,5 +105,37 @@ mod tests {
 
         assert!(!res1.is_empty());
         assert!(res1.contains(&6));
+
+        let nested_condition_2 = Condition::new_nested(
+            "arr1",
+            Filter {
+                must: Some(vec![
+                    // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
+                    Condition::Field(FieldCondition::new_match("a", 1.into())),
+                    Condition::Field(FieldCondition::new_match(
+                        "c",
+                        Match::Text("c1".to_string().into()),
+                    )),
+                    Condition::Field(FieldCondition::new_match("d", 0.into())),
+                ]),
+                should: None,
+                must_not: None,
+            },
+        );
+
+        let nested_filter_2 = Filter::new_must(nested_condition_2);
+
+        let res2: Vec<_> = index.query_points(&nested_filter_2).collect();
+
+        let filter_context = index.filter_context(&nested_filter_1);
+
+        let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
+            .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+            .collect();
+
+        assert_eq!(res2, check_res2);
+
+        assert!(!res2.is_empty());
+        assert!(res2.contains(&6));
     }
 }
