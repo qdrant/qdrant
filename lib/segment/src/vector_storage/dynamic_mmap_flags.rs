@@ -8,17 +8,16 @@ use memmap2::MmapMut;
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use crate::common::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut,
-};
+use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::vector_storage::div_ceil;
 use crate::vector_storage::mmap_vectors::mmap_to_bitslice;
 
+use super::mmap_type::MmapType;
+
 #[cfg(debug_assertions)]
 const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
-
 #[cfg(not(debug_assertions))]
 const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
@@ -105,8 +104,7 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
 pub struct DynamicMmapFlags {
     _flags_mmap: RemovableMmap,
     flags: Option<&'static mut BitSlice>,
-    _status_mmap: Arc<MmapMut>,
-    status: &'static mut DynamicMmapStatus,
+    status: MmapType<DynamicMmapStatus>,
     directory: PathBuf,
 }
 
@@ -134,11 +132,10 @@ impl DynamicMmapFlags {
 
     pub fn open(directory: &Path) -> OperationResult<Self> {
         create_dir_all(directory)?;
-        let mut status_mmap = ensure_status_file(directory)?;
-        let status = transmute_from_u8_to_mut(&mut status_mmap);
+        let status_mmap = ensure_status_file(directory)?;
+        let status = unsafe { MmapType::from(status_mmap) };
 
         let mut flags = Self {
-            _status_mmap: Arc::new(status_mmap),
             status,
             _flags_mmap: Default::default(),
             flags: None,
@@ -254,11 +251,11 @@ impl DynamicMmapFlags {
 
     pub fn flusher(&self) -> Flusher {
         Box::new({
-            let status_mmap = self._status_mmap.clone();
             let flags_mmap = self._flags_mmap.clone();
+            let status_flusher = self.status.flusher();
             move || {
                 flags_mmap.flush()?;
-                status_mmap.flush()?;
+                status_flusher()?;
                 Ok(())
             }
         })

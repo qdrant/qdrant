@@ -1,55 +1,40 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use memmap2::MmapMut;
 
-use crate::common::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut_slice_shared,
-};
+use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
+
+use super::mmap_type::MmapSlice;
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
 pub struct MmapChunk {
     /// Memory mapped file for chunk data.
-    ///
-    /// This should never be accessed directly, because it shares a mutable reference with
-    /// [`data`]. Use that instead. The sole purpose of this is to keep ownership of
-    /// the mmap, and to properly clean it up when this struct is dropped.
-    _mmap: Arc<MmapMut>,
-    /// A convenient `&mut [VectorElementType]` view into the memory map file.
-    ///
-    /// This has the same lifetime as this struct, a borrow must never be leased out for longer.
-    data: &'static mut [VectorElementType],
+    data: MmapSlice<VectorElementType>,
 }
 
 impl MmapChunk {
-    pub fn new(mut mmap: MmapMut) -> Self {
-        let data = unsafe { transmute_from_u8_to_mut_slice_shared(&mut mmap) };
+    pub unsafe fn new(mmap: MmapMut) -> Self {
         Self {
-            _mmap: Arc::new(mmap),
-            data,
+            data: MmapSlice::from(mmap),
         }
     }
 
     pub fn data(&self) -> &[VectorElementType] {
-        self.data
+        &self.data
     }
 
     pub fn data_mut(&mut self) -> &mut [VectorElementType] {
-        self.data
+        &mut self.data
     }
 
     pub fn flusher(&self) -> Flusher {
-        let mmap = self._mmap.clone();
-        Box::new(move || {
-            mmap.flush()?;
-            Ok(())
-        })
+        self.data.flusher()
     }
 }
 
@@ -89,7 +74,7 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
             ))
         })?;
         let mmap = open_write_mmap(&mmap_file)?;
-        let chunk = MmapChunk::new(mmap);
+        let chunk = unsafe { MmapChunk::new(mmap) };
         result.push(chunk);
     }
     Ok(result)
@@ -109,6 +94,6 @@ pub fn create_chunk(
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mmap = open_write_mmap(&chunk_file_path)?;
-    let chunk = MmapChunk::new(mmap);
+    let chunk = unsafe { MmapChunk::new(mmap) };
     Ok(chunk)
 }
