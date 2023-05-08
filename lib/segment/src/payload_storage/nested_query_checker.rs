@@ -25,7 +25,7 @@ where
             .map(checker)
             .reduce(|acc, matches| acc & matches)
             .map(|matches: BitVec| matches.count_ones() > 0)
-            .unwrap_or(true),
+            .unwrap_or(false), // At least one sub-object must match all conditions
     }
 }
 
@@ -42,7 +42,7 @@ where
                 .reduce(|acc, matches| acc | matches)
                 // There is at least one sub-object that does not match any of the conditions
                 .map(|matches: BitVec| matches.count_zeros() > 0)
-                .unwrap_or(true)
+                .unwrap_or(true) // If there are no sub-objects, then must_not conditions are satisfied
         }
     }
 }
@@ -348,8 +348,8 @@ mod tests {
         ));
 
         assert!(payload_checker.check(germany_id, &population_range_condition)); // all cities less than 8.0
-        assert!(payload_checker.check(japan_id, &population_range_condition)); // tokyo is 13.5
-        assert!(payload_checker.check(!boring_id, &population_range_condition)); // has no cities
+        assert!(payload_checker.check(japan_id, &population_range_condition)); // tokyo is 13.5, but other cities are less than 8.0
+        assert!(payload_checker.check(boring_id, &population_range_condition)); // has no cities
 
         // single must values_count condition nested field in array
         let sightseeing_value_count_condition = Filter::new_must(Condition::new_nested(
@@ -385,7 +385,7 @@ mod tests {
 
         assert!(payload_checker.check(germany_id, &sightseeing_value_count_condition));
         assert!(payload_checker.check(japan_id, &sightseeing_value_count_condition));
-        assert!(!payload_checker.check(boring_id, &sightseeing_value_count_condition));
+        assert!(payload_checker.check(boring_id, &sightseeing_value_count_condition));
 
         // single IsEmpty condition nested field in array
         let is_empty_condition = Filter::new_must(Condition::new_nested(

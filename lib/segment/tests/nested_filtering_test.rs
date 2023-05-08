@@ -3,8 +3,6 @@ mod tests {
     use std::sync::Arc;
 
     use atomic_refcell::AtomicRefCell;
-    use rand::prelude::StdRng;
-    use rand::SeedableRng;
     use segment::fixtures::payload_context_fixture::FixtureIdTracker;
     use segment::index::struct_payload_index::StructPayloadIndex;
     use segment::index::PayloadIndex;
@@ -41,8 +39,8 @@ mod tests {
 
     #[test]
     fn test_filtering_context_consistency() {
-        let seed = 42;
-        let mut rng = StdRng::seed_from_u64(seed);
+        // let seed = 42;
+        // let mut rng = StdRng::seed_from_u64(seed);
 
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
@@ -81,9 +79,9 @@ mod tests {
             Filter {
                 must: Some(vec![
                     // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
-                    Condition::Field(FieldCondition::new_match("a", 1.into()).into()),
-                    Condition::Field(FieldCondition::new_match("c", 1.into()).into()),
-                    Condition::Field(FieldCondition::new_match("d", 0.into()).into()),
+                    Condition::Field(FieldCondition::new_match("a", 1.into())),
+                    Condition::Field(FieldCondition::new_match("c", 1.into())),
+                    Condition::Field(FieldCondition::new_match("d", 0.into())),
                 ]),
                 should: None,
                 must_not: None,
