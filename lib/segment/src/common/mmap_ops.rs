@@ -44,12 +44,6 @@ pub fn open_write_mmap(path: &Path) -> OperationResult<MmapMut> {
     Ok(mmap)
 }
 
-pub fn transmute_from_u8_to_mut<'a, T>(data: &mut [u8]) -> &'a mut T {
-    debug_assert_eq!(data.len(), size_of::<T>());
-    let ptr = data.as_ptr() as *mut T;
-    unsafe { &mut *ptr }
-}
-
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v as *const T as *const u8, mem::size_of_val(v)) }
 }
@@ -68,31 +62,6 @@ pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
 
-/// Transmute a `&mut [u8]` and `&mut [T]` and share mutable reference
-///
-/// # Safety
-///
-/// This is unsafe because this creates a second mutable reference to the given `data`.
-///
-/// The caller must ensure that:
-/// - the two mutable references are never mutably accessed at the same time
-/// - the returned reference never outlives `data`
-pub unsafe fn transmute_from_u8_to_mut_slice_shared<'a, T>(data: &mut [u8]) -> &'a mut [T] {
-    debug_assert_eq!(data.len() % size_of::<T>(), 0);
-    let len = data.len() / size_of::<T>();
-    let ptr = data.as_mut_ptr() as *mut T;
-    std::slice::from_raw_parts_mut(ptr, len)
-}
-
 pub fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, mem::size_of_val(v)) }
-}
-
-pub fn write_to_mmap<T>(mmap: &mut MmapMut, offset: usize, data: T) {
-    debug_assert!(offset + size_of::<T>() <= mmap.len());
-    let ptr = mmap.as_mut_ptr();
-    unsafe {
-        let byte_data = transmute_to_u8(&data);
-        std::ptr::copy_nonoverlapping(byte_data.as_ptr(), ptr.add(offset), byte_data.len());
-    }
 }
