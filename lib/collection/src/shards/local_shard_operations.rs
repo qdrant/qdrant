@@ -47,6 +47,7 @@ impl ShardOperation for LocalShard {
                 op_num: operation_id,
                 operation,
                 sender: callback_sender,
+                wait,
             }));
             operation_id
         };
