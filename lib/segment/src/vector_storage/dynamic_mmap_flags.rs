@@ -32,18 +32,12 @@ pub fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 struct RemovableMmap {
     mmap: Arc<Mutex<Option<MmapMut>>>,
 }
 
 impl RemovableMmap {
-    fn new() -> Self {
-        Self {
-            mmap: Arc::new(Mutex::new(None)),
-        }
-    }
-
     fn is_empty(&self) -> bool {
         self.mmap.lock().is_none()
     }
@@ -132,7 +126,7 @@ impl DynamicMmapFlags {
         let mut flags = Self {
             _status_mmap: Arc::new(status_mmap),
             status,
-            _flags_mmap: RemovableMmap::new(),
+            _flags_mmap: Default::default(),
             flags: None,
             directory: directory.to_owned(),
         };
