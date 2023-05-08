@@ -1082,7 +1082,10 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_geo_bounding_box(key: impl Into<PayloadKeyType>, geo_bounding_box: GeoBoundingBox) -> Self {
+    pub fn new_geo_bounding_box(
+        key: impl Into<PayloadKeyType>,
+        geo_bounding_box: GeoBoundingBox,
+    ) -> Self {
         Self {
             key: key.into(),
             r#match: None,

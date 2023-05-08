@@ -315,17 +315,3 @@ pub fn generate_nested_array_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payloa
     })
     .into()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_random_condition() {
-        let mut rnd_gen = rand::thread_rng();
-        let nested_payload = generate_nested_array_payload(&mut rnd_gen);
-        for (key, val) in nested_payload {
-            println!("{}: val: {}", key, serde_json::to_string_pretty(&val).unwrap());
-        }
-    }
-}
