@@ -1,12 +1,10 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{self, size_of, transmute};
-use std::ops::DerefMut;
 use std::path::Path;
-use std::slice;
 
 use bitvec::prelude::BitSlice;
-use memmap2::{Mmap, MmapMut};
+use memmap2::Mmap;
 
 use super::div_ceil;
 use super::mmap_type::MmapBitSlice;
@@ -222,38 +220,4 @@ fn deleted_mmap_size(num: usize) -> usize {
     let num_usizes = div_ceil(num_bytes, unit_size);
     let data_size = num_usizes * unit_size;
     deleted_mmap_data_start() + data_size
-}
-
-/// Create a convenient [`BitSlice`] view over a [`MmapMut`].
-///
-/// This works because the internal memory mapped slice is pinned and doesn't move in memory.
-///
-/// This is unsafe because we create a shared mutable refrence with lifetime `'a`.
-///
-/// - The mmap and BitSlice should never be mutated together.
-/// - The bitslice reference should never outlive the mmap.
-/// - The caller is responsible for handling this with care.
-pub(super) unsafe fn mmap_to_bitslice<'a>(
-    mmap: &mut MmapMut,
-    header_size: usize,
-) -> &'a mut BitSlice {
-    // Obtain static slice into mmap
-    let slice: &'static mut [u8] = {
-        let slice = mmap.deref_mut();
-        slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())
-    };
-
-    // Reslice to aligned data portion
-    let align = mem::align_of::<usize>();
-    let aligned_header_size = div_ceil(header_size, align) * align;
-    let slice: &mut [u8] = &mut slice[aligned_header_size..];
-
-    // Create BitSlice view over data slice
-    // Transmute: &mut [u8] -> &mut [usize] -> &mut BitSlice
-    debug_assert_eq!(slice.as_ptr() as usize % mem::align_of::<usize>(), 0);
-    debug_assert_eq!(slice.len() % mem::size_of::<usize>(), 0);
-    BitSlice::from_slice_unchecked_mut(slice::from_raw_parts_mut(
-        slice.as_ptr() as *mut usize,
-        slice.len() / mem::size_of::<usize>(),
-    ))
 }
