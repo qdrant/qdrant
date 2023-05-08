@@ -52,7 +52,7 @@ quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
 chrono = { version = "0.4.24", features = ["serde"] }
 
-sysinfo = "0.28"
+sysinfo = "0.29"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
