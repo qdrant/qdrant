@@ -303,7 +303,7 @@ mod tests {
 
             dynamic_flags.set_len(num_flags * 2).unwrap();
             for (i, flag) in random_flags.iter().enumerate() {
-                if !*flag {
+                if !flag {
                     assert!(!dynamic_flags.set(num_flags + i, true));
                 }
             }
