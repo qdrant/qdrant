@@ -40,9 +40,6 @@ impl ShardOperation for LocalShard {
             let channel_permit = update_sender.reserve().await?;
             let mut wal_lock = self.wal.lock();
             let operation_id = wal_lock.write(&operation)?;
-            if wait {
-                wal_lock.flush()?;
-            }
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
                 operation,
