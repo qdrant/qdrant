@@ -1,3 +1,26 @@
+//! Typed memory maps
+//!
+//! This module adds type to directly map types and a slice of types onto a memory mapped file.
+//! The typed memory maps can be directly used as if it were that type.
+//!
+//! Types:
+//! - [`MmapType`]
+//! - [`MmapSlice`]
+//! - [`MmapBitSlice`]
+//!
+//! Various additional functions are added for use within Qdrant, such as `flusher` to obtain a
+//! flusher handle to explicitly flush the underlying memory map at a later time.
+//!
+//! # Safety
+//!
+//! Code in this module is `unsafe` and very error prone. It is therefore compacted in this single
+//! module to make it easer to review, to make it easier to check for soundness, and to make it
+//! easier to reason about.
+//!
+//! Please prevent touching code in this file. If modifications must be done, please do so with the
+//! utmost care. Security is critical here as this is an easy place to introduce undefined
+//! behavior. Problems caused by this are very hard to debug.
+
 use std::io;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
@@ -10,7 +33,13 @@ use crate::common::Flusher;
 
 /// Type `T` on a memory mapped file
 ///
-/// This implements [`Deref`] and [`DerefMut`], so this type may be used as if it is type `T`.
+/// Functions as if it is `T` because this implements [`Deref`] and [`DerefMut`].
+///
+/// # Safety
+///
+/// This directly maps (transmutes) the type onto the memory mapped data. This is dangerous and
+/// very error prone and must be used with utmost care. Types holding references are not supported
+/// for example. Malformed data in the mmap will break type `T` and will cause undefined behavior.
 pub struct MmapType<T>
 where
     T: ?Sized + 'static,
@@ -41,9 +70,10 @@ where
 {
     /// Transform a mmap into a typed mmap of type `T`.
     ///
-    /// # Unsafe
+    /// # Safety
     ///
-    /// Unsafe because malformed data in the mmap may break type `T`.
+    /// Unsafe because malformed data in the mmap may break type `T` resulting in undefined
+    /// behavior.
     ///
     /// # Panics
     ///
@@ -63,9 +93,16 @@ where
 {
     /// Transform a mmap into a typed slice mmap of type `&[T]`.
     ///
-    /// # Unsafe
+    /// # Warning
     ///
-    /// Unsafe because malformed data in the mmap may break type `T`.
+    /// This does not support slices, because those cannot be transmuted directly because it has
+    /// extra parts. See [`MmapSlice`], [`MmapType::slice_from`] and
+    /// [`std::slice::from_raw_parts`].
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because malformed data in the mmap may break type `T` resulting in undefined
+    /// behavior.
     ///
     /// # Panics
     ///
@@ -111,10 +148,10 @@ where
 {
     type Target = T;
 
-    // Uses explicit lifetimes to clarify the inner reference never outlives this struct, even
-    // though it has a static internal lifetime.
+    // Has explicit 'bounded lifetime to clarify the inner reference never outlives this struct,
+    // even though the reference has a static lifetime internally.
     #[allow(clippy::needless_lifetimes)]
-    fn deref<'a>(&'a self) -> &'a Self::Target {
+    fn deref<'bounded>(&'bounded self) -> &'bounded Self::Target {
         self.r#type
     }
 }
@@ -123,18 +160,19 @@ impl<T> DerefMut for MmapType<T>
 where
     T: ?Sized + 'static,
 {
-    // Uses explicit lifetimes to clarify the inner reference never outlives this struct, even
-    // though it has a static internal lifetime.
+    // Has explicit 'bounded lifetime to clarify the inner reference never outlives this struct,
+    // even though the reference has a static lifetime internally.
     #[allow(clippy::needless_lifetimes)]
-    fn deref_mut<'a>(&'a mut self) -> &'a mut Self::Target {
+    fn deref_mut<'bounded>(&'bounded mut self) -> &'bounded mut Self::Target {
         self.r#type
     }
 }
 
 /// Slice of type `T` on a memory mapped file
 ///
-/// This implements [`Deref`] and [`DerefMut`], so this type may be used as if it is a slice of
-/// type `T`.
+/// Functions as if it is `&[T]` because this implements [`Deref`] and [`DerefMut`].
+///
+/// A helper because [`MmapType`] doesn't support slices directly.
 pub struct MmapSlice<T>
 where
     T: Sized + 'static,
@@ -145,9 +183,12 @@ where
 impl<T> MmapSlice<T> {
     /// Transform a mmap into a typed slice mmap of type `&[T]`.
     ///
-    /// # Unsafe
+    /// This method is specifically intended for slices.
     ///
-    /// Unsafe because malformed data in the mmap may break type `T`.
+    /// # Safety
+    ///
+    /// Unsafe because malformed data in the mmap may break type `T` resulting in undefined
+    /// behavior.
     ///
     /// # Panics
     ///
@@ -177,8 +218,7 @@ impl<T> DerefMut for MmapSlice<T> {
 
 /// [`BitSlice`] on a memory mapped file
 ///
-/// This implements [`Deref`] and [`DerefMut`], so this type may be used as if it is a
-/// [`BitSlice`].
+/// Functions as if it is a [`BitSlice`] because this implements [`Deref`] and [`DerefMut`].
 pub struct MmapBitSlice {
     mmap: MmapType<BitSlice>,
 }
@@ -241,10 +281,10 @@ impl DerefMut for MmapBitSlice {
 ///
 /// The returned reference is unbounded. The user must ensure it never outlives the `mmap` type.
 ///
-/// # Unsafe
+/// # Safety
 ///
 /// - unsafe because we create a second (unbounded) mutable reference
-/// - malformed data in the mmap may break the transmuted type `T`
+/// - malformed data in the mmap may break the transmuted type `T` resulting in undefined behavior
 ///
 /// # Panics
 ///
@@ -277,10 +317,11 @@ where
 ///
 /// The returned reference is unbounded. The user must ensure it never outlives the `mmap` type.
 ///
-/// # Unsafe
+/// # Safety
 ///
 /// - unsafe because we create a second (unbounded) mutable reference
-/// - malformed data in the mmap may break the transmuted slice for type `T`
+/// - malformed data in the mmap may break the transmuted slice for type `T` resulting in undefined
+///   behavior
 ///
 /// # Panics
 ///
@@ -322,7 +363,7 @@ where
 ///
 /// # Panics
 ///
-/// Panics when alignment is incorrect.
+/// Panics when alignment is wrong.
 fn assert_alignment<S, T>(bytes: &[S]) {
     assert_eq!(
         bytes.as_ptr().align_offset(mem::align_of::<T>()),
