@@ -1,4 +1,12 @@
+# Cross-compiling using Docker multi-platform builds/images and `xx`.
+#
+# https://docs.docker.com/build/building/multi-platform/
+# https://github.com/tonistiigi/xx
 FROM --platform=${BUILDPLATFORM:-linux/amd64} tonistiigi/xx AS xx
+
+# Utilizing Docker layer caching with `cargo-chef.
+#
+# https://www.lpalmieri.com/posts/fast-rust-docker-builds/
 FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.68.1 AS chef
 
 
@@ -13,10 +21,22 @@ WORKDIR /qdrant
 
 COPY --from=xx / /
 
+# Relative order of `ARG` and `RUN` commands in the Dockerfile matters.
+#
+# If you pass a different `ARG` to `docker build`, it would invalidate Docker layer cache
+# for the next steps. (E.g., the following steps may depend on a new `ARG` value, so Docker would
+# have to re-execute them instead of using a cached layer from a previous run.)
+#
+# Steps in this stage are ordered in a way that should maximize Docker layer cache utilization,
+# so, please, don't reorder them without prior consideration. 🥲
+
 RUN apt-get update \
     && apt-get install -y clang lld cmake protobuf-compiler \
     && rustup component add rustfmt
 
+# `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.
+#
+# https://github.com/docker/buildx/issues/510
 ARG BUILDPLATFORM
 ENV BUILDPLATFORM=${BUILDPLATFORM:-linux/amd64}
 
@@ -36,14 +56,24 @@ RUN case "$BUILDPLATFORM" in \
     tar -xf "$TARBALL" --strip-components 1; \
     rm "$TARBALL"
 
+# `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.
+#
+# https://github.com/docker/buildx/issues/510
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
 RUN xx-apt-get install -y gcc g++ libc6-dev
 
+# Select Cargo profile (e.g., `release`, `dev` or `ci`)
 ARG PROFILE=release
+
+# Enable crate features
 ARG FEATURES
+
+# Pass custom `RUSTFLAGS` (e.g., `--cfg tokio_unstable` to enable Tokio tracing/`tokio-console`)
 ARG RUSTFLAGS
+
+# Select linker (e.g., `mold`, `lld` or an empty string for the default linker)
 ARG LINKER=mold
 
 COPY --from=planner /qdrant/recipe.json recipe.json
