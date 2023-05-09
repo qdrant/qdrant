@@ -110,7 +110,7 @@ impl DynamicMmapFlags {
     pub fn open(directory: &Path) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = ensure_status_file(directory)?;
-        let status: MmapType<DynamicMmapStatus> = unsafe { MmapType::from(status_mmap) };
+        let status: MmapType<DynamicMmapStatus> = unsafe { MmapType::try_from(status_mmap)? };
 
         // Open first mmap
         let (flags, flags_flusher) =
@@ -137,7 +137,7 @@ impl DynamicMmapFlags {
             log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
         }
 
-        let flags = MmapBitSlice::from(flags_mmap, 0);
+        let flags = MmapBitSlice::try_from(flags_mmap, 0)?;
         let flusher = flags.flusher();
         Ok((flags, flusher))
     }

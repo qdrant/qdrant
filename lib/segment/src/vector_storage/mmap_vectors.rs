@@ -56,7 +56,7 @@ impl MmapVectors {
         }
 
         // Transform into mmap BitSlice
-        let deleted = MmapBitSlice::from(deleted_mmap, deleted_mmap_data_start());
+        let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
         Ok(MmapVectors {

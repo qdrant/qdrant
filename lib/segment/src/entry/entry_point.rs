@@ -20,6 +20,7 @@ use crate::types::{
     WithVector,
 };
 use crate::utils::mem::Mem;
+use crate::vector_storage::mmap_type::Error as MmapError;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -101,6 +102,12 @@ impl From<ThreadPoolBuildError> for OperationError {
 
 impl From<FileStorageError> for OperationError {
     fn from(err: FileStorageError) -> Self {
+        Self::service_error(err.to_string())
+    }
+}
+
+impl From<MmapError> for OperationError {
+    fn from(err: MmapError) -> Self {
         Self::service_error(err.to_string())
     }
 }

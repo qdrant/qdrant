@@ -48,7 +48,7 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
             ))
         })?;
         let mmap = open_write_mmap(&mmap_file)?;
-        let chunk = unsafe { MmapChunk::from(mmap) };
+        let chunk = unsafe { MmapChunk::try_from(mmap)? };
         result.push(chunk);
     }
     Ok(result)
@@ -68,6 +68,6 @@ pub fn create_chunk(
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mmap = open_write_mmap(&chunk_file_path)?;
-    let chunk = unsafe { MmapChunk::from(mmap) };
+    let chunk = unsafe { MmapChunk::try_from(mmap)? };
     Ok(chunk)
 }

@@ -108,7 +108,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_type_unbounded`]
     pub unsafe fn try_from(mut mmap_with_type: MmapMut) -> Result<Self> {
-        let r#type = unsafe { mmap_to_type_unbounded(&mut mmap_with_type) }?;
+        let r#type = mmap_to_type_unbounded(&mut mmap_with_type)?;
         let mmap = Arc::new(Mutex::new(mmap_with_type));
         Ok(Self { r#type, mmap })
     }
@@ -160,7 +160,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn try_slice_from(mut mmap_with_slice: MmapMut) -> Result<Self> {
-        let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap_with_slice, 0) }?;
+        let r#type = mmap_to_slice_unbounded(&mut mmap_with_slice, 0)?;
         let mmap = Arc::new(Mutex::new(mmap_with_slice));
         Ok(Self { r#type, mmap })
     }
@@ -247,9 +247,26 @@ impl<T> MmapSlice<T> {
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn from(mmap_with_slice: MmapMut) -> Self {
-        Self {
-            mmap: MmapType::slice_from(mmap_with_slice),
-        }
+        Self::try_from(mmap_with_slice).unwrap()
+    }
+
+    /// Transform a mmap into a typed slice mmap of type `&[T]`.
+    ///
+    /// This method is specifically intended for slices.
+    ///
+    /// Returns an error when the mmap has an incorrect size.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because malformed data in the mmap may break type `T` resulting in undefined
+    /// behavior.
+    ///
+    /// # Panics
+    ///
+    /// - panics when the mmap data is not correctly aligned for type `T`
+    /// - See: [`mmap_to_slice_unbounded`]
+    pub unsafe fn try_from(mmap_with_slice: MmapMut) -> Result<Self> {
+        MmapType::try_slice_from(mmap_with_slice).map(|mmap| Self { mmap })
     }
 }
 
@@ -301,7 +318,7 @@ impl MmapBitSlice {
     /// - panics when the header size isn't a multiple of the inner [`BitSlice`] type
     /// - See: [`mmap_to_slice_unbounded`]
     pub fn try_from(mut mmap: MmapMut, header_size: usize) -> Result<Self> {
-        let data = unsafe { mmap_to_slice_unbounded(&mut mmap, header_size) }?;
+        let data = unsafe { mmap_to_slice_unbounded(&mut mmap, header_size)? };
         let bitslice = BitSlice::from_slice_mut(data);
         let mmap = Arc::new(Mutex::new(mmap));
 
