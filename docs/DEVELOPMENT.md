@@ -150,7 +150,7 @@ that can be enabled with optional features.
 - `tokio-tracing` feature explicitly enables [`Tokio` crate tracing][tokio-tracing]
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
   - this is required (and enabled automatically) by the `console` feature
-  - but you can enable it explicitly with the `tracy` feature, to see `Tokio` traces in [`Tracy`] profiler
+  - but you can enable it explicitly with the `tracy` feature, to see Tokio traces in [`Tracy`] profiler
 - `tracing` feature simply enables optional [`tracing`] crate dependency (without any integrations)
   - this is required (and enabled automatically) by all of the above features
 
