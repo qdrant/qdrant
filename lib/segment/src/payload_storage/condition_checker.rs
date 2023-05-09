@@ -3,8 +3,8 @@
 use serde_json::Value;
 
 use crate::types::{
-    AnyVariants, GeoBoundingBox, GeoRadius, Match, MatchAny, MatchText, MatchValue, Range,
-    ValueVariants, ValuesCount,
+    AnyVariants, FieldCondition, GeoBoundingBox, GeoRadius, Match, MatchAny, MatchText, MatchValue,
+    Range, ValueVariants, ValuesCount,
 };
 
 pub trait ValueChecker {
@@ -15,6 +15,39 @@ pub trait ValueChecker {
             Value::Array(values) => values.iter().any(|x| self.check_match(x)),
             _ => self.check_match(payload),
         }
+    }
+}
+
+impl ValueChecker for FieldCondition {
+    fn check_match(&self, payload: &Value) -> bool {
+        let mut res = false;
+        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
+        res = res
+            || self
+                .r#match
+                .as_ref()
+                .map_or(false, |condition| condition.check(payload));
+        res = res
+            || self
+                .range
+                .as_ref()
+                .map_or(false, |condition| condition.check(payload));
+        res = res
+            || self
+                .geo_radius
+                .as_ref()
+                .map_or(false, |condition| condition.check(payload));
+        res = res
+            || self
+                .geo_bounding_box
+                .as_ref()
+                .map_or(false, |condition| condition.check(payload));
+        res = res
+            || self
+                .values_count
+                .as_ref()
+                .map_or(false, |condition| condition.check(payload));
+        res
     }
 }
 

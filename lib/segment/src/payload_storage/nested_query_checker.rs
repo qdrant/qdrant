@@ -4,7 +4,7 @@ use bitvec::bitvec;
 use bitvec::prelude::BitVec;
 use serde_json::Value;
 
-use crate::common::utils::{JsonPathPayload, MultiValue};
+use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
@@ -56,9 +56,12 @@ where
     F: Fn() -> OwnedPayloadRef<'a>,
 {
     let nested_checker = |condition: &Condition| match condition {
-        Condition::Field(field_condition) => {
-            nested_check_field_condition(field_condition, get_payload().deref(), nested_path)
-        }
+        Condition::Field(field_condition) => nested_check_field_condition(
+            field_condition,
+            get_payload().deref(),
+            nested_path,
+            &Default::default(),
+        ),
         Condition::IsEmpty(is_empty) => {
             check_nested_is_empty_condition(nested_path, is_empty, get_payload().deref())
         }
@@ -137,39 +140,29 @@ pub fn nested_check_field_condition(
     field_condition: &FieldCondition,
     payload: &Payload,
     nested_path: &JsonPathPayload,
+    field_indexes: &IndexesMap,
 ) -> BitVec {
     let full_path = nested_path.extend(&field_condition.key);
     let field_values = payload.get_value(&full_path.path).values();
     let mut result = BitVec::with_capacity(field_values.len());
 
+    let field_indexes = field_indexes.get(&full_path.path);
+
     for p in field_values {
-        let mut res = false;
-        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-        res = res
-            || field_condition
-                .r#match
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .range
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .geo_radius
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .geo_bounding_box
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .values_count
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
+        // This covers a case, when a field index affects the result of the condition.
+        // Only required in the nested case,
+        // because non-nested payload is checked by the index directly.
+        let mut index_check_res = None;
+        if let Some(field_indexes) = field_indexes {
+            for index in field_indexes {
+                index_check_res = index.check_condition(field_condition, p);
+                if index_check_res.is_some() {
+                    break;
+                }
+            }
+        }
+        // Fallback to regular condition check if index-aware check did not return a result
+        let res = index_check_res.unwrap_or_else(|| field_condition.check(p));
         result.push(res);
     }
     result

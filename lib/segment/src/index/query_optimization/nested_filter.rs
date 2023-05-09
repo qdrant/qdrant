@@ -1,6 +1,6 @@
 use bitvec::prelude::*;
 
-use crate::common::utils::JsonPathPayload;
+use crate::common::utils::{IndexesMap, JsonPathPayload};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::nested_query_checker::{
@@ -66,24 +66,31 @@ pub fn find_indices_matching_any_conditions(
         .reduce(|acc: BitVec, x: BitVec| acc | x)
 }
 
-pub fn nested_conditions_converter(
-    conditions: &[Condition],
+pub fn nested_conditions_converter<'a>(
+    conditions: &'a [Condition],
     payload_provider: PayloadProvider,
+    field_indexes: &'a IndexesMap,
     nested_path: JsonPathPayload,
-) -> Vec<NestedMatchingIndicesFn<'_>> {
+) -> Vec<NestedMatchingIndicesFn<'a>> {
     conditions
         .iter()
         .map(|condition| {
-            nested_condition_converter(condition, payload_provider.clone(), nested_path.clone())
+            nested_condition_converter(
+                condition,
+                payload_provider.clone(),
+                field_indexes,
+                nested_path.clone(),
+            )
         })
         .collect()
 }
 
-pub fn nested_condition_converter(
-    condition: &Condition,
+pub fn nested_condition_converter<'a>(
+    condition: &'a Condition,
     payload_provider: PayloadProvider,
+    field_indexes: &'a IndexesMap,
     nested_path: JsonPathPayload,
-) -> NestedMatchingIndicesFn<'_> {
+) -> NestedMatchingIndicesFn<'a> {
     match condition {
         Condition::Field(field_condition) => {
             // Do not rely on existing indexes for nested fields because
@@ -91,7 +98,12 @@ pub fn nested_condition_converter(
             // We would need specialized nested indexes.
             Box::new(move |point_id| {
                 payload_provider.with_payload(point_id, |payload| {
-                    nested_check_field_condition(field_condition, &payload, &nested_path)
+                    nested_check_field_condition(
+                        field_condition,
+                        &payload,
+                        &nested_path,
+                        field_indexes,
+                    )
                 })
             })
         }
@@ -117,6 +129,7 @@ pub fn nested_condition_converter(
                 let must_matching = check_nested_must(
                     point_id,
                     nested,
+                    field_indexes,
                     payload_provider.clone(),
                     nested_path.clone(),
                 );
@@ -128,6 +141,7 @@ pub fn nested_condition_converter(
                 let must_not_matching = check_nested_must_not(
                     point_id,
                     nested,
+                    field_indexes,
                     payload_provider.clone(),
                     nested_path.clone(),
                 );
@@ -139,6 +153,7 @@ pub fn nested_condition_converter(
                 let should_matching = check_nested_should(
                     point_id,
                     nested,
+                    field_indexes,
                     payload_provider.clone(),
                     nested_path.clone(),
                 );
@@ -163,6 +178,7 @@ pub fn nested_condition_converter(
 fn check_nested_must(
     point_id: PointOffsetType,
     nested: &NestedContainer,
+    field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
     nested_path: JsonPathPayload,
 ) -> Option<BitVec> {
@@ -170,8 +186,12 @@ fn check_nested_must(
         None => None,
         Some(musts_conditions) => {
             let full_path = nested_path.extend(&nested.array_key());
-            let nested_checkers =
-                nested_conditions_converter(musts_conditions, payload_provider, full_path);
+            let nested_checkers = nested_conditions_converter(
+                musts_conditions,
+                payload_provider,
+                field_indexes,
+                full_path,
+            );
             let matches = find_indices_matching_all_conditions(point_id, &nested_checkers);
             Some(matches)
         }
@@ -181,6 +201,7 @@ fn check_nested_must(
 fn check_nested_must_not(
     point_id: PointOffsetType,
     nested: &NestedContainer,
+    field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
     nested_path: JsonPathPayload,
 ) -> Option<BitVec> {
@@ -188,8 +209,12 @@ fn check_nested_must_not(
         None => None,
         Some(musts_not_conditions) => {
             let full_path = nested_path.extend(&nested.array_key());
-            let matching_indices =
-                nested_conditions_converter(musts_not_conditions, payload_provider, full_path);
+            let matching_indices = nested_conditions_converter(
+                musts_not_conditions,
+                payload_provider,
+                field_indexes,
+                full_path,
+            );
             let matches = find_indices_matching_none_conditions(point_id, &matching_indices);
             Some(matches)
         }
@@ -199,6 +224,7 @@ fn check_nested_must_not(
 fn check_nested_should(
     point_id: PointOffsetType,
     nested: &NestedContainer,
+    field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
     nested_path: JsonPathPayload,
 ) -> Option<BitVec> {
@@ -206,8 +232,12 @@ fn check_nested_should(
         None => None,
         Some(musts_not_conditions) => {
             let full_path = nested_path.extend(&nested.array_key());
-            let matching_indices =
-                nested_conditions_converter(musts_not_conditions, payload_provider, full_path);
+            let matching_indices = nested_conditions_converter(
+                musts_not_conditions,
+                payload_provider,
+                field_indexes,
+                full_path,
+            );
             find_indices_matching_any_conditions(point_id, &matching_indices)
         }
     }

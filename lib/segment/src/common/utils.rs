@@ -4,6 +4,8 @@ use serde_json::Value;
 
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
+use crate::index::field_index::FieldIndex;
+use crate::types::PayloadKeyType;
 
 /// Avoids allocating Vec with a single element
 #[derive(Debug)]
@@ -625,3 +627,5 @@ mod tests {
         );
     }
 }
+
+pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;

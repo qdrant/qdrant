@@ -1,11 +1,10 @@
 use std::cmp::Reverse;
-use std::collections::HashMap;
 
 use itertools::Itertools;
 
-use crate::common::utils::JsonPathPayload;
+use crate::common::utils::{IndexesMap, JsonPathPayload};
 use crate::id_tracker::IdTrackerSS;
-use crate::index::field_index::{CardinalityEstimation, FieldIndex};
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::{
     combine_must_estimations, combine_should_estimations, invert_estimation,
 };
@@ -15,9 +14,7 @@ use crate::index::query_optimization::nested_filter::{
 };
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::types::{Condition, Filter, PayloadKeyType};
-
-pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
+use crate::types::{Condition, Filter};
 
 /// Converts user-provided filtering condition into optimized representation
 ///
@@ -130,7 +127,7 @@ where
 {
     if let Some(nested_path) = nested_path {
         let nested_checker_fns =
-            nested_conditions_converter(conditions, payload_provider, nested_path);
+            nested_conditions_converter(conditions, payload_provider, field_indexes, nested_path);
         let estimations: Vec<_> = conditions.iter().map(estimator).collect();
         let merged = merge_nested_matching_indices(nested_checker_fns, nested_negate);
         // TODO is this correct?
