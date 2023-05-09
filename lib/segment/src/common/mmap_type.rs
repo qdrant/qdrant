@@ -175,7 +175,7 @@ where
     /// See [`MmapMut::lock`] for details.
     #[cfg(unix)]
     pub fn mlock(&mut self) -> io::Result<()> {
-        let mut mmap_guard = self.mmap.lock().unwrap();
+        let mmap_guard = self.mmap.lock().unwrap();
         mmap_guard.lock()
     }
 
