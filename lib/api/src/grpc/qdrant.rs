@@ -2830,6 +2830,7 @@ pub struct SearchPointGroups {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
+    /// Search request
     #[prost(message, optional, tag = "2")]
     pub search: ::core::option::Option<SearchPoints>,
     /// Name of the field to group by
@@ -2950,6 +2951,7 @@ pub struct RecommendPointGroups {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
+    /// Recommend request
     #[prost(message, optional, tag = "2")]
     pub recommend: ::core::option::Option<RecommendPoints>,
     /// Name of the field to group by

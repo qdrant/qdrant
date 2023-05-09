@@ -231,7 +231,7 @@ message SearchBatchPoints {
 
 message SearchPointGroups {
   string collection_name = 1; // Name of the collection
-  SearchPoints search = 2;
+  SearchPoints search = 2; // Search request
   string group_by = 3; // Name of the field to group by
   uint32 top = 4; // Number of points per group to return
   optional uint32 groups = 5; // Number of groups to return, will use the limit in the search request if not specified
@@ -279,7 +279,7 @@ message RecommendBatchPoints {
 
 message RecommendPointGroups {
   string collection_name = 1; // Name of the collection
-  RecommendPoints recommend = 2;
+  RecommendPoints recommend = 2; // Recommend request
   string group_by = 3; // Name of the field to group by
   uint32 top = 4; // Number of points per group to return
   optional uint32 groups = 5; // Number of groups to return, will use the limit in the search request if not specified
