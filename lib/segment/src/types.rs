@@ -527,6 +527,13 @@ pub struct VectorDataConfig {
     /// Vector specific quantization config that overrides collection config
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
+    /// If true - vectors will not be stored in memory.
+    /// Instead, it will store vectors on mmap-files.
+    /// If enabled, search performance will defined by disk speed
+    /// and fraction of vectors that fit in RAM.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_disk: Option<bool>,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>

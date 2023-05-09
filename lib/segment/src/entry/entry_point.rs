@@ -10,6 +10,7 @@ use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
 use crate::common::file_operations::FileStorageError;
+use crate::common::mmap_type::Error as MmapError;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::index::field_index::CardinalityEstimation;
@@ -101,6 +102,12 @@ impl From<ThreadPoolBuildError> for OperationError {
 
 impl From<FileStorageError> for OperationError {
     fn from(err: FileStorageError) -> Self {
+        Self::service_error(err.to_string())
+    }
+}
+
+impl From<MmapError> for OperationError {
+    fn from(err: MmapError) -> Self {
         Self::service_error(err.to_string())
     }
 }

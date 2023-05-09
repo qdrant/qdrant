@@ -187,6 +187,7 @@ impl CollectionParams {
                             .as_ref()
                             .or(collection_quantization)
                             .cloned(),
+                        on_disk: params.on_disk,
                     },
                 )
             })

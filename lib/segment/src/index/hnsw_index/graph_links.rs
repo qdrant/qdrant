@@ -6,23 +6,12 @@ use std::path::{Path, PathBuf};
 
 use memmap2::{Mmap, MmapMut};
 
+use crate::common::mmap_ops;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::madvise;
 use crate::types::PointOffsetType;
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
-
-fn transmute_from_u8<T>(data: &[u8]) -> &[T] {
-    let len = data.len() / size_of::<T>();
-    let ptr = data.as_ptr() as *const T;
-    unsafe { std::slice::from_raw_parts(ptr, len) }
-}
-
-fn transmute_from_u8_mut<T>(data: &mut [u8]) -> &mut [T] {
-    let len = data.len() / size_of::<T>();
-    let ptr = data.as_mut_ptr() as *mut T;
-    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
-}
 
 /*
 Links data for whole graph layers.
@@ -70,25 +59,25 @@ fn get_reindex_slice<'a>(
 ) -> &'a [PointOffsetType] {
     let reindex_range = header.get_reindex_range();
     let reindex_byte_slice = &data[reindex_range];
-    transmute_from_u8(reindex_byte_slice)
+    mmap_ops::transmute_from_u8_to_slice(reindex_byte_slice)
 }
 
 fn get_links_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [PointOffsetType] {
     let links_range = header.get_links_range();
     let links_byte_slice = &data[links_range];
-    transmute_from_u8(links_byte_slice)
+    mmap_ops::transmute_from_u8_to_slice(links_byte_slice)
 }
 
 fn get_offsets_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [u64] {
     let offsets_range = header.get_offsets_range();
     let offsets_byte_slice = &data[offsets_range];
-    transmute_from_u8(offsets_byte_slice)
+    mmap_ops::transmute_from_u8_to_slice(offsets_byte_slice)
 }
 
 fn get_level_offsets<'a>(data: &'a [u8], header: &GraphLinksFileHeader) -> &'a [u64] {
     let level_offsets_range = header.get_level_offsets_range();
     let level_offsets_byte_slice = &data[level_offsets_range];
-    transmute_from_u8(level_offsets_byte_slice)
+    mmap_ops::transmute_from_u8_to_slice(level_offsets_byte_slice)
 }
 
 impl GraphLinksFileHeader {
@@ -98,7 +87,7 @@ impl GraphLinksFileHeader {
 
     pub fn serialize_bytes_to(&self, raw_data: &mut [u8]) {
         let byte_slice = &mut raw_data[0..Self::raw_size()];
-        let arr: &mut [u64] = transmute_from_u8_mut(byte_slice);
+        let arr: &mut [u64] = mmap_ops::transmute_from_u8_to_mut_slice(byte_slice);
         arr[0] = self.point_count;
         arr[1] = self.levels_count;
         arr[2] = self.total_links_len;
@@ -107,7 +96,7 @@ impl GraphLinksFileHeader {
 
     pub fn deserialize_bytes_from(raw_data: &[u8]) -> GraphLinksFileHeader {
         let byte_slice = &raw_data[0..Self::raw_size()];
-        let arr: &[u64] = transmute_from_u8(byte_slice);
+        let arr: &[u64] = mmap_ops::transmute_from_u8_to_slice(byte_slice);
         GraphLinksFileHeader {
             point_count: arr[0],
             levels_count: arr[1],
@@ -228,7 +217,8 @@ impl GraphLinksConverter {
         {
             let reindex_range = header.get_reindex_range();
             let reindex_byte_slice = &mut bytes_data[reindex_range];
-            let reindex_slice: &mut [PointOffsetType] = transmute_from_u8_mut(reindex_byte_slice);
+            let reindex_slice: &mut [PointOffsetType] =
+                mmap_ops::transmute_from_u8_to_mut_slice(reindex_byte_slice);
             reindex_slice.copy_from_slice(&self.reindex);
         }
 
@@ -240,8 +230,9 @@ impl GraphLinksConverter {
             let (links_mmap, offsets_mmap) = bytes_data[union_range]
                 .as_mut()
                 .split_at_mut(links_range.len());
-            let links_mmap: &mut [PointOffsetType] = transmute_from_u8_mut(links_mmap);
-            let offsets_mmap: &mut [u64] = transmute_from_u8_mut(offsets_mmap);
+            let links_mmap: &mut [PointOffsetType] =
+                mmap_ops::transmute_from_u8_to_mut_slice(links_mmap);
+            let offsets_mmap: &mut [u64] = mmap_ops::transmute_from_u8_to_mut_slice(offsets_mmap);
             offsets_mmap[0] = 0;
 
             let mut links_pos = 0;
@@ -261,7 +252,8 @@ impl GraphLinksConverter {
         {
             let level_offsets_range = header.get_level_offsets_range();
             let level_offsets_byte_slice = &mut bytes_data[level_offsets_range];
-            let level_offsets_slice: &mut [u64] = transmute_from_u8_mut(level_offsets_byte_slice);
+            let level_offsets_slice: &mut [u64] =
+                mmap_ops::transmute_from_u8_to_mut_slice(level_offsets_byte_slice);
             level_offsets_slice.copy_from_slice(&level_offsets);
         }
     }

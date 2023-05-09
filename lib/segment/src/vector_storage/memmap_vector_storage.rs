@@ -1,6 +1,5 @@
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{self, Write};
-use std::mem;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -11,7 +10,7 @@ use bitvec::prelude::BitSlice;
 
 use super::quantized::quantized_vectors_base::QuantizedVectorsStorage;
 use super::VectorStorageEnum;
-use crate::common::Flusher;
+use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
@@ -19,8 +18,8 @@ use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::VectorStorage;
 
-pub const VECTORS_PATH: &str = "matrix.dat";
-pub const DELETED_PATH: &str = "deleted.dat";
+const VECTORS_PATH: &str = "matrix.dat";
+const DELETED_PATH: &str = "deleted.dat";
 
 /// Stores all vectors in mem-mapped file
 ///
@@ -98,7 +97,7 @@ impl VectorStorage for MemmapVectorStorage {
         for id in other_ids {
             check_process_stopped(stopped)?;
             let vector = other.get_vector(id);
-            let raw_bites = vf_to_u8(vector);
+            let raw_bites = mmap_ops::transmute_to_u8_slice(vector);
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 
@@ -193,10 +192,6 @@ fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
         .open(path)
 }
 
-fn vf_to_u8<T>(v: &[T]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, mem::size_of_val(v)) }
-}
-
 #[cfg(test)]
 mod tests {
     use std::mem::transmute;
@@ -204,6 +199,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::mmap_ops::transmute_to_u8_slice;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
@@ -544,7 +540,7 @@ mod tests {
     fn test_casts() {
         let data: Vec<VectorElementType> = vec![0.42, 0.069, 333.1, 100500.];
 
-        let raw_data = vf_to_u8(&data);
+        let raw_data = transmute_to_u8_slice(&data);
 
         eprintln!("raw_data.len() = {:#?}", raw_data.len());
 
