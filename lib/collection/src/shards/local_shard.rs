@@ -392,18 +392,30 @@ impl LocalShard {
 
         bar.set_message(format!("Recovering collection {collection_id}"));
 
+        // To optimize loading we want to start reading (and applying) WAL from the last operation
+        // persisted by the storage.
+        //
+        // Each `Segment` is versioned individually, so there's no *single* storage version.
+        // We can guarantee that the *minimal* (i.e., "oldest") persisted version among *all*
+        // `Segment`s has been successfully applied to *all* of them.
+        //
+        // There's no public interface to access `Segment::persisted_version`, but
+        // `LocalShard::load` loads segments state from disk and then calls
+        // `LocalShard::load_from_wal`. So, as each `Segment` was *just* loaded from disk
+        // and was not modified in any way yet, `Segment::version` (returned by
+        // `<Segment as SegmentEntry>::version`) and `Segment::persisted_version` are the same.
+
         let segments = self.segments();
 
-        // TODO: Should we use *most* or *least* recent version here? 🤔
-        let mut most_recent_version = Default::default();
-
-        for (_, segment) in segments.read().iter() {
-            most_recent_version = segment.get().read().version().max(most_recent_version);
-        }
+        let minimal_persisted_version = segments
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.get().read().version())
+            .min();
 
         for (op_num, update) in wal
             .read_all()
-            .skip_while(|(op_num, _)| *op_num <= most_recent_version)
+            .skip_while(|&(op_num, _)| Some(op_num) <= minimal_persisted_version)
         {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update) {
