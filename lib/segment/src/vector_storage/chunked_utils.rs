@@ -1,41 +1,16 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use memmap2::MmapMut;
-
 use super::mmap_type::MmapSlice;
 use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
-pub struct MmapChunk {
-    /// Memory mapped file for chunk data.
-    data: MmapSlice<VectorElementType>,
-}
-
-impl MmapChunk {
-    pub unsafe fn new(mmap: MmapMut) -> Self {
-        Self {
-            data: MmapSlice::from(mmap),
-        }
-    }
-
-    pub fn data(&self) -> &[VectorElementType] {
-        &self.data
-    }
-
-    pub fn data_mut(&mut self) -> &mut [VectorElementType] {
-        &mut self.data
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        self.data.flusher()
-    }
-}
+/// Memory mapped chunk data.
+pub type MmapChunk = MmapSlice<VectorElementType>;
 
 /// Checks if the file name matches the pattern for mmap chunks
 /// Return ID from the file name if it matches, None otherwise
@@ -73,7 +48,7 @@ pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
             ))
         })?;
         let mmap = open_write_mmap(&mmap_file)?;
-        let chunk = unsafe { MmapChunk::new(mmap) };
+        let chunk = unsafe { MmapChunk::from(mmap) };
         result.push(chunk);
     }
     Ok(result)
@@ -93,6 +68,6 @@ pub fn create_chunk(
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mmap = open_write_mmap(&chunk_file_path)?;
-    let chunk = unsafe { MmapChunk::new(mmap) };
+    let chunk = unsafe { MmapChunk::from(mmap) };
     Ok(chunk)
 }

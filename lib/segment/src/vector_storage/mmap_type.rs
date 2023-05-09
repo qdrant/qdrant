@@ -50,9 +50,9 @@ where
     /// - panics when the size of the mmap doesn't match size `T`
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_type_unbounded`]
-    pub unsafe fn from(mut mmap: MmapMut) -> Self {
-        let r#type = unsafe { mmap_to_type_unbounded(&mut mmap) };
-        let mmap = Arc::new(Mutex::new(mmap));
+    pub unsafe fn from(mut mmap_with_type: MmapMut) -> Self {
+        let r#type = unsafe { mmap_to_type_unbounded(&mut mmap_with_type) };
+        let mmap = Arc::new(Mutex::new(mmap_with_type));
         Self { r#type, mmap }
     }
 }
@@ -72,9 +72,9 @@ where
     /// - panics when the size of the mmap isn't a multiple of size `T`
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
-    pub unsafe fn slice_from(mut mmap: MmapMut) -> Self {
-        let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap, 0) };
-        let mmap = Arc::new(Mutex::new(mmap));
+    pub unsafe fn slice_from(mut mmap_with_slice: MmapMut) -> Self {
+        let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap_with_slice, 0) };
+        let mmap = Arc::new(Mutex::new(mmap_with_slice));
         Self { r#type, mmap }
     }
 }
@@ -154,9 +154,9 @@ impl<T> MmapSlice<T> {
     /// - panics when the size of the mmap isn't a multiple of size `T`
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
-    pub unsafe fn from(mmap: MmapMut) -> Self {
+    pub unsafe fn from(mmap_with_slice: MmapMut) -> Self {
         Self {
-            mmap: MmapType::slice_from(mmap),
+            mmap: MmapType::slice_from(mmap_with_slice),
         }
     }
 }
