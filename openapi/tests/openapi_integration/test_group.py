@@ -35,7 +35,7 @@ def setup():
 
 def test_search():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/group',
+        api='/collections/{collection_name}/points/search/groups',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
@@ -60,7 +60,7 @@ def test_search():
             
 def test_recommend():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend/group',
+        api='/collections/{collection_name}/points/recommend/groups',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
@@ -86,7 +86,7 @@ def test_recommend():
             
 def test_groups_overrides_limit():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/group',
+        api='/collections/{collection_name}/points/search/groups',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
@@ -109,7 +109,7 @@ def test_groups_overrides_limit():
 
 def test_with_vectors():
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/group',
+        api='/collections/{collection_name}/points/search/groups',
         method="POST",
         path_params={'collection_name': collection_name},
         body={

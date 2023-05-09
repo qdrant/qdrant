@@ -73,7 +73,7 @@ async fn recommend_batch_points(
     process_response(response, timing)
 }
 
-#[post("/collections/{name}/points/recommend/group")]
+#[post("/collections/{name}/points/recommend/groups")]
 async fn grouped_recommend_points(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,

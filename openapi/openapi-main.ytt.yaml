@@ -326,11 +326,11 @@ paths:
             $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(array(reference("ScoredPoint"))))
 
-  /collections/{collection_name}/points/search/group:
+  /collections/{collection_name}/points/search/groups:
     post:
       tags:
         - points
-      summary: Grouped search points
+      summary: Search grouped points
       description: Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field
       operationId: grouped_search_points
       requestBody:
@@ -338,7 +338,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/GroupedSearchRequest"
+              $ref: "#/components/schemas/SearchGroupsRequest"
 
       parameters:
         - name: collection_name
@@ -353,7 +353,7 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
-      responses: #@ response(array(reference("Group")))
+      responses: #@ response(array(reference("PointGroup")))
 
   /collections/{collection_name}/points/recommend:
     post:
@@ -413,11 +413,11 @@ paths:
             $ref: "#/components/schemas/ReadConsistency"
       responses: #@ response(array(array(reference("ScoredPoint"))))
 
-  /collections/{collection_name}/points/recommend/group:
+  /collections/{collection_name}/points/recommend/groups:
     post:
       tags:
         - points
-      summary: Grouped recommend points
+      summary: Recommend grouped points
       description: Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.
       operationId: grouped_recommend_points
       requestBody:
@@ -425,7 +425,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/GroupedRecommendRequest"
+              $ref: "#/components/schemas/RecommendGroupsRequest"
 
       parameters:
         - name: collection_name
@@ -440,7 +440,7 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
-      responses: #@ response(array(reference("Group")))
+      responses: #@ response(array(reference("PointGroup")))
 
   /collections/{collection_name}/points/count:
     post:

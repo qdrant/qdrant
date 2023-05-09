@@ -3265,12 +3265,12 @@
         }
       }
     },
-    "/collections/{collection_name}/points/search/group": {
+    "/collections/{collection_name}/points/search/groups": {
       "post": {
         "tags": [
           "points"
         ],
-        "summary": "Grouped search points",
+        "summary": "Search grouped points",
         "description": "Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field",
         "operationId": "grouped_search_points",
         "requestBody": {
@@ -3278,7 +3278,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GroupedSearchRequest"
+                "$ref": "#/components/schemas/SearchGroupsRequest"
               }
             }
           }
@@ -3345,7 +3345,7 @@
                     "result": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Group"
+                        "$ref": "#/components/schemas/PointGroup"
                       }
                     }
                   }
@@ -3541,12 +3541,12 @@
         }
       }
     },
-    "/collections/{collection_name}/points/recommend/group": {
+    "/collections/{collection_name}/points/recommend/groups": {
       "post": {
         "tags": [
           "points"
         ],
-        "summary": "Grouped recommend points",
+        "summary": "Recommend grouped points",
         "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.",
         "operationId": "grouped_recommend_points",
         "requestBody": {
@@ -3554,7 +3554,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GroupedRecommendRequest"
+                "$ref": "#/components/schemas/RecommendGroupsRequest"
               }
             }
           }
@@ -3621,7 +3621,7 @@
                     "result": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Group"
+                        "$ref": "#/components/schemas/PointGroup"
                       }
                     }
                   }
@@ -7493,7 +7493,7 @@
           "all"
         ]
       },
-      "Group": {
+      "PointGroup": {
         "type": "object",
         "required": [
           "group_id",
@@ -7501,18 +7501,20 @@
         ],
         "properties": {
           "hits": {
+            "description": "Scored points that have the same group_id",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ScoredPoint"
             }
           },
           "group_id": {
+            "description": "Key shared by all the hits",
             "type": "object",
             "additionalProperties": true
           }
         }
       },
-      "GroupedSearchRequest": {
+      "SearchGroupsRequest": {
         "type": "object",
         "required": [
           "group_by",
@@ -7530,20 +7532,20 @@
           "top": {
             "description": "Limit of points to return per group",
             "type": "integer",
-            "format": "uint",
+            "format": "uint32",
             "minimum": 1
           },
           "groups": {
             "description": "Optional. Limit of groups to return. Will use the limit in the search request if not set",
             "default": null,
             "type": "integer",
-            "format": "uint",
+            "format": "uint32",
             "minimum": 1,
             "nullable": true
           }
         }
       },
-      "GroupedRecommendRequest": {
+      "RecommendGroupsRequest": {
         "type": "object",
         "required": [
           "group_by",
@@ -7561,14 +7563,14 @@
           "top": {
             "description": "Limit of points to return per group",
             "type": "integer",
-            "format": "uint",
+            "format": "uint32",
             "minimum": 1
           },
           "groups": {
             "description": "Optional. Limit of groups to return, will use the limit in the recommend request if not set",
             "default": null,
             "type": "integer",
-            "format": "uint",
+            "format": "uint32",
             "minimum": 1,
             "nullable": true
           }

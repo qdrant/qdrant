@@ -51,7 +51,7 @@ async fn batch_search_points(
     process_response(response, timing)
 }
 
-#[post("/collections/{name}/points/search/group")]
+#[post("/collections/{name}/points/search/groups")]
 async fn grouped_search_points(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
