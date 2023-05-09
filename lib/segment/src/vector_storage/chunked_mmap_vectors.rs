@@ -18,9 +18,8 @@ use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps,
 
 #[cfg(debug_assertions)]
 const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
-
 #[cfg(not(debug_assertions))]
-const DEFAULT_CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128Mb
+const DEFAULT_CHUNK_SIZE: usize = 32 * 1024 * 1024; // 32Mb
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
