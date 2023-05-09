@@ -297,11 +297,11 @@ mod tests {
         {
             let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
             dynamic_flags.set_len(num_flags).unwrap();
-            for (i, flag) in random_flags.iter().enumerate() {
-                if *flag {
-                    assert!(!dynamic_flags.set(i, true));
-                }
-            }
+            random_flags
+                .iter()
+                .enumerate()
+                .filter(|(_, flag)| **flag)
+                .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true)));
             // File swapping happens every 1024 (MINIMAL_MMAP_SIZE) flags
             // < 1024 -> A
             // < 2048 -> B
@@ -315,11 +315,11 @@ mod tests {
             );
 
             dynamic_flags.set_len(num_flags * 2).unwrap();
-            for (i, flag) in random_flags.iter().enumerate() {
-                if !flag {
-                    assert!(!dynamic_flags.set(num_flags + i, true));
-                }
-            }
+            random_flags
+                .iter()
+                .enumerate()
+                .filter(|(_, flag)| !*flag)
+                .for_each(|(i, _)| assert!(!dynamic_flags.set(num_flags + i, true)));
 
             let expected_current_file_id = FileId::A;
             assert_eq!(
