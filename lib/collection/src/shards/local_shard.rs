@@ -391,9 +391,20 @@ impl LocalShard {
         bar.set_style(progress_style);
 
         bar.set_message(format!("Recovering collection {collection_id}"));
+
         let segments = self.segments();
-        // ToDo: Start from minimal applied version
-        for (op_num, update) in wal.read_all() {
+
+        // TODO: Should we use *most* or *least* recent version here? 🤔
+        let mut most_recent_version = Default::default();
+
+        for (_, segment) in segments.read().iter() {
+            most_recent_version = segment.get().read().version().max(most_recent_version);
+        }
+
+        for (op_num, update) in wal
+            .read_all()
+            .skip_while(|(op_num, _)| *op_num <= most_recent_version)
+        {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
