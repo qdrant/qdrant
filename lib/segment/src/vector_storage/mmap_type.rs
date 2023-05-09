@@ -412,7 +412,7 @@ mod tests {
 
         let template: Vec<T> = iter::repeat_with(rng).take(len).collect();
 
-        // Write random values from template into mmap, then close
+        // Write random values from template into mmap
         {
             let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
             let mut mmap_slice: MmapSlice<T> = unsafe { MmapSlice::from(mmap) };
@@ -420,11 +420,38 @@ mod tests {
             mmap_slice.copy_from_slice(&template);
         }
 
-        // Reopen mmap, match random values from template
+        // Reopen and assert values from template
         {
             let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
             let mmap_slice: MmapSlice<T> = unsafe { MmapSlice::from(mmap) };
             assert_eq!(mmap_slice.as_ref(), template);
+        }
+    }
+
+    #[test]
+    fn test_bitslice() {
+        check_bitslice_with_header(512, 0);
+        check_bitslice_with_header(512, 256);
+    }
+
+    fn check_bitslice_with_header(bits: usize, header_size: usize) {
+        let bytes = (mem::size_of::<usize>() * bits / 8) + header_size;
+        let tempfile = create_temp_mmap_file(bytes);
+
+        // Fill bitslice
+        {
+            let mut rng = StdRng::seed_from_u64(42);
+            let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
+            let mut mmap_bitslice = MmapBitSlice::from(mmap, header_size);
+            (0..bits).for_each(|i| mmap_bitslice.set(i, rng.gen()));
+        }
+
+        // Reopen and assert contents
+        {
+            let mut rng = StdRng::seed_from_u64(42);
+            let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
+            let mmap_bitslice = MmapBitSlice::from(mmap, header_size);
+            (0..bits).for_each(|i| assert_eq!(mmap_bitslice[i], rng.gen::<bool>()));
         }
     }
 }
