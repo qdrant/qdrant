@@ -173,6 +173,8 @@ jobs:
             type=gha,scope=${{ github.base_ref }}
           cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
+          build-args: |
+            RUST_BUILD_PROFILE=ci
       - name: Run low RAM test
         working-directory: ./tests/low-ram
         shell: bash
