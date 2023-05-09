@@ -46,11 +46,18 @@ where
 {
     /// Type accessor: mutable reference to access the type
     ///
-    /// This has the same lifetime as the backing [`mmap`], and thus this struct. A borrow must
+    /// This has the same lifetime as the backing `mmap`, and thus this struct. A borrow must
     /// never be leased out for longer.
     ///
     /// Since we own this reference inside this struct, we can guarantee we never lease it out for
     /// longer.
+    ///
+    /// # Safety
+    ///
+    /// This is an alias to the data inside `mmap`. We should prevent using both together at all
+    /// costs because the Rust compiler assumes `noalias` for optimization.
+    ///
+    /// See: <https://doc.rust-lang.org/nomicon/aliasing.html>
     r#type: &'static mut T,
     /// Type storage: memory mapped file as backing store for type
     ///
