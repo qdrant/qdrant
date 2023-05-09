@@ -26,6 +26,7 @@ fn create_collection_config() -> CollectionConfig {
             distance: Distance::Dot,
             hnsw_config: None,
             quantization_config: None,
+            on_disk: None,
         }),
         shard_number: NonZeroU32::new(1).unwrap(),
         replication_factor: NonZeroU32::new(1).unwrap(),

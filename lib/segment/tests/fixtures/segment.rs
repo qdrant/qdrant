@@ -119,6 +119,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         distance: Distance::Dot,
                         hnsw_config: None,
                         quantization_config: None,
+                        on_disk: None,
                     },
                 ),
                 (
@@ -128,6 +129,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         distance: Distance::Dot,
                         hnsw_config: None,
                         quantization_config: None,
+                        on_disk: None,
                     },
                 ),
                 (
@@ -137,6 +139,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         distance: Distance::Euclid,
                         hnsw_config: None,
                         quantization_config: None,
+                        on_disk: None,
                     },
                 ),
             ]),

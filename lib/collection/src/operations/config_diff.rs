@@ -259,6 +259,7 @@ mod tests {
                 distance: Distance::Cosine,
                 hnsw_config: None,
                 quantization_config: None,
+                on_disk: None,
             }
             .into(),
             shard_number: NonZeroU32::new(1).unwrap(),

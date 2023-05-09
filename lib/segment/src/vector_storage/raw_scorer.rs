@@ -55,6 +55,9 @@ pub fn new_raw_scorer<'a>(
     match vector_storage {
         VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted),
         VectorStorageEnum::Memmap(vs) => raw_scorer_impl(vector, vs.as_ref(), point_deleted),
+        VectorStorageEnum::AppendableMemmap(vs) => {
+            raw_scorer_impl(vector, vs.as_ref(), point_deleted)
+        }
     }
 }
 

@@ -28,6 +28,7 @@ use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
     StorageType, VectorDataConfig,
 };
+use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorage;
@@ -93,13 +94,21 @@ fn create_segment(
 
         let vector_storage = match config.storage_type {
             StorageType::InMemory => {
-                let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-                open_simple_vector_storage(
-                    database.clone(),
-                    &db_column_name,
-                    vector_config.size,
-                    vector_config.distance,
-                )?
+                if vector_config.on_disk.unwrap_or(false) {
+                    open_appendable_memmap_vector_storage(
+                        &vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    )?
+                } else {
+                    let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+                    open_simple_vector_storage(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                    )?
+                }
             }
             StorageType::Mmap => open_memmap_vector_storage(
                 &vector_storage_path,
@@ -289,6 +298,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 distance: state.config.distance,
                 hnsw_config: None,
                 quantization_config: None,
+                on_disk: None,
             };
             SegmentState {
                 version: Some(state.version),

@@ -303,6 +303,7 @@ mod tests {
                         distance: params.distance,
                         hnsw_config: None,
                         quantization_config: None,
+                        on_disk: None,
                     },
                 )
             })
@@ -420,6 +421,7 @@ mod tests {
                     distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                     hnsw_config: None,
                     quantization_config: None,
+                    on_disk: None,
                 }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 replication_factor: NonZeroU32::new(1).unwrap(),

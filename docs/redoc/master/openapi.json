@@ -4043,6 +4043,11 @@
                 "nullable": true
               }
             ]
+          },
+          "on_disk": {
+            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency Default: false",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -6794,6 +6799,11 @@
                 "nullable": true
               }
             ]
+          },
+          "on_disk": {
+            "description": "If true - vectors will not be stored in memory. Instead, it will store vectors on mmap-files. If enabled, search performance will defined by disk speed and fraction of vectors that fit in RAM.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },

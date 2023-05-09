@@ -1,5 +1,6 @@
 //! Contains a collection of functions that are called at the start of the program.
 
+use std::backtrace::Backtrace;
 use std::panic;
 
 use log::LevelFilter;
@@ -34,6 +35,7 @@ pub fn setup_logger(log_level: &str) {
 
 pub fn setup_panic_hook(reporting_enabled: bool, reporting_id: String) {
     panic::set_hook(Box::new(move |panic_info| {
+        let backtrace = Backtrace::force_capture().to_string();
         let loc = if let Some(loc) = panic_info.location() {
             format!(" in file {} at line {}", loc.file(), loc.line())
         } else {
@@ -46,6 +48,8 @@ pub fn setup_panic_hook(reporting_enabled: bool, reporting_id: String) {
         } else {
             "Payload not captured as it is not a string."
         };
+
+        log::error!("Panic backtrace: \n{}", backtrace);
         log::error!("Panic occurred{loc}: {message}");
 
         if reporting_enabled {
