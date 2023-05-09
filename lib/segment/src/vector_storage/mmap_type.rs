@@ -31,6 +31,9 @@ use memmap2::MmapMut;
 
 use crate::common::Flusher;
 
+/// Result for mmap errors.
+type Result<T> = std::result::Result<T, Error>;
+
 /// Type `T` on a memory mapped file
 ///
 /// Functions as if it is `T` because this implements [`Deref`] and [`DerefMut`].
@@ -87,10 +90,27 @@ where
     /// - panics when the size of the mmap doesn't match size `T`
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_type_unbounded`]
-    pub unsafe fn from(mut mmap_with_type: MmapMut) -> Self {
-        let r#type = unsafe { mmap_to_type_unbounded(&mut mmap_with_type) };
+    pub unsafe fn from(mmap_with_type: MmapMut) -> Self {
+        Self::try_from(mmap_with_type).unwrap()
+    }
+
+    /// Transform a mmap into a typed mmap of type `T`.
+    ///
+    /// Returns an error when the mmap has an incorrect size.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because malformed data in the mmap may break type `T` resulting in undefined
+    /// behavior.
+    ///
+    /// # Panics
+    ///
+    /// - panics when the mmap data is not correctly aligned for type `T`
+    /// - See: [`mmap_to_type_unbounded`]
+    pub unsafe fn try_from(mut mmap_with_type: MmapMut) -> Result<Self> {
+        let r#type = unsafe { mmap_to_type_unbounded(&mut mmap_with_type) }?;
         let mmap = Arc::new(Mutex::new(mmap_with_type));
-        Self { r#type, mmap }
+        Ok(Self { r#type, mmap })
     }
 }
 
@@ -116,10 +136,33 @@ where
     /// - panics when the size of the mmap isn't a multiple of size `T`
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
-    pub unsafe fn slice_from(mut mmap_with_slice: MmapMut) -> Self {
-        let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap_with_slice, 0) };
+    pub unsafe fn slice_from(mmap_with_slice: MmapMut) -> Self {
+        Self::try_slice_from(mmap_with_slice).unwrap()
+    }
+
+    /// Transform a mmap into a typed slice mmap of type `&[T]`.
+    ///
+    /// Returns an error when the mmap has an incorrect size.
+    ///
+    /// # Warning
+    ///
+    /// This does not support slices, because those cannot be transmuted directly because it has
+    /// extra parts. See [`MmapSlice`], [`MmapType::slice_from`] and
+    /// [`std::slice::from_raw_parts`].
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because malformed data in the mmap may break type `T` resulting in undefined
+    /// behavior.
+    ///
+    /// # Panics
+    ///
+    /// - panics when the mmap data is not correctly aligned for type `T`
+    /// - See: [`mmap_to_slice_unbounded`]
+    pub unsafe fn try_slice_from(mut mmap_with_slice: MmapMut) -> Result<Self> {
+        let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap_with_slice, 0) }?;
         let mmap = Arc::new(Mutex::new(mmap_with_slice));
-        Self { r#type, mmap }
+        Ok(Self { r#type, mmap })
     }
 }
 
@@ -242,17 +285,32 @@ impl MmapBitSlice {
     /// - panics when the mmap data is not correctly aligned to the inner [`BitSlice`] type
     /// - panics when the header size isn't a multiple of the inner [`BitSlice`] type
     /// - See: [`mmap_to_slice_unbounded`]
-    pub fn from(mut mmap: MmapMut, header_size: usize) -> Self {
-        let data = unsafe { mmap_to_slice_unbounded(&mut mmap, header_size) };
+    pub fn from(mmap: MmapMut, header_size: usize) -> Self {
+        Self::try_from(mmap, header_size).unwrap()
+    }
+
+    /// Transform a mmap into a [`BitSlice`].
+    ///
+    /// Returns an error when the mmap has an incorrect size.
+    ///
+    /// A (non-zero) header size in bytes may be provided to omit from the BitSlice data.
+    ///
+    /// # Panics
+    ///
+    /// - panics when the mmap data is not correctly aligned to the inner [`BitSlice`] type
+    /// - panics when the header size isn't a multiple of the inner [`BitSlice`] type
+    /// - See: [`mmap_to_slice_unbounded`]
+    pub fn try_from(mut mmap: MmapMut, header_size: usize) -> Result<Self> {
+        let data = unsafe { mmap_to_slice_unbounded(&mut mmap, header_size) }?;
         let bitslice = BitSlice::from_slice_mut(data);
         let mmap = Arc::new(Mutex::new(mmap));
 
-        Self {
+        Ok(Self {
             mmap: MmapType {
                 r#type: bitslice,
                 mmap,
             },
-        }
+        })
     }
 
     /// Lock memory mapped pages in memory
@@ -283,6 +341,15 @@ impl DerefMut for MmapBitSlice {
     }
 }
 
+/// Typed mmap errors.
+#[derive(thiserror::Error, Clone, Debug)]
+pub enum Error {
+    #[error("Mmap length must be {0} to match the size of type, but it is {1}")]
+    SizeExact(usize, usize),
+    #[error("Mmap length must be multiple of {0} to match the size of type, but it is {1}")]
+    SizeMultiple(usize, usize),
+}
+
 /// Get a second mutable reference for type `T` from the given mmap
 ///
 /// # Warning
@@ -296,9 +363,8 @@ impl DerefMut for MmapBitSlice {
 ///
 /// # Panics
 ///
-/// - panics when the size of the mmap doesn't match size `T`
 /// - panics when the mmap data is not correctly aligned for type `T`
-unsafe fn mmap_to_type_unbounded<'unbnd, T>(mmap: &mut MmapMut) -> &'unbnd mut T
+unsafe fn mmap_to_type_unbounded<'unbnd, T>(mmap: &mut MmapMut) -> Result<&'unbnd mut T>
 where
     T: Sized,
 {
@@ -311,10 +377,12 @@ where
     // Assert alignment and size
     assert_alignment::<_, T>(bytes);
     debug_assert_eq!(mmap.len(), bytes.len());
-    assert_eq!(bytes.len(), mem::size_of::<T>());
+    if bytes.len() != mem::size_of::<T>() {
+        return Err(Error::SizeExact(mem::size_of::<T>(), bytes.len()));
+    }
 
     let ptr = bytes.as_ptr() as *mut T;
-    unsafe { &mut *ptr }
+    Ok(unsafe { &mut *ptr })
 }
 
 /// Get a second mutable reference for a slice of type `T` from the given mmap
@@ -333,13 +401,12 @@ where
 ///
 /// # Panics
 ///
-/// - panics when the size of the mmap isn't a multiple of size `T`
 /// - panics when the mmap data is not correctly aligned for type `T`
 /// - panics when the header size isn't a multiple of size `T`
 unsafe fn mmap_to_slice_unbounded<'unbnd, T>(
     mmap: &mut MmapMut,
     header_size: usize,
-) -> &'unbnd mut [T]
+) -> Result<&'unbnd mut [T]>
 where
     T: Sized,
 {
@@ -357,17 +424,20 @@ where
         0,
         "header not multiple of size T",
     );
-    assert_eq!(
-        bytes.len() % mem::size_of::<T>(),
-        0,
-        "bytes not multiple of size T",
-    );
+    if bytes.len() % mem::size_of::<T>() != 0 {
+        return Err(Error::SizeMultiple(mem::size_of::<T>(), bytes.len()));
+    }
 
     // Transmute slice types
-    slice::from_raw_parts_mut(bytes.as_ptr() as *mut T, bytes.len() / mem::size_of::<T>())
+    Ok(slice::from_raw_parts_mut(
+        bytes.as_ptr() as *mut T,
+        bytes.len() / mem::size_of::<T>(),
+    ))
 }
 
 /// Assert slice `&[S]` is correctly aligned for type `T`.
+///
+/// Does nothing on Windows.
 ///
 /// # Panics
 ///
