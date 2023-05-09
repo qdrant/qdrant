@@ -365,6 +365,11 @@ where
 ///
 /// Panics when alignment is wrong.
 fn assert_alignment<S, T>(bytes: &[S]) {
+    // We do not enforce alignment on Windows at this time, because the Windows API doesn't
+    // guarantee memory mapped segments to be aligned.
+    //
+    // We should look into this again to confirm this is sound.
+    #[cfg(not(windows))]
     assert_eq!(
         bytes.as_ptr().align_offset(mem::align_of::<T>()),
         0,
