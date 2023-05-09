@@ -33,7 +33,10 @@ impl Group {
 
 /// Abstraction over serde_json::Value to be used as a key in a HashMap/HashSet
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub(super) struct GroupKey(pub serde_json::Value);
+pub(super) enum GroupKey {
+    String(String),
+    Number(serde_json::Number),
+}
 
 impl TryFrom<serde_json::Value> for GroupKey {
     type Error = AggregatorError;
@@ -41,18 +44,27 @@ impl TryFrom<serde_json::Value> for GroupKey {
     /// Only allows Strings and Numbers to be converted into GroupKey
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
         match value {
-            serde_json::Value::String(_) | serde_json::Value::Number(_) => Ok(Self(value)),
+            serde_json::Value::String(s) => Ok(Self::String(s)),
+            serde_json::Value::Number(n) => Ok(Self::Number(n)),
             _ => Err(BadKeyType),
+        }
+    }
+}
+
+impl From<GroupKey> for serde_json::Value {
+    fn from(key: GroupKey) -> Self {
+        match key {
+            GroupKey::String(s) => serde_json::Value::String(s),
+            GroupKey::Number(n) => serde_json::Value::Number(n),
         }
     }
 }
 
 impl Hash for GroupKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match &self.0 {
-            Value::Number(n) => n.hash(state),
-            Value::String(s) => s.hash(state),
-            _ => unreachable!("GroupKey should only be a number or a string"),
+        match &self {
+            Self::Number(n) => n.hash(state),
+            Self::String(s) => s.hash(state),
         }
     }
 }

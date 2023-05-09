@@ -75,13 +75,13 @@ impl GroupsAggregator {
         self.groups
             .iter()
             .filter(|(_, hits)| hits.len() < self.max_group_size)
-            .map(|(key, _)| key.0.clone())
+            .map(|(key, _)| Value::from(key.clone()))
             .collect()
     }
 
     // gets the keys of the groups that have reached the max group size
     pub(super) fn keys_of_filled_groups(&self) -> Vec<Value> {
-        self.full_groups.iter().map(|k| k.0.clone()).collect()
+        self.full_groups.iter().cloned().map(Value::from).collect()
     }
 
     /// Gets the ids of the already present points across all the groups
@@ -106,8 +106,10 @@ impl GroupsAggregator {
                     .cloned()
                     .map(ScoredPoint::from)
                     .collect::<Vec<_>>();
+
                 let mut group_id = serde_json::Map::new();
-                group_id.insert(self.grouped_by.clone(), k.0.clone());
+                group_id.insert(self.grouped_by.clone(), k.clone().into());
+
                 Group { hits, group_id }
             })
             // TODO: what happens when the best groups are not the most filled ones?
@@ -131,7 +133,7 @@ mod unit_tests {
     /// Used for convenience
     impl From<&str> for GroupKey {
         fn from(s: &str) -> Self {
-            Self(serde_json::Value::String(s.to_string()))
+            Self::String(s.to_string())
         }
     }
 
@@ -312,7 +314,7 @@ mod unit_tests {
 
             assert_eq!(aggregator.len(), groups, "case {_case}");
 
-            let key = &GroupKey(key);
+            let key = &GroupKey::try_from(key).unwrap();
             if size > 0 {
                 assert_eq!(
                     aggregator.groups.get(key).unwrap().len(),
@@ -378,7 +380,7 @@ mod unit_tests {
                 .to_vec(),
             ),
             (
-                GroupKey(json!(3)),
+                GroupKey::try_from(json!(3)).unwrap(),
                 [
                     ScoredPoint {
                         id: 5.into(),
