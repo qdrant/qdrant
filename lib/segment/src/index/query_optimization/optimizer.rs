@@ -130,7 +130,7 @@ where
 {
     if let Some(nested_path) = nested_path {
         let nested_checker_fns =
-            nested_conditions_converter(conditions, field_indexes, payload_provider, nested_path);
+            nested_conditions_converter(conditions, payload_provider, nested_path);
         let estimations: Vec<_> = conditions.iter().map(estimator).collect();
         let merged = merge_nested_matching_indices(nested_checker_fns, nested_negate);
         // TODO is this correct?

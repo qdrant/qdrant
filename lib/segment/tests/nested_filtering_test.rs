@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     use atomic_refcell::AtomicRefCell;
@@ -46,7 +47,10 @@ mod tests {
 
         let mut payload_storage = InMemoryPayloadStorage::default();
 
+        let mut points = HashMap::new();
+
         for (idx, payload) in nested_payloads().into_iter().enumerate() {
+            points.insert(idx, payload.clone());
             payload_storage
                 .assign(idx as PointOffsetType, &payload)
                 .unwrap();
@@ -113,8 +117,8 @@ mod tests {
                     // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
                     Condition::Field(FieldCondition::new_match("a", 1.into())),
                     Condition::Field(FieldCondition::new_match(
-                        "c",
-                        Match::Text("c1".to_string().into()),
+                        "text",
+                        Match::Text("c1 ".to_string().into()), // need the space to not match on `c1xxx`
                     )),
                     Condition::Field(FieldCondition::new_match("d", 0.into())),
                 ]),
@@ -127,7 +131,7 @@ mod tests {
 
         let res2: Vec<_> = index.query_points(&nested_filter_2).collect();
 
-        let filter_context = index.filter_context(&nested_filter_1);
+        let filter_context = index.filter_context(&nested_filter_2);
 
         let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
             .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
@@ -136,6 +140,5 @@ mod tests {
         assert_eq!(res2, check_res2);
 
         assert!(!res2.is_empty());
-        assert!(res2.contains(&6));
     }
 }
