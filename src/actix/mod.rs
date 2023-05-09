@@ -2,10 +2,11 @@
 pub mod actix_telemetry;
 pub mod api;
 pub mod api_key;
-mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
@@ -15,9 +16,11 @@ use actix_multipart::form::MultipartFormConfig;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use collection::operations::validation;
+use rustls::server::AllowAnyAuthenticatedClient;
+use rustls::{Certificate, RootCertStore, ServerConfig};
+use rustls_pemfile::Item;
 use storage::dispatcher::Dispatcher;
 
-use self::certificate_helpers::build_ssl_acceptor;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
@@ -41,7 +44,7 @@ pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     settings: Settings,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::from(dispatcher.toc().clone());
         let dispatcher_data = web::Data::from(dispatcher);
@@ -104,13 +107,66 @@ pub fn init(
         let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
 
         server = if settings.service.enable_tls {
-            server.bind_openssl(bind_addr, build_ssl_acceptor(&settings)?)?
+            let config = ServerConfig::builder().with_safe_defaults();
+
+            let tls_config = settings
+                .tls
+                .ok_or_else(Settings::tls_config_is_undefined_error)?;
+
+            let config = if settings.service.verify_https_client_certificate {
+                // Verify client CA
+                let mut root_cert_store = RootCertStore::empty();
+                let ca_certs: Vec<Vec<u8>> =
+                    with_buf_read(&tls_config.ca_cert, rustls_pemfile::certs)?;
+                root_cert_store.add_parsable_certificates(&ca_certs[..]);
+                config.with_client_cert_verifier(AllowAnyAuthenticatedClient::new(root_cert_store))
+            } else {
+                // no verification
+                config.with_no_client_auth()
+            };
+            // Server side TLS configuration
+            let certs: Vec<Certificate> =
+                with_buf_read(&tls_config.cert, rustls_pemfile::read_all)?
+                    .into_iter()
+                    .filter_map(|item| {
+                        if let Item::X509Certificate(data) = item {
+                            Some(Certificate(data))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+            if certs.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "No server certificate found",
+                ));
+            }
+            let private_key_item = with_buf_read(&tls_config.key, rustls_pemfile::read_one)?
+                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No private key found"))?;
+            let (Item::RSAKey(pkey) | Item::PKCS8Key(pkey) | Item::ECKey(pkey)) = private_key_item else {
+                return Err(io::Error::new(io::ErrorKind::Other, "No private key found"))
+            };
+            let config = config
+                .with_single_cert(certs, rustls::PrivateKey(pkey))
+                .expect("Setting up TLS failed");
+            server.bind_rustls(bind_addr, config)?
         } else {
             server.bind(bind_addr)?
         };
 
         server.run().await
     })
+}
+
+fn with_buf_read<T>(
+    path: &str,
+    f: impl FnOnce(&mut dyn BufRead) -> io::Result<T>,
+) -> io::Result<T> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let dyn_reader: &mut dyn BufRead = &mut reader;
+    f(dyn_reader)
 }
 
 fn validation_error_handler(
