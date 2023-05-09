@@ -478,6 +478,7 @@ mod tests {
     fn test_bitslice() {
         check_bitslice_with_header(512, 0);
         check_bitslice_with_header(512, 256);
+        check_bitslice_with_header(11721 * 8, 256);
     }
 
     fn check_bitslice_with_header(bits: usize, header_size: usize) {
