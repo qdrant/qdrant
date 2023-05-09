@@ -167,7 +167,7 @@ impl MmapVectors {
     /// This is only supported on Unix.
     fn lock_deleted_flags(&mut self) {
         #[cfg(unix)]
-        if let Err(err) = self.deleted.lock() {
+        if let Err(err) = self.deleted.mlock() {
             log::error!(
                 "Failed to lock deleted flags for quantized mmap segment in memory: {}",
                 err,

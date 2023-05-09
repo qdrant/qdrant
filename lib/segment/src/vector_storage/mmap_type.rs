@@ -124,7 +124,7 @@ where
     ///
     /// See [`MmapMut::lock`] for details.
     #[cfg(unix)]
-    pub fn lock(&mut self) -> io::Result<()> {
+    pub fn mlock(&mut self) -> io::Result<()> {
         self.mmap.lock().unwrap().flush()
     }
 
@@ -251,8 +251,8 @@ impl MmapBitSlice {
     ///
     /// See [`MmapMut::lock`] for details.
     #[cfg(unix)]
-    pub fn lock(&mut self) -> io::Result<()> {
-        self.mmap.lock()
+    pub fn mlock(&mut self) -> io::Result<()> {
+        self.mmap.mlock()
     }
 
     /// Get flusher to explicitly flush mmap at a later time
