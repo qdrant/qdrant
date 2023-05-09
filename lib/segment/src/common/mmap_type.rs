@@ -23,7 +23,7 @@
 //! behavior. Problems caused by this are very hard to debug.
 
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::{io, mem, slice};
 
 use bitvec::slice::BitSlice;
@@ -69,9 +69,7 @@ where
     /// This should never be accessed directly, because it shares a mutable reference with
     /// `r#type`. That must be used instead. The sole purpose of this is to keep ownership of the
     /// mmap, and to allow properly cleaning up when this struct is dropped.
-    ///
-    /// Uses a mutex because mutable access is needed for locking pages in memory.
-    mmap: Arc<Mutex<MmapMut>>,
+    mmap: Arc<MmapMut>,
 }
 
 impl<T> MmapType<T>
@@ -109,7 +107,7 @@ where
     /// - See: [`mmap_to_type_unbounded`]
     pub unsafe fn try_from(mut mmap_with_type: MmapMut) -> Result<Self> {
         let r#type = mmap_to_type_unbounded(&mut mmap_with_type)?;
-        let mmap = Arc::new(Mutex::new(mmap_with_type));
+        let mmap = Arc::new(mmap_with_type);
         Ok(Self { r#type, mmap })
     }
 }
@@ -161,7 +159,7 @@ where
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn try_slice_from(mut mmap_with_slice: MmapMut) -> Result<Self> {
         let r#type = mmap_to_slice_unbounded(&mut mmap_with_slice, 0)?;
-        let mmap = Arc::new(Mutex::new(mmap_with_slice));
+        let mmap = Arc::new(mmap_with_slice);
         Ok(Self { r#type, mmap })
     }
 }
@@ -174,9 +172,8 @@ where
     ///
     /// See [`MmapMut::lock`] for details.
     #[cfg(unix)]
-    pub fn mlock(&mut self) -> io::Result<()> {
-        let mut mmap_guard = self.mmap.lock().unwrap();
-        mmap_guard.lock()
+    pub fn mlock(&self) -> io::Result<()> {
+        self.mmap.lock()
     }
 
     /// Get flusher to explicitly flush mmap at a later time
@@ -186,7 +183,7 @@ where
         Box::new({
             let mmap = self.mmap.clone();
             move || {
-                mmap.lock().unwrap().flush()?;
+                mmap.flush()?;
                 Ok(())
             }
         })
@@ -268,6 +265,19 @@ impl<T> MmapSlice<T> {
     pub unsafe fn try_from(mmap_with_slice: MmapMut) -> Result<Self> {
         MmapType::try_slice_from(mmap_with_slice).map(|mmap| Self { mmap })
     }
+
+    /// Lock memory mapped pages in memory
+    ///
+    /// See [`MmapMut::lock`] for details.
+    #[cfg(unix)]
+    pub fn mlock(&self) -> io::Result<()> {
+        self.mmap.mlock()
+    }
+
+    /// Get flusher to explicitly flush mmap at a later time
+    pub fn flusher(&self) -> Flusher {
+        self.mmap.flusher()
+    }
 }
 
 impl<T> Deref for MmapSlice<T> {
@@ -320,7 +330,7 @@ impl MmapBitSlice {
     pub fn try_from(mut mmap: MmapMut, header_size: usize) -> Result<Self> {
         let data = unsafe { mmap_to_slice_unbounded(&mut mmap, header_size)? };
         let bitslice = BitSlice::from_slice_mut(data);
-        let mmap = Arc::new(Mutex::new(mmap));
+        let mmap = Arc::new(mmap);
 
         Ok(Self {
             mmap: MmapType {
@@ -334,7 +344,7 @@ impl MmapBitSlice {
     ///
     /// See [`MmapMut::lock`] for details.
     #[cfg(unix)]
-    pub fn mlock(&mut self) -> io::Result<()> {
+    pub fn mlock(&self) -> io::Result<()> {
         self.mmap.mlock()
     }
 

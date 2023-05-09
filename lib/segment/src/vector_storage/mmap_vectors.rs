@@ -165,7 +165,7 @@ impl MmapVectors {
     /// huge. Calling this will lock the deleted flags in memory to prevent this.
     ///
     /// This is only supported on Unix.
-    fn lock_deleted_flags(&mut self) {
+    fn lock_deleted_flags(&self) {
         #[cfg(unix)]
         if let Err(err) = self.deleted.mlock() {
             log::error!(
