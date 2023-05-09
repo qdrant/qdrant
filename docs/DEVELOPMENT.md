@@ -179,7 +179,7 @@ fn some_other_function() {
 [`tracing`]: https://docs.rs/tracing/latest/tracing/
 [`Tracy`]: https://github.com/wolfpld/tracy
 [`tokio-console`]: https://docs.rs/tokio-console/latest/tokio_console/
-[`tokio-tracing`]: https://docs.rs/tokio/latest/tokio/#unstable-features
+[tokio-tracing]: https://docs.rs/tokio/latest/tokio/#unstable-features
 
 ## API changes
 
