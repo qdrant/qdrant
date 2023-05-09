@@ -125,7 +125,8 @@ where
     /// See [`MmapMut::lock`] for details.
     #[cfg(unix)]
     pub fn mlock(&mut self) -> io::Result<()> {
-        self.mmap.lock().unwrap().flush()
+        let mut mmap_guard = self.mmap.lock().unwrap();
+        mmap_guard.lock()
     }
 
     /// Get flusher to explicitly flush mmap at a later time

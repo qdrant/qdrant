@@ -137,13 +137,9 @@ impl DynamicMmapFlags {
             log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
         }
 
-        // Very important, that this section is not interrupted by any errors.
-        // Otherwise we can end up with inconsistent state
-        {
-            let flags = MmapBitSlice::from(flags_mmap, 0);
-            let flusher = flags.flusher();
-            Ok((flags, flusher))
-        }
+        let flags = MmapBitSlice::from(flags_mmap, 0);
+        let flusher = flags.flusher();
+        Ok((flags, flusher))
     }
 
     pub fn reopen_mmap(&mut self, num_flags: usize, new_file_id: FileId) -> OperationResult<()> {
