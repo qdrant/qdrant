@@ -79,7 +79,7 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
 pub struct DynamicMmapFlags {
     /// Current mmap'ed BitSlice for flags
     flags: MmapBitSlice,
-    /// Current flusher to flush active flags mmap
+    /// Flusher to flush current flags mmap
     flags_flusher: Arc<Mutex<Option<Flusher>>>,
     status: MmapType<DynamicMmapStatus>,
     directory: PathBuf,
@@ -112,6 +112,7 @@ impl DynamicMmapFlags {
         let status_mmap = ensure_status_file(directory)?;
         let status: MmapType<DynamicMmapStatus> = unsafe { MmapType::from(status_mmap) };
 
+        // Open first mmap
         let (flags, flags_flusher) =
             Self::open_mmap(status.len, directory, status.current_file_id)?;
         Ok(Self {
@@ -152,11 +153,15 @@ impl DynamicMmapFlags {
             "reopen cannot open same file as current",
         );
 
-        // Open mmap, then replace current and flusher
+        // Open new mmap
         let (flags, flusher) = Self::open_mmap(num_flags, &self.directory, new_file_id)?;
-        let mut flags_flusher_lock = self.flags_flusher.lock();
-        self.flags = flags;
-        flags_flusher_lock.replace(flusher);
+
+        // Swap operation. It is important this section is not interrupted by errors.
+        {
+            let mut flags_flusher_lock = self.flags_flusher.lock();
+            self.flags = flags;
+            flags_flusher_lock.replace(flusher);
+        }
 
         Ok(())
     }
@@ -230,6 +235,7 @@ impl DynamicMmapFlags {
             let flags_flusher = self.flags_flusher.clone();
             let status_flusher = self.status.flusher();
             move || {
+                // Maybe we shouldn't take flusher here: FnOnce() -> Fn()
                 if let Some(flags_flusher) = flags_flusher.lock().take() {
                     flags_flusher()?;
                 }
