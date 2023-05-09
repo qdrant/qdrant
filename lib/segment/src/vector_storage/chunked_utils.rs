@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::mmap_type::MmapSlice;
 use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use crate::common::mmap_type::MmapSlice;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 

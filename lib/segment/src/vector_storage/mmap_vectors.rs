@@ -7,8 +7,8 @@ use bitvec::prelude::BitSlice;
 use memmap2::Mmap;
 
 use super::div_ceil;
-use super::mmap_type::MmapBitSlice;
 use crate::common::error_logging::LogError;
+use crate::common::mmap_type::MmapBitSlice;
 use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;

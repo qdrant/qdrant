@@ -10,6 +10,7 @@ use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
 use crate::common::file_operations::FileStorageError;
+use crate::common::mmap_type::Error as MmapError;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::index::field_index::CardinalityEstimation;
@@ -20,7 +21,6 @@ use crate::types::{
     WithVector,
 };
 use crate::utils::mem::Mem;
-use crate::vector_storage::mmap_type::Error as MmapError;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]

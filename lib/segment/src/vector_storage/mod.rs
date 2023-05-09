@@ -4,7 +4,6 @@ mod chunked_utils;
 pub mod chunked_vectors;
 mod dynamic_mmap_flags;
 pub mod memmap_vector_storage;
-pub mod mmap_type;
 mod mmap_vectors;
 pub mod quantized;
 pub mod raw_scorer;

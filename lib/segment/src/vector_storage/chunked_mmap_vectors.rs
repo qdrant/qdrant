@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
-use super::mmap_type::MmapType;
 use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use crate::common::mmap_type::MmapType;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};

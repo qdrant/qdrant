@@ -4,6 +4,7 @@ pub mod cpu;
 pub mod error_logging;
 pub mod file_operations;
 pub mod mmap_ops;
+pub mod mmap_type;
 pub mod operation_time_statistics;
 pub mod rocksdb_wrapper;
 pub mod utils;
