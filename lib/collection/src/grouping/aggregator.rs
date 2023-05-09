@@ -119,9 +119,6 @@ impl GroupsAggregator {
             .collect()
     }
 
-    pub(super) fn grouped_by(&self) -> &String {
-        &self.grouped_by
-    }
 }
 
 #[cfg(test)]

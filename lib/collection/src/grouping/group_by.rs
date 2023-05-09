@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::future::Future;
 
-use itertools::Itertools;
 use schemars::JsonSchema;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, ScoredPoint,

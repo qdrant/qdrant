@@ -10,8 +10,6 @@ pub(super) enum AggregatorError {
     AllGroupsFull,
     BadKeyType,
     KeyNotFound,
-    GroupFull,
-    EnoughGroups,
 }
 
 /// Abstraction over serde_json::Value to be used as a key in a HashMap/HashSet
