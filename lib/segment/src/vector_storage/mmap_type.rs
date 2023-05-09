@@ -1,5 +1,6 @@
+use std::io;
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{mem, slice};
 
 use bitvec::slice::BitSlice;
@@ -29,7 +30,9 @@ where
     /// This should never be accessed directly, because it shares a mutable reference with
     /// `r#type`. That must be used instead. The sole purpose of this is to keep ownership of the
     /// mmap, and to allow properly cleaning up when this struct is dropped.
-    mmap: Arc<MmapMut>,
+    ///
+    /// Uses a mutex because mutable access is needed for locking pages in memory.
+    mmap: Arc<Mutex<MmapMut>>,
 }
 
 impl<T> MmapType<T>
@@ -49,7 +52,7 @@ where
     /// - See: [`mmap_to_type_unbounded`]
     pub unsafe fn from(mut mmap: MmapMut) -> Self {
         let r#type = unsafe { mmap_to_type_unbounded(&mut mmap) };
-        let mmap = Arc::new(mmap);
+        let mmap = Arc::new(Mutex::new(mmap));
         Self { r#type, mmap }
     }
 }
@@ -71,7 +74,7 @@ where
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn slice_from(mut mmap: MmapMut) -> Self {
         let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap, 0) };
-        let mmap = Arc::new(mmap);
+        let mmap = Arc::new(Mutex::new(mmap));
         Self { r#type, mmap }
     }
 }
@@ -80,13 +83,22 @@ impl<T> MmapType<T>
 where
     T: ?Sized + 'static,
 {
+    /// Lock memory mapped pages in memory
+    ///
+    /// See [`MmapMut::lock`] for details.
+    #[cfg(unix)]
+    pub fn lock(&mut self) -> io::Result<()> {
+        self.mmap.lock().unwrap().flush()
+    }
+
+    /// Get flusher to explicitly flush mmap at a later time
     pub fn flusher(&self) -> Flusher {
         // TODO: if we explicitly flush when dropping this type, we can switch to a weak reference
         // here to only flush if it hasn't been done already
         Box::new({
             let mmap = self.mmap.clone();
             move || {
-                mmap.flush()?;
+                mmap.lock().unwrap().flush()?;
                 Ok(())
             }
         })
@@ -185,7 +197,7 @@ impl MmapBitSlice {
     pub fn from(mut mmap: MmapMut, header_size: usize) -> Self {
         let data = unsafe { mmap_to_slice_unbounded(&mut mmap, header_size) };
         let bitslice = BitSlice::from_slice_mut(data);
-        let mmap = Arc::new(mmap);
+        let mmap = Arc::new(Mutex::new(mmap));
 
         Self {
             mmap: MmapType {
@@ -195,6 +207,15 @@ impl MmapBitSlice {
         }
     }
 
+    /// Lock memory mapped pages in memory
+    ///
+    /// See [`MmapMut::lock`] for details.
+    #[cfg(unix)]
+    pub fn lock(&mut self) -> io::Result<()> {
+        self.mmap.lock()
+    }
+
+    /// Get flusher to explicitly flush mmap at a later time
     pub fn flusher(&self) -> Flusher {
         self.mmap.flusher()
     }
