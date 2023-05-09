@@ -1,7 +1,7 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::grouping::group_by::Group;
+use collection::grouping::types::Group;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::types::{
     GroupedRecommendRequest, RecommendRequest, RecommendRequestBatch,

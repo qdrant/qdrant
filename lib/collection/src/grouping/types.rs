@@ -1,7 +1,9 @@
+use std::collections::HashSet;
 use std::hash::Hash;
-use std::ops::{Deref, DerefMut};
 
+use schemars::JsonSchema;
 use segment::types::ScoredPoint;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use AggregatorError::BadKeyType;
 
@@ -10,6 +12,23 @@ pub(super) enum AggregatorError {
     AllGroupsFull,
     BadKeyType,
     KeyNotFound,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+pub struct Group {
+    pub hits: Vec<ScoredPoint>,
+    pub group_id: serde_json::Map<String, Value>,
+}
+
+impl Group {
+    pub(super) fn hydrate_from(&mut self, set: &HashSet<HashablePoint>) {
+        self.hits.iter_mut().for_each(|hit| {
+            if let Some(point) = set.get(&HashablePoint::minimal_from(hit)) {
+                hit.payload = point.0.payload.clone();
+                hit.vector = point.0.vector.clone();
+            }
+        });
+    }
 }
 
 /// Abstraction over serde_json::Value to be used as a key in a HashMap/HashSet
@@ -70,20 +89,6 @@ impl Ord for HashablePoint {
 impl PartialOrd for HashablePoint {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.0.score.partial_cmp(&other.0.score)
-    }
-}
-
-impl Deref for HashablePoint {
-    type Target = ScoredPoint;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for HashablePoint {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 

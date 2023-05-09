@@ -1,17 +1,16 @@
-use std::collections::HashSet;
 use std::future::Future;
 
-use schemars::JsonSchema;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, ScoredPoint,
     WithPayloadInterface, WithVector,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
 use validator::Validate;
 
 use super::aggregator::GroupsAggregator;
+use super::types::Group;
 use crate::collection::Collection;
 use crate::grouping::types::HashablePoint;
 use crate::operations::consistency_params::ReadConsistency;
@@ -140,12 +139,6 @@ impl GroupRequest {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-pub struct Group {
-    pub hits: Vec<ScoredPoint>,
-    pub group_id: Map<String, Value>,
-}
-
 /// Uses the request to fill up groups of points.
 pub async fn group_by<'a, F, Fut>(
     request: GroupRequest,
@@ -249,7 +242,7 @@ where
         aggregator.add_points(&points);
     }
 
-    let groups = aggregator.distill();
+    let mut groups = aggregator.distill();
 
     // flatten results
     let bare_points = groups
@@ -267,10 +260,15 @@ where
             read_consistency,
             None,
         )
-        .await?;
+        .await?
+        .into_iter()
+        .map(HashablePoint::from)
+        .collect();
 
-    // re-group
-    let groups = hydrated_from(groups, &enriched_points);
+    // hydrate groups with enriched points
+    groups
+        .iter_mut()
+        .for_each(|group| group.hydrate_from(&enriched_points));
 
     Ok(groups)
 }
@@ -292,30 +290,19 @@ fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
     .map(|m| Condition::Field(FieldCondition::new_match(path, m)))
 }
 
-fn hydrated_from(groups: Vec<Group>, points: &[ScoredPoint]) -> Vec<Group> {
-    let set: HashSet<_> = points.iter().cloned().map(HashablePoint::from).collect();
-    let mut groups = groups;
-    groups.iter_mut().for_each(|group| {
-        group.hits.iter_mut().for_each(|hit| {
-            if let Some(hydrated) = set.get(&hit.clone().into()) {
-                hit.payload = hydrated.payload.clone();
-                hit.vector = hydrated.vector.clone();
-            }
-        })
-    });
-
-    groups
-}
-
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use segment::types::{Payload, ScoredPoint};
     use serde_json::json;
 
     use crate::grouping::group_by::Group;
+    use crate::grouping::types::HashablePoint;
 
     #[test]
-    fn hydrated_from() {
+    fn test_hydrated_from() {
+        // arrange
         let mut groups: Vec<Group> = Vec::new();
         [
             (
@@ -400,8 +387,12 @@ mod tests {
             },
         ];
 
-        let groups = super::hydrated_from(groups, &hydrated);
+        let set: HashSet<_> = hydrated.iter().cloned().map(HashablePoint::from).collect();
 
+        // act
+        groups.iter_mut().for_each(|group| group.hydrate_from(&set));
+
+        // assert
         assert_eq!(groups.len(), 2);
         assert_eq!(groups.get(0).unwrap().hits.len(), 2);
         assert_eq!(groups.get(1).unwrap().hits.len(), 2);

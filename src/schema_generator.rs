@@ -1,5 +1,5 @@
 use api::grpc::models::CollectionsResponse;
-use collection::grouping::group_by::Group;
+use collection::grouping::types::Group;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};

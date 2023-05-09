@@ -4,9 +4,8 @@ use itertools::Itertools;
 use segment::types::{ExtendedPointId, ScoredPoint};
 use serde_json::Value;
 
-use super::group_by::Group;
 use super::types::AggregatorError::{self, *};
-use super::types::{GroupKey, HashablePoint};
+use super::types::{Group, GroupKey, HashablePoint};
 
 type Hits = HashSet<HashablePoint>;
 
@@ -89,7 +88,7 @@ impl GroupsAggregator {
         self.groups
             .iter()
             .flat_map(|(_, hits)| hits.iter())
-            .map(|p| p.id)
+            .map(|p| p.0.id)
             .collect()
     }
 

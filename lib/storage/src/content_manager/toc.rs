@@ -12,7 +12,8 @@ use collection::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams,
 };
-use collection::grouping::group_by::{group_by, Group, GroupRequest};
+use collection::grouping::group_by::{group_by, GroupRequest};
+use collection::grouping::types::Group;
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;

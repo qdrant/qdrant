@@ -1,3 +1,3 @@
 mod aggregator;
 pub mod group_by;
-mod types;
+pub mod types;
