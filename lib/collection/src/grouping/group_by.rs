@@ -16,8 +16,7 @@ use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
 use crate::grouping::types::HashablePoint;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest,
-};
+use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest};
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
 
@@ -161,7 +160,8 @@ where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
-    let mut aggregator = GroupsAggregator::new(request.groups, request.top, request.group_by.clone());
+    let mut aggregator =
+        GroupsAggregator::new(request.groups, request.top, request.group_by.clone());
 
     // Try to complete amount of groups
     for _ in 0..MAX_GET_GROUPS_REQUESTS {
@@ -215,9 +215,9 @@ where
         if full_groups.len() >= request.groups {
             break;
         }
-        
+
         let mut req = request.request.clone();
-        
+
         // construct filter to only include unsatisfied groups
         let unsatisfied_groups = aggregator.keys_of_unfilled_groups();
         if let Some(match_any) = match_on(request.group_by.clone(), unsatisfied_groups) {
@@ -251,9 +251,13 @@ where
     }
 
     let groups = aggregator.distill();
-    
+
     // flatten results
-    let bare_points = groups.iter().cloned().flat_map(|group| group.hits).collect();
+    let bare_points = groups
+        .iter()
+        .cloned()
+        .flat_map(|group| group.hits)
+        .collect();
 
     // enrich with payload and vector
     let enriched_points = collection
@@ -306,7 +310,7 @@ fn hydrated_from(groups: Vec<Group>, points: &[ScoredPoint]) -> Vec<Group> {
 
 #[cfg(test)]
 mod tests {
-    use segment::types::{ScoredPoint, Payload};
+    use segment::types::{Payload, ScoredPoint};
     use serde_json::json;
 
     use crate::grouping::group_by::Group;
@@ -332,7 +336,7 @@ mod tests {
                         payload: None,
                         vector: None,
                     },
-                ]
+                ],
             ),
             (
                 "b",
@@ -351,12 +355,13 @@ mod tests {
                         payload: None,
                         vector: None,
                     },
-                ]
-            )
-        ].iter()
+                ],
+            ),
+        ]
+        .iter()
         .for_each(|(key, points)| {
             let group = Group {
-                group_id: json!({"docId": key}).as_object().unwrap().clone(),
+                group_id: json!({ "docId": key }).as_object().unwrap().clone(),
                 hits: points.to_vec(),
             };
             groups.push(group);
@@ -399,14 +404,8 @@ mod tests {
         let groups = super::hydrated_from(groups, &hydrated);
 
         assert_eq!(groups.len(), 2);
-        assert_eq!(
-            groups.get(0).unwrap().hits.len(),
-            2
-        );
-        assert_eq!(
-            groups.get(1).unwrap().hits.len(),
-            2
-        );
+        assert_eq!(groups.get(0).unwrap().hits.len(), 2);
+        assert_eq!(groups.get(1).unwrap().hits.len(), 2);
 
         let a = groups.get(0).unwrap();
         let b = groups.get(1).unwrap();

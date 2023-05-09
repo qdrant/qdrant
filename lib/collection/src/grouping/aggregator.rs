@@ -98,7 +98,8 @@ impl GroupsAggregator {
         self.groups
             .iter()
             .map(|(k, v)| {
-                let hits = v.iter()
+                let hits = v
+                    .iter()
                     .sorted()
                     .rev()
                     .take(self.max_group_size)
@@ -107,10 +108,7 @@ impl GroupsAggregator {
                     .collect::<Vec<_>>();
                 let mut group_id = serde_json::Map::new();
                 group_id.insert(self.grouped_by.clone(), k.0.clone());
-                Group {
-                    hits,
-                    group_id,
-                }
+                Group { hits, group_id }
             })
             // TODO: what happens when the best groups are not the most filled ones?
             .sorted_by_key(|group| group.hits.len())
@@ -359,8 +357,9 @@ mod unit_tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
-                    }
-                ].to_vec(),
+                    },
+                ]
+                .to_vec(),
             ),
             (
                 GroupKey::from("b"),
@@ -379,7 +378,8 @@ mod unit_tests {
                         payload: None,
                         vector: None,
                     },
-                ].to_vec(),
+                ]
+                .to_vec(),
             ),
             (
                 GroupKey(json!(3)),
@@ -398,19 +398,19 @@ mod unit_tests {
                         payload: None,
                         vector: None,
                     },
-                ].to_vec(),
+                ]
+                .to_vec(),
             ),
             (
                 GroupKey::from("d"),
-                [
-                    ScoredPoint {
-                        id: 6.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    }
-                ].to_vec(),
+                [ScoredPoint {
+                    id: 6.into(),
+                    version: 0,
+                    score: 1.0,
+                    payload: None,
+                    vector: None,
+                }]
+                .to_vec(),
             ),
         ]
         .iter()
