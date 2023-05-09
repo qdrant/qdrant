@@ -118,7 +118,6 @@ impl GroupsAggregator {
             .rev()
             .collect()
     }
-
 }
 
 #[cfg(test)]
