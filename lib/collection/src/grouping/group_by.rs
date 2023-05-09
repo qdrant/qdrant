@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::future::Future;
 
 use itertools::Itertools;
@@ -13,6 +14,7 @@ use validator::Validate;
 
 use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
+use crate::grouping::types::HashablePoint;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest,
 };
@@ -140,30 +142,10 @@ impl GroupRequest {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Group {
     pub hits: Vec<ScoredPoint>,
     pub group_id: Map<String, Value>,
-}
-
-impl From<GroupsAggregator> for Vec<Group> {
-    fn from(groups: GroupsAggregator) -> Self {
-        let grouped_by = groups.grouped_by().clone();
-        groups
-            .groups()
-            .iter()
-            .map(|(id, hits)| {
-                let mut group_id = Map::new();
-                group_id.insert(grouped_by.clone(), id.0.clone());
-                Group {
-                    hits: hits.iter().cloned().sorted().rev().collect(),
-                    group_id,
-                }
-            })
-            .sorted_by_key(|g| g.hits[0].clone())
-            .rev()
-            .collect()
-    }
 }
 
 /// Uses the request to fill up groups of points.
@@ -179,19 +161,22 @@ where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
-    let mut groups = GroupsAggregator::new(request.groups, request.top, request.group_by.clone());
+    let mut aggregator = GroupsAggregator::new(request.groups, request.top, request.group_by.clone());
 
     // Try to complete amount of groups
     for _ in 0..MAX_GET_GROUPS_REQUESTS {
-        let enough_groups = (request.groups - groups.len()) == 0;
-        if enough_groups {
+        // let enough_groups = (request.groups - groups.len()) == 0;
+        // if enough_groups {
+        //     break;
+        // }
+        let full_groups = aggregator.keys_of_filled_groups();
+        if full_groups.len() >= request.groups {
             break;
         }
 
         let mut req = request.request.clone();
 
         // construct filter to exclude already found groups
-        let full_groups = groups.keys_of_filled_groups();
         if !full_groups.is_empty() {
             if let Some(match_any) = match_on(request.group_by.clone(), full_groups) {
                 let exclude_groups = Filter::new_must_not(match_any);
@@ -200,7 +185,7 @@ where
         }
 
         // exclude already aggregated points
-        let ids = groups.ids();
+        let ids = aggregator.ids();
         if !ids.is_empty() {
             let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
             req.merge_filter(&exclude_ids);
@@ -221,26 +206,27 @@ where
             break;
         }
 
-        groups.add_points(&points)
+        aggregator.add_points(&points)
     }
 
     // Try to fill up groups
     for _ in 0..MAX_GROUP_FILLING_REQUESTS {
-        let unsatisfied_groups = groups.keys_of_unfilled_groups();
-        if unsatisfied_groups.is_empty() {
+        let full_groups = aggregator.keys_of_filled_groups();
+        if full_groups.len() >= request.groups {
             break;
         }
-
+        
         let mut req = request.request.clone();
-
+        
         // construct filter to only include unsatisfied groups
+        let unsatisfied_groups = aggregator.keys_of_unfilled_groups();
         if let Some(match_any) = match_on(request.group_by.clone(), unsatisfied_groups) {
             let include_groups = Filter::new_must(match_any);
             req.merge_filter(&include_groups);
         }
 
         // exclude already aggregated points
-        let ids = groups.ids();
+        let ids = aggregator.ids();
         if !ids.is_empty() {
             let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
             req.merge_filter(&exclude_ids);
@@ -261,11 +247,13 @@ where
             break;
         }
 
-        groups.add_points(&points);
+        aggregator.add_points(&points);
     }
 
+    let groups = aggregator.distill();
+    
     // flatten results
-    let bare_points = groups.flatten();
+    let bare_points = groups.iter().cloned().flat_map(|group| group.hits).collect();
 
     // enrich with payload and vector
     let enriched_points = collection
@@ -279,12 +267,9 @@ where
         .await?;
 
     // re-group
-    groups.hydrate_from(&enriched_points);
+    let groups = hydrated_from(groups, &enriched_points);
 
-    // turn to output form
-    let result: Vec<Group> = groups.into();
-
-    Ok(result)
+    Ok(groups)
 }
 
 /// Uses the set of values to create a Match::Any, if possible
@@ -302,4 +287,131 @@ fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
         _ => None, // also considers the case of empty values
     }
     .map(|m| Condition::Field(FieldCondition::new_match(path, m)))
+}
+
+fn hydrated_from(groups: Vec<Group>, points: &[ScoredPoint]) -> Vec<Group> {
+    let set: HashSet<_> = points.iter().cloned().map(HashablePoint::from).collect();
+    let mut groups = groups;
+    groups.iter_mut().for_each(|group| {
+        group.hits.iter_mut().for_each(|hit| {
+            if let Some(hydrated) = set.get(&hit.clone().into()) {
+                hit.payload = hydrated.payload.clone();
+                hit.vector = hydrated.vector.clone();
+            }
+        })
+    });
+
+    groups
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::types::{ScoredPoint, Payload};
+    use serde_json::json;
+
+    use crate::grouping::group_by::Group;
+
+    #[test]
+    fn hydrated_from() {
+        let mut groups: Vec<Group> = Vec::new();
+        [
+            (
+                "a",
+                [
+                    ScoredPoint {
+                        id: 1.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                    ScoredPoint {
+                        id: 2.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                ]
+            ),
+            (
+                "b",
+                [
+                    ScoredPoint {
+                        id: 3.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                    ScoredPoint {
+                        id: 4.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    },
+                ]
+            )
+        ].iter()
+        .for_each(|(key, points)| {
+            let group = Group {
+                group_id: json!({"docId": key}).as_object().unwrap().clone(),
+                hits: points.to_vec(),
+            };
+            groups.push(group);
+        });
+
+        let payload_a = Payload::from(serde_json::json!({"some_key": "some value a"}));
+        let payload_b = Payload::from(serde_json::json!({"some_key": "some value b"}));
+
+        let hydrated = vec![
+            ScoredPoint {
+                id: 1.into(),
+                version: 0,
+                score: 1.0,
+                payload: Some(payload_a.clone()),
+                vector: None,
+            },
+            ScoredPoint {
+                id: 2.into(),
+                version: 0,
+                score: 1.0,
+                payload: Some(payload_a.clone()),
+                vector: None,
+            },
+            ScoredPoint {
+                id: 3.into(),
+                version: 0,
+                score: 1.0,
+                payload: Some(payload_b.clone()),
+                vector: None,
+            },
+            ScoredPoint {
+                id: 4.into(),
+                version: 0,
+                score: 1.0,
+                payload: Some(payload_b.clone()),
+                vector: None,
+            },
+        ];
+
+        let groups = super::hydrated_from(groups, &hydrated);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(
+            groups.get(0).unwrap().hits.len(),
+            2
+        );
+        assert_eq!(
+            groups.get(1).unwrap().hits.len(),
+            2
+        );
+
+        let a = groups.get(0).unwrap();
+        let b = groups.get(1).unwrap();
+
+        assert!(a.hits.iter().all(|x| x.payload == Some(payload_a.clone())));
+        assert!(b.hits.iter().all(|x| x.payload == Some(payload_b.clone())));
+    }
 }

@@ -63,6 +63,18 @@ impl Hash for HashablePoint {
     }
 }
 
+impl Ord for HashablePoint {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.score.partial_cmp(&other.0.score).unwrap()
+    }
+}
+
+impl PartialOrd for HashablePoint {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.score.partial_cmp(&other.0.score)
+    }
+}
+
 impl Deref for HashablePoint {
     type Target = ScoredPoint;
 
@@ -77,13 +89,13 @@ impl DerefMut for HashablePoint {
     }
 }
 
-impl From<&ScoredPoint> for HashablePoint {
-    fn from(point: &ScoredPoint) -> Self {
-        Self(point.clone())
+impl From<ScoredPoint> for HashablePoint {
+    fn from(point: ScoredPoint) -> Self {
+        Self(point)
     }
 }
-impl From<&HashablePoint> for ScoredPoint {
-    fn from(point: &HashablePoint) -> Self {
-        point.0.clone()
+impl From<HashablePoint> for ScoredPoint {
+    fn from(point: HashablePoint) -> Self {
+        point.0
     }
 }

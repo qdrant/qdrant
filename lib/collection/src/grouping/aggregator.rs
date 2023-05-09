@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
+use itertools::Itertools;
 use segment::types::{ExtendedPointId, ScoredPoint};
 use serde_json::Value;
 
+use super::group_by::Group;
 use super::types::AggregatorError::{self, *};
 use super::types::{GroupKey, HashablePoint};
 
 type Hits = HashSet<HashablePoint>;
 
-#[allow(dead_code)] // temporary
 pub(super) struct GroupsAggregator {
     groups: HashMap<GroupKey, Hits>,
     max_group_size: usize,
@@ -17,7 +18,6 @@ pub(super) struct GroupsAggregator {
     full_groups: HashSet<GroupKey>,
 }
 
-#[allow(dead_code)] // temporary
 impl GroupsAggregator {
     pub(super) fn new(groups: usize, group_size: usize, grouped_by: String) -> Self {
         Self {
@@ -43,16 +43,6 @@ impl GroupsAggregator {
             .ok_or(KeyNotFound)
             .and_then(GroupKey::try_from)?;
 
-        // Check if group is full
-        if self.full_groups.contains(&group_key) {
-            return Err(GroupFull);
-        }
-
-        // Check if we would still need another group
-        if !self.groups.contains_key(&group_key) && self.groups.len() == self.max_groups {
-            return Err(EnoughGroups);
-        }
-
         let group = self
             .groups
             .entry(group_key.clone())
@@ -75,6 +65,7 @@ impl GroupsAggregator {
             .any(|r| matches!(r, Err(AllGroupsFull)));
     }
 
+    #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         self.groups.len()
     }
@@ -102,35 +93,32 @@ impl GroupsAggregator {
             .collect()
     }
 
-    pub(super) fn groups(&self) -> HashMap<GroupKey, Vec<ScoredPoint>> {
+    // Returns the best groups sorted by their best hit. The hits are sorted too
+    pub(super) fn distill(&self) -> Vec<Group> {
         self.groups
             .iter()
             .map(|(k, v)| {
-                (
-                    k.clone(),
-                    v.iter().map(ScoredPoint::from).collect::<Vec<_>>(),
-                )
-            })
-            .collect()
-    }
-
-    pub(super) fn flatten(&self) -> Vec<ScoredPoint> {
-        self.groups
-            .values()
-            .flatten()
-            .map(ScoredPoint::from)
-            .collect()
-    }
-
-    /// Copies the payload and vector from the provided points to the points inside of each of the groups
-    pub(super) fn hydrate_from(&mut self, points: &[ScoredPoint]) {
-        for point in points {
-            self.groups.iter_mut().for_each(|(_, ps)| {
-                if ps.take(&HashablePoint::minimal_from(point)).is_some() {
-                    ps.insert(point.into());
+                let hits = v.iter()
+                    .sorted()
+                    .rev()
+                    .take(self.max_group_size)
+                    .cloned()
+                    .map(ScoredPoint::from)
+                    .collect::<Vec<_>>();
+                let mut group_id = serde_json::Map::new();
+                group_id.insert(self.grouped_by.clone(), k.0.clone());
+                Group {
+                    hits,
+                    group_id,
                 }
-            });
-        }
+            })
+            // TODO: what happens when the best groups are not the most filled ones?
+            .sorted_by_key(|group| group.hits.len())
+            .rev()
+            .take(self.max_groups)
+            .sorted_by_key(|group| group.hits.get(0).cloned())
+            .rev()
+            .collect()
     }
 
     pub(super) fn grouped_by(&self) -> &String {
@@ -212,9 +200,9 @@ mod unit_tests {
                     vector: None,
                 },
                 json!("a"),
-                2, // group already full
+                3, // group already full
                 1,
-                Err(GroupFull),
+                Ok(()),
             ),
             (
                 &ScoredPoint {
@@ -251,9 +239,9 @@ mod unit_tests {
                     vector: None,
                 },
                 json!("d"),
-                0, // already enough groups
-                3,
-                Err(EnoughGroups),
+                1, // already enough groups
+                4,
+                Ok(()),
             ),
             (
                 &ScoredPoint {
@@ -265,7 +253,7 @@ mod unit_tests {
                 },
                 json!("b"),
                 2,
-                3,
+                4,
                 Ok(()),
             ),
             (
@@ -278,7 +266,7 @@ mod unit_tests {
                 },
                 json!("false"),
                 0,
-                3,
+                4,
                 Err(BadKeyType),
             ),
             (
@@ -291,7 +279,7 @@ mod unit_tests {
                 },
                 json!("none"),
                 0,
-                3,
+                4,
                 Err(KeyNotFound),
             ),
             (
@@ -304,7 +292,7 @@ mod unit_tests {
                 },
                 json!(3),
                 2,
-                3,
+                4,
                 Ok(()),
             ),
             (
@@ -317,7 +305,7 @@ mod unit_tests {
                 },
                 json!(3),
                 2,
-                3,
+                4,
                 Err(AllGroupsFull),
             ),
         ]
@@ -345,7 +333,7 @@ mod unit_tests {
         // assert final groups
         assert_eq!(aggregator.full_groups.len(), 3);
 
-        let groups = aggregator.groups();
+        let groups = aggregator.groups;
 
         [
             (
@@ -365,7 +353,14 @@ mod unit_tests {
                         payload: None,
                         vector: None,
                     },
-                ],
+                    ScoredPoint {
+                        id: 3.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    }
+                ].to_vec(),
             ),
             (
                 GroupKey::from("b"),
@@ -384,7 +379,7 @@ mod unit_tests {
                         payload: None,
                         vector: None,
                     },
-                ],
+                ].to_vec(),
             ),
             (
                 GroupKey(json!(3)),
@@ -403,7 +398,19 @@ mod unit_tests {
                         payload: None,
                         vector: None,
                     },
-                ],
+                ].to_vec(),
+            ),
+            (
+                GroupKey::from("d"),
+                [
+                    ScoredPoint {
+                        id: 6.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    }
+                ].to_vec(),
             ),
         ]
         .iter()
@@ -411,109 +418,10 @@ mod unit_tests {
             let group = groups.get(key).unwrap();
 
             for point in points {
-                assert!(group.contains(point));
+                assert!(group.contains(&point.clone().into()));
             }
 
             assert_eq!(group.len(), points.len());
         });
-    }
-
-    #[test]
-    fn hydrate_from() {
-        let mut aggregator = GroupsAggregator::new(2, 2, "docId".to_string());
-
-        aggregator.groups.insert(
-            GroupKey::from("a"),
-            [
-                HashablePoint(ScoredPoint {
-                    id: 1.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: None,
-                    vector: None,
-                }),
-                HashablePoint(ScoredPoint {
-                    id: 2.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: None,
-                    vector: None,
-                }),
-            ]
-            .into(),
-        );
-
-        aggregator.groups.insert(
-            GroupKey::from("b"),
-            [
-                HashablePoint(ScoredPoint {
-                    id: 3.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: None,
-                    vector: None,
-                }),
-                HashablePoint(ScoredPoint {
-                    id: 4.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: None,
-                    vector: None,
-                }),
-            ]
-            .into(),
-        );
-
-        let payload_a = Payload::from(serde_json::json!({"some_key": "some value a"}));
-        let payload_b = Payload::from(serde_json::json!({"some_key": "some value b"}));
-
-        let hydrated = vec![
-            ScoredPoint {
-                id: 1.into(),
-                version: 0,
-                score: 1.0,
-                payload: Some(payload_a.clone()),
-                vector: None,
-            },
-            ScoredPoint {
-                id: 2.into(),
-                version: 0,
-                score: 1.0,
-                payload: Some(payload_a.clone()),
-                vector: None,
-            },
-            ScoredPoint {
-                id: 3.into(),
-                version: 0,
-                score: 1.0,
-                payload: Some(payload_b.clone()),
-                vector: None,
-            },
-            ScoredPoint {
-                id: 4.into(),
-                version: 0,
-                score: 1.0,
-                payload: Some(payload_b.clone()),
-                vector: None,
-            },
-        ];
-
-        aggregator.hydrate_from(&hydrated);
-
-        assert_eq!(aggregator.groups.len(), 2);
-        assert_eq!(
-            aggregator.groups.get(&GroupKey::from("a")).unwrap().len(),
-            2
-        );
-        assert_eq!(
-            aggregator.groups.get(&GroupKey::from("b")).unwrap().len(),
-            2
-        );
-
-        let a = aggregator.groups.get(&GroupKey::from("a")).unwrap();
-        let b = aggregator.groups.get(&GroupKey::from("b")).unwrap();
-
-        assert!(a.iter().all(|x| x.payload == Some(payload_a.clone())));
-        assert!(b.iter().all(|x| x.payload == Some(payload_b.clone())));
     }
 }
