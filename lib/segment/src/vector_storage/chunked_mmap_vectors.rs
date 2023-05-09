@@ -2,14 +2,12 @@ use std::cmp::max;
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
-use crate::common::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut,
-};
+use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use crate::common::mmap_type::MmapType;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -25,7 +23,7 @@ const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
 
 #[repr(C)]
-pub struct MmapStatus {
+pub struct Status {
     pub len: usize,
 }
 
@@ -38,8 +36,7 @@ struct ChunkedMmapConfig {
 
 pub struct ChunkedMmapVectors {
     config: ChunkedMmapConfig,
-    _status_mmap: Arc<MmapMut>,
-    status: &'static mut MmapStatus,
+    status: MmapType<Status>,
     chunks: Vec<MmapChunk>,
     directory: PathBuf,
 }
@@ -105,14 +102,13 @@ impl ChunkedMmapVectors {
 
     pub fn open(directory: &Path, dim: usize) -> OperationResult<Self> {
         create_dir_all(directory)?;
-        let mut status_mmap = Self::ensure_status_file(directory)?;
-        let status = transmute_from_u8_to_mut(&mut status_mmap);
+        let status_mmap = Self::ensure_status_file(directory)?;
+        let status = unsafe { MmapType::from(status_mmap) };
 
         let config = Self::ensure_config(directory, dim)?;
         let chunks = read_mmaps(directory)?;
 
         let vectors = Self {
-            _status_mmap: Arc::new(status_mmap),
             status,
             config,
             chunks,
@@ -168,7 +164,7 @@ impl ChunkedMmapVectors {
 
         let chunk = &mut self.chunks[chunk_idx];
 
-        chunk.data_mut()[chunk_offset..chunk_offset + vector.len()].copy_from_slice(vector);
+        chunk[chunk_offset..chunk_offset + vector.len()].copy_from_slice(vector);
 
         let new_len = max(self.status.len, key + 1);
 
@@ -192,18 +188,18 @@ impl ChunkedMmapVectors {
         let chunk_idx = self.get_chunk_index(key);
         let chunk_offset = self.get_chunk_offset(key);
         let chunk = &self.chunks[chunk_idx];
-        &chunk.data()[chunk_offset..chunk_offset + self.config.dim]
+        &chunk[chunk_offset..chunk_offset + self.config.dim]
     }
 
     pub fn flusher(&self) -> Flusher {
         Box::new({
-            let status_mmap = self._status_mmap.clone();
+            let status_flusher = self.status.flusher();
             let chunks_flushers: Vec<_> = self.chunks.iter().map(|chunk| chunk.flusher()).collect();
             move || {
                 for flusher in chunks_flushers {
                     flusher()?;
                 }
-                status_mmap.flush()?;
+                status_flusher()?;
                 Ok(())
             }
         })

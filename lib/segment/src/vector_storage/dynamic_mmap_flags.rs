@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::fs::create_dir_all;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -8,17 +8,14 @@ use memmap2::MmapMut;
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use crate::common::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, transmute_from_u8_to_mut,
-};
+use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use crate::common::mmap_type::{MmapBitSlice, MmapType};
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::vector_storage::div_ceil;
-use crate::vector_storage::mmap_vectors::mmap_to_bitslice;
 
 #[cfg(debug_assertions)]
 const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
-
 #[cfg(not(debug_assertions))]
 const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
@@ -30,29 +27,6 @@ const STATUS_FILE_NAME: &str = "status.dat";
 
 pub fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
-}
-
-#[derive(Default, Clone)]
-struct RemovableMmap {
-    mmap: Arc<Mutex<Option<MmapMut>>>,
-}
-
-impl RemovableMmap {
-    fn is_empty(&self) -> bool {
-        self.mmap.lock().is_none()
-    }
-
-    /// Replace the mmap, dropping the old one.
-    fn replace_mmap(&self, mmap: MmapMut) {
-        self.mmap.lock().replace(mmap);
-    }
-
-    fn flush(&self) -> OperationResult<()> {
-        if let Some(mmap) = self.mmap.lock().as_mut() {
-            mmap.flush()?;
-        }
-        Ok(())
-    }
 }
 
 /// Identifies A/B variant of file being used.
@@ -103,10 +77,11 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
 }
 
 pub struct DynamicMmapFlags {
-    _flags_mmap: RemovableMmap,
-    flags: Option<&'static mut BitSlice>,
-    _status_mmap: Arc<MmapMut>,
-    status: &'static mut DynamicMmapStatus,
+    /// Current mmap'ed BitSlice for flags
+    flags: MmapBitSlice,
+    /// Flusher to flush current flags mmap
+    flags_flusher: Arc<Mutex<Option<Flusher>>>,
+    status: MmapType<DynamicMmapStatus>,
     directory: PathBuf,
 }
 
@@ -124,8 +99,8 @@ fn mmap_max_current_size(len: usize) -> usize {
 }
 
 impl DynamicMmapFlags {
-    fn file_id_to_file(&self, file_id: FileId) -> PathBuf {
-        self.directory.join(file_id.file_name())
+    fn file_id_to_file(directory: &Path, file_id: FileId) -> PathBuf {
+        directory.join(file_id.file_name())
     }
 
     pub fn len(&self) -> usize {
@@ -133,50 +108,55 @@ impl DynamicMmapFlags {
     }
 
     pub fn open(directory: &Path) -> OperationResult<Self> {
-        create_dir_all(directory)?;
-        let mut status_mmap = ensure_status_file(directory)?;
-        let status = transmute_from_u8_to_mut(&mut status_mmap);
+        fs::create_dir_all(directory)?;
+        let status_mmap = ensure_status_file(directory)?;
+        let status: MmapType<DynamicMmapStatus> = unsafe { MmapType::try_from(status_mmap)? };
 
-        let mut flags = Self {
-            _status_mmap: Arc::new(status_mmap),
+        // Open first mmap
+        let (flags, flags_flusher) =
+            Self::open_mmap(status.len, directory, status.current_file_id)?;
+        Ok(Self {
+            flags,
+            flags_flusher: Arc::new(Mutex::new(Some(flags_flusher))),
             status,
-            _flags_mmap: Default::default(),
-            flags: None,
             directory: directory.to_owned(),
-        };
-
-        flags.reopen_mmap(flags.status.len, flags.status.current_file_id)?;
-
-        Ok(flags)
+        })
     }
 
-    pub fn reopen_mmap(
-        &mut self,
+    fn open_mmap(
         num_flags: usize,
-        current_file_id: FileId,
-    ) -> OperationResult<()> {
-        // We can only open file which is not currently used
-        // self._flags_mmap.is_empty() - means that no files are open, we can open any file
-        debug_assert!(
-            self._flags_mmap.is_empty() || current_file_id != self.status.current_file_id
-        );
-
+        directory: &Path,
+        new_file_id: FileId,
+    ) -> OperationResult<(MmapBitSlice, Flusher)> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
-        let mmap_path = self.file_id_to_file(current_file_id);
+        let mmap_path = Self::file_id_to_file(directory, new_file_id);
         create_and_ensure_length(&mmap_path, capacity_bytes)?;
-        let mut flags_mmap = open_write_mmap(&mmap_path).describe("Open mmap flags for writing")?;
+        let flags_mmap = open_write_mmap(&mmap_path).describe("Open mmap flags for writing")?;
         #[cfg(unix)]
         if let Err(err) = flags_mmap.advise(memmap2::Advice::WillNeed) {
             log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
         }
-        let flags = unsafe { mmap_to_bitslice(&mut flags_mmap, 0) };
 
-        // Very important, that this section is not interrupted by any errors.
-        // Otherwise we can end up with inconsistent state
+        let flags = MmapBitSlice::try_from(flags_mmap, 0)?;
+        let flusher = flags.flusher();
+        Ok((flags, flusher))
+    }
+
+    pub fn reopen_mmap(&mut self, num_flags: usize, new_file_id: FileId) -> OperationResult<()> {
+        // We can only open file which is not currently used
+        debug_assert_ne!(
+            new_file_id, self.status.current_file_id,
+            "reopen cannot open same file as current",
+        );
+
+        // Open new mmap
+        let (flags, flusher) = Self::open_mmap(num_flags, &self.directory, new_file_id)?;
+
+        // Swap operation. It is important this section is not interrupted by errors.
         {
-            self.flags.take(); // Drop the bit slice. Important to do before dropping the mmap
-            self._flags_mmap.replace_mmap(flags_mmap);
-            self.flags.replace(flags);
+            let mut flags_flusher_lock = self.flags_flusher.lock();
+            self.flags = flags;
+            flags_flusher_lock.replace(flusher);
         }
 
         Ok(())
@@ -204,13 +184,12 @@ impl DynamicMmapFlags {
             let old_file_id = self.status.current_file_id;
             let new_file_id = old_file_id.rotate();
 
-            let old_mmap_file = self.file_id_to_file(old_file_id);
-            let new_mmap_file = self.file_id_to_file(new_file_id);
+            let old_mmap_file = Self::file_id_to_file(&self.directory, old_file_id);
+            let new_mmap_file = Self::file_id_to_file(&self.directory, new_file_id);
 
-            self._flags_mmap.flush()?;
-
-            // copy the old file to the new one
-            std::fs::copy(old_mmap_file, new_mmap_file)?;
+            // Flush old mmap, then copy it to new one
+            self.flags.flusher()()?;
+            fs::copy(old_mmap_file, new_mmap_file)?;
 
             self.reopen_mmap(new_len, new_file_id)?;
             self.status.current_file_id = new_file_id;
@@ -228,7 +207,7 @@ impl DynamicMmapFlags {
         if key >= self.status.len {
             return false;
         }
-        self.flags.as_ref().map(|flags| flags[key]).unwrap_or(false)
+        self.flags[key]
     }
 
     /// Set the `true` value of the flag at the given index.
@@ -244,34 +223,32 @@ impl DynamicMmapFlags {
         if key >= self.status.len {
             return false;
         }
-
-        if let Some(flags) = self.flags.as_mut() {
-            return flags.replace(key, value);
-        }
-
-        false
+        self.flags.replace(key, value)
     }
 
     pub fn flusher(&self) -> Flusher {
         Box::new({
-            let status_mmap = self._status_mmap.clone();
-            let flags_mmap = self._flags_mmap.clone();
+            let flags_flusher = self.flags_flusher.clone();
+            let status_flusher = self.status.flusher();
             move || {
-                flags_mmap.flush()?;
-                status_mmap.flush()?;
+                // Maybe we shouldn't take flusher here: FnOnce() -> Fn()
+                if let Some(flags_flusher) = flags_flusher.lock().take() {
+                    flags_flusher()?;
+                }
+                status_flusher()?;
                 Ok(())
             }
         })
     }
 
     pub fn get_bitslice(&self) -> &BitSlice {
-        self.flags.as_ref().unwrap()
+        &self.flags
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
         vec![
             status_file(&self.directory),
-            self.file_id_to_file(self.status.current_file_id),
+            Self::file_id_to_file(&self.directory, self.status.current_file_id),
         ]
     }
 }
