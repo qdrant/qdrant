@@ -41,6 +41,7 @@ clap = { version = "4.2.7", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.3", features = ["v4", "serde"] }
 sys-info = "0.9.1"
+wal = { git = "https://github.com/qdrant/wal.git", rev = "660ccf17b117e7a0667a17177e96fdaeb166851b" }
 
 config = "~0.13.3"
 
@@ -80,6 +81,12 @@ tikv-jemallocator = "0.5"
 [[bin]]
 name = "schema_generator"
 path = "src/schema_generator.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "wal_inspector"
+path = "src/wal_inspector.rs"
 test = false
 bench = false
 
