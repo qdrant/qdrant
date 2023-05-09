@@ -4,13 +4,13 @@ use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointsSelector, WriteOrdering,
 };
 use collection::operations::types::{
-    CountRequest, CountResult, PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
-    SearchRequestBatch, UpdateResult,
+    CountRequest, CountResult, PointRequest, RecommendGroupsRequest, Record, ScrollRequest,
+    ScrollResult, SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
-use segment::types::{PayloadFieldSchema, ScoredPoint};
+use segment::types::{PayloadFieldSchema, PointGroup, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -222,6 +222,32 @@ pub async fn do_search_batch_points(
     shard_selection: Option<ShardId>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.search_batch(collection_name, request, read_consistency, shard_selection)
+        .await
+}
+
+pub async fn do_search_point_groups(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: SearchGroupsRequest,
+    read_consistency: Option<ReadConsistency>,
+    shard_selection: Option<ShardId>,
+) -> Result<Vec<PointGroup>, StorageError> {
+    toc.group(
+        collection_name,
+        request.into(),
+        read_consistency,
+        shard_selection,
+    )
+    .await
+}
+
+pub async fn do_grouped_recommend_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: RecommendGroupsRequest,
+    read_consistency: Option<ReadConsistency>,
+) -> Result<Vec<PointGroup>, StorageError> {
+    toc.group(collection_name, request.into(), read_consistency, None)
         .await
 }
 

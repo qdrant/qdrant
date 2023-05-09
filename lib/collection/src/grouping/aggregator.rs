@@ -104,13 +104,13 @@ impl GroupsAggregator {
                     .rev()
                     .take(self.max_group_size)
                     .cloned()
-                    .map(ScoredPoint::from)
                     .collect::<Vec<_>>();
 
-                let mut group_id = serde_json::Map::new();
-                group_id.insert(self.grouped_by.clone(), k.clone().into());
-
-                Group { hits, group_id }
+                Group {
+                    hits,
+                    key: k.clone(),
+                    group_by: self.grouped_by.clone(),
+                }
             })
             // TODO: what happens when the best groups are not the most filled ones?
             .sorted_by_key(|group| group.hits.len())

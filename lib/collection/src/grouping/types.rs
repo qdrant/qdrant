@@ -1,10 +1,7 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
-use schemars::JsonSchema;
-use segment::types::{ExtendedPointId, ScoredPoint};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use segment::types::{ExtendedPointId, PointGroup, ScoredPoint};
 use AggregatorError::BadKeyType;
 
 #[derive(PartialEq, Debug)]
@@ -13,21 +10,33 @@ pub(super) enum AggregatorError {
     BadKeyType,
     KeyNotFound,
 }
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-pub struct Group {
-    pub hits: Vec<ScoredPoint>,
-    pub group_id: serde_json::Map<String, Value>,
+#[derive(Debug, Clone)]
+pub(super) struct Group {
+    pub hits: Vec<HashablePoint>,
+    pub key: GroupKey,
+    pub group_by: String,
 }
 
 impl Group {
     pub(super) fn hydrate_from(&mut self, set: &HashSet<HashablePoint>) {
         self.hits.iter_mut().for_each(|hit| {
-            if let Some(point) = set.get(&HashablePoint::minimal_from(hit)) {
-                hit.payload = point.0.payload.clone();
-                hit.vector = point.0.vector.clone();
+            if let Some(point) = set.get(hit) {
+                hit.0.payload = point.0.payload.clone();
+                hit.0.vector = point.0.vector.clone();
             }
         });
+    }
+}
+
+impl From<Group> for PointGroup {
+    fn from(group: Group) -> Self {
+        let mut group_id = serde_json::Map::new();
+        group_id.insert(group.group_by, group.key.into());
+
+        Self {
+            hits: group.hits.into_iter().map(|hp| hp.0).collect(),
+            group_id,
+        }
     }
 }
 
@@ -86,6 +95,11 @@ impl HashablePoint {
 
     pub fn id(&self) -> ExtendedPointId {
         self.0.id
+    }
+
+    #[cfg(test)]
+    pub fn payload(&self) -> Option<&segment::types::Payload> {
+        self.0.payload.as_ref()
     }
 }
 

@@ -1,10 +1,9 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::grouping::types::Group;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::types::{
-    GroupedRecommendRequest, RecommendRequest, RecommendRequestBatch,
+    RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
@@ -74,26 +73,16 @@ async fn recommend_batch_points(
     process_response(response, timing)
 }
 
-async fn do_grouped_recommend_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    request: GroupedRecommendRequest,
-    read_consistency: Option<ReadConsistency>,
-) -> Result<Vec<Group>, StorageError> {
-    toc.group(collection_name, request.into(), read_consistency, None)
-        .await
-}
-
 #[post("/collections/{name}/points/recommend/group")]
 async fn grouped_recommend_points(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    request: Json<GroupedRecommendRequest>,
+    request: Json<RecommendGroupsRequest>,
     params: Query<ReadParams>,
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = do_grouped_recommend_points(
+    let response = crate::common::points::do_grouped_recommend_points(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),

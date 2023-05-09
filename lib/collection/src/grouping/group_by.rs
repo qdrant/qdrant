@@ -1,8 +1,8 @@
 use std::future::Future;
 
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, ScoredPoint,
-    WithPayloadInterface, WithVector,
+    AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, PointGroup,
+    ScoredPoint, WithPayloadInterface, WithVector,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,7 +10,6 @@ use tokio::sync::RwLockReadGuard;
 use validator::Validate;
 
 use super::aggregator::GroupsAggregator;
-use super::types::Group;
 use crate::collection::Collection;
 use crate::grouping::types::HashablePoint;
 use crate::operations::consistency_params::ReadConsistency;
@@ -147,7 +146,7 @@ pub async fn group_by<'a, F, Fut>(
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
-) -> CollectionResult<Vec<Group>>
+) -> CollectionResult<Vec<PointGroup>>
 where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
@@ -249,6 +248,7 @@ where
         .iter()
         .cloned()
         .flat_map(|group| group.hits)
+        .map(ScoredPoint::from)
         .collect();
 
     // enrich with payload and vector
@@ -269,6 +269,9 @@ where
     groups
         .iter_mut()
         .for_each(|group| group.hydrate_from(&enriched_points));
+
+    // turn into output form
+    let groups = groups.into_iter().map(PointGroup::from).collect();
 
     Ok(groups)
 }
@@ -295,10 +298,8 @@ mod tests {
     use std::collections::HashSet;
 
     use segment::types::{Payload, ScoredPoint};
-    use serde_json::json;
 
-    use crate::grouping::group_by::Group;
-    use crate::grouping::types::HashablePoint;
+    use crate::grouping::types::{Group, GroupKey, HashablePoint};
 
     #[test]
     fn test_hydrated_from() {
@@ -344,11 +345,12 @@ mod tests {
                 ],
             ),
         ]
-        .iter()
+        .into_iter()
         .for_each(|(key, points)| {
             let group = Group {
-                group_id: json!({ "docId": key }).as_object().unwrap().clone(),
-                hits: points.to_vec(),
+                key: GroupKey::from(key),
+                hits: points.into_iter().map(HashablePoint::from).collect(),
+                group_by: "docId".to_string(),
             };
             groups.push(group);
         });
@@ -400,7 +402,7 @@ mod tests {
         let a = groups.get(0).unwrap();
         let b = groups.get(1).unwrap();
 
-        assert!(a.hits.iter().all(|x| x.payload == Some(payload_a.clone())));
-        assert!(b.hits.iter().all(|x| x.payload == Some(payload_b.clone())));
+        assert!(a.hits.iter().all(|x| x.payload() == Some(&payload_a)));
+        assert!(b.hits.iter().all(|x| x.payload() == Some(&payload_b)));
     }
 }

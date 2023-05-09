@@ -198,6 +198,14 @@ impl PartialEq for ScoredPoint {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+pub struct PointGroup {
+    /// Scored points that have the same group_id
+    pub hits: Vec<ScoredPoint>,
+    /// Key shared by all the hits
+    pub group_id: serde_json::Map<String, Value>,
+}
+
 /// Type of segment
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

@@ -1,5 +1,4 @@
 use api::grpc::models::CollectionsResponse;
-use collection::grouping::types::Group;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
@@ -7,13 +6,13 @@ use collection::operations::point_ops::{PointInsertOperations, PointsSelector, W
 use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
-    CountRequest, CountResult, GroupedRecommendRequest, GroupedSearchRequest, PointRequest,
-    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
+    CountRequest, CountResult, PointRequest, RecommendGroupsRequest, RecommendRequest,
+    RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
     SearchRequestBatch, UpdateResult,
 };
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
-use segment::types::ScoredPoint;
+use segment::types::{PointGroup, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
@@ -65,9 +64,9 @@ struct AllDefinitions {
     ay: AliasDescription,
     az: WriteOrdering,
     b1: ReadConsistency,
-    b2: Group,
-    b3: GroupedSearchRequest,
-    b4: GroupedRecommendRequest,
+    b2: PointGroup,
+    b3: SearchGroupsRequest,
+    b4: RecommendGroupsRequest,
 }
 
 fn save_schema<T: JsonSchema>() {

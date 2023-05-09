@@ -209,6 +209,15 @@ message SearchBatchPoints {
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
 }
 
+message SearchPointGroups {
+  string collection_name = 1; // Name of the collection
+  SearchPoints search = 2;
+  string group_by = 3; // Name of the field to group by
+  uint32 top = 4; // Number of points per group to return
+  optional uint32 groups = 5; // Number of groups to return, will use the limit in the search request if not specified
+  optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
+}
+
 message ScrollPoints {
   string collection_name = 1;
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
@@ -248,6 +257,15 @@ message RecommendBatchPoints {
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
 }
 
+message RecommendPointGroups {
+  string collection_name = 1; // Name of the collection
+  RecommendPoints recommend = 2;
+  string group_by = 3; // Name of the field to group by
+  uint32 top = 4; // Number of points per group to return
+  optional uint32 groups = 5; // Number of groups to return, will use the limit in the search request if not specified
+  optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
+}
+
 message CountPoints {
   string collection_name = 1; // name of the collection
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
@@ -283,6 +301,11 @@ message ScoredPoint {
   optional Vectors vectors = 6; // Vectors to search
 }
 
+message PointGroup {
+  map<string, Value> group_id = 1; // Group id
+  repeated ScoredPoint hits = 2; // Points in the group
+}
+
 message SearchResponse {
   repeated ScoredPoint result = 1;
   double time = 2; // Time spent to process
@@ -294,6 +317,11 @@ message BatchResult {
 
 message SearchBatchResponse {
   repeated BatchResult result = 1;
+  double time = 2; // Time spent to process
+}
+
+message SearchGroupsResponse {
+  repeated PointGroup result = 1;
   double time = 2; // Time spent to process
 }
 
@@ -331,6 +359,11 @@ message RecommendResponse {
 
 message RecommendBatchResponse {
   repeated BatchResult result = 1;
+  double time = 2; // Time spent to process
+}
+
+message RecommendGroupsResponse {
+  repeated PointGroup result = 1;
   double time = 2; // Time spent to process
 }
 

@@ -141,11 +141,17 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchPoints.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
             ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
+            // ("SearchPointGroups.search", "required"), // <-- TODO: needs Serialize on the underlying type
+            ("SearchPointGroups.top", "range(min = 1)"),
+            ("SearchPointGroups.groups", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
             ("ScrollPoints.collection_name", "length(min = 1, max = 255)"),
             ("ScrollPoints.limit", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
             ("RecommendPoints.collection_name", "length(min = 1, max = 255)"),
             ("RecommendBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("RecommendBatchPoints.recommend_points", ""),
+            // ("RecommendPointGroups.recommend", "required"), // <-- TODO: needs Serialize on the underlying type
+            ("RecommendPointGroups.top", "range(min = 1)"),
+            ("RecommendPointGroups.groups", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
             ("CountPoints.collection_name", "length(min = 1, max = 255)"),
         ], &[])
         // Service: points_internal_service.proto

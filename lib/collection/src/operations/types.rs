@@ -789,7 +789,7 @@ pub enum NodeType {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-pub struct GroupedRecommendRequest {
+pub struct RecommendGroupsRequest {
     /// Recommend request to use
     pub recommend: RecommendRequest,
 
@@ -798,36 +798,36 @@ pub struct GroupedRecommendRequest {
 
     /// Limit of points to return per group
     #[validate(range(min = 1))]
-    pub top: usize,
+    pub top: u32,
 
     /// Optional. Limit of groups to return, will use the limit in the recommend request if not set
     #[validate(range(min = 1))]
     #[serde(default)]
-    pub groups: Option<usize>,
+    pub groups: Option<u32>,
 }
 
-impl From<GroupedRecommendRequest> for GroupRequest {
-    fn from(request: GroupedRecommendRequest) -> Self {
+impl From<RecommendGroupsRequest> for GroupRequest {
+    fn from(request: RecommendGroupsRequest) -> Self {
         if let Some(groups) = request.groups {
             GroupRequest {
                 request: SourceRequest::Recommend(request.recommend),
                 group_by: request.group_by,
-                top: request.top,
-                groups,
+                top: request.top as usize,
+                groups: groups as usize,
             }
         } else {
             // use groups = limit in source request
             GroupRequest::new(
                 SourceRequest::Recommend(request.recommend),
                 request.group_by,
-                request.top,
+                request.top as usize,
             )
         }
     }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-pub struct GroupedSearchRequest {
+pub struct SearchGroupsRequest {
     /// Search request to use
     pub search: SearchRequest,
 
@@ -836,29 +836,29 @@ pub struct GroupedSearchRequest {
 
     /// Limit of points to return per group
     #[validate(range(min = 1))]
-    pub top: usize,
+    pub top: u32,
 
     /// Optional. Limit of groups to return. Will use the limit in the search request if not set
     #[validate(range(min = 1))]
     #[serde(default)]
-    pub groups: Option<usize>,
+    pub groups: Option<u32>,
 }
 
-impl From<GroupedSearchRequest> for GroupRequest {
-    fn from(request: GroupedSearchRequest) -> Self {
+impl From<SearchGroupsRequest> for GroupRequest {
+    fn from(request: SearchGroupsRequest) -> Self {
         if let Some(groups) = request.groups {
             GroupRequest {
                 request: SourceRequest::Search(request.search),
                 group_by: request.group_by,
-                top: request.top,
-                groups,
+                top: request.top as usize,
+                groups: groups as usize,
             }
         } else {
             // use groups = limit in source request
             GroupRequest::new(
                 SourceRequest::Search(request.search),
                 request.group_by,
-                request.top,
+                request.top as usize,
             )
         }
     }

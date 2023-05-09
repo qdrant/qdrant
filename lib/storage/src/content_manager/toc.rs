@@ -13,7 +13,6 @@ use collection::config::{
     CollectionParams,
 };
 use collection::grouping::group_by::{group_by, GroupRequest};
-use collection::grouping::types::Group;
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
@@ -35,7 +34,7 @@ use collection::shards::transfer::shard_transfer::{
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::common::cpu::get_num_cpus;
-use segment::types::ScoredPoint;
+use segment::types::{PointGroup, ScoredPoint};
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard, Semaphore};
 use uuid::Uuid;
@@ -1186,7 +1185,7 @@ impl TableOfContent {
         request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
-    ) -> Result<Vec<Group>, StorageError> {
+    ) -> Result<Vec<PointGroup>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);

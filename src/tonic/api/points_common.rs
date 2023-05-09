@@ -6,9 +6,10 @@ use api::grpc::qdrant::{
     BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints,
     GetResponse, PayloadIndexParams, PointsOperationResponse,
-    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchPoints,
-    SearchResponse, SetPayloadPoints, SyncPoints, UpsertPoints,
+    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
+    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
+    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
+    SetPayloadPoints, SyncPoints, UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::write_ordering_from_proto;
@@ -17,8 +18,8 @@ use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector,
 };
 use collection::operations::types::{
-    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
-    SearchRequestBatch,
+    default_exact_count, PointRequest, RecommendGroupsRequest, RecommendRequestBatch,
+    ScrollRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
@@ -517,6 +518,54 @@ pub async fn search_batch(
     Ok(Response::new(response))
 }
 
+pub async fn search_groups(
+    toc: &TableOfContent,
+    search_point_groups: SearchPointGroups,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<SearchGroupsResponse>, Status> {
+    let SearchPointGroups {
+        collection_name,
+        read_consistency,
+        search,
+        group_by,
+        top,
+        groups,
+        ..
+    } = search_point_groups;
+
+    let grouped_search_request = SearchGroupsRequest {
+        groups,
+        top,
+        search: search
+            .map(|s| s.try_into())
+            .transpose()?
+            .ok_or(Status::invalid_argument(
+                "missing search, required for group search",
+            ))?,
+        group_by,
+    };
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let point_groups = crate::common::points::do_search_point_groups(
+        toc,
+        &collection_name,
+        grouped_search_request,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = SearchGroupsResponse {
+        result: point_groups.into_iter().map(|group| group.into()).collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
 pub async fn recommend(
     toc: &TableOfContent,
     recommend_points: RecommendPoints,
@@ -615,6 +664,49 @@ pub async fn recommend_batch(
     Ok(Response::new(response))
 }
 
+pub async fn recommend_groups(
+    toc: &TableOfContent,
+    recommend_point_groups: RecommendPointGroups,
+) -> Result<Response<RecommendGroupsResponse>, Status> {
+    let RecommendPointGroups {
+        collection_name,
+        read_consistency,
+        recommend,
+        group_by,
+        top,
+        groups,
+        ..
+    } = recommend_point_groups;
+
+    let recommend_groups_request =
+        RecommendGroupsRequest {
+            groups,
+            top,
+            recommend: recommend.map(|s| s.try_into()).transpose()?.ok_or(
+                Status::invalid_argument("missing recommend, required for recommend groups"),
+            )?,
+            group_by,
+        };
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let point_groups = crate::common::points::do_grouped_recommend_points(
+        toc,
+        &collection_name,
+        recommend_groups_request,
+        read_consistency,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = RecommendGroupsResponse {
+        result: point_groups.into_iter().map(|group| group.into()).collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
 pub async fn scroll(
     toc: &TableOfContent,
     scroll_points: ScrollPoints,
