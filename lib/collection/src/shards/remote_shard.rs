@@ -21,6 +21,9 @@ use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
 
+use super::conversions::{
+    internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
+};
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
@@ -28,6 +31,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequest, SearchRequestBatch, UpdateResult,
 };
+use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::conversions::{
@@ -216,6 +220,58 @@ impl RemoteShard {
                     )?;
                     self.with_points_client(|mut client| async move {
                         client.sync(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
+                }
+            },
+            CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {
+                VectorOperations::UpdateVectors(update_operation) => {
+                    let request = &internal_update_vectors(
+                        shard_id,
+                        collection_name,
+                        update_operation,
+                        wait,
+                        ordering,
+                    );
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .update_vectors(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                VectorOperations::DeleteVectors(ids, vector_names) => {
+                    let request = &internal_delete_vectors(
+                        shard_id,
+                        collection_name,
+                        ids.points,
+                        vector_names.clone(),
+                        wait,
+                        ordering,
+                    );
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .delete_vectors(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
+                    let request = &internal_delete_vectors_by_filter(
+                        shard_id,
+                        collection_name,
+                        filter,
+                        vector_names.clone(),
+                        wait,
+                        ordering,
+                    );
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .delete_vectors(tonic::Request::new(request.clone()))
+                            .await
                     })
                     .await?
                     .into_inner()

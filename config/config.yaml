@@ -68,12 +68,15 @@ storage:
     # Segments larger than this threshold will be stored as read-only memmaped file.
     # To enable memmap storage, lower the threshold
     # Note: 1Kb = 1 vector of size 256
-    # If not set, mmap will not be used.
+    # To explicitly disable mmap optimization, set to `0`.
+    # If not set, will be disabled by default.
     memmap_threshold_kb: null
 
     # Maximum size (in KiloBytes) of vectors allowed for plain index.
     # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
     # Note: 1Kb = 1 vector of size 256
+    # To explicitly disable vector indexing, set to `0`.
+    # If not set, the default value will be used.
     indexing_threshold_kb: 20000
 
     # Interval between forced flushes.

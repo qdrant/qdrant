@@ -4,12 +4,12 @@ use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::{
     BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
-    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints,
-    GetResponse, PayloadIndexParams, PointsOperationResponse,
+    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, FieldType,
+    GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponse,
     ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
     RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
     SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
-    SetPayloadPoints, SyncPoints, UpsertPoints,
+    SetPayloadPoints, SyncPoints, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::write_ordering_from_proto;
@@ -21,8 +21,10 @@ use collection::operations::types::{
     default_exact_count, PointRequest, RecommendGroupsRequest, RecommendRequestBatch,
     ScrollRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
+use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
+use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::NamedVector;
 use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
 use storage::content_manager::conversions::error_to_status;
@@ -31,8 +33,9 @@ use tonic::{Response, Status};
 
 use crate::common::points::{
     do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
-    do_delete_points, do_get_points, do_overwrite_payload, do_scroll_points,
-    do_search_batch_points, do_search_points, do_set_payload, do_upsert_points, CreateFieldIndex,
+    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
+    do_search_batch_points, do_search_points, do_set_payload, do_update_vectors, do_upsert_points,
+    CreateFieldIndex,
 };
 
 pub fn points_operation_response(
@@ -142,6 +145,103 @@ pub async fn delete(
         toc,
         &collection_name,
         points_selector,
+        shard_selection,
+        wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn update_vectors(
+    toc: &TableOfContent,
+    update_point_vectors: UpdatePointVectors,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let UpdatePointVectors {
+        collection_name,
+        wait,
+        points,
+        ordering,
+    } = update_point_vectors;
+
+    // Build list of operation points
+    let mut op_points = Vec::with_capacity(points.len());
+    for point in points {
+        let id = match point.id {
+            Some(id) => id.try_into()?,
+            None => return Err(Status::invalid_argument("id is expected")),
+        };
+        let vector = match point.vectors {
+            Some(vectors) => {
+                let vectors = vectors
+                    .vectors
+                    .into_iter()
+                    .map(|(k, v)| (k, v.data))
+                    .collect();
+                NamedVectors::from_map(vectors)
+            }
+            None => return Err(Status::invalid_argument("vectors is expected")),
+        };
+        op_points.push(PointVectors {
+            id,
+            vector: vector.into(),
+        });
+    }
+
+    let operation = UpdateVectors { points: op_points };
+
+    let timing = Instant::now();
+    let result = do_update_vectors(
+        toc,
+        &collection_name,
+        operation,
+        shard_selection,
+        wait.unwrap_or(false),
+        write_ordering_from_proto(ordering)?,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn delete_vectors(
+    toc: &TableOfContent,
+    delete_point_vectors: DeletePointVectors,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<PointsOperationResponse>, Status> {
+    let DeletePointVectors {
+        collection_name,
+        wait,
+        points_selector,
+        vectors,
+        ordering,
+    } = delete_point_vectors;
+
+    let point_selector = match points_selector {
+        Some(points_selector) => points_selector.try_into()?,
+        None => return Err(Status::invalid_argument("points_selector is expected")),
+    };
+    let vector_names = match vectors {
+        Some(vectors) => vectors.names,
+        None => return Err(Status::invalid_argument("vectors is expected")),
+    };
+
+    let operation = DeleteVectors {
+        point_selector,
+        vector: vector_names.into_iter().collect(),
+    };
+
+    let timing = Instant::now();
+    let result = do_delete_vectors(
+        toc,
+        &collection_name,
+        operation,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,

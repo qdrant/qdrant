@@ -50,6 +50,7 @@ mod tests {
                     distance,
                     hnsw_config: None,
                     quantization_config: None,
+                    on_disk: None,
                 },
             )]),
             index: Indexes::Plain {},

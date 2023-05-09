@@ -115,7 +115,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         vectors.try_reserve_exact(vectors_count).map_err(|err| {
             std::io::Error::new(
                 std::io::ErrorKind::OutOfMemory,
-                format!("Failed to load quantized vectors from file: {}", err),
+                format!("Failed to load quantized vectors from file: {err}"),
             )
         })?;
         let mut file = File::open(path)?;
@@ -124,7 +124,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
             vectors.push(&buffer).map_err(|err| {
                 std::io::Error::new(
                     std::io::ErrorKind::OutOfMemory,
-                    format!("Failed to load quantized vectors from file: {}", err),
+                    format!("Failed to load quantized vectors from file: {err}"),
                 )
             })?;
         }
@@ -135,7 +135,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
                 std::io::ErrorKind::Other,
                 format!(
                     "Loaded vectors count {} is not equal to expected count {vectors_count}",
-                    vectors.len()
+                    vectors.len(),
                 ),
             ))
         }

@@ -1,5 +1,6 @@
 use segment::types::{Filter, PointIdType};
 
+use super::vector_ops;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::{point_ops, CollectionUpdateOperations};
 
@@ -30,6 +31,9 @@ impl EstimateOperationEffectArea for CollectionUpdateOperations {
             CollectionUpdateOperations::PointOperation(point_operation) => {
                 point_operation.estimate_effect_area()
             }
+            CollectionUpdateOperations::VectorOperation(vector_operation) => {
+                vector_operation.estimate_effect_area()
+            }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                 payload_operation.estimate_effect_area()
             }
@@ -56,6 +60,23 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                     "SyncPoints operation should not be used during transfer"
                 );
                 OperationEffectArea::Points(sync_op.points.iter().map(|x| x.id).collect())
+            }
+        }
+    }
+}
+
+impl EstimateOperationEffectArea for vector_ops::VectorOperations {
+    fn estimate_effect_area(&self) -> OperationEffectArea {
+        match self {
+            vector_ops::VectorOperations::UpdateVectors(update_operation) => {
+                let ids = update_operation.points.iter().map(|p| p.id).collect();
+                OperationEffectArea::Points(ids)
+            }
+            vector_ops::VectorOperations::DeleteVectors(ids, _) => {
+                OperationEffectArea::Points(ids.points.clone())
+            }
+            vector_ops::VectorOperations::DeleteVectorsByFilter(filter, _) => {
+                OperationEffectArea::Filter(filter.clone())
             }
         }
     }

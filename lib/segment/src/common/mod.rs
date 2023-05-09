@@ -3,6 +3,8 @@ pub mod arc_atomic_ref_cell_iterator;
 pub mod cpu;
 pub mod error_logging;
 pub mod file_operations;
+pub mod mmap_ops;
+pub mod mmap_type;
 pub mod operation_time_statistics;
 pub mod rocksdb_wrapper;
 pub mod utils;
@@ -28,12 +30,7 @@ pub fn check_vectors_set(
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
     for vector_name in vectors.keys() {
-        if !segment_config.vector_data.contains_key(vector_name) {
-            return Err(OperationError::VectorNameNotExists {
-                received_name: vector_name.to_string(),
-            });
-        }
+        check_vector_name(vector_name, segment_config)?;
     }
-
     Ok(())
 }

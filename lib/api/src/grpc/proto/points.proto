@@ -71,6 +71,26 @@ message GetPoints {
   optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
 }
 
+message UpdatePointVectors {
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  repeated PointVectors points = 3; // List of points and vectors to update
+  optional WriteOrdering ordering = 4; // Write ordering guarantees
+}
+
+message PointVectors {
+  PointId id = 1; // ID to update vectors for
+  NamedVectors vectors = 2; // Named vectors to update, leave others intact
+}
+
+message DeletePointVectors {
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  PointsSelector points_selector = 3; // Affected points
+  VectorsSelector vectors = 4; // List of vector names to delete
+  optional WriteOrdering ordering = 5; // Write ordering guarantees
+}
+
 message SetPayloadPoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?

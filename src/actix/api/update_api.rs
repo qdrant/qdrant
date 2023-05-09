@@ -3,6 +3,7 @@ use actix_web::{delete, post, put, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
+use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
@@ -12,7 +13,8 @@ use super::CollectionPath;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_overwrite_payload, do_set_payload, do_upsert_points, CreateFieldIndex,
+    do_delete_vectors, do_overwrite_payload, do_set_payload, do_update_vectors, do_upsert_points,
+    CreateFieldIndex,
 };
 
 #[derive(Deserialize, Validate)]
@@ -65,6 +67,54 @@ async fn delete_points(
     let ordering = params.ordering.unwrap_or_default();
 
     let response = do_delete_points(
+        toc.get_ref(),
+        &collection.name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
+    process_response(response, timing)
+}
+
+#[put("/collections/{name}/points/vectors")]
+async fn update_vectors(
+    toc: web::Data<TableOfContent>,
+    collection: Path<CollectionPath>,
+    operation: Json<UpdateVectors>,
+    params: Query<UpdateParam>,
+) -> impl Responder {
+    let timing = Instant::now();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
+
+    let response = do_update_vectors(
+        toc.get_ref(),
+        &collection.name,
+        operation,
+        None,
+        wait,
+        ordering,
+    )
+    .await;
+    process_response(response, timing)
+}
+
+#[post("/collections/{name}/points/vectors/delete")]
+async fn delete_vectors(
+    toc: web::Data<TableOfContent>,
+    collection: Path<CollectionPath>,
+    operation: Json<DeleteVectors>,
+    params: Query<UpdateParam>,
+) -> impl Responder {
+    let timing = Instant::now();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
+
+    let response = do_delete_vectors(
         toc.get_ref(),
         &collection.name,
         operation,
@@ -223,6 +273,8 @@ async fn delete_field_index(
 pub fn config_update_api(cfg: &mut web::ServiceConfig) {
     cfg.service(upsert_points)
         .service(delete_points)
+        .service(update_vectors)
+        .service(delete_vectors)
         .service(set_payload)
         .service(overwrite_payload)
         .service(delete_payload)

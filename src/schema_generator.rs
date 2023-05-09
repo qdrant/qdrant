@@ -10,6 +10,7 @@ use collection::operations::types::{
     RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
     SearchRequestBatch, UpdateResult,
 };
+use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
 use segment::types::{PointGroup, ScoredPoint};
@@ -64,9 +65,11 @@ struct AllDefinitions {
     ay: AliasDescription,
     az: WriteOrdering,
     b1: ReadConsistency,
-    b2: PointGroup,
-    b3: SearchGroupsRequest,
-    b4: RecommendGroupsRequest,
+    b2: UpdateVectors,
+    b3: DeleteVectors,
+    b4: PointGroup,
+    b5: SearchGroupsRequest,
+    b6: RecommendGroupsRequest,
 }
 
 fn save_schema<T: JsonSchema>() {
