@@ -135,6 +135,44 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 
 ![call-graph example](./imgs/call-graph-profile.png)
 
+### Real-time profiling
+
+Qdrant have basic [`Tracy`] and [`tokio-console`] profilers integration that can be enabled with optional features.
+
+- `tracy` feature enables [`Tracy`] integration
+- `console` feature enables [`tokio-console`] integration
+  - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
+  - by default [`tokio-console`] binds to `127.0.0.1:6669`
+  - if you want to connect [`tokio-console`] to Qdrant instance running inside a Docker container
+    or on remote server, you can define `TOKIO_CONSOLE_BIND` when running Qdrant to override it
+    (e.g., `TOKIO_CONSOLE_BIND=0.0.0.0:6669` to listen on all interfaces)
+- `tokio-tracing` feature explicitly enables [`Tokio` crate tracing][tokio-tracing]
+  - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
+  - this is required (and enabled automatically) by the `console` feature
+  - but you can enable it explicitly with the `tracy` feature, to see `Tokio` traces in [`Tracy`] profiler
+
+Qdrant code is **not** instrumented by default, so you'll have to manually add `#[tracing::instrument]` attributes
+on functions and methods that you want to profile.
+
+```rust
+// `tracing` crate is an *optional* dependency, so if you want the code to compile even when `tracing`
+// feature is disabled, you'll have to use `#[cfg_attr(...)]`...
+//
+// See https://doc.rust-lang.org/reference/conditional-compilation.html#the-cfg_attr-attribute
+#[cfg_attr(feature = "tracing", tracing::instrument)]
+fn my_function(some_parameter: String) {
+    // ...
+}
+
+// ...or if you just want to do some quick-and-dirty profiling, you use `#[tracing::instrument]`
+// directly, just don't forget to add `--features tracing` when running `cargo` or add `tracing`
+// to default features in `Cargo.toml`
+#[tracing::instrument]
+fn some_other_function() {
+    // ...
+}
+```
+
 ## API changes
 
 ### REST
