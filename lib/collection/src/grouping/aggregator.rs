@@ -58,10 +58,11 @@ impl GroupsAggregator {
 
     /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field, else it just ignores them
     pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
-        points
-            .iter()
-            .map(|point| self.add_point(point))
-            .any(|r| matches!(r, Err(AllGroupsFull)));
+        for point in points {
+            if let Err(AllGroupsFull) = self.add_point(point) {
+                break;
+            }
+        }
     }
 
     #[cfg(test)]
