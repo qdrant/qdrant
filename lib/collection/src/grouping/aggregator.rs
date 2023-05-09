@@ -89,7 +89,7 @@ impl GroupsAggregator {
         self.groups
             .iter()
             .flat_map(|(_, hits)| hits.iter())
-            .map(|p| p.0.id)
+            .map(|p| p.id())
             .collect()
     }
 

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use schemars::JsonSchema;
-use segment::types::ScoredPoint;
+use segment::types::{ExtendedPointId, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use AggregatorError::BadKeyType;
@@ -71,7 +71,7 @@ impl Hash for GroupKey {
 
 /// Abstraction over ScoredPoint to be used in a HashSet
 #[derive(Eq, Debug, PartialEq, Clone)]
-pub(super) struct HashablePoint(pub ScoredPoint);
+pub(super) struct HashablePoint(ScoredPoint);
 
 impl HashablePoint {
     pub fn minimal_from(point: &ScoredPoint) -> Self {
@@ -82,6 +82,10 @@ impl HashablePoint {
             payload: None,
             vector: None,
         })
+    }
+
+    pub fn id(&self) -> ExtendedPointId {
+        self.0.id
     }
 }
 
