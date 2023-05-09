@@ -1,6 +1,6 @@
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
-use std::mem::size_of;
+use std::mem::size_of_val;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -19,7 +19,7 @@ use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::VectorStorage;
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
+    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, size_of_val(v)) }
 }
 
 /// Stores all vectors in mem-mapped file
