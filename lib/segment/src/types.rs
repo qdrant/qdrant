@@ -514,32 +514,6 @@ pub struct SegmentConfig {
     pub payload_storage_type: PayloadStorageType,
 }
 
-impl From<SegmentConfigV5> for SegmentConfig {
-    fn from(old: SegmentConfigV5) -> Self {
-        let vector_data = old
-            .vector_data
-            .into_iter()
-            .map(|(vector_name, mut vector_data)| {
-                // Remove vector specific quantization config if no global one is set
-                // This is required because in some cases this was incorrectly set on the vector
-                // level
-                if old.quantization_config.is_none() {
-                    vector_data.quantization_config.take();
-                }
-
-                (vector_name, vector_data)
-            })
-            .collect();
-
-        SegmentConfig {
-            vector_data,
-            index: old.index,
-            storage_type: old.storage_type,
-            payload_storage_type: old.payload_storage_type,
-        }
-    }
-}
-
 impl SegmentConfig {
     /// Helper to get vector specific quantization config.
     ///
@@ -571,7 +545,7 @@ impl SegmentConfig {
 #[serde(rename_all = "snake_case")]
 #[deprecated = "use SegmentConfig instead"]
 pub struct SegmentConfigV5 {
-    pub vector_data: HashMap<String, VectorDataConfig>,
+    pub vector_data: HashMap<String, VectorDataConfigV5>,
     /// Type of index used for search
     pub index: Indexes,
     /// Type of vector storage
@@ -584,10 +558,60 @@ pub struct SegmentConfigV5 {
     pub quantization_config: Option<QuantizationConfig>,
 }
 
+impl From<SegmentConfigV5> for SegmentConfig {
+    fn from(old: SegmentConfigV5) -> Self {
+        let vector_data = old
+            .vector_data
+            .into_iter()
+            .map(|(vector_name, mut vector_data)| {
+                // Remove vector specific quantization config if no global one is set
+                // This is required because in some cases this was incorrectly set on the vector
+                // level
+                if old.quantization_config.is_none() {
+                    vector_data.quantization_config.take();
+                }
+
+                (vector_name, vector_data.into())
+            })
+            .collect();
+
+        SegmentConfig {
+            vector_data,
+            index: old.index,
+            storage_type: old.storage_type,
+            payload_storage_type: old.payload_storage_type,
+        }
+    }
+}
+
 /// Config of single vector data storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataConfig {
+    /// Size/dimensionality of the vectors used
+    pub size: usize,
+    /// Type of distance function used for measuring distance between vectors
+    pub distance: Distance,
+    /// Vector specific HNSW config that overrides collection config
+    #[serde(default)]
+    pub hnsw_config: Option<HnswConfig>,
+    /// Vector specific quantization config that overrides collection config
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
+    /// If true - vectors will not be stored in memory.
+    /// Instead, it will store vectors on mmap-files.
+    /// If enabled, search performance will defined by disk speed
+    /// and fraction of vectors that fit in RAM.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_disk: Option<bool>,
+}
+
+/// Config of single vector data storage
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+#[deprecated = "use VectorDataConfig instead"]
+pub struct VectorDataConfigV5 {
     /// Size of a vectors used
     pub size: usize,
     /// Type of distance function used for measuring distance between vectors
@@ -605,6 +629,18 @@ pub struct VectorDataConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+}
+
+impl From<VectorDataConfigV5> for VectorDataConfig {
+    fn from(old: VectorDataConfigV5) -> Self {
+        Self {
+            size: old.size,
+            distance: old.distance,
+            hnsw_config: old.hnsw_config,
+            quantization_config: old.quantization_config,
+            on_disk: old.on_disk,
+        }
+    }
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
