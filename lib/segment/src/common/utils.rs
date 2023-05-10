@@ -4,6 +4,8 @@ use serde_json::Value;
 
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
+use crate::index::field_index::FieldIndex;
+use crate::types::PayloadKeyType;
 
 /// Avoids allocating Vec with a single element
 #[derive(Debug)]
@@ -98,13 +100,16 @@ impl MultiValue<&Value> {
     }
 }
 
-impl<T> Iterator for MultiValue<T> {
+impl<T> IntoIterator for MultiValue<T> {
     type Item = T;
+    // propagate to Vec internal iterator
+    type IntoIter = std::vec::IntoIter<Self::Item>;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn into_iter(self) -> Self::IntoIter {
         match self {
-            Self::Single(opt) => opt.take(),
-            Self::Multiple(vec) => vec.pop(),
+            Self::Single(None) => vec![].into_iter(),
+            Self::Single(Some(a)) => vec![a].into_iter(),
+            Self::Multiple(vec) => vec.into_iter(),
         }
     }
 }
@@ -182,6 +187,20 @@ fn focus_array_path<'a>(
     }
 }
 
+/// Focus on value references according to path
+/// Flatten intermediate arrays but keep leaf array values on demand.
+/// E.g
+/// {
+///   "arr": [
+///       { "a": [1, 2, 3] },
+///       { "a": 4 },
+///       { "b": 5 }
+///   ]
+/// }
+///
+/// path: "arr[].a"   => Vec![Value::Array[ 1, 2, 3], 4]
+/// path: "arr[].a[]" => Vec![ 1, 2, 3, 4]
+///
 pub fn get_value_from_json_map<'a>(
     path: &str,
     value: &'a serde_json::Map<String, Value>,
@@ -308,6 +327,30 @@ pub fn transpose_map_into_named_vector(
         }
     }
     result
+}
+
+/// Light abstraction over a JSON path to avoid concatenating strings
+#[derive(Debug, Clone)]
+pub struct JsonPathPayload {
+    pub path: String,
+}
+
+impl JsonPathPayload {
+    pub fn new(path: String) -> Self {
+        Self { path }
+    }
+
+    pub fn extend(&self, segment: &str) -> Self {
+        let full_path = format!("{}.{}", self.path, segment);
+        JsonPathPayload::new(full_path)
+    }
+
+    pub fn extend_or_new(base: Option<&Self>, segment: &str) -> Self {
+        match base {
+            Some(path) => path.extend(segment),
+            None => JsonPathPayload::new(segment.to_string()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -510,4 +553,79 @@ mod tests {
         // select bad index from array
         assert!(get_value_from_json_map("a.b[z]", &map).check_is_empty());
     }
+
+    #[test]
+    fn test_get_deeply_nested_array_value_from_json_map() {
+        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "arr1": [
+                    {
+                        "arr2": [
+                            {"a": 1, "b": 2}
+                        ]
+                    },
+                    {
+                        "arr2": [
+                            {"a": 3, "b": 4},
+                            {"a": 5, "b": 6}
+                        ]
+                    }
+                ]
+            }
+            "#,
+        )
+        .unwrap();
+
+        // extract and flatten all elements from arrays
+        assert_eq!(
+            get_value_from_json_map("arr1[].arr2[].a", &map).values(),
+            vec![
+                &Value::Number(1.into()),
+                &Value::Number(3.into()),
+                &Value::Number(5.into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_no_flatten_array_value_from_json_map() {
+        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "arr": [
+                    { "a": [1, 2, 3] },
+                    { "a": 4 },
+                    { "b": 5 }
+                ]
+            }
+            "#,
+        )
+        .unwrap();
+
+        // extract and retain structure for arrays arrays
+        assert_eq!(
+            get_value_from_json_map("arr[].a", &map).values(),
+            vec![
+                &Value::Array(vec![
+                    Value::Number(1.into()),
+                    Value::Number(2.into()),
+                    Value::Number(3.into()),
+                ]),
+                &Value::Number(4.into()),
+            ]
+        );
+
+        // expect an array as leaf, ignore non arrays
+        assert_eq!(
+            get_value_from_json_map("arr[].a[]", &map).values(),
+            vec![
+                &Value::Number(1.into()),
+                &Value::Number(2.into()),
+                &Value::Number(3.into()),
+            ]
+        );
+    }
 }
+
+pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;

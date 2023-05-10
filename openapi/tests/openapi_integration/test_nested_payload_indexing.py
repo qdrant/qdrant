@@ -1,10 +1,9 @@
 import pytest
-import json
 
 from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import drop_collection
 
-collection_name = 'test_collection_payload_indexing'
+collection_name = 'test_collection_nested_payload_indexing'
 
 
 def nested_payload_collection_setup(collection_name, on_disk_payload=False):
@@ -54,16 +53,28 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                                 {
                                     "name": "Berlin",
                                     "population": 3.7,
+                                    "location": {
+                                        "lon": 13.76116,
+                                        "lat": 52.33826,
+                                    },
                                     "sightseeing": ["Brandenburg Gate", "Reichstag"]
                                 },
                                 {
                                     "name": "Munich",
                                     "population": 1.5,
+                                    "location": {
+                                        "lon": 11.57549,
+                                        "lat": 48.13743,
+                                    },
                                     "sightseeing": ["Marienplatz", "Olympiapark"]
                                 },
                                 {
                                     "name": "Hamburg",
                                     "population": 1.8,
+                                    "location": {
+                                        "lon": 9.99368,
+                                        "lat": 53.55108,
+                                    },
                                     "sightseeing": ["Reeperbahn", "Elbphilharmonie"]
                                 }
                             ],
@@ -81,16 +92,28 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                                 {
                                     "name": "London",
                                     "population": 8.9,
-                                    "sightseeing": ["Big Ben", "London Eye"]
+                                    "location": {
+                                        "lon": -0.12755,
+                                        "lat": 51.50722,
+                                    },
+                                    "sightseeing": ["Big Ben", "London Eye", "Buckingham Palace"]
                                 },
                                 {
                                     "name": "Manchester",
                                     "population": 2.5,
+                                    "location": {
+                                        "lon": -2.23743,
+                                        "lat": 53.48095,
+                                    },
                                     "sightseeing": ["Manchester United", "Manchester City"]
                                 },
                                 {
                                     "name": "Liverpool",
                                     "population": 0.5,
+                                    "location": {
+                                        "lon": -2.97794,
+                                        "lat": 53.41058,
+                                    },
                                     "sightseeing": ["Anfield", "Albert Dock"]
                                 }
                             ]
@@ -108,16 +131,28 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                                 {
                                     "name": "Paris",
                                     "population": 2.2,
-                                    "sightseeing": ["Eiffel Tower", "Louvre"]
+                                    "location": {
+                                        "lon": 2.35222,
+                                        "lat": 48.85661,
+                                    },
+                                    "sightseeing": ["Eiffel Tower", "Louvre", "Notre Dame", "Arc de Triomphe"]
                                 },
                                 {
                                     "name": "Marseille",
                                     "population": 0.9,
+                                    "location": {
+                                        "lon": 5.36978,
+                                        "lat": 43.29648,
+                                    },
                                     "sightseeing": ["Vieux Port", "Notre Dame de la Garde"]
                                 },
                                 {
                                     "name": "Lyon",
                                     "population": 0.5,
+                                    "location": {
+                                        "lon": 4.83565,
+                                        "lat": 45.76404,
+                                    },
                                     "sightseeing": ["Place Bellecour", "Fourvière Basilica"]
                                 }
                             ]
@@ -135,16 +170,28 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                                 {
                                     "name": "Tokyo",
                                     "population": 9.3,
+                                    "location": {
+                                        "lon": 139.69171,
+                                        "lat": 35.6895,
+                                    },
                                     "sightseeing": ["Tokyo Tower", "Tokyo Skytree"]
                                 },
                                 {
                                     "name": "Osaka",
                                     "population": 2.7,
+                                    "location": {
+                                        "lon": 135.50217,
+                                        "lat": 34.69374,
+                                    },
                                     "sightseeing": ["Osaka Castle", "Universal Studios Japan"]
                                 },
                                 {
                                     "name": "Kyoto",
                                     "population": 1.5,
+                                    "location": {
+                                        "lon": 135.76803,
+                                        "lat": 35.01163,
+                                    },
                                     "sightseeing": ["Kiyomizu-dera", "Fushimi Inari-taisha"]
                                 }
                             ]
@@ -156,7 +203,8 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                     "vector": [0.24, 0.18, 0.22, 0.44],
                     "payload": {
                         "country": {
-                            "name": "Nauru",
+                            "name": "Nauru",  # Null capital for testing
+                            "cities": [],  # Empty data for testing
                         }
                     }
                 },
@@ -177,7 +225,7 @@ def setup():
     drop_collection(collection_name=collection_name)
 
 
-def test_payload_indexing_operations():
+def test_nested_payload_indexing_operations():
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
