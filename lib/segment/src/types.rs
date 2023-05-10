@@ -517,6 +517,18 @@ pub struct SegmentConfig {
     pub quantization_config: Option<QuantizationConfig>,
 }
 
+impl From<SegmentConfigV5> for SegmentConfig {
+    fn from(old: SegmentConfigV5) -> Self {
+        SegmentConfig {
+            vector_data: old.vector_data,
+            index: old.index,
+            storage_type: old.storage_type,
+            payload_storage_type: old.payload_storage_type,
+            quantization_config: old.quantization_config,
+        }
+    }
+}
+
 impl SegmentConfig {
     /// Helper to get vector specific quantization config.
     ///
@@ -544,6 +556,23 @@ impl SegmentConfig {
             StorageType::Mmap => true,
         }
     }
+}
+
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+#[deprecated = "use SegmentConfig instead"]
+pub struct SegmentConfigV5 {
+    pub vector_data: HashMap<String, VectorDataConfig>,
+    /// Type of index used for search
+    pub index: Indexes,
+    /// Type of vector storage
+    pub storage_type: StorageType,
+    /// Defines payload storage type
+    #[serde(default)]
+    pub payload_storage_type: PayloadStorageType,
+    /// Quantization parameters. If none - quantization is disabled.
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
 }
 
 /// Config of single vector data storage
