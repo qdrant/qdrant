@@ -4,7 +4,6 @@ use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, PointGroup,
     ScoredPoint, WithPayloadInterface, WithVector,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
 use validator::Validate;
@@ -20,8 +19,7 @@ use crate::shards::shard::ShardId;
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
 const MAX_GROUP_FILLING_REQUESTS: usize = 5;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Clone, Debug)]
 pub enum SourceRequest {
     Search(SearchRequest),
     Recommend(RecommendRequest),
@@ -106,7 +104,7 @@ impl SourceRequest {
     }
 }
 
-#[derive(Clone, Validate, Deserialize)]
+#[derive(Clone, Validate)]
 pub struct GroupRequest {
     /// Request to use (search or recommend)
     pub request: SourceRequest,
@@ -156,18 +154,16 @@ where
 
     // Try to complete amount of groups
     for _ in 0..MAX_GET_GROUPS_REQUESTS {
-        // let enough_groups = (request.groups - groups.len()) == 0;
-        // if enough_groups {
-        //     break;
-        // }
-        let full_groups = aggregator.keys_of_filled_groups();
-        if full_groups.len() >= request.groups {
+        // TODO: should we break early if we have some amount of "enough" groups?
+
+        if aggregator.len_of_filled_best_groups() >= request.groups {
             break;
         }
 
         let mut req = request.request.clone();
 
         // construct filter to exclude already found groups
+        let full_groups = aggregator.keys_of_filled_groups();
         if !full_groups.is_empty() {
             if let Some(match_any) = match_on(request.group_by.clone(), full_groups) {
                 let exclude_groups = Filter::new_must_not(match_any);
@@ -202,15 +198,14 @@ where
 
     // Try to fill up groups
     for _ in 0..MAX_GROUP_FILLING_REQUESTS {
-        let full_groups = aggregator.keys_of_filled_groups();
-        if full_groups.len() >= request.groups {
+        if aggregator.len_of_filled_best_groups() >= request.groups {
             break;
         }
 
         let mut req = request.request.clone();
 
         // construct filter to only include unsatisfied groups
-        let unsatisfied_groups = aggregator.keys_of_unfilled_groups();
+        let unsatisfied_groups = aggregator.keys_of_unfilled_best_groups();
         if let Some(match_any) = match_on(request.group_by.clone(), unsatisfied_groups) {
             let include_groups = Filter::new_must(match_any);
             req.merge_filter(&include_groups);

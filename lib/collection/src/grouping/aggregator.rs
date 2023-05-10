@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
+use priority_queue::PriorityQueue;
 use segment::types::{ExtendedPointId, ScoredPoint};
 use serde_json::Value;
 
@@ -15,6 +16,7 @@ pub(super) struct GroupsAggregator {
     grouped_by: String,
     max_groups: usize,
     full_groups: HashSet<GroupKey>,
+    best_group_keys: PriorityQueue<GroupKey, HashablePoint>,
 }
 
 impl GroupsAggregator {
@@ -25,14 +27,12 @@ impl GroupsAggregator {
             grouped_by,
             max_groups: groups,
             full_groups: HashSet::with_capacity(groups),
+            best_group_keys: PriorityQueue::with_capacity(groups),
         }
     }
 
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
-    fn add_point(&mut self, point: &ScoredPoint) -> Result<(), AggregatorError> {
-        if self.full_groups.len() == self.max_groups {
-            return Err(AllGroupsFull);
-        }
+    fn add_point(&mut self, point: ScoredPoint) -> Result<(), AggregatorError> {
 
         // if the key contains multiple values, grabs the first one
         let group_key = point
@@ -42,13 +42,19 @@ impl GroupsAggregator {
             .ok_or(KeyNotFound)
             .and_then(GroupKey::try_from)?;
 
+        let point = HashablePoint::minimal_from(point);
+
         let group = self
             .groups
             .entry(group_key.clone())
             .or_insert_with(|| HashSet::with_capacity(self.max_group_size));
-
-        group.insert(HashablePoint::minimal_from(point));
-
+        
+        group.insert(point.clone());
+        
+        // keep track of best groups
+        self.best_group_keys
+            .push_increase(group_key.clone(), point);
+        
         if group.len() == self.max_group_size {
             self.full_groups.insert(group_key);
         }
@@ -59,8 +65,8 @@ impl GroupsAggregator {
     /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field, else it just ignores them
     pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
         for point in points {
-            if let Err(AllGroupsFull) = self.add_point(point) {
-                break;
+            if self.add_point(point.to_owned()).is_err() {
+                continue; // ignore points that don't have the group_by field
             }
         }
     }
@@ -71,17 +77,38 @@ impl GroupsAggregator {
     }
 
     // Gets the keys of the groups that have less than the max group size
-    pub(super) fn keys_of_unfilled_groups(&self) -> Vec<Value> {
-        self.groups
-            .iter()
-            .filter(|(_, hits)| hits.len() < self.max_group_size)
-            .map(|(key, _)| Value::from(key.clone()))
+    pub(super) fn keys_of_unfilled_best_groups(&self) -> Vec<Value> {
+        self.best_group_keys
+            .clone()
+            .into_sorted_vec()
+            .into_iter()
+            .take(self.max_groups)
+            .filter_map(|key| {
+                let hits = self.groups.get(&key)?;
+
+                if hits.len() < self.max_group_size {
+                    Some(Value::from(key))
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
-    // gets the keys of the groups that have reached the max group size
+    /// Gets the keys of the groups that have reached the max group size
     pub(super) fn keys_of_filled_groups(&self) -> Vec<Value> {
         self.full_groups.iter().cloned().map(Value::from).collect()
+    }
+
+    /// Gets the amount of best groups that have reached the max group size
+    pub(super) fn len_of_filled_best_groups(&self) -> usize {
+        self.best_group_keys
+            .clone()
+            .into_sorted_vec()
+            .iter()
+            .take(self.max_groups)
+            .filter(|key| self.full_groups.contains(key))
+            .count()
     }
 
     /// Gets the ids of the already present points across all the groups
@@ -93,12 +120,16 @@ impl GroupsAggregator {
             .collect()
     }
 
-    // Returns the best groups sorted by their best hit. The hits are sorted too
+    /// Returns the best groups sorted by their best hit. The hits are sorted too.
     pub(super) fn distill(&self) -> Vec<Group> {
-        self.groups
+        self.best_group_keys
+            .clone()
+            .into_sorted_vec()
             .iter()
-            .map(|(k, v)| {
-                let hits = v
+            .filter_map(|key| {
+                let hits = self
+                    .groups
+                    .get(key)?  // it should always have it
                     .iter()
                     .sorted()
                     .rev()
@@ -106,18 +137,13 @@ impl GroupsAggregator {
                     .cloned()
                     .collect::<Vec<_>>();
 
-                Group {
+                Some(Group {
                     hits,
-                    key: k.clone(),
+                    key: key.clone(),
                     group_by: self.grouped_by.clone(),
-                }
+                })
             })
-            // TODO: what happens when the best groups are not the most filled ones?
-            .sorted_by_key(|group| group.hits.len())
-            .rev()
             .take(self.max_groups)
-            .sorted_by_key(|group| group.hits.get(0).cloned())
-            .rev()
             .collect()
     }
 }
@@ -145,7 +171,7 @@ mod unit_tests {
         [
             (
                 // point
-                &ScoredPoint {
+                ScoredPoint {
                     id: 1.into(),
                     version: 0,
                     score: 1.0,
@@ -162,7 +188,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 1.into(), // same id as the previous one
                     version: 0,
                     score: 1.0,
@@ -175,7 +201,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 2.into(),
                     version: 0,
                     score: 1.0,
@@ -188,7 +214,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 3.into(),
                     version: 0,
                     score: 1.0,
@@ -201,7 +227,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 4.into(),
                     version: 0,
                     score: 1.0,
@@ -214,7 +240,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 5.into(),
                     version: 0,
                     score: 1.0,
@@ -227,7 +253,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 6.into(),
                     version: 0,
                     score: 1.0,
@@ -240,7 +266,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 7.into(),
                     version: 0,
                     score: 1.0,
@@ -253,7 +279,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 8.into(),
                     version: 0,
                     score: 1.0,
@@ -266,7 +292,7 @@ mod unit_tests {
                 Err(BadKeyType),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 9.into(),
                     version: 0,
                     score: 1.0,
@@ -279,7 +305,7 @@ mod unit_tests {
                 Err(KeyNotFound),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 10.into(),
                     version: 0,
                     score: 1.0,
@@ -292,7 +318,7 @@ mod unit_tests {
                 Ok(()),
             ),
             (
-                &ScoredPoint {
+                ScoredPoint {
                     id: 11.into(),
                     version: 0,
                     score: 1.0,
@@ -300,9 +326,9 @@ mod unit_tests {
                     vector: None,
                 },
                 json!(3),
-                2,
+                3,
                 4,
-                Err(AllGroupsFull),
+                Ok(()),
             ),
         ]
         .into_iter()
@@ -396,6 +422,13 @@ mod unit_tests {
                         payload: None,
                         vector: None,
                     },
+                    ScoredPoint {
+                        id: 11.into(),
+                        version: 0,
+                        score: 1.0,
+                        payload: None,
+                        vector: None,
+                    }
                 ]
                 .to_vec(),
             ),

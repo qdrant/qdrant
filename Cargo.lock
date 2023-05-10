@@ -989,6 +989,7 @@ dependencies = [
  "ordered-float 3.7.0",
  "parking_lot",
  "pprof",
+ "priority-queue",
  "rand 0.8.5",
  "rmp-serde",
  "schemars",
@@ -2902,6 +2903,16 @@ checksum = "1ceca8aaf45b5c46ec7ed39fff75f57290368c1846d33d24a122ca81416ab058"
 dependencies = [
  "proc-macro2",
  "syn 2.0.11",
+]
+
+[[package]]
+name = "priority-queue"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ca9c6be70d989d21a136eb86c2d83e4b328447fac4a88dace2143c179c86267"
+dependencies = [
+ "autocfg",
+ "indexmap",
 ]
 
 [[package]]

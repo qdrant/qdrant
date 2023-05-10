@@ -6,7 +6,6 @@ use AggregatorError::BadKeyType;
 
 #[derive(PartialEq, Debug)]
 pub(super) enum AggregatorError {
-    AllGroupsFull,
     BadKeyType,
     KeyNotFound,
 }
@@ -83,7 +82,7 @@ impl Hash for GroupKey {
 pub(super) struct HashablePoint(ScoredPoint);
 
 impl HashablePoint {
-    pub fn minimal_from(point: &ScoredPoint) -> Self {
+    pub fn minimal_from(point: ScoredPoint) -> Self {
         Self(ScoredPoint {
             id: point.id,
             version: point.version,
