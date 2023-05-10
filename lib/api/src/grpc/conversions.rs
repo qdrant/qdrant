@@ -4,7 +4,9 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{default_quantization_ignore_value, default_quantization_rescore_value};
+use segment::types::{
+    default_quantization_ignore_value, default_quantization_rescore_value, NestedContainer,
+};
 use tonic::Status;
 use uuid::Uuid;
 
@@ -21,11 +23,11 @@ use crate::grpc::qdrant::{
     with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
     HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match,
-    NamedVectors, PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams,
-    PayloadSchemaInfo, PayloadSchemaType, PointId, QuantizationConfig, QuantizationSearchParams,
-    Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams,
-    Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector,
-    WithPayloadSelector, WithVectorsSelector,
+    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
+    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, QuantizationConfig,
+    QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization,
+    ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
+    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -658,6 +660,9 @@ impl TryFrom<Condition> for segment::types::Condition {
                 ConditionOneOf::IsNull(is_null) => {
                     Ok(segment::types::Condition::IsNull(is_null.into()))
                 }
+                ConditionOneOf::Nested(nested) => Ok(segment::types::Condition::Nested(
+                    NestedContainer::new(nested.try_into()?),
+                )),
             };
         }
         Err(Status::invalid_argument("Malformed Condition type"))
@@ -674,10 +679,38 @@ impl From<segment::types::Condition> for Condition {
             segment::types::Condition::IsNull(is_null) => ConditionOneOf::IsNull(is_null.into()),
             segment::types::Condition::HasId(has_id) => ConditionOneOf::HasId(has_id.into()),
             segment::types::Condition::Filter(filter) => ConditionOneOf::Filter(filter.into()),
+            segment::types::Condition::Nested(nested) => {
+                ConditionOneOf::Nested(nested.nested.into())
+            }
         };
 
         Self {
             condition_one_of: Some(condition_one_of),
+        }
+    }
+}
+
+impl TryFrom<NestedCondition> for segment::types::NestedCondition {
+    type Error = Status;
+
+    fn try_from(value: NestedCondition) -> Result<Self, Self::Error> {
+        match value.filter {
+            None => Err(Status::invalid_argument(
+                "Nested condition must have a filter",
+            )),
+            Some(filter) => Ok(Self {
+                key: value.key,
+                filter: filter.try_into()?,
+            }),
+        }
+    }
+}
+
+impl From<segment::types::NestedCondition> for NestedCondition {
+    fn from(value: segment::types::NestedCondition) -> Self {
+        Self {
+            key: value.key,
+            filter: Some(value.filter.into()),
         }
     }
 }

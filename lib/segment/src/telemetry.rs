@@ -122,6 +122,7 @@ impl Anonymize for VectorDataConfig {
             distance: self.distance,
             hnsw_config: None,
             quantization_config: None,
+            on_disk: None,
         }
     }
 }

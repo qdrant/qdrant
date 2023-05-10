@@ -31,6 +31,8 @@ pub struct OperationData {
     pub op_num: SeqNumberType,
     /// Operation
     pub operation: CollectionUpdateOperations,
+    /// If operation was requested to wait for result
+    pub wait: bool,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
 }
@@ -122,6 +124,7 @@ impl UpdateHandler {
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             update_receiver,
             tx,
+            self.wal.clone(),
             self.segments.clone(),
         )));
         let (flush_tx, flush_rx) = oneshot::channel();
@@ -313,6 +316,7 @@ impl UpdateHandler {
     async fn update_worker_fn(
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
+        wal: LockedWal,
         segments: LockedSegmentHolder,
     ) {
         while let Some(signal) = receiver.recv().await {
@@ -321,8 +325,23 @@ impl UpdateHandler {
                     op_num,
                     operation,
                     sender,
+                    wait,
                 }) => {
-                    let res = match CollectionUpdater::update(&segments, op_num, operation) {
+                    let flush_res = if wait {
+                        wal.lock().flush().map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "Can't flush WAL before operation {} - {}",
+                                op_num, err
+                            ))
+                        })
+                    } else {
+                        Ok(())
+                    };
+
+                    let operation_result = flush_res
+                        .and_then(|_| CollectionUpdater::update(&segments, op_num, operation));
+
+                    let res = match operation_result {
                         Ok(update_res) => optimize_sender
                             .send(OptimizerSignal::Operation(op_num))
                             .await

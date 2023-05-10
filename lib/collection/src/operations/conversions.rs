@@ -346,6 +346,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 ),
                 None => None,
             },
+            on_disk: vector_params.on_disk,
         })
     }
 }
@@ -772,6 +773,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             .into(),
             hnsw_config: value.hnsw_config.map(Into::into),
             quantization_config: value.quantization_config.map(Into::into),
+            on_disk: value.on_disk,
         }
     }
 }

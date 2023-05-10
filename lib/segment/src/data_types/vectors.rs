@@ -30,6 +30,16 @@ pub enum VectorStruct {
     Multi(HashMap<String, VectorType>),
 }
 
+impl VectorStruct {
+    /// Check if this vector struct is empty.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            VectorStruct::Single(vector) => vector.is_empty(),
+            VectorStruct::Multi(vectors) => vectors.values().all(|v| v.is_empty()),
+        }
+    }
+}
+
 impl From<VectorType> for VectorStruct {
     fn from(v: VectorType) -> Self {
         VectorStruct::Single(v)
@@ -55,13 +65,7 @@ impl<'a> From<NamedVectors<'a>> for VectorStruct {
 impl VectorStruct {
     pub fn get(&self, name: &str) -> Option<&VectorType> {
         match self {
-            VectorStruct::Single(v) => {
-                if name == DEFAULT_VECTOR_NAME {
-                    Some(v)
-                } else {
-                    None
-                }
-            }
+            VectorStruct::Single(v) => (name == DEFAULT_VECTOR_NAME).then_some(v),
             VectorStruct::Multi(v) => v.get(name),
         }
     }

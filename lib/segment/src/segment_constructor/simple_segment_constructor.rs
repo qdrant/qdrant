@@ -28,6 +28,7 @@ pub fn build_simple_segment(
                     distance,
                     hnsw_config: None,
                     quantization_config: None,
+                    on_disk: None,
                 },
             )]),
             index: Indexes::Plain {},
@@ -50,6 +51,7 @@ pub fn build_multivec_segment(
             distance,
             hnsw_config: None,
             quantization_config: None,
+            on_disk: None,
         },
     );
     vectors_config.insert(
@@ -59,6 +61,7 @@ pub fn build_multivec_segment(
             distance,
             hnsw_config: None,
             quantization_config: None,
+            on_disk: None,
         },
     );
 

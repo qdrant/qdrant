@@ -304,6 +304,7 @@ mod tests {
                     distance: Distance::Dot,
                     hnsw_config: None,
                     quantization_config: None,
+                    on_disk: None,
                 }),
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,
@@ -351,7 +352,7 @@ mod tests {
         for &point_id in &segment_points_to_assign1 {
             assert!(segment_guard.has_point(point_id));
             let payload = segment_guard.payload(point_id).unwrap();
-            let payload_color = &(*payload.get_value("color").next().unwrap()).clone();
+            let payload_color = &(*payload.get_value("color").into_iter().next().unwrap()).clone();
 
             match payload_color {
                 Value::String(x) => assert_eq!(x, "red"),
@@ -396,6 +397,7 @@ mod tests {
                         distance: Distance::Dot,
                         hnsw_config: None,
                         quantization_config: None,
+                        on_disk: None,
                     },
                 ),
                 (
@@ -405,6 +407,7 @@ mod tests {
                         distance: Distance::Dot,
                         hnsw_config: None,
                         quantization_config: None,
+                        on_disk: None,
                     },
                 ),
             ])),

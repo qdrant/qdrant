@@ -17,6 +17,9 @@ pub struct VectorParams {
     #[prost(message, optional, tag = "4")]
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
+    #[prost(bool, optional, tag = "5")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -162,29 +165,36 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "3")]
     pub default_segment_number: ::core::option::Option<u64>,
     ///
-    /// Do not create segments larger this size (in KiloBytes).
+    /// Do not create segments larger this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
-    /// If indexation speed has more priority for you - make this parameter lower.
+    /// If indexing speed is more important - make this parameter lower.
     /// If search speed is more important - make this parameter higher.
     /// Note: 1Kb = 1 vector of size 256
+    /// If not set, will be automatically selected considering the number of available CPUs.
     #[prost(uint64, optional, tag = "4")]
     pub max_segment_size: ::core::option::Option<u64>,
     ///
-    /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-    /// Segments larger than this threshold will be stored as a read-only memmaped file.
-    /// To enable memmap storage, lower the threshold
+    /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
+    /// Segments larger than this threshold will be stored as read-only memmaped file.
+    ///
+    /// Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
+    ///
+    /// To disable memmap storage, set this to `0`.
+    ///
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "5")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1000")]
     pub memmap_threshold: ::core::option::Option<u64>,
     ///
-    /// Maximum size (in KiloBytes) of vectors allowed for plain index.
-    /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
-    /// Note: 1Kb = 1 vector of size 256
+    /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
+    ///
+    /// Default value is 20,000, based on <<https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.>
+    ///
+    /// To disable vector indexing, set to `0`.
+    ///
+    /// Note: 1kB = 1 vector of size 256.
     #[prost(uint64, optional, tag = "6")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1000")]
     pub indexing_threshold: ::core::option::Option<u64>,
     ///
     /// Interval between forced flushes.
@@ -2476,6 +2486,7 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
@@ -2537,6 +2548,55 @@ pub struct GetPoints {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "6")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdatePointVectors {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    /// List of points and vectors to update
+    #[prost(message, repeated, tag = "3")]
+    pub points: ::prost::alloc::vec::Vec<PointVectors>,
+    /// Write ordering guarantees
+    #[prost(message, optional, tag = "4")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointVectors {
+    /// ID to update vectors for
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
+    /// Named vectors to update, leave others intact
+    #[prost(message, optional, tag = "2")]
+    pub vectors: ::core::option::Option<NamedVectors>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeletePointVectors {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    /// Affected points
+    #[prost(message, optional, tag = "3")]
+    pub points_selector: ::core::option::Option<PointsSelector>,
+    /// List of vector names to delete
+    #[prost(message, optional, tag = "4")]
+    pub vectors: ::core::option::Option<VectorsSelector>,
+    /// Write ordering guarantees
+    #[prost(message, optional, tag = "5")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2676,6 +2736,7 @@ pub mod with_payload_selector {
         Exclude(super::PayloadExcludeSelector),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectors {
@@ -3063,7 +3124,7 @@ pub struct Filter {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6")]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
@@ -3081,6 +3142,8 @@ pub mod condition {
         Filter(super::Filter),
         #[prost(message, tag = "5")]
         IsNull(super::IsNullCondition),
+        #[prost(message, tag = "6")]
+        Nested(super::NestedCondition),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3100,6 +3163,16 @@ pub struct IsNullCondition {
 pub struct HasIdCondition {
     #[prost(message, repeated, tag = "1")]
     pub has_id: ::prost::alloc::vec::Vec<PointId>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NestedCondition {
+    /// Path to nested object
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// Filter condition
+    #[prost(message, optional, tag = "2")]
+    pub filter: ::core::option::Option<Filter>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3537,6 +3610,60 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         ///
+        /// Update named vectors for point
+        pub async fn update_vectors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdatePointVectors>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/UpdateVectors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "UpdateVectors"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Delete named vectors for points
+        pub async fn delete_vectors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeletePointVectors>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/DeleteVectors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "DeleteVectors"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
         /// Set payload for points
         pub async fn set_payload(
             &mut self,
@@ -3869,6 +3996,24 @@ pub mod points_server {
             request: tonic::Request<super::GetPoints>,
         ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status>;
         ///
+        /// Update named vectors for point
+        async fn update_vectors(
+            &self,
+            request: tonic::Request<super::UpdatePointVectors>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Delete named vectors for points
+        async fn delete_vectors(
+            &self,
+            request: tonic::Request<super::DeletePointVectors>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
+        ///
         /// Set payload for points
         async fn set_payload(
             &self,
@@ -4158,6 +4303,98 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/UpdateVectors" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateVectorsSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::UpdatePointVectors>
+                    for UpdateVectorsSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdatePointVectors>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).update_vectors(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateVectorsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/DeleteVectors" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteVectorsSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::DeletePointVectors>
+                    for DeleteVectorsSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeletePointVectors>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).delete_vectors(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteVectorsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -4797,6 +5034,26 @@ pub struct DeletePointsInternal {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateVectorsInternal {
+    #[prost(message, optional, tag = "1")]
+    #[validate]
+    pub update_vectors: ::core::option::Option<UpdatePointVectors>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteVectorsInternal {
+    #[prost(message, optional, tag = "1")]
+    #[validate]
+    pub delete_vectors: ::core::option::Option<DeletePointVectors>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPointsInternal {
     #[prost(message, optional, tag = "1")]
     #[validate]
@@ -5069,6 +5326,56 @@ pub mod points_internal_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "Delete"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn update_vectors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateVectorsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/UpdateVectors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "UpdateVectors"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn delete_vectors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteVectorsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/DeleteVectors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "DeleteVectors"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn set_payload(
@@ -5388,6 +5695,20 @@ pub mod points_internal_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
+        async fn update_vectors(
+            &self,
+            request: tonic::Request<super::UpdateVectorsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
+        async fn delete_vectors(
+            &self,
+            request: tonic::Request<super::DeleteVectorsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponse>,
+            tonic::Status,
+        >;
         async fn set_payload(
             &self,
             request: tonic::Request<super::SetPayloadPointsInternal>,
@@ -5657,6 +5978,98 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/UpdateVectors" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateVectorsSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::UpdateVectorsInternal>
+                    for UpdateVectorsSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateVectorsInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).update_vectors(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateVectorsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/DeleteVectors" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteVectorsSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::DeleteVectorsInternal>
+                    for DeleteVectorsSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteVectorsInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).delete_vectors(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteVectorsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

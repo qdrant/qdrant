@@ -4,18 +4,20 @@ use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
-    DeletePayloadPointsInternal, DeletePointsInternal, GetPointsInternal, GetResponse,
-    PointsOperationResponse, RecommendPointsInternal, RecommendResponse, ScrollPointsInternal,
-    ScrollResponse, SearchBatchPointsInternal, SearchBatchResponse, SearchPointsInternal,
-    SearchResponse, SetPayloadPointsInternal, SyncPointsInternal, UpsertPointsInternal,
+    DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
+    GetResponse, PointsOperationResponse, RecommendPointsInternal, RecommendResponse,
+    ScrollPointsInternal, ScrollResponse, SearchBatchPointsInternal, SearchBatchResponse,
+    SearchPointsInternal, SearchResponse, SetPayloadPointsInternal, SyncPointsInternal,
+    UpdateVectorsInternal, UpsertPointsInternal,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
 use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    overwrite_payload, recommend, scroll, search, search_batch, set_payload, sync, upsert,
+    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload,
+    delete_vectors, get, overwrite_payload, recommend, scroll, search, search_batch, set_payload,
+    sync, update_vectors, upsert,
 };
 
 /// This API is intended for P2P communication within a distributed deployment.
@@ -61,6 +63,36 @@ impl PointsInternal for PointsInternalService {
             delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
 
         delete(self.toc.as_ref(), delete_points, shard_id).await
+    }
+
+    async fn update_vectors(
+        &self,
+        request: Request<UpdateVectorsInternal>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
+        let request = request.into_inner();
+        let shard_id = request.shard_id;
+        let update_point_vectors = request.update_vectors;
+
+        let update_point_vectors = update_point_vectors
+            .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
+
+        update_vectors(self.toc.as_ref(), update_point_vectors, shard_id).await
+    }
+
+    async fn delete_vectors(
+        &self,
+        request: Request<DeleteVectorsInternal>,
+    ) -> Result<Response<PointsOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
+        let request = request.into_inner();
+        let shard_id = request.shard_id;
+        let delete_point_vectors = request.delete_vectors;
+
+        let delete_point_vectors = delete_point_vectors
+            .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
+
+        delete_vectors(self.toc.as_ref(), delete_point_vectors, shard_id).await
     }
 
     async fn set_payload(

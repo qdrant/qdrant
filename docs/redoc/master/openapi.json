@@ -2606,6 +2606,200 @@
         }
       }
     },
+    "/collections/{collection_name}/points/vectors": {
+      "put": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Update vectors",
+        "description": "Update specified named vectors on points, keep unspecified vectors intact.",
+        "operationId": "update_vectors",
+        "requestBody": {
+          "description": "Update named vectors on points",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVectors"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to update from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "ordering",
+            "in": "query",
+            "description": "define ordering guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WriteOrdering"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/points/vectors/delete": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Delete vectors",
+        "description": "Delete named vectors from the given points.",
+        "operationId": "delete_vectors",
+        "requestBody": {
+          "description": "Delete named vectors from points",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteVectors"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to delete from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait for changes to actually happen",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "ordering",
+            "in": "query",
+            "description": "define ordering guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WriteOrdering"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/points/payload": {
       "post": {
         "tags": [
@@ -3849,6 +4043,11 @@
                 "nullable": true
               }
             ]
+          },
+          "on_disk": {
+            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency Default: false",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -3879,7 +4078,7 @@
             "nullable": true
           },
           "full_scan_threshold": {
-            "description": "Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
+            "description": "Minimal size (in kilobytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
             "minimum": 1000,
@@ -4071,7 +4270,7 @@
             "minimum": 0
           },
           "max_segment_size": {
-            "description": "Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
+            "description": "Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
             "default": null,
             "type": "integer",
             "format": "uint",
@@ -4079,18 +4278,19 @@
             "nullable": true
           },
           "memmap_threshold": {
-            "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 If not set, mmap will not be used.",
+            "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.\n\nMemmap storage is disabled by default, to enable it, set this threshold to a reasonable value.\n\nTo disable memmap storage, set this to `0`. Internally it will use the largest threshold possible.\n\nNote: 1Kb = 1 vector of size 256",
             "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 1000,
+            "minimum": 0,
             "nullable": true
           },
           "indexing_threshold": {
-            "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
+            "description": "Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing\n\nDefault value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.\n\nTo disable vector indexing, set to `0`.\n\nNote: 1kB = 1 vector of size 256.",
+            "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 1000,
+            "minimum": 0,
             "nullable": true
           },
           "flush_interval_sec": {
@@ -4562,6 +4762,9 @@
           },
           {
             "$ref": "#/components/schemas/Filter"
+          },
+          {
+            "$ref": "#/components/schemas/NestedContainer"
           }
         ]
       },
@@ -4880,6 +5083,33 @@
               "$ref": "#/components/schemas/ExtendedPointId"
             },
             "uniqueItems": true
+          }
+        }
+      },
+      "NestedContainer": {
+        "type": "object",
+        "required": [
+          "nested"
+        ],
+        "properties": {
+          "nested": {
+            "$ref": "#/components/schemas/NestedCondition"
+          }
+        }
+      },
+      "NestedCondition": {
+        "description": "Select points with payload for a specified nested field",
+        "type": "object",
+        "required": [
+          "filter",
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/Filter"
           }
         }
       },
@@ -5359,24 +5589,24 @@
             "nullable": true
           },
           "max_segment_size": {
-            "description": "Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256",
+            "description": "Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
             "nullable": true
           },
           "memmap_threshold": {
-            "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256",
+            "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.\n\nMemmap storage is disabled by default, to enable it, set this threshold to a reasonable value.\n\nTo disable memmap storage, set this to `0`.\n\nNote: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
-            "minimum": 1000,
+            "minimum": 0,
             "nullable": true
           },
           "indexing_threshold": {
-            "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md> Note: 1Kb = 1 vector of size 256",
+            "description": "Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing\n\nDefault value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.\n\nTo disable vector indexing, set to `0`.\n\nNote: 1kB = 1 vector of size 256.",
             "type": "integer",
             "format": "uint",
-            "minimum": 1000,
+            "minimum": 0,
             "nullable": true
           },
           "flush_interval_sec": {
@@ -5390,7 +5620,7 @@
             "description": "Maximum available threads for optimization workers",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           }
         }
@@ -6638,6 +6868,11 @@
                 "nullable": true
               }
             ]
+          },
+          "on_disk": {
+            "description": "If true - vectors will not be stored in memory. Instead, it will store vectors on mmap-files. If enabled, search performance will defined by disk speed and fraction of vectors that fit in RAM.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7349,6 +7584,58 @@
           "quorum",
           "all"
         ]
+      },
+      "UpdateVectors": {
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "properties": {
+          "points": {
+            "description": "Points with named vectors",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PointVectors"
+            },
+            "minItems": 1
+          }
+        }
+      },
+      "PointVectors": {
+        "type": "object",
+        "required": [
+          "id",
+          "vector"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          "vector": {
+            "$ref": "#/components/schemas/VectorStruct"
+          }
+        }
+      },
+      "DeleteVectors": {
+        "type": "object",
+        "required": [
+          "point_selector",
+          "vector"
+        ],
+        "properties": {
+          "point_selector": {
+            "$ref": "#/components/schemas/PointsSelector"
+          },
+          "vector": {
+            "description": "Vector names",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
       }
     }
   }

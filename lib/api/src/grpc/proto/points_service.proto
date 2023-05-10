@@ -20,6 +20,14 @@ service Points {
    */
   rpc Get (GetPoints) returns (GetResponse) {}
   /*
+  Update named vectors for point
+   */
+  rpc UpdateVectors (UpdatePointVectors) returns (PointsOperationResponse) {}
+  /*
+  Delete named vectors for points
+   */
+  rpc DeleteVectors (DeletePointVectors) returns (PointsOperationResponse) {}
+  /*
   Set payload for points
    */
   rpc SetPayload (SetPayloadPoints) returns (PointsOperationResponse) {}

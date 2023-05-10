@@ -4,6 +4,12 @@
 FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.69.0 AS chef
 WORKDIR /qdrant
 
+ARG RUST_BUILD_PROFILE=release
+
+ARG MOLD_VERSION=1.11.0
+
+# # Choose MOLD arch based on TARGETARCH: amd64 -> x86_64, arm64 -> aarch64
+
 FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
@@ -15,6 +21,13 @@ ARG TARGETARCH
 ENV TARGETARCH=${TARGETARCH:-amd64}
 
 WORKDIR /qdrant
+
+COPY ./tools/mold_arch.sh ./mold_arch.sh
+
+RUN wget https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz \
+    && tar -xf mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux.tar.gz  \
+    && mv mold-${MOLD_VERSION}-$(bash mold_arch.sh)-linux /qdrant/mold \
+    && chmod +x /qdrant/mold/bin/mold
 
 COPY ./tools/target_arch.sh ./target_arch.sh
 RUN echo "Building for $TARGETARCH, arch: $(bash target_arch.sh)"
@@ -30,15 +43,14 @@ RUN apt-get update \
 RUN rustup target add $(bash target_arch.sh)
 
 # Build dependencies - this is the caching Docker layer!
-RUN cargo chef cook --release --target $(bash target_arch.sh) --recipe-path recipe.json
+RUN ./mold/bin/mold -run cargo chef cook --profile=${RUST_BUILD_PROFILE} --target $(bash target_arch.sh) --recipe-path recipe.json
 
 COPY . .
 
-
 # Build actual target here
-RUN cargo build --release --target $(bash target_arch.sh) --bin qdrant
+RUN ./mold/bin/mold -run cargo build --profile=${RUST_BUILD_PROFILE} --target $(bash target_arch.sh) --bin qdrant
 
-RUN mv target/$(bash target_arch.sh)/release/qdrant /qdrant/qdrant
+RUN mv target/$(bash target_arch.sh)/${RUST_BUILD_PROFILE}/qdrant /qdrant/qdrant
 
 FROM debian:11-slim
 ARG APP=/qdrant

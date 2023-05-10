@@ -314,6 +314,19 @@ impl SegmentEntry for ProxySegment {
         Ok(was_deleted || was_deleted_in_writable)
     }
 
+    fn update_vectors(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: NamedVectors,
+    ) -> OperationResult<bool> {
+        self.move_if_exists(op_num, point_id)?;
+        self.write_segment
+            .get()
+            .write()
+            .update_vectors(op_num, point_id, vectors)
+    }
+
     fn delete_vector(
         &mut self,
         op_num: SeqNumberType,

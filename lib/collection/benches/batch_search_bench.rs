@@ -64,6 +64,7 @@ fn batch_search_bench(c: &mut Criterion) {
             distance: Distance::Dot,
             hnsw_config: None,
             quantization_config: None,
+            on_disk: None,
         }
         .into(),
         shard_number: NonZeroU32::new(1).expect("Shard number can not be zero"),
