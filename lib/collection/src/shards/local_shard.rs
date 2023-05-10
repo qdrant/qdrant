@@ -407,16 +407,30 @@ impl LocalShard {
 
         let segments = self.segments();
 
-        let minimal_persisted_version = segments
+        let min_persisted_version = segments
             .read()
             .iter()
             .map(|(_, segment)| segment.get().read().version())
-            .min();
+            .min()
+            .unwrap_or(0);
 
-        for (op_num, update) in wal
-            .read_all()
-            .skip_while(|&(op_num, _)| Some(op_num) <= minimal_persisted_version)
-        {
+        // `0` is a valid version.
+        //
+        // `Segment::version` declared as `Option<SeqNumberType>`.
+        //
+        // However, `<Segment as SegmentEntry>::version` returns `self.version.unwrap_or(0)`,
+        // which means we can't precisely distinguish an empty `Segment` (i.e., no operations applied)
+        // from a `Segment` with version `0` (i.e., exactly one operation with version `0` applied).
+        //
+        // To work around this corner case, we explicitly check that `min_persisted_version > 0`,
+        // so that if `min_persisted_version == 0` we won't skip operation `0` and will always
+        // (re)apply it.
+
+        let ops = wal.read_all().skip_while(|&(op_num, _)| {
+            op_num <= min_persisted_version && min_persisted_version > 0
+        });
+
+        for (op_num, update) in ops {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
