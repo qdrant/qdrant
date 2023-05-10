@@ -285,7 +285,8 @@ impl Segment {
     {
         match op_point_offset {
             None => {
-                // Not a point operation, use global version to check if already applied
+                // Not a point operation *or* point does not exist.
+                // Use global version to check if operation has been already applied.
                 if self.version.unwrap_or(0) > op_num {
                     return Ok(false); // Skip without execution
                 }
