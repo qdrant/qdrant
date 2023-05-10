@@ -2037,14 +2037,14 @@ mod tests {
     #[test]
     fn merge_filters() {
         let condition1 = Condition::Field(FieldCondition::new_match(
-            "summary".into(),
+            "summary",
             Match::new_text("Berlin"),
         ));
         let mut this = Filter::new_must(condition1.clone());
         this.should = Some(vec![condition1.clone()]);
 
         let condition2 = Condition::Field(FieldCondition::new_match(
-            "city".into(),
+            "city",
             Match::new_value(ValueVariants::Keyword("Osaka".into())),
         ));
         let other = Filter::new_must(condition2.clone());

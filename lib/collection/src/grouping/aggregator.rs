@@ -38,7 +38,7 @@ impl GroupsAggregator {
         let group_key = point
             .payload
             .as_ref()
-            .and_then(|p| p.get_value(&self.grouped_by).next().cloned())
+            .and_then(|p| p.get_value(&self.grouped_by).into_iter().next().cloned())
             .ok_or(KeyNotFound)
             .and_then(GroupKey::try_from)?;
 
