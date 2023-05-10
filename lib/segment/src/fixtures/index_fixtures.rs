@@ -79,6 +79,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         _data_path: &Path,
         _quantization_config: &QuantizationConfig,
         _max_threads: usize,
+        _stopped: &AtomicBool,
     ) -> OperationResult<()> {
         Ok(())
     }

@@ -234,6 +234,7 @@ impl SegmentBuilder {
                     &vector_storage_path,
                     quantization,
                     max_threads,
+                    stopped,
                 )?;
             }
         }

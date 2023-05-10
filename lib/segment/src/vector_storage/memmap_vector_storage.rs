@@ -141,9 +141,16 @@ impl VectorStorage for MemmapVectorStorage {
         data_path: &Path,
         quantization_config: &QuantizationConfig,
         max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.quantize(self.distance, data_path, quantization_config, max_threads)
+        mmap_store.quantize(
+            self.distance,
+            data_path,
+            quantization_config,
+            max_threads,
+            stopped,
+        )
     }
 
     fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
@@ -603,7 +610,10 @@ mod tests {
         }
         .into();
 
-        borrowed_storage.quantize(dir.path(), &config, 1).unwrap();
+        let stopped = Arc::new(AtomicBool::new(false));
+        borrowed_storage
+            .quantize(dir.path(), &config, 1, &stopped)
+            .unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];
 
