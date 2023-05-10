@@ -378,7 +378,7 @@ pub enum Error {
     #[error("Mmap length must be multiple of {0} to match the size of type, but it is {1}")]
     SizeMultiple(usize, usize),
     #[cfg(windows)]
-    #[error("Mmap is empty, this is not supported on Windows")]
+    #[error("Mmap is empty, not supported on Windows")]
     Empty,
 }
 
@@ -400,7 +400,7 @@ unsafe fn mmap_to_type_unbounded<'unbnd, T>(mmap: &mut MmapMut) -> Result<&'unbn
 where
     T: Sized,
 {
-    // On Windows, mmap cannot be empty
+    // Empty mmap is not supported on Windows
     #[cfg(windows)]
     if mmap.is_empty() {
         return Err(Error::Empty);
@@ -448,7 +448,7 @@ unsafe fn mmap_to_slice_unbounded<'unbnd, T>(
 where
     T: Sized,
 {
-    // On Windows, mmap cannot be empty
+    // Empty mmap is not supported on Windows
     #[cfg(windows)]
     if mmap.is_empty() {
         return Err(Error::Empty);
@@ -638,11 +638,14 @@ mod tests {
         let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
         let result = unsafe { MmapType::<()>::try_from(mmap) };
 
+        // Empty mmap is supported on non-Windows
         #[cfg(not(windows))]
         assert!(
             result.is_ok(),
             "using empty mmap on non-Windows should be okay",
         );
+
+        // Empty mmap is not supported on Windows
         #[cfg(windows)]
         assert!(result.is_err(), "using empty mmap on Windows must error",);
     }
