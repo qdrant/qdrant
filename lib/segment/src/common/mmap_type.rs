@@ -505,14 +505,12 @@ mod tests {
     use crate::common::mmap_ops;
 
     fn create_temp_mmap_file(len: usize) -> NamedTempFile {
-        assert!(len > 0, "should not create empty file");
         let tempfile = Builder::new()
             .prefix("test.")
             .suffix(".mmap")
             .tempfile()
             .unwrap();
         tempfile.as_file().set_len(len as u64).unwrap();
-        tempfile.as_file().sync_all().unwrap();
         tempfile
     }
 
@@ -521,15 +519,20 @@ mod tests {
         check_open_zero_type::<u8>(0);
         check_open_zero_type::<usize>(0);
         check_open_zero_type::<f32>(0.0);
-        check_open_zero_slice::<u8>(0, 0);
         check_open_zero_slice::<u8>(1, 0);
         check_open_zero_slice::<u8>(123, 0);
-        check_open_zero_slice::<usize>(0, 0);
         check_open_zero_slice::<usize>(1, 0);
         check_open_zero_slice::<usize>(123, 0);
-        check_open_zero_slice::<f32>(0, 0.0);
         check_open_zero_slice::<f32>(1, 0.0);
         check_open_zero_slice::<f32>(123, 0.0);
+
+        // Test empty mmap, not supported on Windows
+        #[cfg(not(windows))]
+        {
+            check_open_zero_slice::<u8>(0, 0);
+            check_open_zero_slice::<usize>(0, 0);
+            check_open_zero_slice::<f32>(0, 0.0);
+        }
     }
 
     fn check_open_zero_type<T: Sized + PartialEq + Debug + 'static>(zero: T) {
@@ -554,15 +557,20 @@ mod tests {
     #[test]
     fn test_reopen_random() {
         let mut rng = StdRng::seed_from_u64(42);
-        check_reopen_random::<u8, _>(0, || rng.gen());
         check_reopen_random::<u8, _>(1, || rng.gen());
         check_reopen_random::<u8, _>(123, || rng.gen());
-        check_reopen_random::<usize, _>(0, || rng.gen());
         check_reopen_random::<usize, _>(1, || rng.gen());
         check_reopen_random::<usize, _>(123, || rng.gen());
-        check_reopen_random::<f32, _>(0, || rng.gen());
         check_reopen_random::<f32, _>(1, || rng.gen());
         check_reopen_random::<f32, _>(123, || rng.gen());
+
+        // Test empty mmap, not supported on Windows
+        #[cfg(not(windows))]
+        {
+            check_reopen_random::<u8, _>(0, || rng.gen());
+            check_reopen_random::<usize, _>(0, || rng.gen());
+            check_reopen_random::<f32, _>(0, || rng.gen());
+        }
     }
 
     fn check_reopen_random<T, R>(len: usize, rng: R)
@@ -617,5 +625,20 @@ mod tests {
             let mmap_bitslice = MmapBitSlice::from(mmap, header_size);
             (0..bits).for_each(|i| assert_eq!(mmap_bitslice[i], rng.gen::<bool>()));
         }
+    }
+
+    #[test]
+    fn test_emtpy_error() {
+        let tempfile = create_temp_mmap_file(0);
+        let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
+        let result = unsafe { MmapType::<()>::try_from(mmap) };
+
+        #[cfg(not(windows))]
+        assert!(
+            result.is_ok(),
+            "using empty mmap on non-Windows should be okay",
+        );
+        #[cfg(windows)]
+        assert!(result.is_err(), "using empty mmap on Windows must error",);
     }
 }
