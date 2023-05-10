@@ -10,11 +10,16 @@ use crate::types::{
 pub trait ValueChecker {
     fn check_match(&self, payload: &Value) -> bool;
 
-    fn check(&self, payload: &Value) -> bool {
+    #[inline]
+    fn _check(&self, payload: &Value) -> bool {
         match payload {
             Value::Array(values) => values.iter().any(|x| self.check_match(x)),
             _ => self.check_match(payload),
         }
+    }
+
+    fn check(&self, payload: &Value) -> bool {
+        self._check(payload)
     }
 }
 
@@ -26,28 +31,36 @@ impl ValueChecker for FieldCondition {
             || self
                 .r#match
                 .as_ref()
-                .map_or(false, |condition| condition.check(payload));
+                .map_or(false, |condition| condition.check_match(payload));
         res = res
             || self
                 .range
                 .as_ref()
-                .map_or(false, |condition| condition.check(payload));
+                .map_or(false, |condition| condition.check_match(payload));
         res = res
             || self
                 .geo_radius
                 .as_ref()
-                .map_or(false, |condition| condition.check(payload));
+                .map_or(false, |condition| condition.check_match(payload));
         res = res
             || self
                 .geo_bounding_box
                 .as_ref()
-                .map_or(false, |condition| condition.check(payload));
+                .map_or(false, |condition| condition.check_match(payload));
         res = res
             || self
                 .values_count
                 .as_ref()
-                .map_or(false, |condition| condition.check(payload));
+                .map_or(false, |condition| condition.check_match(payload));
         res
+    }
+
+    fn check(&self, payload: &Value) -> bool {
+        if self.values_count.is_some() {
+            self.values_count.as_ref().unwrap().check_count(payload)
+        } else {
+            self._check(payload)
+        }
     }
 }
 
