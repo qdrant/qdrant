@@ -4,6 +4,7 @@ use std::mem::{self, size_of, transmute};
 use std::ops::DerefMut;
 use std::path::Path;
 use std::slice;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
@@ -100,6 +101,7 @@ impl MmapVectors {
         data_path: &Path,
         quantization_config: &QuantizationConfig,
         max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<()> {
         self.lock_deleted_flags();
         let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
@@ -115,6 +117,7 @@ impl MmapVectors {
             data_path,
             true,
             max_threads,
+            stopped,
         )?);
         Ok(())
     }

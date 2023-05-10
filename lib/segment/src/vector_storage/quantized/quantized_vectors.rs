@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::slice::BitSlice;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
@@ -124,6 +125,7 @@ impl QuantizedVectors {
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
@@ -136,6 +138,7 @@ impl QuantizedVectors {
                 scalar_config,
                 path,
                 on_disk_vector_storage,
+                stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
                 Self::crate_pq(
@@ -145,6 +148,7 @@ impl QuantizedVectors {
                     path,
                     on_disk_vector_storage,
                     max_threads,
+                    stopped,
                 )?
             }
         };
@@ -228,6 +232,7 @@ impl QuantizedVectors {
         scalar_config: &crate::types::ScalarQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
+        stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let quantized_vector_size =
             EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
@@ -240,6 +245,7 @@ impl QuantizedVectors {
                 storage_builder,
                 vector_parameters,
                 scalar_config.quantile,
+                || stopped.load(Ordering::Relaxed),
             )?))
         } else {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
@@ -254,6 +260,7 @@ impl QuantizedVectors {
                     storage_builder,
                     vector_parameters,
                     scalar_config.quantile,
+                    || stopped.load(Ordering::Relaxed),
                 )?,
             ))
         }
@@ -266,6 +273,7 @@ impl QuantizedVectors {
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bucket_size = Self::get_bucket_size(pq_config.compression);
         let quantized_vector_size =
@@ -283,6 +291,7 @@ impl QuantizedVectors {
                 vector_parameters,
                 bucket_size,
                 max_threads,
+                || stopped.load(Ordering::Relaxed),
             )?))
         } else {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
@@ -297,6 +306,7 @@ impl QuantizedVectors {
                 vector_parameters,
                 bucket_size,
                 max_threads,
+                || stopped.load(Ordering::Relaxed),
             )?))
         }
     }
