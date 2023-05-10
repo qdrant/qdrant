@@ -1067,9 +1067,9 @@ pub struct FieldCondition {
 }
 
 impl FieldCondition {
-    pub fn new_match(key: PayloadKeyType, r#match: Match) -> Self {
+    pub fn new_match(key: impl Into<PayloadKeyType>, r#match: Match) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: Some(r#match),
             range: None,
             geo_bounding_box: None,
@@ -1078,9 +1078,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_range(key: PayloadKeyType, range: Range) -> Self {
+    pub fn new_range(key: impl Into<PayloadKeyType>, range: Range) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: None,
             range: Some(range),
             geo_bounding_box: None,
@@ -1089,9 +1089,12 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_geo_bounding_box(key: PayloadKeyType, geo_bounding_box: GeoBoundingBox) -> Self {
+    pub fn new_geo_bounding_box(
+        key: impl Into<PayloadKeyType>,
+        geo_bounding_box: GeoBoundingBox,
+    ) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: None,
             range: None,
             geo_bounding_box: Some(geo_bounding_box),
@@ -1100,9 +1103,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_geo_radius(key: PayloadKeyType, geo_radius: GeoRadius) -> Self {
+    pub fn new_geo_radius(key: impl Into<PayloadKeyType>, geo_radius: GeoRadius) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: None,
             range: None,
             geo_bounding_box: None,
@@ -1111,9 +1114,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_values_count(key: PayloadKeyType, values_count: ValuesCount) -> Self {
+    pub fn new_values_count(key: impl Into<PayloadKeyType>, values_count: ValuesCount) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: None,
             range: None,
             geo_bounding_box: None,
@@ -1154,6 +1157,44 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
     }
 }
 
+/// Select points with payload for a specified nested field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct NestedCondition {
+    pub key: PayloadKeyType,
+    pub filter: Filter,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct NestedContainer {
+    pub nested: NestedCondition,
+}
+
+/// Container to workaround the untagged enum limitation for condition
+impl NestedContainer {
+    pub fn new(nested: NestedCondition) -> Self {
+        Self { nested }
+    }
+
+    /// Get the raw key without any modifications
+    pub fn raw_key(&self) -> &str {
+        &self.nested.key
+    }
+
+    /// Nested is made to be used with arrays, so we add `[]` to the key if it is not present for convenience
+    pub fn array_key(&self) -> String {
+        let raw = self.raw_key();
+        if raw.ends_with("[]") {
+            raw.to_string()
+        } else {
+            format!("{}[]", raw)
+        }
+    }
+
+    pub fn filter(&self) -> &Filter {
+        &self.nested.filter
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
@@ -1168,6 +1209,19 @@ pub enum Condition {
     HasId(HasIdCondition),
     /// Nested filter
     Filter(Filter),
+    /// Nested filters
+    Nested(NestedContainer),
+}
+
+impl Condition {
+    pub fn new_nested(key: impl Into<String>, filter: Filter) -> Self {
+        Self::Nested(NestedContainer {
+            nested: NestedCondition {
+                key: key.into(),
+                filter,
+            },
+        })
+    }
 }
 
 /// Options for specifying which payload to include or not
@@ -1637,6 +1691,66 @@ mod tests {
         };
 
         assert_eq!(c.is_null.key.as_str(), "Jason");
+    }
+
+    #[test]
+    fn test_parse_nested_filter_query() {
+        let query = r#"
+        {
+          "must": [
+            {
+              "nested": {
+                "key": "country.cities",
+                "filter": {
+                  "must": [
+                    {
+                      "key": "population",
+                      "range": {
+                        "gte": 8
+                      }
+                    },
+                    {
+                      "key": "sightseeing",
+                      "values_count": {
+                        "lt": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+        "#;
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let musts = filter.must.unwrap();
+        assert_eq!(musts.len(), 1);
+        match musts.get(0) {
+            Some(Condition::Nested(nested_condition)) => {
+                assert_eq!(nested_condition.raw_key(), "country.cities");
+                assert_eq!(nested_condition.array_key(), "country.cities[]");
+                let nested_musts = nested_condition.filter().must.as_ref().unwrap();
+                assert_eq!(nested_musts.len(), 2);
+                let first_must = nested_musts.get(0).unwrap();
+                match first_must {
+                    Condition::Field(c) => {
+                        assert_eq!(c.key, "population");
+                        assert!(c.range.is_some());
+                    }
+                    _ => panic!("Condition::Field expected"),
+                }
+
+                let second_must = nested_musts.get(1).unwrap();
+                match second_must {
+                    Condition::Field(c) => {
+                        assert_eq!(c.key, "sightseeing");
+                        assert!(c.values_count.is_some());
+                    }
+                    _ => panic!("Condition::Field expected"),
+                }
+            }
+            o => panic!("Condition::Nested expected but got {:?}", o),
+        };
     }
 
     #[test]

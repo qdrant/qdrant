@@ -94,6 +94,7 @@
     - [Match](#qdrant-Match)
     - [NamedVectors](#qdrant-NamedVectors)
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
+    - [NestedCondition](#qdrant-NestedCondition)
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
     - [PointId](#qdrant-PointId)
@@ -1239,6 +1240,7 @@ The JSON representation for `Value` is a JSON value.
 | has_id | [HasIdCondition](#qdrant-HasIdCondition) |  |  |
 | filter | [Filter](#qdrant-Filter) |  |  |
 | is_null | [IsNullCondition](#qdrant-IsNullCondition) |  |  |
+| nested | [NestedCondition](#qdrant-NestedCondition) |  |  |
 
 
 
@@ -1613,6 +1615,22 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Vector](#qdrant-Vector) |  |  |
+
+
+
+
+
+
+<a name="qdrant-NestedCondition"></a>
+
+### NestedCondition
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  | Path to nested object |
+| filter | [Filter](#qdrant-Filter) |  | Filter condition |
 
 
 

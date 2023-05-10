@@ -111,6 +111,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         .as_ref()
         .expect("has payload")
         .get_value("k")
+        .into_iter()
         .next()
         .expect("has value")
     {
@@ -186,6 +187,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .as_ref()
         .expect("has payload")
         .get_value("k2")
+        .into_iter()
         .next()
         .expect("has value")
     {
@@ -228,6 +230,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .as_ref()
         .expect("has payload")
         .get_value("k3")
+        .into_iter()
         .next()
         .expect("has value")
     {

@@ -102,6 +102,16 @@ impl FullTextIndex {
         }
     }
 
+    pub fn parse_document(&self, text: &str) -> Document {
+        let mut document_tokens = vec![];
+        Tokenizer::tokenize_doc(text, &self.config, |token| {
+            if let Some(token_id) = self.inverted_index.vocab.get(token) {
+                document_tokens.push(*token_id);
+            }
+        });
+        Document::new(document_tokens)
+    }
+
     #[cfg(test)]
     pub fn query(&self, query: &str) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let parsed_query = self.parse_query(query);

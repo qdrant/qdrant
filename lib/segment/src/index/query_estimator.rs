@@ -264,6 +264,7 @@ mod tests {
     fn test_estimator(condition: &Condition) -> CardinalityEstimation {
         match condition {
             Condition::Filter(_) => panic!("unexpected Filter"),
+            Condition::Nested(_) => panic!("unexpected Nested"),
             Condition::Field(field) => match field.key.as_str() {
                 "color" => CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Condition(field.clone())],

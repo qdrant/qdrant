@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
+use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
-use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition,
@@ -25,8 +25,7 @@ pub fn condition_converter<'a>(
             .and_then(|indexes| {
                 indexes
                     .iter()
-                    .filter_map(|index| field_condition_index(index, field_condition))
-                    .next()
+                    .find_map(|index| field_condition_index(index, field_condition))
             })
             .unwrap_or_else(|| {
                 Box::new(move |point_id| {
@@ -58,6 +57,7 @@ pub fn condition_converter<'a>(
             Box::new(move |point_id| segment_ids.contains(&point_id))
         }
         Condition::Filter(_) => unreachable!(),
+        Condition::Nested(_) => unreachable!(),
     }
 }
 
