@@ -792,10 +792,9 @@ pub enum NodeType {
     Listener,
 }
 
-/// Base configuration for a GroupRequest
 #[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone)]
 pub struct BaseGroupRequest {
-    /// Payload field to group by, must be a string or number field. 
+    /// Payload field to group by, must be a string or number field.
     /// If the field contains more than 1 value (e.g. when it's an array), the first value will be used
     pub group_by: String,
 
@@ -820,13 +819,15 @@ pub struct RecommendGroupsRequest {
 
 impl From<RecommendGroupsRequest> for GroupRequest {
     fn from(request: RecommendGroupsRequest) -> Self {
-       let BaseGroupRequest {
+        let BaseGroupRequest {
             group_by,
             top,
             groups,
         } = request.group_request;
 
-        let groups = groups.map(|g| g as usize).unwrap_or(request.recommend.limit);
+        let groups = groups
+            .map(|g| g as usize)
+            .unwrap_or(request.recommend.limit);
 
         GroupRequest {
             request: SourceRequest::Recommend(request.recommend),
