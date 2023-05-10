@@ -109,8 +109,9 @@ impl QuantizedVectors {
         vec![
             // Config files
             self.path.join(QUANTIZED_CONFIG_PATH),
-            // Storage files
+            // Storage file
             self.path.join(QUANTIZED_DATA_PATH),
+            // Meta file
             self.path.join(QUANTIZED_META_PATH),
         ]
     }
