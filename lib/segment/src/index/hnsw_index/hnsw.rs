@@ -22,6 +22,7 @@ use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use crate::index::hnsw_index::max_rayon_threads;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
@@ -34,7 +35,6 @@ use crate::types::{
     default_quantization_ignore_value, default_quantization_rescore_value, FieldCondition, Filter,
     HnswConfig, PointOffsetType, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
 const HNSW_USE_HEURISTIC: bool = true;
@@ -498,7 +498,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
         let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
-            .num_threads(self.config.max_rayon_threads())
+            .num_threads(max_rayon_threads(self.config.max_indexing_threads))
             .build()?;
 
         for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {

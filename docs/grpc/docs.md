@@ -34,6 +34,7 @@
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
     - [PayloadIndexParams](#qdrant-PayloadIndexParams)
     - [PayloadSchemaInfo](#qdrant-PayloadSchemaInfo)
+    - [ProductQuantization](#qdrant-ProductQuantization)
     - [QuantizationConfig](#qdrant-QuantizationConfig)
     - [RemoteShardInfo](#qdrant-RemoteShardInfo)
     - [RenameAlias](#qdrant-RenameAlias)
@@ -51,6 +52,7 @@
     - [WalConfigDiff](#qdrant-WalConfigDiff)
   
     - [CollectionStatus](#qdrant-CollectionStatus)
+    - [CompressionRatio](#qdrant-CompressionRatio)
     - [Distance](#qdrant-Distance)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
@@ -695,6 +697,22 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-ProductQuantization"></a>
+
+### ProductQuantization
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| compression | [CompressionRatio](#qdrant-CompressionRatio) |  | Compression ratio |
+| always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
+
+
+
+
+
+
 <a name="qdrant-QuantizationConfig"></a>
 
 ### QuantizationConfig
@@ -704,6 +722,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | scalar | [ScalarQuantization](#qdrant-ScalarQuantization) |  |  |
+| product | [ProductQuantization](#qdrant-ProductQuantization) |  |  |
 
 
 
@@ -960,6 +979,21 @@ Note: 1kB = 1 vector of size 256. |
 | Green | 1 | All segments are ready |
 | Yellow | 2 | Optimization in process |
 | Red | 3 | Something went wrong |
+
+
+
+<a name="qdrant-CompressionRatio"></a>
+
+### CompressionRatio
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| x4 | 0 |  |
+| x8 | 1 |  |
+| x16 | 2 |  |
+| x32 | 3 |  |
+| x64 | 4 |  |
 
 
 

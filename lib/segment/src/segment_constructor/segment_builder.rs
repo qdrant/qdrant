@@ -8,10 +8,11 @@ use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{
     check_process_stopped, OperationError, OperationResult, SegmentEntry,
 };
+use crate::index::hnsw_index::max_rayon_threads;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
-use crate::types::{PayloadFieldSchema, PayloadKeyType, SegmentConfig};
+use crate::types::{Indexes, PayloadFieldSchema, PayloadKeyType, SegmentConfig};
 use crate::vector_storage::VectorStorage;
 
 /// Structure for constructing segment out of several other segments
@@ -225,10 +226,16 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
 
                 let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
-                vector_data
-                    .vector_storage
-                    .borrow_mut()
-                    .quantize(&vector_storage_path, quantization)?;
+                let max_threads = match segment.config().index {
+                    Indexes::Hnsw(hnsw) => max_rayon_threads(hnsw.max_indexing_threads),
+                    _ => 1,
+                };
+                vector_data.vector_storage.borrow_mut().quantize(
+                    &vector_storage_path,
+                    quantization,
+                    max_threads,
+                    stopped,
+                )?;
             }
         }
         Ok(())

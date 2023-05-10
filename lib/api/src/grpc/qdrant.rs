@@ -223,8 +223,19 @@ pub struct ScalarQuantization {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProductQuantization {
+    /// Compression ratio
+    #[prost(enumeration = "CompressionRatio", tag = "1")]
+    pub compression: i32,
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "2")]
+    pub always_ram: ::core::option::Option<bool>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
-    #[prost(oneof = "quantization_config::Quantization", tags = "1")]
+    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2")]
     #[validate]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
@@ -235,6 +246,8 @@ pub mod quantization_config {
     pub enum Quantization {
         #[prost(message, tag = "1")]
         Scalar(super::ScalarQuantization),
+        #[prost(message, tag = "2")]
+        Product(super::ProductQuantization),
     }
 }
 #[derive(validator::Validate)]
@@ -801,6 +814,41 @@ impl QuantizationType {
         match value {
             "UnknownQuantization" => Some(Self::UnknownQuantization),
             "Int8" => Some(Self::Int8),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CompressionRatio {
+    X4 = 0,
+    X8 = 1,
+    X16 = 2,
+    X32 = 3,
+    X64 = 4,
+}
+impl CompressionRatio {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            CompressionRatio::X4 => "x4",
+            CompressionRatio::X8 => "x8",
+            CompressionRatio::X16 => "x16",
+            CompressionRatio::X32 => "x32",
+            CompressionRatio::X64 => "x64",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "x4" => Some(Self::X4),
+            "x8" => Some(Self::X8),
+            "x16" => Some(Self::X16),
+            "x32" => Some(Self::X32),
+            "x64" => Some(Self::X64),
             _ => None,
         }
     }

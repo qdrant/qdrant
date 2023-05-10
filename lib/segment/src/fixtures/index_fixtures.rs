@@ -13,7 +13,7 @@ use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{raw_scorer_impl, RawScorer, VectorStorage, VectorStorageEnum};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
@@ -78,6 +78,8 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         &mut self,
         _data_path: &Path,
         _quantization_config: &QuantizationConfig,
+        _max_threads: usize,
+        _stopped: &AtomicBool,
     ) -> OperationResult<()> {
         Ok(())
     }
@@ -86,7 +88,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         Ok(())
     }
 
-    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage> {
+    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
         None
     }
 

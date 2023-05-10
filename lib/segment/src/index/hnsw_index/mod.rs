@@ -11,3 +11,12 @@ mod search_context;
 
 #[cfg(test)]
 mod tests;
+
+pub fn max_rayon_threads(max_indexing_threads: usize) -> usize {
+    if max_indexing_threads == 0 {
+        let num_cpu = crate::common::cpu::get_num_cpus();
+        std::cmp::max(1, num_cpu - 1)
+    } else {
+        max_indexing_threads
+    }
+}

@@ -1,14 +1,8 @@
 use std::path::Path;
 
 use memmap2::{Mmap, MmapMut};
-use quantization::EncodedVectors;
 
-use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::madvise;
-use crate::types::{Distance, ScalarQuantizationConfig};
-use crate::vector_storage::quantized::scalar_quantized::{
-    ScalarQuantizedVectors, QUANTIZED_DATA_PATH, QUANTIZED_META_PATH,
-};
 
 pub struct QuantizedMmapStorage {
     mmap: Mmap,
@@ -91,50 +85,4 @@ impl QuantizedMmapStorageBuilder {
             cursor_pos: 0,
         })
     }
-}
-
-pub fn create_scalar_quantized_vectors_mmap<'a>(
-    vectors: impl Iterator<Item = &'a [f32]> + Clone,
-    config: &ScalarQuantizationConfig,
-    vector_parameters: &quantization::VectorParameters,
-    data_path: &Path,
-    distance: Distance,
-) -> OperationResult<ScalarQuantizedVectors<QuantizedMmapStorage>> {
-    let quantized_vector_size =
-        quantization::EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
-            vector_parameters,
-        );
-    let mmap_data_path = data_path.join(QUANTIZED_DATA_PATH);
-
-    let storage_builder = QuantizedMmapStorageBuilder::new(
-        mmap_data_path.as_path(),
-        vector_parameters.count,
-        quantized_vector_size,
-    )?;
-    let quantized_vectors = quantization::EncodedVectorsU8::encode(
-        vectors,
-        storage_builder,
-        vector_parameters,
-        config.quantile,
-    )
-    .map_err(|e| OperationError::service_error(format!("Cannot quantize vector data: {e}")))?;
-
-    Ok(ScalarQuantizedVectors::new(quantized_vectors, distance))
-}
-
-pub fn load_scalar_quantized_vectors_mmap(
-    path: &Path,
-    vector_parameters: &quantization::VectorParameters,
-    distance: Distance,
-) -> OperationResult<ScalarQuantizedVectors<QuantizedMmapStorage>> {
-    let data_path = path.join(QUANTIZED_DATA_PATH);
-    let meta_path = path.join(QUANTIZED_META_PATH);
-
-    let storage = quantization::EncodedVectorsU8::<QuantizedMmapStorage>::load(
-        &data_path,
-        &meta_path,
-        vector_parameters,
-    )?;
-
-    Ok(ScalarQuantizedVectors::new(storage, distance))
 }

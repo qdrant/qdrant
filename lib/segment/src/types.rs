@@ -339,6 +339,16 @@ fn default_max_indexing_threads() -> usize {
     0
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum CompressionRatio {
+    X4,
+    X8,
+    X16,
+    X32,
+    X64,
+}
+
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ScalarType {
@@ -375,6 +385,21 @@ impl PartialEq for ScalarQuantizationConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct ProductQuantizationConfig {
+    pub compression: CompressionRatio,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+pub struct ProductQuantization {
+    #[validate]
+    pub product: ProductQuantizationConfig,
+}
+
 impl std::hash::Hash for ScalarQuantizationConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.always_ram.hash(state);
@@ -389,12 +414,14 @@ impl Eq for ScalarQuantizationConfig {}
 #[serde(untagged)]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
+    Product(ProductQuantization),
 }
 
 impl Validate for QuantizationConfig {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
+            QuantizationConfig::Product(product) => product.validate(),
         }
     }
 }
@@ -402,6 +429,12 @@ impl Validate for QuantizationConfig {
 impl From<ScalarQuantizationConfig> for QuantizationConfig {
     fn from(config: ScalarQuantizationConfig) -> Self {
         QuantizationConfig::Scalar(ScalarQuantization { scalar: config })
+    }
+}
+
+impl From<ProductQuantizationConfig> for QuantizationConfig {
+    fn from(config: ProductQuantizationConfig) -> Self {
+        QuantizationConfig::Product(ProductQuantization { product: config })
     }
 }
 

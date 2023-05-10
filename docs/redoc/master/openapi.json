@@ -4109,6 +4109,9 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/ScalarQuantization"
+          },
+          {
+            "$ref": "#/components/schemas/ProductQuantization"
           }
         ]
       },
@@ -4151,6 +4154,42 @@
         "type": "string",
         "enum": [
           "int8"
+        ]
+      },
+      "ProductQuantization": {
+        "type": "object",
+        "required": [
+          "product"
+        ],
+        "properties": {
+          "product": {
+            "$ref": "#/components/schemas/ProductQuantizationConfig"
+          }
+        }
+      },
+      "ProductQuantizationConfig": {
+        "type": "object",
+        "required": [
+          "compression"
+        ],
+        "properties": {
+          "compression": {
+            "$ref": "#/components/schemas/CompressionRatio"
+          },
+          "always_ram": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "CompressionRatio": {
+        "type": "string",
+        "enum": [
+          "x4",
+          "x8",
+          "x16",
+          "x32",
+          "x64"
         ]
       },
       "HnswConfig": {

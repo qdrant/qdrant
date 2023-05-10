@@ -12,8 +12,9 @@ mod tests {
     use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Distance, HnswConfig, Indexes, ScalarQuantizationConfig, SearchParams, SegmentConfig,
-        SeqNumberType, StorageType, VectorDataConfig,
+        CompressionRatio, Distance, HnswConfig, Indexes, ProductQuantizationConfig,
+        QuantizationConfig, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
+        StorageType, VectorDataConfig,
     };
     use segment::vector_storage::{ScoredPointOffset, VectorStorage};
     use tempfile::Builder;
@@ -26,14 +27,17 @@ mod tests {
             .count()
     }
 
-    fn hnsw_quantized_search_test(distance: Distance) {
+    fn hnsw_quantized_search_test(
+        distance: Distance,
+        num_vectors: u64,
+        quantization_config: QuantizationConfig,
+    ) {
         let stopped = AtomicBool::new(false);
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let quantized_data_path = dir.path();
 
-        let dim = 128;
+        let dim = 131;
         let m = 16;
-        let num_vectors: u64 = 5_000;
         let ef = 64;
         let ef_construct = 64;
 
@@ -70,15 +74,7 @@ mod tests {
             vector_storage
                 .vector_storage
                 .borrow_mut()
-                .quantize(
-                    quantized_data_path,
-                    &ScalarQuantizationConfig {
-                        r#type: Default::default(),
-                        quantile: None,
-                        always_ram: None,
-                    }
-                    .into(),
-                )
+                .quantize(quantized_data_path, &quantization_config, 3, &stopped)
                 .unwrap();
         });
 
@@ -132,11 +128,55 @@ mod tests {
 
     #[test]
     fn hnsw_quantized_search_cosine_test() {
-        hnsw_quantized_search_test(Distance::Cosine);
+        hnsw_quantized_search_test(
+            Distance::Cosine,
+            5003,
+            ScalarQuantizationConfig {
+                r#type: Default::default(),
+                quantile: None,
+                always_ram: None,
+            }
+            .into(),
+        );
     }
 
     #[test]
     fn hnsw_quantized_search_euclid_test() {
-        hnsw_quantized_search_test(Distance::Euclid);
+        hnsw_quantized_search_test(
+            Distance::Euclid,
+            5003,
+            ScalarQuantizationConfig {
+                r#type: Default::default(),
+                quantile: None,
+                always_ram: None,
+            }
+            .into(),
+        );
+    }
+
+    #[test]
+    fn hnsw_product_quantization_cosine_test() {
+        hnsw_quantized_search_test(
+            Distance::Cosine,
+            1003,
+            ProductQuantizationConfig {
+                compression: CompressionRatio::X4,
+                always_ram: Some(true),
+            }
+            .into(),
+        );
+    }
+
+    #[test]
+    fn hnsw_product_quantization_euclid_test() {
+        hnsw_quantized_search_test(
+            Distance::Euclid,
+            1003,
+            ProductQuantizationConfig {
+                compression: CompressionRatio::X4,
+                always_ram: Some(true),
+            }
+            .into(),
+        );
     }
 }
