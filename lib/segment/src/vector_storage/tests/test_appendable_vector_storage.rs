@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -11,7 +12,6 @@ use crate::types::{
     Distance, PointIdType, PointOffsetType, QuantizationConfig, ScalarQuantizationConfig,
 };
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
@@ -291,7 +291,10 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         .tempdir()
         .unwrap();
 
-    borrowed_storage.quantize(dir.path(), &config).unwrap();
+    let stopped = AtomicBool::new(false);
+    borrowed_storage
+        .quantize(dir.path(), &config, 1, &stopped)
+        .unwrap();
 
     let query = vec![0.5, 0.5, 0.5, 0.5];
 

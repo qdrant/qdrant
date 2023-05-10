@@ -2,9 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{self, size_of, transmute};
 use std::path::Path;
-use std::slice;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::Mmap;

@@ -205,9 +205,15 @@ impl VectorStorage for VectorStorageEnum {
         stopped: &AtomicBool,
     ) -> OperationResult<()> {
         match self {
-            VectorStorageEnum::Simple(v) => v.quantize(data_path, quantization_config),
-            VectorStorageEnum::Memmap(v) => v.quantize(data_path, quantization_config),
-            VectorStorageEnum::AppendableMemmap(v) => v.quantize(data_path, quantization_config),
+            VectorStorageEnum::Simple(v) => {
+                v.quantize(data_path, quantization_config, max_threads, stopped)
+            }
+            VectorStorageEnum::Memmap(v) => {
+                v.quantize(data_path, quantization_config, max_threads, stopped)
+            }
+            VectorStorageEnum::AppendableMemmap(v) => {
+                v.quantize(data_path, quantization_config, max_threads, stopped)
+            }
         }
     }
 

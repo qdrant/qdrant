@@ -13,7 +13,7 @@ use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dynamic_mmap_flags::DynamicMmapFlags;
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -24,7 +24,7 @@ pub struct AppendableMmapVectorStorage {
     deleted: DynamicMmapFlags,
     distance: Distance,
     deleted_count: usize,
-    quantized_vectors: Option<QuantizedVectorsStorage>,
+    quantized_vectors: Option<QuantizedVectors>,
 }
 
 pub fn open_appendable_memmap_vector_storage(
@@ -145,9 +145,11 @@ impl VectorStorage for AppendableMmapVectorStorage {
         &mut self,
         path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<()> {
         let vector_data_iterator = (0..self.vectors.len() as u32).map(|i| self.vectors.get(i));
-        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
+        self.quantized_vectors = Some(QuantizedVectors::create(
             vector_data_iterator,
             quantization_config,
             self.distance,
@@ -155,19 +157,20 @@ impl VectorStorage for AppendableMmapVectorStorage {
             self.vectors.len(),
             path,
             true,
+            max_threads,
+            stopped,
         )?);
         Ok(())
     }
 
     fn load_quantization(&mut self, path: &Path) -> OperationResult<()> {
-        if QuantizedVectorsStorage::check_exists(path) {
-            self.quantized_vectors =
-                Some(QuantizedVectorsStorage::load(path, true, self.distance)?);
+        if QuantizedVectors::config_exists(path) {
+            self.quantized_vectors = Some(QuantizedVectors::load(path, true, self.distance)?);
         }
         Ok(())
     }
 
-    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage> {
+    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
         self.quantized_vectors.as_ref()
     }
 
