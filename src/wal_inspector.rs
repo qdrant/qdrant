@@ -17,11 +17,16 @@ fn main() {
         }
         Ok(wal) => {
             // print all entries
-            wal.read_all().for_each(|(idx, op)| {
+            let mut count = 0;
+            for (idx, op) in wal.read_all() {
                 println!("==========================");
                 println!("Entry {}", idx);
                 println!("{:?}", op);
-            });
+                count += 1;
+            }
+            println!("==========================");
+            println!("End of WAL.");
+            println!("Found {} entries.", count);
         }
     }
 }
