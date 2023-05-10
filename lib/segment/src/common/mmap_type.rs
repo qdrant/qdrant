@@ -22,9 +22,13 @@
 //! utmost care. Security is critical here as this is an easy place to introduce undefined
 //! behavior. Problems caused by this are very hard to debug.
 
+#[cfg(unix)]
+use std::io;
 use std::ops::{Deref, DerefMut};
+#[cfg(windows)]
+use std::ptr::NonNull;
 use std::sync::Arc;
-use std::{io, mem, slice};
+use std::{mem, slice};
 
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
@@ -395,6 +399,20 @@ unsafe fn mmap_to_type_unbounded<'unbnd, T>(mmap: &mut MmapMut) -> Result<&'unbn
 where
     T: Sized,
 {
+    let size_t = mem::size_of::<T>();
+
+    // Assert size
+    if mmap.len() != size_t {
+        return Err(Error::SizeExact(size_t, mmap.len()));
+    }
+
+    // Empty mmap is not supported on Windows, return zero-sized T at dangling pointer instead
+    #[cfg(windows)]
+    if mmap.is_empty() {
+        debug_assert_eq!(size_t, 0);
+        return Ok(NonNull::dangling().as_mut());
+    }
+
     // Obtain unbounded bytes slice into mmap
     let bytes: &'unbnd mut [u8] = {
         let slice = mmap.deref_mut();
@@ -415,6 +433,8 @@ where
 /// Get a second mutable reference for a slice of type `T` from the given mmap
 ///
 /// A (non-zero) header size in bytes may be provided to omit from the BitSlice data.
+///
+/// On Windows, if an empty mmap is provided. An empty slice at dangling pointer is returned.
 ///
 /// # Warning
 ///
@@ -437,44 +457,54 @@ unsafe fn mmap_to_slice_unbounded<'unbnd, T>(
 where
     T: Sized,
 {
+    let size_t = mem::size_of::<T>();
+
+    // Assert size
+    if size_t == 0 {
+        // For zero-sized T, data part must be zero-sized as well, we cannot have infinite slice
+        debug_assert_eq!(
+            mmap.len().saturating_sub(header_size),
+            0,
+            "mmap data must be zero-sized, because size T is zero",
+        );
+    } else {
+        // Must be multiple of size T
+        debug_assert_eq!(header_size % size_t, 0, "header not multiple of size T");
+        if mmap.len() % size_t != 0 {
+            return Err(Error::SizeMultiple(size_t, mmap.len()));
+        }
+    }
+
+    // Empty mmap is not supported on Windows, return empty slice at dangling pointer instead
+    #[cfg(windows)]
+    if mmap.is_empty() {
+        let dangling = NonNull::dangling();
+        return Ok(slice::from_raw_parts_mut(dangling.as_ptr(), 0));
+    }
+
     // Obtain unbounded bytes slice into mmap
     let bytes: &'unbnd mut [u8] = {
         let slice = mmap.deref_mut();
         &mut slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())[header_size..]
     };
 
-    // Assert alignment and size
+    // Assert alignment and bytes size
     assert_alignment::<_, T>(bytes);
-    debug_assert_eq!(mmap.len(), bytes.len() + header_size);
-    debug_assert_eq!(
-        header_size % mem::size_of::<T>(),
-        0,
-        "header not multiple of size T",
-    );
-    if bytes.len() % mem::size_of::<T>() != 0 {
-        return Err(Error::SizeMultiple(mem::size_of::<T>(), bytes.len()));
-    }
+    debug_assert_eq!(bytes.len() + header_size, mmap.len());
 
     // Transmute slice types
     Ok(slice::from_raw_parts_mut(
         bytes.as_mut_ptr() as *mut T,
-        bytes.len() / mem::size_of::<T>(),
+        bytes.len().checked_div(size_t).unwrap_or(0),
     ))
 }
 
 /// Assert slice `&[S]` is correctly aligned for type `T`.
 ///
-/// Does nothing on Windows.
-///
 /// # Panics
 ///
 /// Panics when alignment is wrong.
 fn assert_alignment<S, T>(bytes: &[S]) {
-    // We do not enforce alignment on Windows at this time, because the Windows API doesn't
-    // guarantee memory mapped segments to be aligned.
-    //
-    // We should look into this again to confirm this is sound.
-    #[cfg(not(windows))]
     assert_eq!(
         bytes.as_ptr().align_offset(mem::align_of::<T>()),
         0,
@@ -505,19 +535,11 @@ mod tests {
     }
 
     #[test]
-    fn test_open_zero() {
+    fn test_open_zero_type() {
+        check_open_zero_type::<()>(());
         check_open_zero_type::<u8>(0);
         check_open_zero_type::<usize>(0);
         check_open_zero_type::<f32>(0.0);
-        check_open_zero_slice::<u8>(0, 0);
-        check_open_zero_slice::<u8>(1, 0);
-        check_open_zero_slice::<u8>(123, 0);
-        check_open_zero_slice::<usize>(0, 0);
-        check_open_zero_slice::<usize>(1, 0);
-        check_open_zero_slice::<usize>(123, 0);
-        check_open_zero_slice::<f32>(0, 0.0);
-        check_open_zero_slice::<f32>(1, 0.0);
-        check_open_zero_slice::<f32>(123, 0.0);
     }
 
     fn check_open_zero_type<T: Sized + PartialEq + Debug + 'static>(zero: T) {
@@ -527,6 +549,27 @@ mod tests {
 
         let mmap_type: MmapType<T> = unsafe { MmapType::from(mmap) };
         assert_eq!(mmap_type.deref(), &zero);
+    }
+
+    #[test]
+    fn test_open_zero_slice() {
+        check_open_zero_slice::<()>(0, ());
+        check_open_zero_slice::<u8>(0, 0);
+        check_open_zero_slice::<u8>(1, 0);
+        check_open_zero_slice::<u8>(131, 0);
+        check_open_zero_slice::<usize>(0, 0);
+        check_open_zero_slice::<usize>(1, 0);
+        check_open_zero_slice::<usize>(131, 0);
+        check_open_zero_slice::<f32>(0, 0.0);
+        check_open_zero_slice::<f32>(1, 0.0);
+        check_open_zero_slice::<f32>(131, 0.0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_open_zero_slice_infinite_length() {
+        // A slice with zero-sized type T can never be more than 0 bytes
+        check_open_zero_slice::<()>(1, ());
     }
 
     fn check_open_zero_slice<T: Sized + PartialEq + Debug + 'static>(len: usize, zero: T) {
@@ -542,15 +585,16 @@ mod tests {
     #[test]
     fn test_reopen_random() {
         let mut rng = StdRng::seed_from_u64(42);
+        check_reopen_random::<(), _>(0, || rng.gen());
         check_reopen_random::<u8, _>(0, || rng.gen());
         check_reopen_random::<u8, _>(1, || rng.gen());
-        check_reopen_random::<u8, _>(123, || rng.gen());
+        check_reopen_random::<u8, _>(131, || rng.gen());
         check_reopen_random::<usize, _>(0, || rng.gen());
         check_reopen_random::<usize, _>(1, || rng.gen());
-        check_reopen_random::<usize, _>(123, || rng.gen());
+        check_reopen_random::<usize, _>(131, || rng.gen());
         check_reopen_random::<f32, _>(0, || rng.gen());
         check_reopen_random::<f32, _>(1, || rng.gen());
-        check_reopen_random::<f32, _>(123, || rng.gen());
+        check_reopen_random::<f32, _>(131, || rng.gen());
     }
 
     fn check_reopen_random<T, R>(len: usize, rng: R)
@@ -581,6 +625,8 @@ mod tests {
 
     #[test]
     fn test_bitslice() {
+        check_bitslice_with_header(0, 0);
+        check_bitslice_with_header(0, 128);
         check_bitslice_with_header(512, 0);
         check_bitslice_with_header(512, 256);
         check_bitslice_with_header(11721 * 8, 256);
@@ -604,6 +650,24 @@ mod tests {
             let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
             let mmap_bitslice = MmapBitSlice::from(mmap, header_size);
             (0..bits).for_each(|i| assert_eq!(mmap_bitslice[i], rng.gen::<bool>()));
+        }
+    }
+
+    #[test]
+    fn test_zero_sized_type() {
+        {
+            let tempfile = create_temp_mmap_file(0);
+            let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
+            let result = unsafe { MmapType::<()>::try_from(mmap).unwrap() };
+            assert_eq!(result.deref(), &());
+        }
+
+        {
+            let tempfile = create_temp_mmap_file(0);
+            let mmap = mmap_ops::open_write_mmap(tempfile.path()).unwrap();
+            let result = unsafe { MmapSlice::<()>::try_from(mmap).unwrap() };
+            assert_eq!(result.as_ref(), &[]);
+            assert_alignment::<_, ()>(result.as_ref());
         }
     }
 }
