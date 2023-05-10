@@ -22,9 +22,11 @@
 //! utmost care. Security is critical here as this is an easy place to introduce undefined
 //! behavior. Problems caused by this are very hard to debug.
 
+#[cfg(unix)]
+use std::io;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::{io, mem, slice};
+use std::{mem, slice};
 
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
