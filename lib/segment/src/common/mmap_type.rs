@@ -463,19 +463,18 @@ where
     // Assert alignment and size
     assert_alignment::<_, T>(bytes);
     debug_assert_eq!(mmap.len(), bytes.len() + header_size);
-    debug_assert_eq!(
-        header_size % mem::size_of::<T>(),
-        0,
-        "header not multiple of size T",
-    );
-    if bytes.len() % mem::size_of::<T>() != 0 {
-        return Err(Error::SizeMultiple(mem::size_of::<T>(), bytes.len()));
+    let size_t = mem::size_of::<T>();
+    if size_t > 0 {
+        debug_assert_eq!(header_size % size_t, 0, "header not multiple of size T",);
+        if bytes.len() % size_t != 0 {
+            return Err(Error::SizeMultiple(size_t, bytes.len()));
+        }
     }
 
     // Transmute slice types
     Ok(slice::from_raw_parts_mut(
         bytes.as_mut_ptr() as *mut T,
-        bytes.len() / mem::size_of::<T>(),
+        bytes.len().checked_div(size_t).unwrap_or(0),
     ))
 }
 
@@ -529,6 +528,8 @@ mod tests {
         // Empty mmap is not supported on Windows
         #[cfg(not(windows))]
         {
+            check_open_zero_type::<()>(());
+            check_open_zero_slice::<()>(0, ());
             check_open_zero_slice::<u8>(0, 0);
             check_open_zero_slice::<usize>(0, 0);
             check_open_zero_slice::<f32>(0, 0.0);
