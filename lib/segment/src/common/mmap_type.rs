@@ -526,7 +526,7 @@ mod tests {
         check_open_zero_slice::<f32>(1, 0.0);
         check_open_zero_slice::<f32>(123, 0.0);
 
-        // Test empty mmap, not supported on Windows
+        // Empty mmap is not supported on Windows
         #[cfg(not(windows))]
         {
             check_open_zero_slice::<u8>(0, 0);
@@ -564,7 +564,7 @@ mod tests {
         check_reopen_random::<f32, _>(1, || rng.gen());
         check_reopen_random::<f32, _>(123, || rng.gen());
 
-        // Test empty mmap, not supported on Windows
+        // Empty mmap is not supported on Windows
         #[cfg(not(windows))]
         {
             check_reopen_random::<u8, _>(0, || rng.gen());
@@ -601,9 +601,14 @@ mod tests {
 
     #[test]
     fn test_bitslice() {
+        check_bitslice_with_header(0, 128);
         check_bitslice_with_header(512, 0);
         check_bitslice_with_header(512, 256);
         check_bitslice_with_header(11721 * 8, 256);
+
+        // Empty mmap is not supported on Windows
+        #[cfg(not(windows))]
+        check_bitslice_with_header(0, 0);
     }
 
     fn check_bitslice_with_header(bits: usize, header_size: usize) {
