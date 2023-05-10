@@ -232,9 +232,9 @@ message SearchBatchPoints {
 message SearchPointGroups {
   string collection_name = 1; // Name of the collection
   SearchPoints search = 2; // Search request
-  string group_by = 3; // Name of the field to group by
-  uint32 top = 4; // Number of points per group to return
-  optional uint32 groups = 5; // Number of groups to return, will use the limit in the search request if not specified
+  string group_by = 3; // Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
+  uint32 top = 4; // Maximum amount of points to return per group
+  optional uint32 groups = 5; // Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
   optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
 }
 
@@ -280,9 +280,9 @@ message RecommendBatchPoints {
 message RecommendPointGroups {
   string collection_name = 1; // Name of the collection
   RecommendPoints recommend = 2; // Recommend request
-  string group_by = 3; // Name of the field to group by
-  uint32 top = 4; // Number of points per group to return
-  optional uint32 groups = 5; // Number of groups to return, will use the limit in the search request if not specified
+  string group_by = 3; // Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
+  uint32 top = 4; // Maximum amount of points to return per group
+  optional uint32 groups = 5; // Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
   optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
 }
 

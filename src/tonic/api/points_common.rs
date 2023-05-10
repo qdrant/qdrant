@@ -19,7 +19,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::types::{
     default_exact_count, PointRequest, RecommendGroupsRequest, RecommendRequestBatch,
-    ScrollRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
+    ScrollRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch, BaseGroupRequest,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
@@ -634,15 +634,17 @@ pub async fn search_groups(
     } = search_point_groups;
 
     let grouped_search_request = SearchGroupsRequest {
-        groups,
-        top,
         search: search
             .map(|s| s.try_into())
             .transpose()?
             .ok_or(Status::invalid_argument(
-                "missing search, required for group search",
+                "missing search, required for search groups",
             ))?,
-        group_by,
+        group_request: BaseGroupRequest {
+            group_by,
+            groups,
+            top,
+        },
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -780,12 +782,14 @@ pub async fn recommend_groups(
 
     let recommend_groups_request =
         RecommendGroupsRequest {
-            groups,
-            top,
             recommend: recommend.map(|s| s.try_into()).transpose()?.ok_or(
                 Status::invalid_argument("missing recommend, required for recommend groups"),
             )?,
-            group_by,
+            group_request: BaseGroupRequest {
+                group_by,
+                groups,
+                top,
+            },
         };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;

@@ -330,11 +330,11 @@ paths:
     post:
       tags:
         - points
-      summary: Search grouped points
+      summary: Search point groups
       description: Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field
-      operationId: grouped_search_points
+      operationId: search_point_groups
       requestBody:
-        description: Search request with optional filtering, grouped by a payload field
+        description: Search request with optional filtering, grouped by a given payload field
         content:
           application/json:
             schema:
@@ -417,9 +417,9 @@ paths:
     post:
       tags:
         - points
-      summary: Recommend grouped points
+      summary: Recommend point groups
       description: Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.
-      operationId: grouped_recommend_points
+      operationId: recommend_point_groups
       requestBody:
         description: Request points based on positive and negative examples, grouped by a payload field.
         content:

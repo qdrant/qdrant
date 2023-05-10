@@ -2833,14 +2833,14 @@ pub struct SearchPointGroups {
     /// Search request
     #[prost(message, optional, tag = "2")]
     pub search: ::core::option::Option<SearchPoints>,
-    /// Name of the field to group by
+    /// Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
     #[prost(string, tag = "3")]
     pub group_by: ::prost::alloc::string::String,
-    /// Number of points per group to return
+    /// Maximum amount of points to return per group
     #[prost(uint32, tag = "4")]
     #[validate(range(min = 1))]
     pub top: u32,
-    /// Number of groups to return, will use the limit in the search request if not specified
+    /// Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
     #[prost(uint32, optional, tag = "5")]
     #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
     pub groups: ::core::option::Option<u32>,
@@ -2954,14 +2954,14 @@ pub struct RecommendPointGroups {
     /// Recommend request
     #[prost(message, optional, tag = "2")]
     pub recommend: ::core::option::Option<RecommendPoints>,
-    /// Name of the field to group by
+    /// Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
     #[prost(string, tag = "3")]
     pub group_by: ::prost::alloc::string::String,
-    /// Number of points per group to return
+    /// Maximum amount of points to return per group
     #[prost(uint32, tag = "4")]
     #[validate(range(min = 1))]
     pub top: u32,
-    /// Number of groups to return, will use the limit in the search request if not specified
+    /// Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
     #[prost(uint32, optional, tag = "5")]
     #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
     pub groups: ::core::option::Option<u32>,

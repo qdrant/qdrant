@@ -792,40 +792,47 @@ pub enum NodeType {
     Listener,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-pub struct RecommendGroupsRequest {
-    /// Recommend request to use
-    pub recommend: RecommendRequest,
-
-    /// Payload field to group by
+/// Base configuration for a GroupRequest
+#[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone)]
+pub struct BaseGroupRequest {
+    /// Payload field to group by, must be a string or number field. 
+    /// If the field contains more than 1 value (e.g. when it's an array), the first value will be used
     pub group_by: String,
 
-    /// Limit of points to return per group
+    /// Maximum amount of points to return per group
     #[validate(range(min = 1))]
     pub top: u32,
 
-    /// Optional. Limit of groups to return, will use the limit in the recommend request if not set
+    /// Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
     #[validate(range(min = 1))]
     #[serde(default)]
     pub groups: Option<u32>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct RecommendGroupsRequest {
+    /// Recommend request to use
+    pub recommend: RecommendRequest,
+
+    #[serde(flatten)]
+    pub group_request: BaseGroupRequest,
+}
+
 impl From<RecommendGroupsRequest> for GroupRequest {
     fn from(request: RecommendGroupsRequest) -> Self {
-        if let Some(groups) = request.groups {
-            GroupRequest {
-                request: SourceRequest::Recommend(request.recommend),
-                group_by: request.group_by,
-                top: request.top as usize,
-                groups: groups as usize,
-            }
-        } else {
-            // use groups = limit in source request
-            GroupRequest::new(
-                SourceRequest::Recommend(request.recommend),
-                request.group_by,
-                request.top as usize,
-            )
+       let BaseGroupRequest {
+            group_by,
+            top,
+            groups,
+        } = request.group_request;
+
+        let groups = groups.map(|g| g as usize).unwrap_or(request.recommend.limit);
+
+        GroupRequest {
+            request: SourceRequest::Recommend(request.recommend),
+            group_by,
+            top: top as usize,
+            groups,
         }
     }
 }
@@ -835,35 +842,25 @@ pub struct SearchGroupsRequest {
     /// Search request to use
     pub search: SearchRequest,
 
-    /// Payload field to group by
-    pub group_by: String,
-
-    /// Limit of points to return per group
-    #[validate(range(min = 1))]
-    pub top: u32,
-
-    /// Optional. Limit of groups to return. Will use the limit in the search request if not set
-    #[validate(range(min = 1))]
-    #[serde(default)]
-    pub groups: Option<u32>,
+    #[serde(flatten)]
+    pub group_request: BaseGroupRequest,
 }
 
 impl From<SearchGroupsRequest> for GroupRequest {
     fn from(request: SearchGroupsRequest) -> Self {
-        if let Some(groups) = request.groups {
-            GroupRequest {
-                request: SourceRequest::Search(request.search),
-                group_by: request.group_by,
-                top: request.top as usize,
-                groups: groups as usize,
-            }
-        } else {
-            // use groups = limit in source request
-            GroupRequest::new(
-                SourceRequest::Search(request.search),
-                request.group_by,
-                request.top as usize,
-            )
+        let BaseGroupRequest {
+            group_by,
+            top,
+            groups,
+        } = request.group_request;
+
+        let groups = groups.map(|g| g as usize).unwrap_or(request.search.limit);
+
+        GroupRequest {
+            request: SourceRequest::Search(request.search),
+            group_by,
+            top: top as usize,
+            groups,
         }
     }
 }

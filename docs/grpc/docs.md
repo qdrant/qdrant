@@ -1926,9 +1926,9 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
 | recommend | [RecommendPoints](#qdrant-RecommendPoints) |  | Recommend request |
-| group_by | [string](#string) |  | Name of the field to group by |
-| top | [uint32](#uint32) |  | Number of points per group to return |
-| groups | [uint32](#uint32) | optional | Number of groups to return, will use the limit in the search request if not specified |
+| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it&#39;s an array), the first value will be used |
+| top | [uint32](#uint32) |  | Maximum amount of points to return per group |
+| groups | [uint32](#uint32) | optional | Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
@@ -2191,9 +2191,9 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
 | search | [SearchPoints](#qdrant-SearchPoints) |  | Search request |
-| group_by | [string](#string) |  | Name of the field to group by |
-| top | [uint32](#uint32) |  | Number of points per group to return |
-| groups | [uint32](#uint32) | optional | Number of groups to return, will use the limit in the search request if not specified |
+| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it&#39;s an array), the first value will be used |
+| top | [uint32](#uint32) |  | Maximum amount of points to return per group |
+| groups | [uint32](#uint32) | optional | Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
