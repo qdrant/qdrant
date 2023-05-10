@@ -46,6 +46,7 @@ pub const LAT_RANGE: Range<f64> = -90.0..90.0;
 
 pub const STR_KEY: &str = "kvd";
 pub const STR_PROJ_KEY: &str = "kvd_proj";
+pub const STR_ROOT_PROJ_KEY: &str = "kvd_root_proj";
 pub const INT_KEY: &str = "int";
 pub const INT_KEY_2: &str = "int2";
 pub const FLT_KEY: &str = "flt";
@@ -239,8 +240,8 @@ pub fn random_nested_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
     }
 }
 
-pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
-    let payload: Payload = if rnd_gen.gen_range(0.0..1.0) < 0.5 {
+fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {
+    if rnd_gen.gen_range(0.0..1.0) < 0.5 {
         json!({
             STR_KEY: random_keyword_payload(rnd_gen, 1..=3),
             INT_KEY: random_int_payload(rnd_gen, 1..=3),
@@ -249,7 +250,6 @@ pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
             TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1)
         })
-        .into()
     } else {
         json!({
             STR_KEY: random_keyword_payload(rnd_gen, 1..=2),
@@ -260,10 +260,11 @@ pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
             TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1),
             FLICKING_KEY: random_int_payload(rnd_gen, 1..=3)
         })
-        .into()
-    };
+    }
+}
 
-    payload
+pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
+    random_json(rnd_gen).into()
 }
 
 pub fn generate_diverse_nested_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
@@ -278,6 +279,39 @@ pub fn generate_diverse_nested_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payl
                 { "nested_2": random_keyword_payload(rnd_gen, 1..=3) }
             ]
         },
+        STR_ROOT_PROJ_KEY: [
+            {
+                "nested_1": [
+                    { "nested_2":  random_keyword_payload(rnd_gen, 1..=3) }
+                ]
+            }
+        ],
+    })
+    .into()
+}
+
+pub const NESTED_ARRAY_1: &str = "arr1";
+pub const NESTED_ARRAY_2: &str = "arr2";
+pub const NESTED_ARRAY_3: &str = "arr3";
+
+pub fn generate_nested_array_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
+    json!({
+        NESTED_ARRAY_1: [
+            random_json(rnd_gen),
+            random_json(rnd_gen),
+            random_json(rnd_gen),
+            random_json(rnd_gen),
+        ],
+        NESTED_ARRAY_2: [
+            {
+                   NESTED_ARRAY_3: [
+                       random_json(rnd_gen),
+                       random_json(rnd_gen),
+                       random_json(rnd_gen),
+                       random_json(rnd_gen),
+                   ]
+            }
+        ]
     })
     .into()
 }

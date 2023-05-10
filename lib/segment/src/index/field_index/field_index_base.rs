@@ -10,7 +10,8 @@ use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
+    FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText, PayloadKeyType,
+    PointOffsetType,
 };
 
 pub trait PayloadFieldIndex {
@@ -55,6 +56,14 @@ pub trait ValueIndexer<T> {
 
     /// Extract index-able value from payload `Value`
     fn get_value(&self, value: &Value) -> Option<T>;
+
+    /// Try to extract index-able values from payload `Value`, even if it is an array
+    fn get_values(&self, value: &Value) -> Vec<T> {
+        match value {
+            Value::Array(values) => values.iter().flat_map(|x| self.get_value(x)).collect(),
+            _ => self.get_value(value).map(|x| vec![x]).unwrap_or_default(),
+        }
+    }
 
     /// Add point with payload to index
     fn add_point(
@@ -115,6 +124,40 @@ pub enum FieldIndex {
 }
 
 impl FieldIndex {
+    /// Try to check condition for a payload given a field index.
+    /// Required because some index parameters may influence the condition checking logic.
+    /// For example, full text index may have different tokenizers.
+    ///
+    /// Returns `None` if there is no special logic for the given index
+    /// returns `Some(true)` if condition is satisfied
+    /// returns `Some(false)` if condition is not satisfied
+    pub fn check_condition(
+        &self,
+        condition: &FieldCondition,
+        payload_value: &Value,
+    ) -> Option<bool> {
+        match self {
+            FieldIndex::IntIndex(_) => None,
+            FieldIndex::IntMapIndex(_) => None,
+            FieldIndex::KeywordIndex(_) => None,
+            FieldIndex::FloatIndex(_) => None,
+            FieldIndex::GeoIndex(_) => None,
+            FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
+                Some(Match::Text(MatchText { text })) => {
+                    let query = full_text_index.parse_query(text);
+                    for value in full_text_index.get_values(payload_value) {
+                        let document = full_text_index.parse_document(&value);
+                        if query.check_match(&document) {
+                            return Some(true);
+                        }
+                    }
+                    Some(false)
+                }
+                _ => None,
+            },
+        }
+    }
+
     fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index,

@@ -13,8 +13,9 @@ mod tests {
     use segment::fixtures::payload_fixtures::{
         generate_diverse_nested_payload, generate_diverse_payload, random_filter,
         random_nested_filter, random_vector, FLICKING_KEY, GEO_KEY, INT_KEY, INT_KEY_2, LAT_RANGE,
-        LON_RANGE, STR_KEY, STR_PROJ_KEY, TEXT_KEY,
+        LON_RANGE, STR_KEY, STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY,
     };
+    use segment::index::field_index::PrimaryCondition;
     use segment::index::PayloadIndex;
     use segment::segment::Segment;
     use segment::segment_constructor::build_segment;
@@ -171,6 +172,8 @@ mod tests {
         // Nested payload keys
         let nested_str_key = format!("{}.{}.{}", STR_KEY, "nested_1", "nested_2");
         let nested_str_proj_key = format!("{}.{}[].{}", STR_PROJ_KEY, "nested_1", "nested_2");
+        let deep_nested_str_proj_key =
+            format!("{}[].{}[].{}", STR_ROOT_PROJ_KEY, "nested_1", "nested_2");
 
         let mut opnum = 0;
         struct_segment
@@ -188,6 +191,16 @@ mod tests {
                 Some(&PayloadSchemaType::Keyword.into()),
             )
             .unwrap();
+
+        struct_segment
+            .create_field_index(
+                opnum,
+                &deep_nested_str_proj_key,
+                Some(&PayloadSchemaType::Keyword.into()),
+            )
+            .unwrap();
+
+        eprintln!("{}", deep_nested_str_proj_key);
 
         opnum += 1;
         for n in 0..num_points {
@@ -312,6 +325,119 @@ mod tests {
             .payload_index
             .borrow()
             .estimate_cardinality(&filter);
+
+        let payload_index = struct_segment.payload_index.borrow();
+        let filter_context = payload_index.filter_context(&filter);
+        let exact = struct_segment
+            .id_tracker
+            .borrow()
+            .iter_ids()
+            .filter(|x| filter_context.check(*x))
+            .collect_vec()
+            .len();
+
+        eprintln!("exact = {exact:#?}");
+        eprintln!("estimation = {estimation:#?}");
+
+        assert!(exact <= estimation.max);
+        assert!(exact >= estimation.min);
+    }
+
+    #[test]
+    fn test_root_nested_array_filter_cardinality_estimation() {
+        let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+        let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
+
+        let (struct_segment, _) = build_test_segments_nested_payload(dir1.path(), dir2.path());
+
+        // rely on test data from `build_test_segments_nested_payload`
+        let nested_key = "nested_1[].nested_2";
+        let nested_match =
+            FieldCondition::new_match(nested_key.to_owned(), "some value".to_owned().into());
+        let filter = Filter::new_must(Condition::new_nested(
+            STR_ROOT_PROJ_KEY.to_string(),
+            Filter::new_must(Condition::Field(nested_match)),
+        ));
+
+        let estimation = struct_segment
+            .payload_index
+            .borrow()
+            .estimate_cardinality(&filter);
+
+        // not empty primary clauses
+        assert_eq!(estimation.primary_clauses.len(), 1);
+        eprintln!("primary_clauses = {:#?}", estimation.primary_clauses);
+        let primary_clause = estimation.primary_clauses.first().unwrap();
+
+        let expected_primary_clause = FieldCondition::new_match(
+            format!("{}[].{}", STR_ROOT_PROJ_KEY, nested_key), // full key expected
+            "some value".to_owned().into(),
+        );
+
+        match primary_clause {
+            PrimaryCondition::Condition(field_condition) => {
+                assert_eq!(field_condition, &expected_primary_clause);
+            }
+            o => panic!("unexpected primary clause: {:?}", o),
+        }
+
+        let payload_index = struct_segment.payload_index.borrow();
+        let filter_context = payload_index.filter_context(&filter);
+        let exact = struct_segment
+            .id_tracker
+            .borrow()
+            .iter_ids()
+            .filter(|x| filter_context.check(*x))
+            .collect_vec()
+            .len();
+
+        eprintln!("exact = {exact:#?}");
+        eprintln!("estimation = {estimation:#?}");
+
+        assert!(exact <= estimation.max);
+        assert!(exact >= estimation.min);
+    }
+
+    #[test]
+    fn test_nesting_nested_array_filter_cardinality_estimation() {
+        let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+        let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
+
+        let (struct_segment, _) = build_test_segments_nested_payload(dir1.path(), dir2.path());
+
+        // rely on test data from `build_test_segments_nested_payload`
+        let nested_match_key = "nested_2";
+        let nested_match =
+            FieldCondition::new_match(nested_match_key.to_owned(), "some value".to_owned().into());
+        let filter = Filter::new_must(Condition::new_nested(
+            STR_ROOT_PROJ_KEY.to_string(),
+            Filter::new_must(Condition::new_nested(
+                "nested_1".to_string(),
+                Filter::new_must(Condition::Field(nested_match)),
+            )),
+        ));
+
+        let estimation = struct_segment
+            .payload_index
+            .borrow()
+            .estimate_cardinality(&filter);
+
+        // not empty primary clauses
+        assert_eq!(estimation.primary_clauses.len(), 1);
+        eprintln!("primary_clauses = {:#?}", estimation.primary_clauses);
+        let primary_clause = estimation.primary_clauses.first().unwrap();
+
+        let expected_primary_clause = FieldCondition::new_match(
+            format!("{}[].nested_1[].{}", STR_ROOT_PROJ_KEY, nested_match_key), // full key expected
+            "some value".to_owned().into(),
+        );
+
+        match primary_clause {
+            PrimaryCondition::Condition(field_condition) => {
+                assert_eq!(field_condition, &expected_primary_clause);
+            }
+            o => panic!("unexpected primary clause: {:?}", o),
+        }
 
         let payload_index = struct_segment.payload_index.borrow();
         let filter_context = payload_index.filter_context(&filter);
