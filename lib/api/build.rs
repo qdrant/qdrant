@@ -116,6 +116,7 @@ fn configure_validation(builder: Builder) -> Builder {
             "ListAliasesRequest",
             "CollectionClusterInfoRequest",
             "UpdateCollectionClusterSetupRequest",
+            "ProductQuantization",
         ])
         // Service: collections_internal.proto
         .validates(&[

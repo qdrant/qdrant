@@ -8,14 +8,13 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
 
-use super::quantized::quantized_vectors_base::QuantizedVectorsStorage;
+use super::quantized::quantized_vectors::QuantizedVectors;
 use super::VectorStorageEnum;
 use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectors;
 use crate::vector_storage::VectorStorage;
 
 const VECTORS_PATH: &str = "matrix.dat";
@@ -140,9 +139,17 @@ impl VectorStorage for MemmapVectorStorage {
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<()> {
         let mmap_store = self.mmap_store.as_mut().unwrap();
-        mmap_store.quantize(self.distance, data_path, quantization_config)
+        mmap_store.quantize(
+            self.distance,
+            data_path,
+            quantization_config,
+            max_threads,
+            stopped,
+        )
     }
 
     fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()> {
@@ -150,7 +157,7 @@ impl VectorStorage for MemmapVectorStorage {
         mmap_store.load_quantization(data_path, self.distance)
     }
 
-    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage> {
+    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
         let mmap_store = self.mmap_store.as_ref().unwrap();
         mmap_store.quantized_vectors.as_ref()
     }
@@ -599,7 +606,10 @@ mod tests {
         }
         .into();
 
-        borrowed_storage.quantize(dir.path(), &config).unwrap();
+        let stopped = Arc::new(AtomicBool::new(false));
+        borrowed_storage
+            .quantize(dir.path(), &config, 1, &stopped)
+            .unwrap();
 
         let query = vec![0.5, 0.5, 0.5, 0.5];
 

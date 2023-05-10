@@ -69,6 +69,14 @@ enum QuantizationType {
   Int8 = 1;
 }
 
+enum CompressionRatio {
+  x4 = 0;
+  x8 = 1;
+  x16 = 2;
+  x32 = 3;
+  x64 = 4;
+}
+
 message OptimizerStatus {
   bool ok = 1;
   string error = 2;
@@ -177,9 +185,15 @@ message ScalarQuantization {
   optional bool always_ram = 3; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
+message ProductQuantization {
+  CompressionRatio compression = 1; // Compression ratio
+  optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+}
+
 message QuantizationConfig {
   oneof quantization {
     ScalarQuantization scalar = 1;
+    ProductQuantization product = 2;
   }
 }
 

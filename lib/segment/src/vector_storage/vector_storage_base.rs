@@ -7,7 +7,7 @@ use bitvec::prelude::BitSlice;
 use ordered_float::OrderedFloat;
 
 use super::memmap_vector_storage::MemmapVectorStorage;
-use super::quantized::quantized_vectors_base::QuantizedVectorsStorage;
+use super::quantized::quantized_vectors::QuantizedVectors;
 use super::simple_vector_storage::SimpleVectorStorage;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -83,12 +83,14 @@ pub trait VectorStorage {
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<()>;
 
     // Load quantized vectors from disk
     fn load_quantization(&mut self, data_path: &Path) -> OperationResult<()>;
 
-    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage>;
+    fn quantized_storage(&self) -> Option<&QuantizedVectors>;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -199,11 +201,19 @@ impl VectorStorage for VectorStorageEnum {
         &mut self,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<()> {
         match self {
-            VectorStorageEnum::Simple(v) => v.quantize(data_path, quantization_config),
-            VectorStorageEnum::Memmap(v) => v.quantize(data_path, quantization_config),
-            VectorStorageEnum::AppendableMemmap(v) => v.quantize(data_path, quantization_config),
+            VectorStorageEnum::Simple(v) => {
+                v.quantize(data_path, quantization_config, max_threads, stopped)
+            }
+            VectorStorageEnum::Memmap(v) => {
+                v.quantize(data_path, quantization_config, max_threads, stopped)
+            }
+            VectorStorageEnum::AppendableMemmap(v) => {
+                v.quantize(data_path, quantization_config, max_threads, stopped)
+            }
         }
     }
 
@@ -215,7 +225,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn quantized_storage(&self) -> Option<&QuantizedVectorsStorage> {
+    fn quantized_storage(&self) -> Option<&QuantizedVectors> {
         match self {
             VectorStorageEnum::Simple(v) => v.quantized_storage(),
             VectorStorageEnum::Memmap(v) => v.quantized_storage(),

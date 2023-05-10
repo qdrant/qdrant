@@ -156,6 +156,12 @@ impl From<fs_extra::error::Error> for OperationError {
     }
 }
 
+impl From<quantization::EncodingError> for OperationError {
+    fn from(err: quantization::EncodingError) -> Self {
+        OperationError::service_error(format!("Quantization encoding error: {err}"))
+    }
+}
+
 impl From<TryReserveError> for OperationError {
     fn from(err: TryReserveError) -> Self {
         let free_memory = Mem::new().available_memory_bytes();

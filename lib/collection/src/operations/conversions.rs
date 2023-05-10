@@ -7,7 +7,8 @@ use api::grpc::qdrant::QuantizationType;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedVector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{
-    Distance, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+    CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
+    ScalarQuantization, ScalarQuantizationConfig, ScalarType,
 };
 use tonic::Status;
 
@@ -367,6 +368,28 @@ fn grpc_to_segment_quantization_config(
                         }
                     },
                     quantile: config.quantile,
+                    always_ram: config.always_ram,
+                },
+            }))
+        }
+        api::grpc::qdrant::quantization_config::Quantization::Product(config) => {
+            Ok(QuantizationConfig::Product(ProductQuantization {
+                product: ProductQuantizationConfig {
+                    compression: match api::grpc::qdrant::CompressionRatio::from_i32(
+                        config.compression,
+                    ) {
+                        None => {
+                            return Err(format!(
+                                "Cannot convert compression ratio: {}",
+                                config.compression
+                            ));
+                        }
+                        Some(api::grpc::qdrant::CompressionRatio::X4) => CompressionRatio::X4,
+                        Some(api::grpc::qdrant::CompressionRatio::X8) => CompressionRatio::X8,
+                        Some(api::grpc::qdrant::CompressionRatio::X16) => CompressionRatio::X16,
+                        Some(api::grpc::qdrant::CompressionRatio::X32) => CompressionRatio::X32,
+                        Some(api::grpc::qdrant::CompressionRatio::X64) => CompressionRatio::X64,
+                    },
                     always_ram: config.always_ram,
                 },
             }))

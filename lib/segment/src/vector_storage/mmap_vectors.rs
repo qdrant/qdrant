@@ -2,6 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{self, size_of, transmute};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use memmap2::Mmap;
@@ -13,7 +14,7 @@ use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
-use crate::vector_storage::quantized::quantized_vectors_base::QuantizedVectorsStorage;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
@@ -31,7 +32,7 @@ pub struct MmapVectors {
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
-    pub quantized_vectors: Option<QuantizedVectorsStorage>,
+    pub quantized_vectors: Option<QuantizedVectors>,
 }
 
 impl MmapVectors {
@@ -78,13 +79,15 @@ impl MmapVectors {
         distance: Distance,
         data_path: &Path,
         quantization_config: &QuantizationConfig,
+        max_threads: usize,
+        stopped: &AtomicBool,
     ) -> OperationResult<()> {
         self.lock_deleted_flags();
         let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
             self.raw_vector_offset(offset)
         });
-        self.quantized_vectors = Some(QuantizedVectorsStorage::create(
+        self.quantized_vectors = Some(QuantizedVectors::create(
             vector_data_iterator,
             quantization_config,
             distance,
@@ -92,6 +95,8 @@ impl MmapVectors {
             self.num_vectors,
             data_path,
             true,
+            max_threads,
+            stopped,
         )?);
         Ok(())
     }
@@ -101,10 +106,9 @@ impl MmapVectors {
         data_path: &Path,
         distance: Distance,
     ) -> OperationResult<()> {
-        if QuantizedVectorsStorage::check_exists(data_path) {
+        if QuantizedVectors::config_exists(data_path) {
             self.lock_deleted_flags();
-            self.quantized_vectors =
-                Some(QuantizedVectorsStorage::load(data_path, true, distance)?);
+            self.quantized_vectors = Some(QuantizedVectors::load(data_path, true, distance)?);
         }
         Ok(())
     }
