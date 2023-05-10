@@ -505,12 +505,14 @@ mod tests {
     use crate::common::mmap_ops;
 
     fn create_temp_mmap_file(len: usize) -> NamedTempFile {
+        assert!(len > 0, "should not create empty file");
         let tempfile = Builder::new()
             .prefix("test.")
             .suffix(".mmap")
             .tempfile()
             .unwrap();
         tempfile.as_file().set_len(len as u64).unwrap();
+        tempfile.as_file().sync_all().unwrap();
         tempfile
     }
 
