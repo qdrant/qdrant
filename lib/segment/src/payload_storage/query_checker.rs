@@ -113,32 +113,7 @@ pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload
 
     let mut res = false;
     for p in field_values {
-        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-        res = res
-            || field_condition
-                .r#match
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .range
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .geo_radius
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .geo_bounding_box
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .values_count
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
+        res |= field_condition.check(p);
     }
     res
 }

@@ -1060,9 +1060,9 @@ pub struct FieldCondition {
 }
 
 impl FieldCondition {
-    pub fn new_match(key: PayloadKeyType, r#match: Match) -> Self {
+    pub fn new_match(key: impl Into<PayloadKeyType>, r#match: Match) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: Some(r#match),
             range: None,
             geo_bounding_box: None,
@@ -1071,9 +1071,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_range(key: PayloadKeyType, range: Range) -> Self {
+    pub fn new_range(key: impl Into<PayloadKeyType>, range: Range) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: None,
             range: Some(range),
             geo_bounding_box: None,
@@ -1082,9 +1082,12 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_geo_bounding_box(key: PayloadKeyType, geo_bounding_box: GeoBoundingBox) -> Self {
+    pub fn new_geo_bounding_box(
+        key: impl Into<PayloadKeyType>,
+        geo_bounding_box: GeoBoundingBox,
+    ) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: None,
             range: None,
             geo_bounding_box: Some(geo_bounding_box),
@@ -1093,9 +1096,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_geo_radius(key: PayloadKeyType, geo_radius: GeoRadius) -> Self {
+    pub fn new_geo_radius(key: impl Into<PayloadKeyType>, geo_radius: GeoRadius) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: None,
             range: None,
             geo_bounding_box: None,
@@ -1104,9 +1107,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_values_count(key: PayloadKeyType, values_count: ValuesCount) -> Self {
+    pub fn new_values_count(key: impl Into<PayloadKeyType>, values_count: ValuesCount) -> Self {
         Self {
-            key,
+            key: key.into(),
             r#match: None,
             range: None,
             geo_bounding_box: None,
@@ -1204,9 +1207,12 @@ pub enum Condition {
 }
 
 impl Condition {
-    pub fn new_nested(key: String, filter: Filter) -> Self {
+    pub fn new_nested(key: impl Into<String>, filter: Filter) -> Self {
         Self::Nested(NestedContainer {
-            nested: NestedCondition { key, filter },
+            nested: NestedCondition {
+                key: key.into(),
+                filter,
+            },
         })
     }
 }

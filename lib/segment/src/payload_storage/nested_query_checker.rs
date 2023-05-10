@@ -1,69 +1,48 @@
-use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
+use bitvec::bitvec;
+use bitvec::prelude::BitVec;
 use serde_json::Value;
 
-use crate::common::utils::{JsonPathPayload, MultiValue};
+use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
 };
 
+/// Executes condition checks for all `must` conditions of the nester objects.
+/// If there is at least one nested object that matches all `must` conditions, returns `true`.
+/// If there are no conditions, returns `true`.
+/// If there are no nested objects, returns `false`.
 fn check_nested_must_conditions<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
 where
-    F: Fn(&Condition) -> (Vec<usize>, usize),
+    F: Fn(&Condition) -> BitVec,
 {
     match must {
         None => true,
-        Some(conditions) => {
-            let condition_count = conditions.len();
-            // Count the number of matches per element index
-            let matches: HashMap<usize, usize> =
-                conditions
-                    .iter()
-                    .flat_map(|c| checker(c).0)
-                    .fold(HashMap::new(), |mut acc, m| {
-                        *acc.entry(m).or_insert(0) += 1;
-                        acc
-                    });
-            matches.iter().any(|(_, count)| *count == condition_count)
-        }
+        Some(conditions) => conditions
+            .iter()
+            .map(checker)
+            .reduce(|acc, matches| acc & matches)
+            .map(|matches: BitVec| matches.count_ones() > 0)
+            .unwrap_or(false), // At least one sub-object must match all conditions
     }
 }
 
 fn check_nested_must_not_conditions<F>(checker: &F, must_not: &Option<Vec<Condition>>) -> bool
 where
-    F: Fn(&Condition) -> (Vec<usize>, usize),
+    F: Fn(&Condition) -> BitVec,
 {
     match must_not {
         None => true,
         Some(conditions) => {
-            let mut len = 0;
-            // find all indices that have matched at least one condition
-            let match_at_least_once: HashSet<usize> = conditions
+            conditions
                 .iter()
-                .flat_map(|condition| {
-                    let (matches, len_) = checker(condition);
-                    len = len_; // all len are the same for all
-                    matches
-                })
-                .fold(HashSet::new(), |mut acc, inner| {
-                    acc.insert(inner);
-                    acc
-                });
-
-            if len == 0 {
-                return true;
-            }
-
-            for i in 1..len {
-                // index is 0 based, so we need to substract 1 from len based index
-                let index = i - 1;
-                if !match_at_least_once.contains(&index) {
-                    return true;
-                }
-            }
-            false
+                .map(checker)
+                .reduce(|acc, matches| acc | matches)
+                // There is at least one sub-object that does not match any of the conditions
+                .map(|matches: BitVec| matches.count_zeros() > 0)
+                .unwrap_or(true) // If there are no sub-objects, then must_not conditions are satisfied
         }
     }
 }
@@ -77,9 +56,12 @@ where
     F: Fn() -> OwnedPayloadRef<'a>,
 {
     let nested_checker = |condition: &Condition| match condition {
-        Condition::Field(field_condition) => {
-            nested_check_field_condition(field_condition, get_payload().deref(), nested_path)
-        }
+        Condition::Field(field_condition) => nested_check_field_condition(
+            field_condition,
+            get_payload().deref(),
+            nested_path,
+            &Default::default(),
+        ),
         Condition::IsEmpty(is_empty) => {
             check_nested_is_empty_condition(nested_path, is_empty, get_payload().deref())
         }
@@ -96,7 +78,7 @@ where
 
 pub fn nested_filter_checker<F>(matching_paths: &F, nested_filter: &Filter) -> bool
 where
-    F: Fn(&Condition) -> (Vec<usize>, usize),
+    F: Fn(&Condition) -> BitVec,
 {
     check_nested_must_conditions(matching_paths, &nested_filter.must)
         && check_nested_must_not_conditions(matching_paths, &nested_filter.must_not)
@@ -107,20 +89,18 @@ pub fn check_nested_is_empty_condition(
     nested_path: &JsonPathPayload,
     is_empty: &IsEmptyCondition,
     payload: &Payload,
-) -> (Vec<usize>, usize) {
+) -> BitVec {
     let full_path = nested_path.extend(&is_empty.is_empty.key);
-    let field_values = payload.get_value(&full_path.path);
-    let mut field_len = 0;
-    let mut matching_indices = vec![];
-    for (index, p) in field_values.values().iter().enumerate() {
-        field_len += 1;
+    let field_values = payload.get_value(&full_path.path).values();
+    let mut result = BitVec::with_capacity(field_values.len());
+    for p in field_values {
         match p {
-            Value::Null => matching_indices.push(index),
-            Value::Array(vec) if vec.is_empty() => matching_indices.push(index),
-            _ => (),
+            Value::Null => result.push(true),
+            Value::Array(vec) if vec.is_empty() => result.push(true),
+            _ => result.push(false),
         }
     }
-    (matching_indices, field_len)
+    result
 }
 
 /// Return element indices matching the condition in the payload
@@ -128,35 +108,29 @@ pub fn check_nested_is_null_condition(
     nested_path: &JsonPathPayload,
     is_null: &IsNullCondition,
     payload: &Payload,
-) -> (Vec<usize>, usize) {
+) -> BitVec {
     let full_path = nested_path.extend(&is_null.is_null.key);
     let field_values = payload.get_value(&full_path.path);
-    let mut field_len = 0;
     match field_values {
-        MultiValue::Single(None) => (vec![0], field_len),
+        MultiValue::Single(None) => bitvec![1; 1],
         MultiValue::Single(Some(v)) => {
-            field_len += 1;
             if v.is_null() {
-                (vec![0], field_len)
+                bitvec![1; 1]
             } else {
-                (vec![], field_len)
+                bitvec![0; 1]
             }
         }
         MultiValue::Multiple(multiple_values) => {
-            let mut paths = vec![];
-            for (index, p) in multiple_values.iter().enumerate() {
-                field_len += 1;
-                match p {
-                    Value::Null => paths.push(index),
-                    Value::Array(vec) => {
-                        if vec.iter().any(|val| val.is_null()) {
-                            paths.push(index)
-                        }
-                    }
-                    _ => (),
-                }
+            let mut paths = BitVec::with_capacity(multiple_values.len());
+            for p in multiple_values {
+                let check_res = match p {
+                    Value::Null => true,
+                    Value::Array(vec) => vec.iter().any(|val| val.is_null()),
+                    _ => false,
+                };
+                paths.push(check_res);
             }
-            (paths, field_len)
+            paths
         }
     }
 }
@@ -166,46 +140,32 @@ pub fn nested_check_field_condition(
     field_condition: &FieldCondition,
     payload: &Payload,
     nested_path: &JsonPathPayload,
-) -> (Vec<usize>, usize) {
+    field_indexes: &IndexesMap,
+) -> BitVec {
     let full_path = nested_path.extend(&field_condition.key);
-    let field_values = payload.get_value(&full_path.path);
-    let mut field_len = 0;
-    let mut matching_indices = vec![];
+    let field_values = payload.get_value(&full_path.path).values();
+    let mut result = BitVec::with_capacity(field_values.len());
 
-    for (index, p) in field_values.values().iter().enumerate() {
-        field_len += 1;
-        let mut res = false;
-        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-        res = res
-            || field_condition
-                .r#match
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .range
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .geo_radius
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .geo_bounding_box
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        res = res
-            || field_condition
-                .values_count
-                .as_ref()
-                .map_or(false, |condition| condition.check(p));
-        if res {
-            matching_indices.push(index);
+    let field_indexes = field_indexes.get(&full_path.path);
+
+    for p in field_values {
+        // This covers a case, when a field index affects the result of the condition.
+        // Only required in the nested case,
+        // because non-nested payload is checked by the index directly.
+        let mut index_check_res = None;
+        if let Some(field_indexes) = field_indexes {
+            for index in field_indexes {
+                index_check_res = index.check_condition(field_condition, p);
+                if index_check_res.is_some() {
+                    break;
+                }
+            }
         }
+        // Fallback to regular condition check if index-aware check did not return a result
+        let res = index_check_res.unwrap_or_else(|| field_condition.check(p));
+        result.push(res);
     }
-    (matching_indices, field_len)
+    result
 }
 
 #[cfg(test)]
@@ -381,8 +341,8 @@ mod tests {
         ));
 
         assert!(payload_checker.check(germany_id, &population_range_condition)); // all cities less than 8.0
-        assert!(payload_checker.check(japan_id, &population_range_condition)); // tokyo is 13.5
-        assert!(payload_checker.check(!boring_id, &population_range_condition)); // has no cities
+        assert!(payload_checker.check(japan_id, &population_range_condition)); // tokyo is 13.5, but other cities are less than 8.0
+        assert!(payload_checker.check(boring_id, &population_range_condition)); // has no cities
 
         // single must values_count condition nested field in array
         let sightseeing_value_count_condition = Filter::new_must(Condition::new_nested(
@@ -418,7 +378,7 @@ mod tests {
 
         assert!(payload_checker.check(germany_id, &sightseeing_value_count_condition));
         assert!(payload_checker.check(japan_id, &sightseeing_value_count_condition));
-        assert!(!payload_checker.check(boring_id, &sightseeing_value_count_condition));
+        assert!(payload_checker.check(boring_id, &sightseeing_value_count_condition));
 
         // single IsEmpty condition nested field in array
         let is_empty_condition = Filter::new_must(Condition::new_nested(

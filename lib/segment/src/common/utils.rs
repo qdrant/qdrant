@@ -4,6 +4,8 @@ use serde_json::Value;
 
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
+use crate::index::field_index::FieldIndex;
+use crate::types::PayloadKeyType;
 
 /// Avoids allocating Vec with a single element
 #[derive(Debug)]
@@ -185,6 +187,20 @@ fn focus_array_path<'a>(
     }
 }
 
+/// Focus on value references according to path
+/// Flatten intermediate arrays but keep leaf array values on demand.
+/// E.g
+/// {
+///   "arr": [
+///       { "a": [1, 2, 3] },
+///       { "a": 4 },
+///       { "b": 5 }
+///   ]
+/// }
+///
+/// path: "arr[].a"   => Vec![Value::Array[ 1, 2, 3], 4]
+/// path: "arr[].a[]" => Vec![ 1, 2, 3, 4]
+///
 pub fn get_value_from_json_map<'a>(
     path: &str,
     value: &'a serde_json::Map<String, Value>,
@@ -571,4 +587,45 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_no_flatten_array_value_from_json_map() {
+        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "arr": [
+                    { "a": [1, 2, 3] },
+                    { "a": 4 },
+                    { "b": 5 }
+                ]
+            }
+            "#,
+        )
+        .unwrap();
+
+        // extract and retain structure for arrays arrays
+        assert_eq!(
+            get_value_from_json_map("arr[].a", &map).values(),
+            vec![
+                &Value::Array(vec![
+                    Value::Number(1.into()),
+                    Value::Number(2.into()),
+                    Value::Number(3.into()),
+                ]),
+                &Value::Number(4.into()),
+            ]
+        );
+
+        // expect an array as leaf, ignore non arrays
+        assert_eq!(
+            get_value_from_json_map("arr[].a[]", &map).values(),
+            vec![
+                &Value::Number(1.into()),
+                &Value::Number(2.into()),
+                &Value::Number(3.into()),
+            ]
+        );
+    }
 }
+
+pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
