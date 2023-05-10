@@ -9,8 +9,8 @@ use crate::index::query_estimator::{
     combine_must_estimations, combine_should_estimations, invert_estimation,
 };
 use crate::index::query_optimization::condition_converter::condition_converter;
-use crate::index::query_optimization::nested_filter::{
-    merge_nested_matching_indices, nested_conditions_converter,
+use crate::index::query_optimization::nested_optimizer::{
+    optimize_nested_must, optimize_nested_must_not, optimize_nested_should,
 };
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
@@ -53,15 +53,25 @@ where
     let optimized_filter = OptimizedFilter {
         should: filter.should.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
-                let (optimized_conditions, estimation) = optimize_should(
-                    conditions,
-                    id_tracker,
-                    field_indexes,
-                    payload_provider.clone(),
-                    estimator,
-                    total,
-                    nested_path.clone(),
-                );
+                let (optimized_conditions, estimation) = if let Some(np) = &nested_path {
+                    optimize_nested_should(
+                        conditions,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                        np.clone(),
+                    )
+                } else {
+                    optimize_should(
+                        conditions,
+                        id_tracker,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                    )
+                };
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -70,15 +80,25 @@ where
         }),
         must: filter.must.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
-                let (optimized_conditions, estimation) = optimize_must(
-                    conditions,
-                    id_tracker,
-                    field_indexes,
-                    payload_provider.clone(),
-                    estimator,
-                    total,
-                    nested_path.clone(),
-                );
+                let (optimized_conditions, estimation) = if let Some(np) = &nested_path {
+                    optimize_nested_must(
+                        conditions,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                        np.clone(),
+                    )
+                } else {
+                    optimize_must(
+                        conditions,
+                        id_tracker,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                    )
+                };
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -87,15 +107,25 @@ where
         }),
         must_not: filter.must_not.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
-                let (optimized_conditions, estimation) = optimize_must_not(
-                    conditions,
-                    id_tracker,
-                    field_indexes,
-                    payload_provider.clone(),
-                    estimator,
-                    total,
-                    nested_path,
-                );
+                let (optimized_conditions, estimation) = if let Some(np) = &nested_path {
+                    optimize_nested_must_not(
+                        conditions,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                        np.clone(),
+                    )
+                } else {
+                    optimize_must_not(
+                        conditions,
+                        id_tracker,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                    )
+                };
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -110,8 +140,6 @@ where
     )
 }
 
-// TODO args
-#[allow(clippy::too_many_arguments)]
 fn convert_conditions<'a, F>(
     conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
@@ -119,61 +147,49 @@ fn convert_conditions<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-    nested_path: Option<JsonPathPayload>,
-    nested_negate: bool,
 ) -> Vec<(OptimizedCondition<'a>, CardinalityEstimation)>
 where
     F: Fn(&Condition) -> CardinalityEstimation,
 {
-    if let Some(nested_path) = nested_path {
-        let nested_checker_fns =
-            nested_conditions_converter(conditions, payload_provider, field_indexes, nested_path);
-        let estimations: Vec<_> = conditions.iter().map(estimator).collect();
-        let merged = merge_nested_matching_indices(nested_checker_fns, nested_negate);
-        // TODO is this correct?
-        let estimation = combine_must_estimations(&estimations, total);
-        vec![(OptimizedCondition::Checker(merged), estimation)]
-    } else {
-        conditions
-            .iter()
-            .map(|condition| match condition {
-                Condition::Nested(nested_filter) => {
-                    let (optimized_filter, estimation) = optimize_filter(
-                        nested_filter.filter(),
-                        id_tracker,
-                        field_indexes,
-                        payload_provider.clone(),
-                        estimator,
-                        total,
-                        Some(JsonPathPayload::new(nested_filter.array_key())),
-                    );
-                    (OptimizedCondition::Filter(optimized_filter), estimation)
-                }
-                Condition::Filter(filter) => {
-                    let (optimized_filter, estimation) = optimize_filter(
-                        filter,
-                        id_tracker,
-                        field_indexes,
-                        payload_provider.clone(),
-                        estimator,
-                        total,
-                        None,
-                    );
-                    (OptimizedCondition::Filter(optimized_filter), estimation)
-                }
-                _ => {
-                    let estimation = estimator(condition);
-                    let condition_checker = condition_converter(
-                        condition,
-                        field_indexes,
-                        payload_provider.clone(),
-                        id_tracker,
-                    );
-                    (OptimizedCondition::Checker(condition_checker), estimation)
-                }
-            })
-            .collect()
-    }
+    conditions
+        .iter()
+        .map(|condition| match condition {
+            Condition::Nested(nested_filter) => {
+                let (optimized_filter, estimation) = optimize_filter(
+                    nested_filter.filter(),
+                    id_tracker,
+                    field_indexes,
+                    payload_provider.clone(),
+                    estimator,
+                    total,
+                    Some(JsonPathPayload::new(nested_filter.array_key())),
+                );
+                (OptimizedCondition::Filter(optimized_filter), estimation)
+            }
+            Condition::Filter(filter) => {
+                let (optimized_filter, estimation) = optimize_filter(
+                    filter,
+                    id_tracker,
+                    field_indexes,
+                    payload_provider.clone(),
+                    estimator,
+                    total,
+                    None,
+                );
+                (OptimizedCondition::Filter(optimized_filter), estimation)
+            }
+            _ => {
+                let estimation = estimator(condition);
+                let condition_checker = condition_converter(
+                    condition,
+                    field_indexes,
+                    payload_provider.clone(),
+                    id_tracker,
+                );
+                (OptimizedCondition::Checker(condition_checker), estimation)
+            }
+        })
+        .collect()
 }
 
 fn optimize_should<'a, F>(
@@ -183,7 +199,6 @@ fn optimize_should<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-    nested_path: Option<JsonPathPayload>,
 ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
 where
     F: Fn(&Condition) -> CardinalityEstimation,
@@ -195,8 +210,6 @@ where
         payload_provider,
         estimator,
         total,
-        nested_path,
-        false,
     );
     // More probable conditions first
     converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
@@ -212,7 +225,6 @@ fn optimize_must<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-    nested_path: Option<JsonPathPayload>,
 ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
 where
     F: Fn(&Condition) -> CardinalityEstimation,
@@ -224,8 +236,6 @@ where
         payload_provider,
         estimator,
         total,
-        nested_path,
-        false,
     );
     // Less probable conditions first
     converted.sort_by_key(|(_, estimation)| estimation.exp);
@@ -241,7 +251,6 @@ fn optimize_must_not<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-    nested_path: Option<JsonPathPayload>,
 ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
 where
     F: Fn(&Condition) -> CardinalityEstimation,
@@ -253,8 +262,6 @@ where
         payload_provider,
         estimator,
         total,
-        nested_path,
-        true,
     );
     // More probable conditions first, as it will be reverted
     converted.sort_by_key(|(_, estimation)| estimation.exp);

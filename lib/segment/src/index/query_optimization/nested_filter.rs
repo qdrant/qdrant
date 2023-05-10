@@ -1,7 +1,6 @@
 use bitvec::prelude::*;
 
 use crate::common::utils::{IndexesMap, JsonPathPayload};
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::nested_query_checker::{
     check_nested_is_empty_condition, check_nested_is_null_condition, nested_check_field_condition,
@@ -10,26 +9,6 @@ use crate::types::{Condition, NestedContainer, PointOffsetType};
 
 /// Given a point_id, returns the list of nested indices matching the condition and the total number of nested elements in the payload
 type NestedMatchingIndicesFn<'a> = Box<dyn Fn(PointOffsetType) -> BitVec + 'a>;
-
-/// Merge several nested condition results into a single regular condition checker
-///
-/// return a single condition checker that will return true if all nested condition checkers for the point_id
-pub fn merge_nested_matching_indices(
-    nested_checkers: Vec<NestedMatchingIndicesFn>,
-    nested_negate: bool,
-) -> ConditionCheckerFn {
-    Box::new(move |point_id: PointOffsetType| {
-        if nested_negate {
-            let not_matching = find_indices_matching_none_conditions(point_id, &nested_checkers);
-            // if they are no nested path not matching ANY nested conditions
-            not_matching.count_ones() == 0
-        } else {
-            let matches = find_indices_matching_all_conditions(point_id, &nested_checkers);
-            // if any of the nested path is matching for ALL nested condition
-            matches.count_ones() > 0
-        }
-    })
-}
 
 /// Apply `point_id` to `nested_checkers` and return the list of indices in the payload matching all conditions
 pub fn find_indices_matching_all_conditions(
@@ -143,7 +122,7 @@ pub fn nested_condition_converter<'a>(
                     nested,
                     field_indexes,
                     payload_provider.clone(),
-                    nested_path.clone(),
+                    &nested_path,
                 );
                 if let Some(must_not_matching) = must_not_matching {
                     bitvecs.push(must_not_matching);
@@ -203,7 +182,7 @@ fn check_nested_must_not(
     nested: &NestedContainer,
     field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
-    nested_path: JsonPathPayload,
+    nested_path: &JsonPathPayload,
 ) -> Option<BitVec> {
     match &nested.filter().must_not {
         None => None,
@@ -243,68 +222,3 @@ fn check_nested_should(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn zero_matching_merge_nested_matching_indices() {
-        let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
-            Box::new(|_point_id: PointOffsetType| BitVec::default()),
-            Box::new(|_point_id: PointOffsetType| BitVec::default()),
-            Box::new(|_point_id: PointOffsetType| BitVec::default()),
-        ];
-
-        let bits = find_indices_matching_all_conditions(0, &matching_indices_fn);
-        // none of the conditions are matching anything
-        assert!(bits.is_empty());
-
-        let bits = find_indices_matching_none_conditions(0, &matching_indices_fn);
-        assert!(bits.is_empty());
-    }
-
-    #[test]
-    fn single_matching_merge_merge_nested_matching_indices() {
-        let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
-            Box::new(|_point_id: PointOffsetType| bitvec![1 ; 1]),
-            Box::new(|_point_id: PointOffsetType| bitvec![1 ; 1]),
-            Box::new(|_point_id: PointOffsetType| bitvec![1 ; 1]),
-        ];
-
-        let bits = find_indices_matching_all_conditions(0, &matching_indices_fn);
-        // index 0 is matching all the conditions
-        assert_eq!(bits.len(), 1);
-        assert!(bits[0]);
-
-        let bits = find_indices_matching_none_conditions(0, &matching_indices_fn);
-        assert_eq!(bits.len(), 1);
-        assert!(!bits[0]);
-    }
-
-    #[test]
-    fn single_non_matching_merge_nested_matching_indices() {
-        let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
-            Box::new(|_point_id: PointOffsetType| bitvec![1, 0]),
-            Box::new(|_point_id: PointOffsetType| bitvec![1, 0]),
-            Box::new(|_point_id: PointOffsetType| bitvec![0, 1]),
-        ];
-        let merged = merge_nested_matching_indices(matching_indices_fn, false);
-        // does not because all the checkers are not matching the same path
-        let result: bool = merged(0);
-        assert!(!result);
-    }
-
-    #[test]
-    fn many_matching_merge_nested_matching_indices() {
-        let matching_indices_fn: Vec<NestedMatchingIndicesFn> = vec![
-            Box::new(|_point_id: PointOffsetType| bitvec![1, 1]),
-            Box::new(|_point_id: PointOffsetType| bitvec![1, 1]),
-            Box::new(|_point_id: PointOffsetType| bitvec![1, 0]),
-        ];
-
-        let merged = merge_nested_matching_indices(matching_indices_fn, false);
-        // still matching because of the path '0' matches all conditions
-        let result: bool = merged(0);
-        assert!(result);
-    }
-}
