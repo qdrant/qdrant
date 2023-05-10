@@ -5,6 +5,8 @@ use collection::operations::CollectionUpdateOperations;
 use collection::wal::SerdeWal;
 use wal::WalOptions;
 
+/// Executable to inspect the content of a write ahead log folder.
+/// e.g `cargo run --bin wal_inspector storage/collections/test-collection/0/wal/`
 fn main() {
     let args: Vec<String> = env::args().collect();
     let wal_path = Path::new(&args[1]);
