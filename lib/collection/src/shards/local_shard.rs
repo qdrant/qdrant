@@ -319,7 +319,6 @@ impl LocalShard {
                     true => PayloadStorageType::OnDisk,
                     false => PayloadStorageType::InMemory,
                 },
-                quantization_config: Default::default(),
             };
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))

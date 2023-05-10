@@ -182,10 +182,10 @@ impl CollectionParams {
                         hnsw_config: params
                             .hnsw_config
                             .and_then(|c| c.update(collection_hnsw).ok()),
-                        quantization_config: params
-                            .quantization_config
-                            .as_ref()
-                            .or(collection_quantization)
+                        // Only set if enabled on segment level as well
+                        // TODO: is this correct?
+                        quantization_config: collection_quantization
+                            .and(params.quantization_config.as_ref())
                             .cloned(),
                         on_disk: params.on_disk,
                     },

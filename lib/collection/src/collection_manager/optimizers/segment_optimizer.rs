@@ -83,7 +83,6 @@ pub trait SegmentOptimizer {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,
             },
-            quantization_config: None,
         };
         Ok(LockedSegment::new(build_segment(
             self.collection_path(),
@@ -165,12 +164,6 @@ pub trait SegmentOptimizer {
             payload_storage_type: match collection_params.on_disk_payload {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,
-            },
-            quantization_config: if is_indexed {
-                // TODO: separate config for applying quantization
-                self.quantization_config()
-            } else {
-                Default::default()
             },
         };
 

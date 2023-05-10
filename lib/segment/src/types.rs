@@ -512,19 +512,30 @@ pub struct SegmentConfig {
     /// Defines payload storage type
     #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
-    /// Quantization parameters. If none - quantization is disabled.
-    #[serde(default)]
-    pub quantization_config: Option<QuantizationConfig>,
 }
 
 impl From<SegmentConfigV5> for SegmentConfig {
     fn from(old: SegmentConfigV5) -> Self {
+        let vector_data = old
+            .vector_data
+            .into_iter()
+            .map(|(vector_name, mut vector_data)| {
+                // Remove vector specific quantization config if no global one is set
+                // This is required because in some cases this was incorrectly set on the vector
+                // level
+                if old.quantization_config.is_none() {
+                    vector_data.quantization_config.take();
+                }
+
+                (vector_name, vector_data)
+            })
+            .collect();
+
         SegmentConfig {
-            vector_data: old.vector_data,
+            vector_data,
             index: old.index,
             storage_type: old.storage_type,
             payload_storage_type: old.payload_storage_type,
-            quantization_config: old.quantization_config,
         }
     }
 }
@@ -532,15 +543,13 @@ impl From<SegmentConfigV5> for SegmentConfig {
 impl SegmentConfig {
     /// Helper to get vector specific quantization config.
     ///
-    /// This grabs the quantization config for the given vector name if it exists. Falls back to
-    /// the collection quantization config.
+    /// This grabs the quantization config for the given vector name if it exists.
     ///
     /// If no quantization is configured, `None` is returned.
     pub fn quantization_config(&self, vector_name: &str) -> Option<&QuantizationConfig> {
         self.vector_data
             .get(vector_name)
             .and_then(|v| v.quantization_config.as_ref())
-            .or(self.quantization_config.as_ref())
     }
 
     pub fn is_vector_indexed(&self) -> bool {
