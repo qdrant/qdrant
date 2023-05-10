@@ -375,6 +375,9 @@ pub enum Error {
     SizeExact(usize, usize),
     #[error("Mmap length must be multiple of {0} to match the size of type, but it is {1}")]
     SizeMultiple(usize, usize),
+    #[cfg(windows)]
+    #[error("Mmap is empty, this is not supported on Windows")]
+    Empty,
 }
 
 /// Get a second mutable reference for type `T` from the given mmap
@@ -395,6 +398,12 @@ unsafe fn mmap_to_type_unbounded<'unbnd, T>(mmap: &mut MmapMut) -> Result<&'unbn
 where
     T: Sized,
 {
+    // On Windows, mmap cannot be empty
+    #[cfg(windows)]
+    if mmap.is_empty() {
+        return Err(Error::Empty);
+    }
+
     // Obtain unbounded bytes slice into mmap
     let bytes: &'unbnd mut [u8] = {
         let slice = mmap.deref_mut();
@@ -437,6 +446,12 @@ unsafe fn mmap_to_slice_unbounded<'unbnd, T>(
 where
     T: Sized,
 {
+    // On Windows, mmap cannot be empty
+    #[cfg(windows)]
+    if mmap.is_empty() {
+        return Err(Error::Empty);
+    }
+
     // Obtain unbounded bytes slice into mmap
     let bytes: &'unbnd mut [u8] = {
         let slice = mmap.deref_mut();
@@ -464,17 +479,10 @@ where
 
 /// Assert slice `&[S]` is correctly aligned for type `T`.
 ///
-/// Does nothing on Windows.
-///
 /// # Panics
 ///
 /// Panics when alignment is wrong.
 fn assert_alignment<S, T>(bytes: &[S]) {
-    // We do not enforce alignment on Windows at this time, because the Windows API doesn't
-    // guarantee memory mapped segments to be aligned.
-    //
-    // We should look into this again to confirm this is sound.
-    #[cfg(not(windows))]
     assert_eq!(
         bytes.as_ptr().align_offset(mem::align_of::<T>()),
         0,
