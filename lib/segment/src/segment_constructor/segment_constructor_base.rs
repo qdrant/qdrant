@@ -25,8 +25,8 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
-    Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
-    StorageType, VectorDataConfig,
+    Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentConfigV5, SegmentState,
+    SegmentType, SeqNumberType, StorageType, VectorDataConfigV5,
 };
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
@@ -262,14 +262,16 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
     #[derive(Deserialize)]
     #[serde(rename_all = "snake_case")]
-    pub struct ObsoleteSegmentState {
+    #[deprecated]
+    pub struct SegmentStateV3 {
         pub version: SeqNumberType,
-        pub config: ObsoleteSegmentConfig,
+        pub config: SegmentConfigV3,
     }
 
     #[derive(Deserialize)]
     #[serde(rename_all = "snake_case")]
-    pub struct ObsoleteSegmentConfig {
+    #[deprecated]
+    pub struct SegmentConfigV3 {
         /// Size of a vectors used
         pub vector_size: usize,
         /// Type of distance function used for measuring distance between vectors
@@ -290,23 +292,27 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
     let mut file = File::open(&path)?;
     file.read_to_string(&mut contents)?;
 
-    serde_json::from_str::<ObsoleteSegmentState>(&contents)
+    serde_json::from_str::<SegmentStateV3>(&contents)
         .map(|state| {
-            let vector_data = VectorDataConfig {
+            // Construct V5 version, then convert into current
+            let vector_data = VectorDataConfigV5 {
                 size: state.config.vector_size,
                 distance: state.config.distance,
                 hnsw_config: None,
                 quantization_config: None,
                 on_disk: None,
             };
+            let segment_config = SegmentConfigV5 {
+                vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
+                index: state.config.index,
+                storage_type: state.config.storage_type,
+                payload_storage_type: state.config.payload_storage_type,
+                quantization_config: None,
+            };
+
             SegmentState {
                 version: Some(state.version),
-                config: SegmentConfig {
-                    vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
-                    index: state.config.index,
-                    storage_type: state.config.storage_type,
-                    payload_storage_type: state.config.payload_storage_type,
-                },
+                config: segment_config.into(),
             }
         })
         .map_err(|err| {
