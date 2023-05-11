@@ -87,6 +87,7 @@
     - [GeoRadius](#qdrant-GeoRadius)
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
+    - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [IsNullCondition](#qdrant-IsNullCondition)
@@ -1515,6 +1516,21 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-GroupsResult"></a>
+
+### GroupsResult
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| groups | [PointGroup](#qdrant-PointGroup) | repeated | Groups |
+
+
+
+
+
+
 <a name="qdrant-HasIdCondition"></a>
 
 ### HasIdCondition
@@ -1908,7 +1924,7 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| result | [PointGroup](#qdrant-PointGroup) | repeated |  |
+| result | [GroupsResult](#qdrant-GroupsResult) |  |  |
 | time | [double](#double) |  | Time spent to process |
 
 
@@ -1925,10 +1941,18 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
-| recommend | [RecommendPoints](#qdrant-RecommendPoints) |  | Recommend request |
+| positive | [PointId](#qdrant-PointId) | repeated | Look for vectors closest to those |
+| negative | [PointId](#qdrant-PointId) | repeated | Try to avoid vectors like this |
+| filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
+| limit | [uint32](#uint32) |  | Max number of groups in result |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
+| params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+| score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
+| using | [string](#string) | optional | Define which vector to use for recommendation, if not specified - default vector |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
 | group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it&#39;s an array), the first value will be used |
-| top | [uint32](#uint32) |  | Maximum amount of points to return per group |
-| groups | [uint32](#uint32) | optional | Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set |
+| per_group | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
@@ -2156,7 +2180,7 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| result | [PointGroup](#qdrant-PointGroup) | repeated |  |
+| result | [GroupsResult](#qdrant-GroupsResult) |  |  |
 | time | [double](#double) |  | Time spent to process |
 
 
@@ -2190,10 +2214,16 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
-| search | [SearchPoints](#qdrant-SearchPoints) |  | Search request |
+| vector | [float](#float) | repeated | Vector to compare against |
+| filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
+| limit | [uint32](#uint32) |  | Max number of result |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
+| params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+| score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
+| vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it&#39;s an array), the first value will be used |
-| top | [uint32](#uint32) |  | Maximum amount of points to return per group |
-| groups | [uint32](#uint32) | optional | Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set |
+| per_group | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
