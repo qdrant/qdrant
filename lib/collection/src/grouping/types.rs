@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use segment::types::{ExtendedPointId, PointGroup, ScoredPoint};
-use AggregatorError::BadKeyType;
+use AggregatorError::{BadKeyType, KeyNotFound};
 
 #[derive(PartialEq, Debug)]
 pub(super) enum AggregatorError {
@@ -50,7 +50,14 @@ impl TryFrom<serde_json::Value> for GroupKey {
     type Error = AggregatorError;
 
     /// Only allows Strings and Numbers to be converted into GroupKey
+    /// When dealing with arrays, it will consider only the first element
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+        let value = match value {
+            serde_json::Value::Array(arr) => {
+                arr.into_iter().next().ok_or(KeyNotFound)?
+            }
+            _ => value,
+        };
         match value {
             serde_json::Value::String(s) => Ok(Self::String(s)),
             serde_json::Value::Number(n) => Ok(Self::Number(n)),
@@ -129,5 +136,46 @@ impl From<ScoredPoint> for HashablePoint {
 impl From<HashablePoint> for ScoredPoint {
     fn from(point: HashablePoint) -> Self {
         point.0
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn group_key_from_values() {
+        use super::GroupKey;
+        use serde_json::json;
+        use std::convert::TryFrom;
+
+        let string = GroupKey::try_from(json!("string")).unwrap();
+        let int = GroupKey::try_from(json!(1)).unwrap();
+        let float = GroupKey::try_from(json!(2.42)).unwrap();
+        let int_array = GroupKey::try_from(json!([5, 6, 7])).unwrap();
+        let str_array = GroupKey::try_from(json!(["a", "b", "c"])).unwrap();
+
+        assert_eq!(string, GroupKey::String("string".to_string()));
+        assert_eq!(int, GroupKey::Number(serde_json::Number::from(1)));
+        assert_eq!(float, GroupKey::Number(serde_json::Number::from_f64(2.42).unwrap()));
+        assert_eq!(int_array, GroupKey::Number(serde_json::Number::from(5)));
+        assert_eq!(str_array, GroupKey::String("a".to_string()));
+
+        let bad_key = GroupKey::try_from(json!(true));
+        assert!(bad_key.is_err());
+
+        let empty_array = GroupKey::try_from(json!([]));
+        assert!(empty_array.is_err());
+
+        let empty_object = GroupKey::try_from(json!({}));
+        assert!(empty_object.is_err());
+
+        let null = GroupKey::try_from(serde_json::Value::Null);
+        assert!(null.is_err());
+
+        let nested_array = GroupKey::try_from(json!([[1, 2, 3], [4, 5, 6]]));
+        assert!(nested_array.is_err());
+
+        let nested_object = GroupKey::try_from(json!({"a": 1, "b": 2}));
+        assert!(nested_object.is_err());
     }
 }
