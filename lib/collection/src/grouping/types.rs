@@ -53,9 +53,7 @@ impl TryFrom<serde_json::Value> for GroupKey {
     /// When dealing with arrays, it will consider only the first element
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
         let value = match value {
-            serde_json::Value::Array(arr) => {
-                arr.into_iter().next().ok_or(KeyNotFound)?
-            }
+            serde_json::Value::Array(arr) => arr.into_iter().next().ok_or(KeyNotFound)?,
             _ => value,
         };
         match value {
@@ -144,9 +142,11 @@ mod test {
 
     #[test]
     fn group_key_from_values() {
-        use super::GroupKey;
-        use serde_json::json;
         use std::convert::TryFrom;
+
+        use serde_json::json;
+
+        use super::GroupKey;
 
         let string = GroupKey::try_from(json!("string")).unwrap();
         let int = GroupKey::try_from(json!(1)).unwrap();
@@ -156,7 +156,10 @@ mod test {
 
         assert_eq!(string, GroupKey::String("string".to_string()));
         assert_eq!(int, GroupKey::Number(serde_json::Number::from(1)));
-        assert_eq!(float, GroupKey::Number(serde_json::Number::from_f64(2.42).unwrap()));
+        assert_eq!(
+            float,
+            GroupKey::Number(serde_json::Number::from_f64(2.42).unwrap())
+        );
         assert_eq!(int_array, GroupKey::Number(serde_json::Number::from(5)));
         assert_eq!(str_array, GroupKey::String("a".to_string()));
 

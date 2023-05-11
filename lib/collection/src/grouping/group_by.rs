@@ -6,7 +6,7 @@ use segment::types::{
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
@@ -61,6 +61,7 @@ pub struct GroupRequest {
     pub source: SourceRequest,
 
     /// Path to the field to group by
+    #[validate(custom = "validate_group_by_field")]
     pub group_by: String,
 
     /// Limit of points to return per group
@@ -70,6 +71,16 @@ pub struct GroupRequest {
     /// Limit of groups to return
     #[validate(range(min = 1))]
     pub limit: usize,
+}
+
+fn validate_group_by_field(group_by: &str) -> Result<(), ValidationError> {
+    if group_by.is_empty() {
+        return Err(ValidationError::new("not_empty"));
+    }
+    if group_by.contains("[]") {
+        return Err(ValidationError::new("no_bracket_syntax"));
+    }
+    Ok(())
 }
 
 impl GroupRequest {
@@ -230,6 +241,8 @@ where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
+    request.validate()?;
+
     let mut aggregator =
         GroupsAggregator::new(request.limit, request.per_group, request.group_by.clone());
 
