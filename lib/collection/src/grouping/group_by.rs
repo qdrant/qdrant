@@ -85,16 +85,16 @@ fn validate_group_by_field(group_by: &str) -> Result<(), ValidationError> {
 
 impl GroupRequest {
     pub fn with_limit_from_request(
-        request: SourceRequest,
+        source: SourceRequest,
         group_by: String,
         per_group: usize,
     ) -> Self {
-        let limit = match &request {
+        let limit = match &source {
             SourceRequest::Search(request) => request.limit,
             SourceRequest::Recommend(request) => request.limit,
         };
         Self {
-            source: request,
+            source,
             group_by,
             per_group,
             limit,

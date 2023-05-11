@@ -2829,6 +2829,7 @@ pub struct SearchBatchPoints {
 pub struct SearchPointGroups {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Vector to compare against
     #[prost(float, repeated, tag = "2")]
@@ -2838,6 +2839,7 @@ pub struct SearchPointGroups {
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint32, tag = "4")]
+    #[validate(range(min = 1))]
     pub limit: u32,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "5")]
@@ -2850,6 +2852,7 @@ pub struct SearchPointGroups {
     pub score_threshold: ::core::option::Option<f32>,
     /// Which vector to use for search, if not specified - use default vector
     #[prost(string, optional, tag = "8")]
+    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "9")]
@@ -2859,6 +2862,7 @@ pub struct SearchPointGroups {
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
     #[prost(uint32, tag = "11")]
+    #[validate(range(min = 1))]
     pub per_group: u32,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "12")]
@@ -2966,6 +2970,7 @@ pub struct RecommendBatchPoints {
 pub struct RecommendPointGroups {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Look for vectors closest to those
     #[prost(message, repeated, tag = "2")]
@@ -2978,6 +2983,7 @@ pub struct RecommendPointGroups {
     pub filter: ::core::option::Option<Filter>,
     /// Max number of groups in result
     #[prost(uint32, tag = "5")]
+    #[validate(range(min = 1))]
     pub limit: u32,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "6")]
@@ -3002,6 +3008,7 @@ pub struct RecommendPointGroups {
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
     #[prost(uint32, tag = "13")]
+    #[validate(range(min = 1))]
     pub per_group: u32,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]
