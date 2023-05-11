@@ -129,8 +129,7 @@ impl GroupsAggregator {
                     .groups
                     .get(key)? // it should always have it
                     .iter()
-                    .sorted()
-                    .rev()
+                    .sorted_by(|a, b| b.cmp(a))
                     .take(self.max_group_size)
                     .cloned()
                     .collect::<Vec<_>>();
@@ -203,7 +202,7 @@ mod unit_tests {
                     id: 2.into(),
                     version: 0,
                     score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": "a"}))),
+                    payload: Some(Payload::from(serde_json::json!({"docId": ["a", "b"]}))),
                     vector: None,
                 },
                 json!("a"),
