@@ -18,8 +18,8 @@ use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector,
 };
 use collection::operations::types::{
-    default_exact_count, PointRequest,
-    RecommendRequestBatch, ScrollRequest, SearchRequest, SearchRequestBatch,
+    default_exact_count, PointRequest, RecommendRequestBatch, ScrollRequest, SearchRequest,
+    SearchRequestBatch,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;

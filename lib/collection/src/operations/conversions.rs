@@ -11,6 +11,7 @@ use segment::types::{
 };
 use tonic::Status;
 
+use super::types::{BaseGroupRequest, GroupsResult, RecommendGroupsRequest, SearchGroupsRequest};
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams, WalConfig,
@@ -33,8 +34,6 @@ use crate::operations::types::{
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionSearchRequest;
-
-use super::types::{BaseGroupRequest, SearchGroupsRequest, RecommendGroupsRequest, GroupsResult};
 
 pub fn write_ordering_to_proto(ordering: WriteOrdering) -> api::grpc::qdrant::WriteOrdering {
     api::grpc::qdrant::WriteOrdering {
@@ -841,11 +840,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
 impl From<GroupsResult> for api::grpc::qdrant::GroupsResult {
     fn from(value: GroupsResult) -> Self {
         Self {
-            groups: value
-                .groups
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            groups: value.groups.into_iter().map(Into::into).collect(),
         }
     }
 }

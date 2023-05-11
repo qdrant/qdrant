@@ -12,7 +12,10 @@ use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
 use crate::grouping::types::HashablePoint;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest, SearchGroupsRequest, BaseGroupRequest, RecommendGroupsRequest};
+use crate::operations::types::{
+    BaseGroupRequest, CollectionResult, RecommendGroupsRequest, RecommendRequest,
+    SearchGroupsRequest, SearchRequest,
+};
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
 
@@ -146,12 +149,13 @@ impl From<SearchGroupsRequest> for GroupRequest {
             with_payload,
             with_vector,
             score_threshold,
-            group_request: BaseGroupRequest {
-                group_by,
-                per_group,
-                limit
-            }
-        } = request;       
+            group_request:
+                BaseGroupRequest {
+                    group_by,
+                    per_group,
+                    limit,
+                },
+        } = request;
 
         let search = SearchRequest {
             vector,
@@ -185,11 +189,12 @@ impl From<RecommendGroupsRequest> for GroupRequest {
             score_threshold,
             using,
             lookup_from,
-            group_request: BaseGroupRequest {
-                group_by,
-                per_group,
-                limit
-            }
+            group_request:
+                BaseGroupRequest {
+                    group_by,
+                    per_group,
+                    limit,
+                },
         } = request;
 
         let recommend = RecommendRequest {

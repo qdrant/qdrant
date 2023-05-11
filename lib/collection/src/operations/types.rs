@@ -13,8 +13,8 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector, PointGroup,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointGroup, PointIdType,
+    QuantizationConfig, ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
