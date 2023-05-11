@@ -49,7 +49,7 @@ impl GroupsAggregator {
             .or_insert_with(|| HashSet::with_capacity(self.max_group_size));
 
         group.insert(point.clone());
-        
+
         if group.len() == self.max_group_size {
             self.full_groups.insert(group_key.clone());
         }
