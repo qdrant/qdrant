@@ -29,59 +29,6 @@ pub enum SourceRequest {
 }
 
 impl SourceRequest {
-    async fn r#do<'a, F, Fut>(
-        &self,
-        collection: &Collection,
-        // only used for recommend
-        collection_by_name: F,
-        read_consistency: Option<ReadConsistency>,
-        shard_selection: Option<ShardId>,
-        include_key: String,
-        limit: usize,
-        per_group: usize,
-    ) -> CollectionResult<Vec<ScoredPoint>>
-    where
-        F: Fn(String) -> Fut,
-        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
-    {
-        let only_group_by_key = Some(WithPayloadInterface::Fields(vec![include_key.clone()]));
-
-        let key_not_null = Filter::new_must_not(Condition::IsNull(IsNullCondition::from(
-            include_key.clone(),
-        )));
-
-        match self {
-            SourceRequest::Search(request) => {
-                let mut request = request.clone();
-
-                request.limit = limit * per_group;
-
-                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
-
-                // We're enriching the final results at the end, so we'll keep this minimal
-                request.with_payload = only_group_by_key;
-                request.with_vector = None;
-
-                collection
-                    .search(request, read_consistency, shard_selection)
-                    .await
-            }
-            SourceRequest::Recommend(request) => {
-                let mut request = request.clone();
-
-                request.limit = limit * per_group;
-
-                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
-
-                // We're enriching the final results at the end, so we'll keep this minimal
-                request.with_payload = only_group_by_key;
-                request.with_vector = None;
-
-                recommend_by(request, collection, collection_by_name, read_consistency).await
-            }
-        }
-    }
-
     fn merge_filter(&mut self, filter: &Filter) {
         match self {
             SourceRequest::Search(request) => {
@@ -111,7 +58,7 @@ impl SourceRequest {
 #[derive(Clone, Validate)]
 pub struct GroupRequest {
     /// Request to use (search or recommend)
-    pub request: SourceRequest,
+    pub source: SourceRequest,
 
     /// Path to the field to group by
     pub group_by: String,
@@ -126,16 +73,66 @@ pub struct GroupRequest {
 }
 
 impl GroupRequest {
-    pub fn new(request: SourceRequest, group_by: String, per_group: usize) -> Self {
+    pub fn with_limit_from_request(
+        request: SourceRequest,
+        group_by: String,
+        per_group: usize,
+    ) -> Self {
         let limit = match &request {
             SourceRequest::Search(request) => request.limit,
             SourceRequest::Recommend(request) => request.limit,
         };
         Self {
-            request,
+            source: request,
             group_by,
             per_group,
             limit,
+        }
+    }
+
+    async fn r#do<'a, F, Fut>(
+        &self,
+        collection: &Collection,
+        // only used for recommend
+        collection_by_name: F,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<ScoredPoint>>
+    where
+        F: Fn(String) -> Fut,
+        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+    {
+        let only_group_by_key = Some(WithPayloadInterface::Fields(vec![self.group_by.clone()]));
+
+        let key_not_null = Filter::new_must_not(Condition::IsNull(IsNullCondition::from(
+            self.group_by.clone(),
+        )));
+
+        match self.source.clone() {
+            SourceRequest::Search(mut request) => {
+                request.limit = self.limit * self.per_group;
+
+                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
+
+                // We're enriching the final results at the end, so we'll keep this minimal
+                request.with_payload = only_group_by_key;
+                request.with_vector = None;
+
+                collection
+                    .search(request, read_consistency, shard_selection)
+                    .await
+            }
+            SourceRequest::Recommend(mut request) => {
+                request.limit = self.limit * self.per_group;
+
+                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
+
+                // We're enriching the final results at the end, so we'll keep this minimal
+                request.with_payload = only_group_by_key;
+                request.with_vector = None;
+
+                recommend_by(request, collection, collection_by_name, read_consistency).await
+            }
         }
     }
 }
@@ -169,7 +166,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
         };
 
         GroupRequest {
-            request: SourceRequest::Search(search),
+            source: SourceRequest::Search(search),
             group_by,
             per_group: per_group as usize,
             limit: limit as usize,
@@ -212,7 +209,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
         };
 
         GroupRequest {
-            request: SourceRequest::Recommend(recommend),
+            source: SourceRequest::Recommend(recommend),
             group_by,
             per_group: per_group as usize,
             limit: limit as usize,
@@ -243,14 +240,16 @@ where
             break;
         }
 
-        let mut req = request.request.clone();
+        let mut request = request.clone();
+
+        let source = &mut request.source;
 
         // construct filter to exclude already found groups
         let full_groups = aggregator.keys_of_filled_groups();
         if !full_groups.is_empty() {
             if let Some(match_any) = match_on(request.group_by.clone(), full_groups) {
                 let exclude_groups = Filter::new_must_not(match_any);
-                req.merge_filter(&exclude_groups);
+                source.merge_filter(&exclude_groups);
             }
         }
 
@@ -258,18 +257,15 @@ where
         let ids = aggregator.ids();
         if !ids.is_empty() {
             let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
-            req.merge_filter(&exclude_ids);
+            source.merge_filter(&exclude_ids);
         }
 
-        let points = req
+        let points = request
             .r#do(
                 collection,
                 collection_by_name.clone(),
                 read_consistency,
                 shard_selection,
-                request.group_by.clone(),
-                request.limit,
-                request.per_group,
             )
             .await?;
 
@@ -286,31 +282,30 @@ where
             break;
         }
 
-        let mut req = request.request.clone();
+        let mut request = request.clone();
+
+        let source = &mut request.source;
 
         // construct filter to only include unsatisfied groups
         let unsatisfied_groups = aggregator.keys_of_unfilled_best_groups();
         if let Some(match_any) = match_on(request.group_by.clone(), unsatisfied_groups) {
             let include_groups = Filter::new_must(match_any);
-            req.merge_filter(&include_groups);
+            source.merge_filter(&include_groups);
         }
 
         // exclude already aggregated points
         let ids = aggregator.ids();
         if !ids.is_empty() {
             let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
-            req.merge_filter(&exclude_ids);
+            source.merge_filter(&exclude_ids);
         }
 
-        let points = req
+        let points = request
             .r#do(
                 collection,
                 collection_by_name.clone(),
                 read_consistency,
                 shard_selection,
-                request.group_by.clone(),
-                request.limit,
-                request.per_group,
             )
             .await?;
 
@@ -335,8 +330,8 @@ where
     let enriched_points = collection
         .fill_search_result_with_payload(
             bare_points,
-            request.request.with_payload(),
-            request.request.with_vector().unwrap_or_default(),
+            request.source.with_payload(),
+            request.source.with_vector().unwrap_or_default(),
             read_consistency,
             None,
         )

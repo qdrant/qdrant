@@ -532,7 +532,7 @@ mod grouping {
             score_threshold: None,
         });
 
-        let request = GroupRequest::new(source, "docId".to_string(), 3);
+        let request = GroupRequest::with_limit_from_request(source, "docId".to_string(), 3);
 
         let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
@@ -615,7 +615,7 @@ mod grouping {
     async fn recommending() {
         let resources = setup(16, 8).await;
 
-        let request = GroupRequest::new(
+        let request = GroupRequest::with_limit_from_request(
             SourceRequest::Recommend(RecommendRequest {
                 filter: None,
                 params: None,
@@ -681,7 +681,7 @@ mod grouping {
         }))
         .unwrap();
 
-        let group_by_request = GroupRequest::new(
+        let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: Some(filter.clone()),
@@ -716,7 +716,7 @@ mod grouping {
     async fn with_payload_and_vectors() {
         let resources = setup(16, 8).await;
 
-        let group_by_request = GroupRequest::new(
+        let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -762,7 +762,7 @@ mod grouping {
             ..
         } = setup(16, 8).await;
 
-        let group_by_request = GroupRequest::new(
+        let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -806,7 +806,7 @@ mod grouping {
             ..
         } = setup(16, 8).await;
 
-        let group_by_request = GroupRequest::new(
+        let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -846,7 +846,7 @@ mod grouping {
             ..
         } = setup(16, 8).await;
 
-        let group_by_request = GroupRequest::new(
+        let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -886,7 +886,7 @@ mod grouping {
             ..
         } = setup(1000, 5).await;
 
-        let group_by_request = GroupRequest::new(
+        let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
@@ -930,7 +930,7 @@ mod grouping {
             ..
         } = setup(10, 500).await;
 
-        let group_by_request = GroupRequest::new(
+        let group_by_request = GroupRequest::with_limit_from_request(
             SourceRequest::Search(SearchRequest {
                 vector: vec![0.5, 0.5, 0.5, 0.5].into(),
                 filter: None,
