@@ -231,11 +231,17 @@ message SearchBatchPoints {
 
 message SearchPointGroups {
   string collection_name = 1; // Name of the collection
-  SearchPoints search = 2; // Search request
-  string group_by = 3; // Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
-  uint32 top = 4; // Maximum amount of points to return per group
-  optional uint32 groups = 5; // Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
-  optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
+  repeated float vector = 2; // Vector to compare against
+  Filter filter = 3; // Filter conditions - return only those points that satisfy the specified conditions
+  uint32 limit = 4; // Max number of result
+  WithPayloadSelector with_payload = 5; // Options for specifying which payload to include or not
+  SearchParams params = 6; // Search config
+  optional float score_threshold = 7; // If provided - cut off results with worse scores
+  optional string vector_name = 8; // Which vector to use for search, if not specified - use default vector
+  optional WithVectorsSelector with_vectors = 9; // Options for specifying which vectors to include into response
+  string group_by = 10; // Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
+  uint32 per_group = 11; // Maximum amount of points to return per group
+  optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
 }
 
 message ScrollPoints {
@@ -279,11 +285,19 @@ message RecommendBatchPoints {
 
 message RecommendPointGroups {
   string collection_name = 1; // Name of the collection
-  RecommendPoints recommend = 2; // Recommend request
-  string group_by = 3; // Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
-  uint32 top = 4; // Maximum amount of points to return per group
-  optional uint32 groups = 5; // Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
-  optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
+  repeated PointId positive = 2; // Look for vectors closest to those
+  repeated PointId negative = 3; // Try to avoid vectors like this
+  Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
+  uint32 limit = 5; // Max number of groups in result
+  WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
+  SearchParams params = 7; // Search config
+  optional float score_threshold = 8; // If provided - cut off results with worse scores
+  optional string using = 9; // Define which vector to use for recommendation, if not specified - default vector
+  optional WithVectorsSelector with_vectors = 10; // Options for specifying which vectors to include into response
+  optional LookupLocation lookup_from = 11; // Name of the collection to use for points lookup, if not specified - use current collection
+  string group_by = 12; // Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
+  uint32 per_group = 13; // Maximum amount of points to return per group
+  optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
 }
 
 message CountPoints {
@@ -326,6 +340,10 @@ message PointGroup {
   repeated ScoredPoint hits = 2; // Points in the group
 }
 
+message GroupsResult {
+  repeated PointGroup groups = 1; // Groups
+}
+
 message SearchResponse {
   repeated ScoredPoint result = 1;
   double time = 2; // Time spent to process
@@ -341,7 +359,7 @@ message SearchBatchResponse {
 }
 
 message SearchGroupsResponse {
-  repeated PointGroup result = 1;
+  GroupsResult result = 1;
   double time = 2; // Time spent to process
 }
 
@@ -383,7 +401,7 @@ message RecommendBatchResponse {
 }
 
 message RecommendGroupsResponse {
-  repeated PointGroup result = 1;
+  GroupsResult result = 1;
   double time = 2; // Time spent to process
 }
 

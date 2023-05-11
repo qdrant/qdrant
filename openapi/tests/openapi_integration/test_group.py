@@ -32,6 +32,7 @@ def upsert_points_with_array_fields(collection_name, docs=5, chunks=5, id_offset
             i = doc * chunks + chunk + id_offset
             p = {"id": i, "vector": [0.5, 0.5, 0.5, 0.5], "payload": {"compoundId": doc_ids}} 
             points.append(p)
+    print(points)
             
     response = request_with_validation(
         api='/collections/{collection_name}/points',
@@ -62,18 +63,16 @@ def test_search():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "search": {
-                "vector": [1.0, 0.0, 0.0, 0.0],
-                "limit": 10,
-                "with_payload": True,
-            },
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
             "group_by": "docId",
-            "top": 3,
+            "per_group": 3,
         }   
     )
     assert response.ok
     
-    groups = response.json()["result"]
+    groups = response.json()["result"]["groups"]
     
     assert len(groups) == 10
     for g in groups:
@@ -87,19 +86,17 @@ def test_recommend():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "recommend": {
-                "positive": [10, 20, 30],
-                "negative": [4, 5, 6],
-                "limit": 10,
-                "with_payload": True,
-            },
+            "positive": [10, 20, 30],
+            "negative": [4, 5, 6],
+            "limit": 10,
+            "with_payload": True,
             "group_by": "docId",
-            "top": 3,
+            "per_group": 3,
         }   
     )
     assert response.ok
     
-    groups = response.json()["result"]
+    groups = response.json()["result"]["groups"]
     
     assert len(groups) == 10
     for g in groups:
@@ -107,48 +104,23 @@ def test_recommend():
         for h in g["hits"]:
             assert h["payload"]["docId"] == g["group_id"]["docId"]
             
-def test_groups_overrides_limit():
-    response = request_with_validation(
-        api='/collections/{collection_name}/points/search/groups',
-        method="POST",
-        path_params={'collection_name': collection_name},
-        body={
-            "search": {
-                "vector": [1.0, 0.0, 0.0, 0.0],
-                "limit": 10,
-            },
-            "group_by": "docId",
-            "top": 3,
-            "groups": 4,
-        }   
-    )
-    assert response.ok
-    
-    groups = response.json()["result"]
-    
-    assert len(groups) == 4
-    for g in groups:
-        assert len(g["hits"]) == 3
-
 def test_with_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/search/groups',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "search": {
-                "vector": [1.0, 0.0, 0.0, 0.0],
-                "limit": 5,
-                "with_payload": True,
-                "with_vector": True,
-            },
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 5,
+            "with_payload": True,
+            "with_vector": True,
             "group_by": "docId",
-            "top": 3,
+            "per_group": 3,
         }   
     )
     assert response.ok
     
-    groups = response.json()["result"]
+    groups = response.json()["result"]["groups"]
     
     assert len(groups) == 5
     for g in groups:
@@ -163,19 +135,16 @@ def test_array_fields_uses_first_value_only():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "search": {
-                "vector": [1.0, 0.0, 0.0, 0.0],
-                "limit": 5,
-                "with_payload": True,
-                "with_vector": True,
-            },
+            "vector": [1.0, 0.5, 0.0, 0.0],
+            "limit": 5,
+            "with_payload": True,
             "group_by": "compoundId",
-            "top": 3,
+            "per_group": 3,
         }   
     )
     assert response.ok
     
-    groups = response.json()["result"]
+    groups = response.json()["result"]["groups"]
     
     assert len(groups) == 5
     for g in groups:

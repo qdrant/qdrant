@@ -18,8 +18,8 @@ use collection::operations::point_ops::{
     PointInsertOperations, PointOperations, PointSyncOperation, PointsSelector,
 };
 use collection::operations::types::{
-    default_exact_count, BaseGroupRequest, PointRequest, RecommendGroupsRequest,
-    RecommendRequestBatch, ScrollRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
+    default_exact_count, PointRequest,
+    RecommendRequestBatch, ScrollRequest, SearchRequest, SearchRequestBatch,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
@@ -623,37 +623,21 @@ pub async fn search_groups(
     search_point_groups: SearchPointGroups,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<SearchGroupsResponse>, Status> {
+    let search_groups_request = search_point_groups.clone().try_into()?;
+
     let SearchPointGroups {
         collection_name,
         read_consistency,
-        search,
-        group_by,
-        top,
-        groups,
         ..
     } = search_point_groups;
-
-    let grouped_search_request = SearchGroupsRequest {
-        search: search
-            .map(|s| s.try_into())
-            .transpose()?
-            .ok_or(Status::invalid_argument(
-                "missing search, required for search groups",
-            ))?,
-        group_request: BaseGroupRequest {
-            group_by,
-            groups,
-            top,
-        },
-    };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
-    let point_groups = crate::common::points::do_search_point_groups(
+    let groups_result = crate::common::points::do_search_point_groups(
         toc,
         &collection_name,
-        grouped_search_request,
+        search_groups_request,
         read_consistency,
         shard_selection,
     )
@@ -661,7 +645,7 @@ pub async fn search_groups(
     .map_err(error_to_status)?;
 
     let response = SearchGroupsResponse {
-        result: point_groups.into_iter().map(|group| group.into()).collect(),
+        result: Some(groups_result.into()),
         time: timing.elapsed().as_secs_f64(),
     };
 
@@ -770,32 +754,18 @@ pub async fn recommend_groups(
     toc: &TableOfContent,
     recommend_point_groups: RecommendPointGroups,
 ) -> Result<Response<RecommendGroupsResponse>, Status> {
+    let recommend_groups_request = recommend_point_groups.clone().try_into()?;
+
     let RecommendPointGroups {
         collection_name,
         read_consistency,
-        recommend,
-        group_by,
-        top,
-        groups,
         ..
     } = recommend_point_groups;
-
-    let recommend_groups_request =
-        RecommendGroupsRequest {
-            recommend: recommend.map(|s| s.try_into()).transpose()?.ok_or(
-                Status::invalid_argument("missing recommend, required for recommend groups"),
-            )?,
-            group_request: BaseGroupRequest {
-                group_by,
-                groups,
-                top,
-            },
-        };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
-    let point_groups = crate::common::points::do_grouped_recommend_points(
+    let groups_result = crate::common::points::do_recommend_point_groups(
         toc,
         &collection_name,
         recommend_groups_request,
@@ -805,7 +775,7 @@ pub async fn recommend_groups(
     .map_err(error_to_status)?;
 
     let response = RecommendGroupsResponse {
-        result: point_groups.into_iter().map(|group| group.into()).collect(),
+        result: Some(groups_result.into()),
         time: timing.elapsed().as_secs_f64(),
     };
 

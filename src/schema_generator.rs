@@ -8,7 +8,7 @@ use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
     CountRequest, CountResult, PointRequest, RecommendGroupsRequest, RecommendRequest,
     RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
-    SearchRequestBatch, UpdateResult,
+    SearchRequestBatch, UpdateResult, GroupsResult,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
@@ -70,6 +70,7 @@ struct AllDefinitions {
     b4: PointGroup,
     b5: SearchGroupsRequest,
     b6: RecommendGroupsRequest,
+    b7: GroupsResult,
 }
 
 fn save_schema<T: JsonSchema>() {

@@ -52,7 +52,7 @@ async fn batch_search_points(
 }
 
 #[post("/collections/{name}/points/search/groups")]
-async fn grouped_search_points(
+async fn search_point_groups(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     request: Json<SearchGroupsRequest>,
@@ -76,5 +76,5 @@ async fn grouped_search_points(
 pub fn config_search_api(cfg: &mut web::ServiceConfig) {
     cfg.service(search_points)
         .service(batch_search_points)
-        .service(grouped_search_points);
+        .service(search_point_groups);
 }

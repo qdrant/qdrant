@@ -594,8 +594,8 @@ mod grouping {
 
         let group_req = resources.request;
 
-        assert_eq!(result.len(), group_req.groups);
-        assert_eq!(result[0].hits.len(), group_req.top);
+        assert_eq!(result.len(), group_req.limit);
+        assert_eq!(result[0].hits.len(), group_req.per_group);
 
         // is sorted?
         let mut last_group_best_score = f32::MAX;
@@ -646,11 +646,11 @@ mod grouping {
 
         let result = result.unwrap();
 
-        assert_eq!(result.len(), request.groups);
+        assert_eq!(result.len(), request.limit);
 
         let mut last_group_best_score = f32::MAX;
         for group in result {
-            assert_eq!(group.hits.len(), request.top);
+            assert_eq!(group.hits.len(), request.per_group);
 
             // is sorted?
             assert!(group.hits[0].score <= last_group_best_score);
@@ -747,7 +747,7 @@ mod grouping {
         assert_eq!(result.len(), 4);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.top);
+            assert_eq!(group.hits.len(), group_by_request.per_group);
             assert!(group.hits[0].payload.is_some());
             assert!(group.hits[0].vector.is_some());
         }
@@ -793,7 +793,7 @@ mod grouping {
         assert_eq!(result.len(), 4);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.top);
+            assert_eq!(group.hits.len(), group_by_request.per_group);
         }
     }
 
@@ -914,10 +914,10 @@ mod grouping {
 
         let result = result.unwrap();
 
-        assert_eq!(result.len(), group_by_request.groups);
+        assert_eq!(result.len(), group_by_request.limit);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.top);
+            assert_eq!(group.hits.len(), group_by_request.per_group);
         }
     }
 
@@ -958,10 +958,10 @@ mod grouping {
 
         let result = result.unwrap();
 
-        assert_eq!(result.len(), group_by_request.groups);
+        assert_eq!(result.len(), group_by_request.limit);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.top);
+            assert_eq!(group.hits.len(), group_by_request.per_group);
         }
     }
 }

@@ -12,7 +12,7 @@ use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
 use crate::grouping::types::HashablePoint;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest};
+use crate::operations::types::{CollectionResult, RecommendRequest, SearchRequest, SearchGroupsRequest, BaseGroupRequest, RecommendGroupsRequest};
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
 
@@ -34,7 +34,8 @@ impl SourceRequest {
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
         include_key: String,
-        top: usize,
+        limit: usize,
+        per_group: usize,
     ) -> CollectionResult<Vec<ScoredPoint>>
     where
         F: Fn(String) -> Fut,
@@ -50,7 +51,7 @@ impl SourceRequest {
             SourceRequest::Search(request) => {
                 let mut request = request.clone();
 
-                request.limit *= top;
+                request.limit = limit * per_group;
 
                 request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
 
@@ -65,7 +66,7 @@ impl SourceRequest {
             SourceRequest::Recommend(request) => {
                 let mut request = request.clone();
 
-                request.limit *= top;
+                request.limit = limit * per_group;
 
                 request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
 
@@ -114,24 +115,102 @@ pub struct GroupRequest {
 
     /// Limit of points to return per group
     #[validate(range(min = 1))]
-    pub top: usize,
+    pub per_group: usize,
 
     /// Limit of groups to return
     #[validate(range(min = 1))]
-    pub groups: usize,
+    pub limit: usize,
 }
 
 impl GroupRequest {
-    pub fn new(request: SourceRequest, path: String, top: usize) -> Self {
-        let groups = match &request {
+    pub fn new(request: SourceRequest, group_by: String, per_group: usize) -> Self {
+        let limit = match &request {
             SourceRequest::Search(request) => request.limit,
             SourceRequest::Recommend(request) => request.limit,
         };
         Self {
             request,
-            group_by: path,
-            top,
-            groups,
+            group_by,
+            per_group,
+            limit,
+        }
+    }
+}
+
+impl From<SearchGroupsRequest> for GroupRequest {
+    fn from(request: SearchGroupsRequest) -> Self {
+        let SearchGroupsRequest {
+            vector,
+            filter,
+            params,
+            with_payload,
+            with_vector,
+            score_threshold,
+            group_request: BaseGroupRequest {
+                group_by,
+                per_group,
+                limit
+            }
+        } = request;       
+
+        let search = SearchRequest {
+            vector,
+            filter,
+            params,
+            limit: 0,
+            offset: 0,
+            with_payload,
+            with_vector,
+            score_threshold,
+        };
+
+        GroupRequest {
+            request: SourceRequest::Search(search),
+            group_by,
+            per_group: per_group as usize,
+            limit: limit as usize,
+        }
+    }
+}
+
+impl From<RecommendGroupsRequest> for GroupRequest {
+    fn from(request: RecommendGroupsRequest) -> Self {
+        let RecommendGroupsRequest {
+            positive,
+            negative,
+            filter,
+            params,
+            with_payload,
+            with_vector,
+            score_threshold,
+            using,
+            lookup_from,
+            group_request: BaseGroupRequest {
+                group_by,
+                per_group,
+                limit
+            }
+        } = request;
+
+        let recommend = RecommendRequest {
+            positive,
+            negative,
+            filter,
+            params,
+            limit: 0,
+            offset: 0,
+            with_payload,
+            with_vector,
+            score_threshold,
+            using,
+            lookup_from,
+        };
+
+        GroupRequest {
+            request: SourceRequest::Recommend(recommend),
+            group_by,
+            per_group: per_group as usize,
+            limit: limit as usize,
         }
     }
 }
@@ -150,13 +229,12 @@ where
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
     let mut aggregator =
-        GroupsAggregator::new(request.groups, request.top, request.group_by.clone());
+        GroupsAggregator::new(request.limit, request.per_group, request.group_by.clone());
 
     // Try to complete amount of groups
     for _ in 0..MAX_GET_GROUPS_REQUESTS {
         // TODO: should we break early if we have some amount of "enough" groups?
-
-        if aggregator.len_of_filled_best_groups() >= request.groups {
+        if aggregator.len_of_filled_best_groups() >= request.limit {
             break;
         }
 
@@ -185,7 +263,8 @@ where
                 read_consistency,
                 shard_selection,
                 request.group_by.clone(),
-                request.top,
+                request.limit,
+                request.per_group,
             )
             .await?;
 
@@ -198,7 +277,7 @@ where
 
     // Try to fill up groups
     for _ in 0..MAX_GROUP_FILLING_REQUESTS {
-        if aggregator.len_of_filled_best_groups() >= request.groups {
+        if aggregator.len_of_filled_best_groups() >= request.limit {
             break;
         }
 
@@ -225,7 +304,8 @@ where
                 read_consistency,
                 shard_selection,
                 request.group_by.clone(),
-                request.top,
+                request.limit,
+                request.per_group,
             )
             .await?;
 

@@ -2830,22 +2830,38 @@ pub struct SearchPointGroups {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Search request
-    #[prost(message, optional, tag = "2")]
-    pub search: ::core::option::Option<SearchPoints>,
+    /// Vector to compare against
+    #[prost(float, repeated, tag = "2")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "3")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of result
+    #[prost(uint32, tag = "4")]
+    pub limit: u32,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "5")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "6")]
+    pub params: ::core::option::Option<SearchParams>,
+    /// If provided - cut off results with worse scores
+    #[prost(float, optional, tag = "7")]
+    pub score_threshold: ::core::option::Option<f32>,
+    /// Which vector to use for search, if not specified - use default vector
+    #[prost(string, optional, tag = "8")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "9")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
     /// Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
-    #[prost(string, tag = "3")]
+    #[prost(string, tag = "10")]
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
-    #[prost(uint32, tag = "4")]
-    #[validate(range(min = 1))]
-    pub top: u32,
-    /// Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
-    #[prost(uint32, optional, tag = "5")]
-    #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
-    pub groups: ::core::option::Option<u32>,
+    #[prost(uint32, tag = "11")]
+    pub per_group: u32,
     /// Options for specifying read consistency guarantees
-    #[prost(message, optional, tag = "6")]
+    #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[derive(validator::Validate)]
@@ -2951,22 +2967,44 @@ pub struct RecommendPointGroups {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Recommend request
-    #[prost(message, optional, tag = "2")]
-    pub recommend: ::core::option::Option<RecommendPoints>,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "2")]
+    pub positive: ::prost::alloc::vec::Vec<PointId>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "3")]
+    pub negative: ::prost::alloc::vec::Vec<PointId>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "4")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of groups in result
+    #[prost(uint32, tag = "5")]
+    pub limit: u32,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "6")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "7")]
+    pub params: ::core::option::Option<SearchParams>,
+    /// If provided - cut off results with worse scores
+    #[prost(float, optional, tag = "8")]
+    pub score_threshold: ::core::option::Option<f32>,
+    /// Define which vector to use for recommendation, if not specified - default vector
+    #[prost(string, optional, tag = "9")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "10")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Name of the collection to use for points lookup, if not specified - use current collection
+    #[prost(message, optional, tag = "11")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
     /// Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
-    #[prost(string, tag = "3")]
+    #[prost(string, tag = "12")]
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
-    #[prost(uint32, tag = "4")]
-    #[validate(range(min = 1))]
-    pub top: u32,
-    /// Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
-    #[prost(uint32, optional, tag = "5")]
-    #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
-    pub groups: ::core::option::Option<u32>,
+    #[prost(uint32, tag = "13")]
+    pub per_group: u32,
     /// Options for specifying read consistency guarantees
-    #[prost(message, optional, tag = "6")]
+    #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[derive(validator::Validate)]
@@ -3034,6 +3072,13 @@ pub struct PointGroup {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GroupsResult {
+    /// Groups
+    #[prost(message, repeated, tag = "1")]
+    pub groups: ::prost::alloc::vec::Vec<PointGroup>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
@@ -3059,8 +3104,8 @@ pub struct SearchBatchResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchGroupsResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub result: ::prost::alloc::vec::Vec<PointGroup>,
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<GroupsResult>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -3132,8 +3177,8 @@ pub struct RecommendBatchResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendGroupsResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub result: ::prost::alloc::vec::Vec<PointGroup>,
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<GroupsResult>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,

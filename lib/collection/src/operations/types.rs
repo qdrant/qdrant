@@ -14,7 +14,7 @@ use segment::data_types::vectors::{
 use segment::entry::entry_point::OperationError;
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector, PointGroup,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -27,7 +27,6 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
-use crate::grouping::group_by::{GroupRequest, SourceRequest};
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
@@ -247,6 +246,34 @@ pub struct SearchRequestBatch {
     pub searches: Vec<SearchRequest>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct SearchGroupsRequest {
+    /// Look for vectors closest to this
+    pub vector: NamedVectorStruct,
+
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+
+    /// Additional search params
+    pub params: Option<SearchParams>,
+
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Whether to return the point vector with the result?
+    #[serde(default, alias = "with_vectors")]
+    pub with_vector: Option<WithVector>,
+
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
+
+    #[serde(flatten)]
+    pub group_request: BaseGroupRequest,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointRequest {
@@ -335,6 +362,52 @@ pub struct RecommendRequest {
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequestBatch {
     pub searches: Vec<RecommendRequest>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct RecommendGroupsRequest {
+    /// Look for vectors closest to those
+    pub positive: Vec<PointIdType>,
+
+    /// Try to avoid vectors like this
+    #[serde(default)]
+    pub negative: Vec<PointIdType>,
+
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+
+    /// Additional search params
+    pub params: Option<SearchParams>,
+
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Whether to return the point vector with the result?
+    #[serde(default, alias = "with_vectors")]
+    pub with_vector: Option<WithVector>,
+
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
+
+    /// Define which vector to use for recommendation, if not specified - try to use default vector
+    #[serde(default)]
+    pub using: Option<UsingVector>,
+
+    /// The location used to lookup vectors. If not specified - use current collection.
+    /// Note: the other collection should have the same vector size as the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
+
+    #[serde(flatten)]
+    pub group_request: BaseGroupRequest,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GroupsResult {
+    pub groups: Vec<PointGroup>,
 }
 
 /// Count Request
@@ -800,68 +873,10 @@ pub struct BaseGroupRequest {
 
     /// Maximum amount of points to return per group
     #[validate(range(min = 1))]
-    pub top: u32,
+    pub per_group: u32,
 
-    /// Optional. Maximum amount of groups to return, will use the limit in the recommend request if not set
+    /// Maximum amount of groups to return
     #[validate(range(min = 1))]
     #[serde(default)]
-    pub groups: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-pub struct RecommendGroupsRequest {
-    /// Recommend request to use
-    pub recommend: RecommendRequest,
-
-    #[serde(flatten)]
-    pub group_request: BaseGroupRequest,
-}
-
-impl From<RecommendGroupsRequest> for GroupRequest {
-    fn from(request: RecommendGroupsRequest) -> Self {
-        let BaseGroupRequest {
-            group_by,
-            top,
-            groups,
-        } = request.group_request;
-
-        let groups = groups
-            .map(|g| g as usize)
-            .unwrap_or(request.recommend.limit);
-
-        GroupRequest {
-            request: SourceRequest::Recommend(request.recommend),
-            group_by,
-            top: top as usize,
-            groups,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-pub struct SearchGroupsRequest {
-    /// Search request to use
-    pub search: SearchRequest,
-
-    #[serde(flatten)]
-    pub group_request: BaseGroupRequest,
-}
-
-impl From<SearchGroupsRequest> for GroupRequest {
-    fn from(request: SearchGroupsRequest) -> Self {
-        let BaseGroupRequest {
-            group_by,
-            top,
-            groups,
-        } = request.group_request;
-
-        let groups = groups.map(|g| g as usize).unwrap_or(request.search.limit);
-
-        GroupRequest {
-            request: SourceRequest::Search(request.search),
-            group_by,
-            top: top as usize,
-            groups,
-        }
-    }
+    pub limit: u32,
 }

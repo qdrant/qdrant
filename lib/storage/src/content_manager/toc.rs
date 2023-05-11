@@ -20,7 +20,7 @@ use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
     RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    UpdateResult, VectorsConfig,
+    UpdateResult, VectorsConfig, GroupsResult
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -34,7 +34,7 @@ use collection::shards::transfer::shard_transfer::{
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::common::cpu::get_num_cpus;
-use segment::types::{PointGroup, ScoredPoint};
+use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard, Semaphore};
 use uuid::Uuid;
@@ -1185,7 +1185,7 @@ impl TableOfContent {
         request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
-    ) -> Result<Vec<PointGroup>, StorageError> {
+    ) -> Result<GroupsResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);
@@ -1198,6 +1198,7 @@ impl TableOfContent {
             shard_selection,
         )
         .await
+        .map(|groups| GroupsResult { groups })
         .map_err(|err| err.into())
     }
 

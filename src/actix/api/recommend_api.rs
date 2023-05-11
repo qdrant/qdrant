@@ -74,7 +74,7 @@ async fn recommend_batch_points(
 }
 
 #[post("/collections/{name}/points/recommend/groups")]
-async fn grouped_recommend_points(
+async fn recommend_point_groups(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
     request: Json<RecommendGroupsRequest>,
@@ -82,7 +82,7 @@ async fn grouped_recommend_points(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = crate::common::points::do_grouped_recommend_points(
+    let response = crate::common::points::do_recommend_point_groups(
         toc.get_ref(),
         &collection.name,
         request.into_inner(),
@@ -96,5 +96,5 @@ async fn grouped_recommend_points(
 pub fn config_recommend_api(cfg: &mut web::ServiceConfig) {
     cfg.service(recommend_points)
         .service(recommend_batch_points)
-        .service(grouped_recommend_points);
+        .service(recommend_point_groups);
 }

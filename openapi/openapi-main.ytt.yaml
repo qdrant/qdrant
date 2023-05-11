@@ -353,7 +353,7 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
-      responses: #@ response(array(reference("PointGroup")))
+      responses: #@ response(reference("GroupsResult"))
 
   /collections/{collection_name}/points/recommend:
     post:
@@ -440,7 +440,7 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ReadConsistency"
-      responses: #@ response(array(reference("PointGroup")))
+      responses: #@ response(reference("GroupsResult"))
 
   /collections/{collection_name}/points/count:
     post:
