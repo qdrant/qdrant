@@ -14,13 +14,11 @@
     <a href="https://qdrant.to/roadmap"><img src="https://img.shields.io/badge/Roadmap-2023-bc1439.svg" alt="Roadmap 2023"></a>
 </p>
 
-**Qdrant** (read: _quadrant_ ) is a vector similarity search engine and vector database.
-It provides a production-ready service with a convenient API to store, search, and manage points—vectors with an additional payload
-Qdrant is tailored to extended filtering support. It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications.
+**Qdrant**  , pronounced "quadrant," is a search engine and database designed to compare vectors. It offers a ready-to-use service with an easy-to-use interface to save, search, and handle vector points, including additional information. Qdrant is optimized for extensive filtering support, which is helpful for neural network or semantic-based matching, faceted search, and other applications.
 
-Qdrant is written in Rust 🦀, which makes it fast and reliable even under high load. See [benchmarks](https://qdrant.tech/benchmarks/).
+Qdrant is created using Rust 🦀, a programming language known for its speed and dependability, even during high traffic periods. You can refer to [benchmarks](https://qdrant.tech/benchmarks/) to see its performance.
 
-With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
+With Qdrant , you can convert embeddings or neural network encoders into fully functional applications for matching, searching, recommending, and more!
 
 <p align="center">
 <strong><a href="./QUICK_START.md">Quick Start</a> • <a href="#clients">Client Libraries</a> • <a href="#demo-projects">Demo Projects</a> • <a href="#integrations">Integrations</a> • <a href="#contacts">Contact</a>
