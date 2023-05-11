@@ -798,7 +798,7 @@ mod grouping {
     }
 
     #[tokio::test]
-    async fn zero_top_groups() {
+    async fn zero_per_group() {
         let Resources {
             collection,
             read_consistency,
@@ -830,11 +830,7 @@ mod grouping {
         )
         .await;
 
-        assert!(result.is_ok());
-
-        let result = result.unwrap();
-
-        assert_eq!(result.len(), 0);
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -870,11 +866,7 @@ mod grouping {
         )
         .await;
 
-        assert!(result.is_ok());
-
-        let result = result.unwrap();
-
-        assert_eq!(result.len(), 0);
+        assert!(result.is_err());
     }
 
     #[tokio::test]
