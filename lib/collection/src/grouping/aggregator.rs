@@ -33,7 +33,6 @@ impl GroupsAggregator {
 
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
     fn add_point(&mut self, point: ScoredPoint) -> Result<(), AggregatorError> {
-
         // if the key contains multiple values, grabs the first one
         let group_key = point
             .payload
@@ -48,16 +47,15 @@ impl GroupsAggregator {
             .groups
             .entry(group_key.clone())
             .or_insert_with(|| HashSet::with_capacity(self.max_group_size));
-        
+
         group.insert(point.clone());
         
-        // keep track of best groups
-        self.best_group_keys
-            .push_increase(group_key.clone(), point);
-        
         if group.len() == self.max_group_size {
-            self.full_groups.insert(group_key);
+            self.full_groups.insert(group_key.clone());
         }
+
+        // keep track of best groups
+        self.best_group_keys.push_increase(group_key, point);
 
         Ok(())
     }
@@ -65,8 +63,8 @@ impl GroupsAggregator {
     /// Adds multiple points to the group that they corresponds based on the group_by field, assumes that the points always have the grouped_by field, else it just ignores them
     pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
         for point in points {
-            if self.add_point(point.to_owned()).is_err() {
-                continue; // ignore points that don't have the group_by field
+            match self.add_point(point.to_owned()) {
+                Ok(()) | Err(KeyNotFound | BadKeyType) => continue, // ignore points that don't have the group_by field
             }
         }
     }
@@ -129,7 +127,7 @@ impl GroupsAggregator {
             .filter_map(|key| {
                 let hits = self
                     .groups
-                    .get(key)?  // it should always have it
+                    .get(key)? // it should always have it
                     .iter()
                     .sorted()
                     .rev()
@@ -222,7 +220,7 @@ mod unit_tests {
                     vector: None,
                 },
                 json!("a"),
-                3, // group already full
+                3, // group already full, but will still keep growing (we want the best results)
                 1,
                 Ok(()),
             ),
@@ -261,7 +259,7 @@ mod unit_tests {
                     vector: None,
                 },
                 json!("d"),
-                1, // already enough groups
+                1, // already enough groups, but we still want to grow to keep the best ones
                 4,
                 Ok(()),
             ),
@@ -428,7 +426,7 @@ mod unit_tests {
                         score: 1.0,
                         payload: None,
                         vector: None,
-                    }
+                    },
                 ]
                 .to_vec(),
             ),
