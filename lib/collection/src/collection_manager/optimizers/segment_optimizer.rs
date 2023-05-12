@@ -77,7 +77,7 @@ pub trait SegmentOptimizer {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
             vector_data: collection_params
-                .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?,
+                .into_base_vector_data(self.quantization_config().as_ref())?,
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
                 true => PayloadStorageType::OnDisk,
@@ -148,8 +148,8 @@ pub trait SegmentOptimizer {
         let is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
-        let mut vector_data = collection_params
-            .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?;
+        let mut vector_data =
+            collection_params.into_base_vector_data(self.quantization_config().as_ref())?;
 
         // If indexing, change to HNSW index
         if is_indexed {

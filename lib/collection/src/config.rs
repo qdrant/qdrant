@@ -164,9 +164,8 @@ impl CollectionParams {
     /// Get all vector params as `VectorDataConfig`
     ///
     /// The vector specific HNSW configuration will be based upon the given `collection_hnsw`.
-    pub fn get_all_vector_params(
+    pub fn into_base_vector_data(
         &self,
-        collection_hnsw: &HnswConfig,
         collection_quantization: Option<&QuantizationConfig>,
     ) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         Ok(self
