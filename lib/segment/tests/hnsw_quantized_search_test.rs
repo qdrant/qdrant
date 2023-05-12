@@ -53,7 +53,6 @@ mod tests {
                     size: dim,
                     distance,
                     index: Indexes::Plain {},
-                    hnsw_config: None,
                     quantization_config: None,
                     on_disk: None,
                 },

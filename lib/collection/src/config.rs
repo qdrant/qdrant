@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
-use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -180,9 +179,6 @@ impl CollectionParams {
                         size: params.size.get() as usize,
                         distance: params.distance,
                         index: Indexes::Plain {},
-                        hnsw_config: params
-                            .hnsw_config
-                            .and_then(|c| c.update(collection_hnsw).ok()),
                         // Only set if enabled on segment level as well
                         // TODO: is this correct?
                         quantization_config: collection_quantization

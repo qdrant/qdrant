@@ -119,7 +119,6 @@ impl Anonymize for VectorDataConfig {
             size: self.size.anonymize(),
             distance: self.distance,
             index: self.index.clone(),
-            hnsw_config: None,
             quantization_config: None,
             on_disk: None,
         }

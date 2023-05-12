@@ -579,14 +579,6 @@ impl From<SegmentConfigV5> for SegmentConfig {
                 let new_data = VectorDataConfig {
                     size: old_data.size,
                     distance: old_data.distance,
-                    hnsw_config: old_data
-                        .hnsw_config
-                        .as_ref()
-                        .or(match &old_segment.index {
-                            Indexes::Plain {} => None,
-                            Indexes::Hnsw(hnsw) => Some(hnsw),
-                        })
-                        .cloned(),
                     // Use HNSW index if vector specific one is set, or fall back to segment index
                     index: match old_data.hnsw_config {
                         Some(hnsw_config) => Indexes::Hnsw(hnsw_config),
@@ -624,9 +616,6 @@ pub struct VectorDataConfig {
     pub distance: Distance,
     /// Type of index used for search
     pub index: Indexes,
-    /// Vector specific HNSW config that overrides collection config
-    #[serde(default)]
-    pub hnsw_config: Option<HnswConfig>,
     /// Vector specific quantization config that overrides collection config
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
