@@ -240,6 +240,10 @@ impl VectorStorage for SimpleVectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
     }
+
+    fn is_appendable(&self) -> bool {
+        true
+    }
 }
 
 /// Set deleted state in given bitvec.

@@ -187,6 +187,10 @@ impl VectorStorage for MemmapVectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.mmap_store.as_ref().unwrap().deleted_vector_bitslice()
     }
+
+    fn is_appendable(&self) -> bool {
+        false
+    }
 }
 
 /// Open a file shortly for appending

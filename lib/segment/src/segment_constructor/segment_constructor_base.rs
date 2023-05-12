@@ -165,8 +165,7 @@ fn create_segment(
     } else {
         SegmentType::Plain
     };
-
-    let appendable_flag = segment_type == SegmentType::Plain {} && !config.is_any_mmap();
+    let appendable_flag = vector_data.values().all(VectorData::is_appendable);
 
     Ok(Segment {
         version,
