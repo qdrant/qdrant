@@ -92,7 +92,7 @@ fn create_segment(
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
-        let vector_storage = match config.storage_type {
+        let vector_storage = match vector_config.storage_type {
             StorageType::InMemory => {
                 if vector_config.on_disk.unwrap_or(false) {
                     open_appendable_memmap_vector_storage(
@@ -166,8 +166,7 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    let appendable_flag =
-        segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
+    let appendable_flag = segment_type == SegmentType::Plain {} && !config.is_any_mmap();
 
     Ok(Segment {
         version,

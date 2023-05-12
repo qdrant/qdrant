@@ -313,7 +313,6 @@ impl LocalShard {
             let path_clone = segments_path.clone();
             let segment_config = SegmentConfig {
                 vector_data: vector_params.clone(),
-                storage_type: Default::default(),
                 payload_storage_type: match config.params.on_disk_payload {
                     true => PayloadStorageType::OnDisk,
                     false => PayloadStorageType::InMemory,

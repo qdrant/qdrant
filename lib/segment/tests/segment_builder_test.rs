@@ -91,6 +91,7 @@ mod tests {
                     index: Indexes::Hnsw(Default::default()),
                     quantization_config: None,
                     on_disk: None,
+                    storage_type: Default::default(),
                 },
             )]),
             ..Default::default()

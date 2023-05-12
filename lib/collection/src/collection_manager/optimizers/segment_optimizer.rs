@@ -78,7 +78,6 @@ pub trait SegmentOptimizer {
         let config = SegmentConfig {
             vector_data: collection_params
                 .into_base_vector_data(self.quantization_config().as_ref())?,
-            storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,
@@ -166,13 +165,15 @@ pub trait SegmentOptimizer {
             });
         }
 
+        // If storing on disk, change to mmap
+        if is_on_disk {
+            vector_data.values_mut().for_each(|config| {
+                config.storage_type = StorageType::Mmap;
+            });
+        }
+
         let optimized_config = SegmentConfig {
             vector_data,
-            storage_type: if is_on_disk {
-                StorageType::Mmap
-            } else {
-                StorageType::InMemory
-            },
             payload_storage_type: match collection_params.on_disk_payload {
                 true => PayloadStorageType::OnDisk,
                 false => PayloadStorageType::InMemory,

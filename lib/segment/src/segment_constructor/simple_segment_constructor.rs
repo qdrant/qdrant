@@ -29,6 +29,7 @@ pub fn build_simple_segment(
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: None,
+                    storage_type: Default::default(),
                 },
             )]),
             ..Default::default()
@@ -51,6 +52,7 @@ pub fn build_multivec_segment(
             index: Indexes::Plain {},
             quantization_config: None,
             on_disk: None,
+            storage_type: Default::default(),
         },
     );
     vectors_config.insert(
@@ -61,6 +63,7 @@ pub fn build_multivec_segment(
             index: Indexes::Plain {},
             quantization_config: None,
             on_disk: None,
+            storage_type: Default::default(),
         },
     );
 

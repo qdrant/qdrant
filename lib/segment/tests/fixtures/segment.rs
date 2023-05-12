@@ -120,6 +120,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         on_disk: None,
+                        storage_type: Default::default(),
                     },
                 ),
                 (
@@ -130,6 +131,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         on_disk: None,
+                        storage_type: Default::default(),
                     },
                 ),
                 (
@@ -140,6 +142,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         on_disk: None,
+                        storage_type: Default::default(),
                     },
                 ),
             ]),
