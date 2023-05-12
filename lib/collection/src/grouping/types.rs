@@ -40,7 +40,7 @@ impl From<Group> for PointGroup {
 }
 
 /// Abstraction over serde_json::Value to be used as a key in a HashMap/HashSet
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub(super) enum GroupKey {
     String(String),
     Number(serde_json::Number),
@@ -73,17 +73,8 @@ impl From<GroupKey> for serde_json::Value {
     }
 }
 
-impl Hash for GroupKey {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match &self {
-            Self::Number(n) => n.hash(state),
-            Self::String(s) => s.hash(state),
-        }
-    }
-}
-
 /// Abstraction over ScoredPoint to be used in a HashSet
-#[derive(Eq, Debug, PartialEq, Clone)]
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone)]
 pub(super) struct HashablePoint(ScoredPoint);
 
 impl HashablePoint {
@@ -111,18 +102,6 @@ impl Hash for HashablePoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.id.hash(state);
         self.0.version.hash(state);
-    }
-}
-
-impl Ord for HashablePoint {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl PartialOrd for HashablePoint {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
     }
 }
 
