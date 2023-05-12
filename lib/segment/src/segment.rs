@@ -304,17 +304,17 @@ impl Segment {
             }
         }
 
-        let res = operation(self);
+        let (applied, point_id) = operation(self)?;
 
-        if res.is_ok() {
-            self.version = Some(max(op_num, self.version.unwrap_or(0)));
-            if let Ok((_, Some(point_id))) = res {
-                self.id_tracker
-                    .borrow_mut()
-                    .set_internal_version(point_id, op_num)?;
-            }
+        self.version = Some(max(op_num, self.version.unwrap_or(0)));
+
+        if let Some(point_id) = point_id {
+            self.id_tracker
+                .borrow_mut()
+                .set_internal_version(point_id, op_num)?;
         }
-        res.map(|(res, _)| res)
+
+        Ok(applied)
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
