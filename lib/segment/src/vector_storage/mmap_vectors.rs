@@ -82,7 +82,15 @@ impl MmapVectors {
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<()> {
-        self.lock_deleted_flags();
+        // In theory, we can lock deleted flags here, as we assume that it is the hottest data.
+        // Uncomment the following code if you want to do that:
+        //
+        // self.lock_deleted_flags();
+        //
+        // But it seems, that mlock functionality is not working properly if qdrant is running
+        // inside docker container with limited memory.
+        // Additionally, the speedup is not measured explicitly.
+
         let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
             self.raw_vector_offset(offset)
@@ -107,7 +115,14 @@ impl MmapVectors {
         distance: Distance,
     ) -> OperationResult<()> {
         if QuantizedVectors::config_exists(data_path) {
-            self.lock_deleted_flags();
+            // In theory, we can lock deleted flags here, as we assume that it is the hottest data.
+            // Uncomment the following code if you want to do that:
+            //
+            // self.lock_deleted_flags();
+            //
+            // But it seems, that mlock functionality is not working properly if qdrant is running
+            // inside docker container with limited memory.
+            // Additionally, the speedup is not measured explicitly.
             self.quantized_vectors = Some(QuantizedVectors::load(data_path, true, distance)?);
         }
         Ok(())
@@ -169,6 +184,7 @@ impl MmapVectors {
     /// huge. Calling this will lock the deleted flags in memory to prevent this.
     ///
     /// This is only supported on Unix.
+    #[allow(unused)]
     fn lock_deleted_flags(&self) {
         #[cfg(unix)]
         if let Err(err) = self.deleted.mlock() {
