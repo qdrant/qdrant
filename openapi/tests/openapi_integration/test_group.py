@@ -147,7 +147,27 @@ def test_with_vectors():
         for h in g["hits"]:
             assert h["payload"]["docId"] == g["group_id"]["docId"]
             assert h["vector"] == [1.0, 0.0, 0.0, 0.0]
-            
+
+def test_inexistent_group_by():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search/groups',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "with_vector": True,
+            "group_by": "inexistentDocId",
+            "per_group": 3,
+        }   
+    )
+    assert response.ok
+    
+    groups = response.json()["result"]["groups"]
+    
+    assert len(groups) == 0
+    
 def test_array_fields_uses_first_value_only():
     response = request_with_validation(
         api='/collections/{collection_name}/points/search/groups',
@@ -188,7 +208,7 @@ def test_group_by_does_not_support_bracket_notation():
     
     error = response.json()["status"]["error"]
     
-    assert "no_bracket_syntax" in error
+    assert "\"compoundId[]\" is invalid" in error
             
 def test_groups_by_heterogenous_fields():
     response = request_with_validation(

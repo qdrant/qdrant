@@ -2859,6 +2859,7 @@ pub struct SearchPointGroups {
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
     /// Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
     #[prost(string, tag = "10")]
+    #[validate(custom = "crate::grpc::validate::validate_group_by_field")]
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
     #[prost(uint32, tag = "11")]
@@ -3005,6 +3006,7 @@ pub struct RecommendPointGroups {
     pub lookup_from: ::core::option::Option<LookupLocation>,
     /// Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
     #[prost(string, tag = "12")]
+    #[validate(custom = "crate::grpc::validate::validate_group_by_field")]
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
     #[prost(uint32, tag = "13")]

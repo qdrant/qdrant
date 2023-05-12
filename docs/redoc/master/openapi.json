@@ -7799,6 +7799,7 @@
         "type": "object",
         "required": [
           "group_by",
+          "limit",
           "per_group",
           "vector"
         ],
@@ -7869,7 +7870,6 @@
           },
           "limit": {
             "description": "Maximum amount of groups to return",
-            "default": 0,
             "type": "integer",
             "format": "uint32",
             "minimum": 1
@@ -7880,6 +7880,7 @@
         "type": "object",
         "required": [
           "group_by",
+          "limit",
           "per_group",
           "positive"
         ],
@@ -7986,7 +7987,6 @@
           },
           "limit": {
             "description": "Maximum amount of groups to return",
-            "default": 0,
             "type": "integer",
             "format": "uint32",
             "minimum": 1
