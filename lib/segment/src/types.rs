@@ -548,12 +548,6 @@ impl SegmentConfig {
             .values()
             .any(|config| config.storage_type == StorageType::Mmap)
     }
-
-    pub fn is_all_mmap(&self) -> bool {
-        self.vector_data
-            .values()
-            .all(|config| config.storage_type == StorageType::Mmap)
-    }
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]

@@ -78,9 +78,10 @@ pub trait SegmentOptimizer {
         let config = SegmentConfig {
             vector_data: collection_params
                 .into_base_vector_data(self.quantization_config().as_ref())?,
-            payload_storage_type: match collection_params.on_disk_payload {
-                true => PayloadStorageType::OnDisk,
-                false => PayloadStorageType::InMemory,
+            payload_storage_type: if collection_params.on_disk_payload {
+                PayloadStorageType::OnDisk
+            } else {
+                PayloadStorageType::InMemory
             },
         };
         Ok(LockedSegment::new(build_segment(
@@ -174,9 +175,10 @@ pub trait SegmentOptimizer {
 
         let optimized_config = SegmentConfig {
             vector_data,
-            payload_storage_type: match collection_params.on_disk_payload {
-                true => PayloadStorageType::OnDisk,
-                false => PayloadStorageType::InMemory,
+            payload_storage_type: if collection_params.on_disk_payload {
+                PayloadStorageType::OnDisk
+            } else {
+                PayloadStorageType::InMemory
             },
         };
 

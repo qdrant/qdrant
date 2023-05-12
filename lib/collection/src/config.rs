@@ -161,9 +161,8 @@ impl CollectionParams {
             })
     }
 
-    /// Get all vector params as `VectorDataConfig`
-    ///
-    /// The vector specific HNSW configuration will be based upon the given `collection_hnsw`.
+    /// This will create vector data configurations with the default index and storage settings.
+    /// No settings optimization (based on thresholds) will be done.
     pub fn into_base_vector_data(
         &self,
         collection_quantization: Option<&QuantizationConfig>,
@@ -179,7 +178,7 @@ impl CollectionParams {
                         distance: params.distance,
                         index: Indexes::Plain {},
                         // Only set if enabled on segment level as well
-                        // TODO: is this correct?
+                        // TODO: decide this outside this function?
                         quantization_config: collection_quantization
                             .and(params.quantization_config.as_ref())
                             .cloned(),
