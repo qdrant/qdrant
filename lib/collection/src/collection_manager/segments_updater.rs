@@ -23,23 +23,40 @@ pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
     processed: &HashSet<PointIdType>,
 ) -> CollectionResult<usize> {
-    let min_segment_version = segments
-        .iter()
-        .map(|(_, segment)| segment.get().read().version())
-        .min()
-        .unwrap_or(0);
+    let mut max_segment_version = 0;
+    let mut versions = HashMap::new();
 
-    let unprocessed_points = points
-        .iter()
-        .cloned()
-        .filter(|point| !processed.contains(point));
+    for (_, segment) in segments.iter() {
+        let segment = segment.get();
+        let segment = segment.read();
 
-    for point_id in unprocessed_points {
-        let point_version = segments
-            .iter()
-            .find_map(|(_, segment)| segment.get().read().point_version(point_id));
+        max_segment_version = max_segment_version.max(segment.version());
 
-        if op_num >= point_version.unwrap_or(min_segment_version) {
+        for &point_id in points {
+            let point_version = match segment.point_version(point_id) {
+                Some(point_version) => point_version,
+                None => continue,
+            };
+
+            match versions.get_mut(&point_id) {
+                Some(version) => {
+                    *version = point_version.max(*version);
+                }
+
+                None => {
+                    versions.insert(point_id, point_version);
+                }
+            }
+        }
+    }
+
+    for &point_id in points.iter().filter(|&point| !processed.contains(point)) {
+        let point_version_or_max_segment_version = versions
+            .get(&point_id)
+            .copied()
+            .unwrap_or(max_segment_version);
+
+        if op_num >= point_version_or_max_segment_version {
             return Err(CollectionError::PointNotFound {
                 missed_point_id: point_id,
             });
