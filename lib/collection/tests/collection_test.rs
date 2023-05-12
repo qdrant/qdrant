@@ -830,7 +830,11 @@ mod grouping {
         )
         .await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 0);
     }
 
     #[tokio::test]
@@ -866,7 +870,11 @@ mod grouping {
         )
         .await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 0);
     }
 
     #[tokio::test]
