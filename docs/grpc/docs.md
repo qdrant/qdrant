@@ -87,6 +87,7 @@
     - [GeoRadius](#qdrant-GeoRadius)
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
+    - [GroupId](#qdrant-GroupId)
     - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
@@ -99,7 +100,6 @@
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
     - [PointGroup](#qdrant-PointGroup)
-    - [PointGroup.GroupIdEntry](#qdrant-PointGroup-GroupIdEntry)
     - [PointId](#qdrant-PointId)
     - [PointStruct](#qdrant-PointStruct)
     - [PointStruct.PayloadEntry](#qdrant-PointStruct-PayloadEntry)
@@ -1516,6 +1516,23 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-GroupId"></a>
+
+### GroupId
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| double_value | [double](#double) |  | Represents a double value. |
+| integer_value | [int64](#int64) |  | Represents an integer value |
+| string_value | [string](#string) |  | Represents a string value. |
+
+
+
+
+
+
 <a name="qdrant-GroupsResult"></a>
 
 ### GroupsResult
@@ -1697,24 +1714,8 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| group_id | [PointGroup.GroupIdEntry](#qdrant-PointGroup-GroupIdEntry) | repeated | Group id |
+| id | [GroupId](#qdrant-GroupId) |  | Group id |
 | hits | [ScoredPoint](#qdrant-ScoredPoint) | repeated | Points in the group |
-
-
-
-
-
-
-<a name="qdrant-PointGroup-GroupIdEntry"></a>
-
-### PointGroup.GroupIdEntry
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| key | [string](#string) |  |  |
-| value | [Value](#qdrant-Value) |  |  |
 
 
 

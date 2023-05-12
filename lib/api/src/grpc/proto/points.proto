@@ -335,8 +335,19 @@ message ScoredPoint {
   optional Vectors vectors = 6; // Vectors to search
 }
 
+message GroupId {
+  oneof kind {
+    // Represents a double value.
+    double double_value = 1;
+    // Represents an integer value
+    int64 integer_value = 2;
+    // Represents a string value.
+    string string_value = 3;
+  }
+}
+
 message PointGroup {
-  map<string, Value> group_id = 1; // Group id
+  GroupId id = 1; // Group id
   repeated ScoredPoint hits = 2; // Points in the group
 }
 

@@ -97,7 +97,7 @@ def test_search():
     for g in groups:
         assert len(g["hits"]) == 3
         for h in g["hits"]:
-            assert h["payload"]["docId"] == g["group_id"]["docId"]
+            assert h["payload"]["docId"] == g["id"]
             
 def test_recommend():
     response = request_with_validation(
@@ -121,7 +121,7 @@ def test_recommend():
     for g in groups:
         assert len(g["hits"]) == 3
         for h in g["hits"]:
-            assert h["payload"]["docId"] == g["group_id"]["docId"]
+            assert h["payload"]["docId"] == g["id"]
             
 def test_with_vectors():
     response = request_with_validation(
@@ -145,7 +145,7 @@ def test_with_vectors():
     for g in groups:
         assert len(g["hits"]) == 3
         for h in g["hits"]:
-            assert h["payload"]["docId"] == g["group_id"]["docId"]
+            assert h["payload"]["docId"] == g["id"]
             assert h["vector"] == [1.0, 0.0, 0.0, 0.0]
 
 def test_inexistent_group_by():
@@ -188,8 +188,8 @@ def test_array_fields_uses_first_value_only():
     assert len(groups) == 5
     for g in groups:
         assert len(g["hits"]) == 3
-        assert g["group_id"]["compoundId"].startswith("valid_")
-        assert g["group_id"]["compoundId"] != "unused"
+        assert g["id"].startswith("valid_")
+        assert g["id"] != "unused"
     
 def test_group_by_does_not_support_bracket_notation():
     response = request_with_validation(
@@ -230,7 +230,7 @@ def test_groups_by_heterogenous_fields():
     assert len(groups) == 5
     for g in groups:
         assert len(g["hits"]) == 1
-        assert g["group_id"]["heterogenousId"] != []
-        assert g["group_id"]["heterogenousId"] != None
-        assert g["group_id"]["heterogenousId"] != {"object": "string"}
-        assert type(g["group_id"]["heterogenousId"]) != list
+        assert g["id"] != []
+        assert g["id"] != None
+        assert g["id"] != {"object": "string"}
+        assert type(g["id"]) != list

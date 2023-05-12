@@ -119,26 +119,21 @@ impl GroupsAggregator {
     }
 
     /// Returns the best groups sorted by their best hit. The hits are sorted too.
-    pub(super) fn distill(&self) -> Vec<Group> {
+    pub(super) fn distill(mut self) -> Vec<Group> {
         self.best_group_keys
             .clone()
             .into_sorted_vec()
-            .iter()
+            .into_iter()
             .filter_map(|key| {
                 let hits = self
                     .groups
-                    .get(key)? // it should always have it
-                    .iter()
+                    .remove(&key)? // it should always have it
+                    .into_iter()
                     .sorted_by(|a, b| b.cmp(a))
                     .take(self.max_group_size)
-                    .cloned()
                     .collect::<Vec<_>>();
 
-                Some(Group {
-                    hits,
-                    key: key.clone(),
-                    group_by: self.grouped_by.clone(),
-                })
+                Some(Group { hits, key })
             })
             .take(self.max_groups)
             .collect()
@@ -152,13 +147,6 @@ mod unit_tests {
     use serde_json::json;
 
     use super::*;
-
-    /// Used for convenience
-    impl From<&str> for GroupKey {
-        fn from(s: &str) -> Self {
-            Self::String(s.to_string())
-        }
-    }
 
     #[test]
     fn it_adds_single_points() {

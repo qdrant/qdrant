@@ -7777,23 +7777,31 @@
       "PointGroup": {
         "type": "object",
         "required": [
-          "group_id",
-          "hits"
+          "hits",
+          "id"
         ],
         "properties": {
           "hits": {
-            "description": "Scored points that have the same group_id",
+            "description": "Scored points that have the same value of the group_by key",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ScoredPoint"
             }
           },
-          "group_id": {
-            "description": "Key shared by all the hits",
-            "type": "object",
-            "additionalProperties": true
+          "id": {
+            "$ref": "#/components/schemas/GroupId"
           }
         }
+      },
+      "GroupId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          }
+        ]
       },
       "SearchGroupsRequest": {
         "type": "object",

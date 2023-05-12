@@ -313,6 +313,7 @@ where
         aggregator.add_points(&points);
     }
 
+    // extract best results
     let mut groups = aggregator.distill();
 
     // flatten results
@@ -422,7 +423,6 @@ mod tests {
             let group = Group {
                 key: GroupKey::from(key),
                 hits: points.into_iter().map(HashablePoint::from).collect(),
-                group_by: "docId".to_string(),
             };
             groups.push(group);
         });

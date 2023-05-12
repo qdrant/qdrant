@@ -200,10 +200,17 @@ impl PartialEq for ScoredPoint {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 pub struct PointGroup {
-    /// Scored points that have the same group_id
+    /// Scored points that have the same value of the group_by key
     pub hits: Vec<ScoredPoint>,
-    /// Key shared by all the hits
-    pub group_id: serde_json::Map<String, Value>,
+    /// Value of the group_by key shared by all the hits
+    pub id: GroupId,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Eq, PartialEq, Clone, Hash)]
+#[serde(untagged)]
+pub enum GroupId {
+    String(String),
+    Number(serde_json::Number),
 }
 
 /// Type of segment

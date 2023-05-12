@@ -20,13 +20,14 @@ use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition, Distance,
-    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply,
-    HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match,
-    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
-    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointGroup, PointId,
-    QuantizationConfig, QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings,
-    ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value,
-    ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, GroupId, HasIdCondition,
+    HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
+    ListValue, Match, NamedVectors, NestedCondition, PayloadExcludeSelector,
+    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointGroup,
+    PointId, QuantizationConfig, QuantizationSearchParams, Range, RepeatedIntegers,
+    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams,
+    TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector,
+    WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -428,11 +429,26 @@ impl From<segment::types::PointGroup> for PointGroup {
     fn from(group: segment::types::PointGroup) -> Self {
         Self {
             hits: group.hits.into_iter().map(ScoredPoint::from).collect(),
-            group_id: group
-                .group_id
-                .into_iter()
-                .map(|(k, v)| (k, json_to_proto(v)))
-                .collect(),
+            id: Some(group.id.into()),
+        }
+    }
+}
+
+impl From<segment::types::GroupId> for GroupId {
+    fn from(key: segment::types::GroupId) -> Self {
+        match key {
+            segment::types::GroupId::Number(n) => Self {
+                kind: if let Some(int) = n.as_i64() {
+                    Some(crate::grpc::qdrant::group_id::Kind::IntegerValue(int))
+                } else {
+                    Some(crate::grpc::qdrant::group_id::Kind::DoubleValue(
+                        n.as_f64().unwrap(),
+                    ))
+                },
+            },
+            segment::types::GroupId::String(str) => Self {
+                kind: Some(crate::grpc::qdrant::group_id::Kind::StringValue(str)),
+            },
         }
     }
 }

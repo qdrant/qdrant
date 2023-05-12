@@ -3071,10 +3071,32 @@ pub struct ScoredPoint {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GroupId {
+    #[prost(oneof = "group_id::Kind", tags = "1, 2, 3")]
+    pub kind: ::core::option::Option<group_id::Kind>,
+}
+/// Nested message and enum types in `GroupId`.
+pub mod group_id {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Kind {
+        /// Represents a double value.
+        #[prost(double, tag = "1")]
+        DoubleValue(f64),
+        /// Represents an integer value
+        #[prost(int64, tag = "2")]
+        IntegerValue(i64),
+        /// Represents a string value.
+        #[prost(string, tag = "3")]
+        StringValue(::prost::alloc::string::String),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointGroup {
     /// Group id
-    #[prost(map = "string, message", tag = "1")]
-    pub group_id: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<GroupId>,
     /// Points in the group
     #[prost(message, repeated, tag = "2")]
     pub hits: ::prost::alloc::vec::Vec<ScoredPoint>,

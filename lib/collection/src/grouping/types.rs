@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
-use segment::types::{ExtendedPointId, PointGroup, ScoredPoint};
+use segment::types::{ExtendedPointId, GroupId, PointGroup, ScoredPoint};
 use AggregatorError::{BadKeyType, KeyNotFound};
 
 #[derive(PartialEq, Debug)]
@@ -13,7 +13,6 @@ pub(super) enum AggregatorError {
 pub(super) struct Group {
     pub hits: Vec<HashablePoint>,
     pub key: GroupKey,
-    pub group_by: String,
 }
 
 impl Group {
@@ -29,22 +28,16 @@ impl Group {
 
 impl From<Group> for PointGroup {
     fn from(group: Group) -> Self {
-        let mut group_id = serde_json::Map::new();
-        group_id.insert(group.group_by, group.key.into());
-
         Self {
             hits: group.hits.into_iter().map(|hp| hp.0).collect(),
-            group_id,
+            id: group.key.0,
         }
     }
 }
 
 /// Abstraction over serde_json::Value to be used as a key in a HashMap/HashSet
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
-pub(super) enum GroupKey {
-    String(String),
-    Number(serde_json::Number),
-}
+pub(super) struct GroupKey(GroupId);
 
 impl TryFrom<serde_json::Value> for GroupKey {
     type Error = AggregatorError;
@@ -57,18 +50,25 @@ impl TryFrom<serde_json::Value> for GroupKey {
             _ => value,
         };
         match value {
-            serde_json::Value::String(s) => Ok(Self::String(s)),
-            serde_json::Value::Number(n) => Ok(Self::Number(n)),
+            serde_json::Value::String(s) => Ok(Self(GroupId::String(s))),
+            serde_json::Value::Number(n) => Ok(Self(GroupId::Number(n))),
             _ => Err(BadKeyType),
         }
+    }
+}
+
+#[cfg(test)]
+impl From<&str> for GroupKey {
+    fn from(s: &str) -> Self {
+        Self(GroupId::String(s.to_string()))
     }
 }
 
 impl From<GroupKey> for serde_json::Value {
     fn from(key: GroupKey) -> Self {
         match key {
-            GroupKey::String(s) => serde_json::Value::String(s),
-            GroupKey::Number(n) => serde_json::Value::Number(n),
+            GroupKey(GroupId::String(s)) => serde_json::Value::String(s),
+            GroupKey(GroupId::Number(n)) => serde_json::Value::Number(n),
         }
     }
 }
@@ -118,6 +118,7 @@ impl From<HashablePoint> for ScoredPoint {
 
 #[cfg(test)]
 mod test {
+    use segment::types::GroupId;
 
     #[test]
     fn group_key_from_values() {
@@ -133,14 +134,17 @@ mod test {
         let int_array = GroupKey::try_from(json!([5, 6, 7])).unwrap();
         let str_array = GroupKey::try_from(json!(["a", "b", "c"])).unwrap();
 
-        assert_eq!(string, GroupKey::String("string".to_string()));
-        assert_eq!(int, GroupKey::Number(serde_json::Number::from(1)));
+        assert_eq!(string, GroupKey(GroupId::String("string".to_string())));
+        assert_eq!(int, GroupKey(GroupId::Number(serde_json::Number::from(1))));
         assert_eq!(
             float,
-            GroupKey::Number(serde_json::Number::from_f64(2.42).unwrap())
+            GroupKey(GroupId::Number(serde_json::Number::from_f64(2.42).unwrap()))
         );
-        assert_eq!(int_array, GroupKey::Number(serde_json::Number::from(5)));
-        assert_eq!(str_array, GroupKey::String("a".to_string()));
+        assert_eq!(
+            int_array,
+            GroupKey(GroupId::Number(serde_json::Number::from(5)))
+        );
+        assert_eq!(str_array, GroupKey(GroupId::String("a".to_string())));
 
         let bad_key = GroupKey::try_from(json!(true));
         assert!(bad_key.is_err());
