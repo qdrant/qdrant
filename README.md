@@ -14,7 +14,7 @@
     <a href="https://qdrant.to/roadmap"><img src="https://img.shields.io/badge/Roadmap-2023-bc1439.svg" alt="Roadmap 2023"></a>
 </p>
 
-**Qdrant** (read: _quadrant_ ) is a vector similarity search engine and vector database.
+**Qdrant** (read: _quadrant_) is a vector similarity search engine and vector database.
 It provides a production-ready service with a convenient API to store, search, and manage points—vectors with an additional payload
 Qdrant is tailored to extended filtering support. It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications.
 
