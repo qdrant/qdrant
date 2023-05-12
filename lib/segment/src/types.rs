@@ -571,27 +571,45 @@ pub struct SegmentConfigV5 {
 }
 
 impl From<SegmentConfigV5> for SegmentConfig {
-    fn from(old: SegmentConfigV5) -> Self {
-        let vector_data = old
+    fn from(old_segment: SegmentConfigV5) -> Self {
+        let vector_data = old_segment
             .vector_data
             .into_iter()
-            .map(|(vector_name, mut vector_data)| {
-                // Remove vector specific quantization config if no global one is set
-                // This is required because in some cases this was incorrectly set on the vector
-                // level
-                if old.quantization_config.is_none() {
-                    vector_data.quantization_config.take();
-                }
+            .map(|(vector_name, old_data)| {
+                let new_data = VectorDataConfig {
+                    size: old_data.size,
+                    distance: old_data.distance,
+                    hnsw_config: old_data
+                        .hnsw_config
+                        .as_ref()
+                        .or(match &old_segment.index {
+                            Indexes::Plain {} => None,
+                            Indexes::Hnsw(hnsw) => Some(hnsw),
+                        })
+                        .cloned(),
+                    // Use HNSW index if vector specific one is set, or fall back to segment index
+                    index: match old_data.hnsw_config {
+                        Some(hnsw_config) => Indexes::Hnsw(hnsw_config),
+                        None => old_segment.index.clone(),
+                    },
+                    // Remove vector specific quantization config if no segment one is set
+                    // This is required because in some cases this was incorrectly set on the vector
+                    // level
+                    quantization_config: old_segment
+                        .quantization_config
+                        .as_ref()
+                        .and(old_data.quantization_config),
+                    on_disk: old_data.on_disk,
+                };
 
-                (vector_name, vector_data.into())
+                (vector_name, new_data)
             })
             .collect();
 
         SegmentConfig {
             vector_data,
-            index: old.index,
-            storage_type: old.storage_type,
-            payload_storage_type: old.payload_storage_type,
+            storage_type: old_segment.storage_type,
+            payload_storage_type: old_segment.payload_storage_type,
         }
     }
 }
@@ -643,19 +661,6 @@ pub struct VectorDataConfigV5 {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
-}
-
-impl From<VectorDataConfigV5> for VectorDataConfig {
-    fn from(old: VectorDataConfigV5) -> Self {
-        Self {
-            size: old.size,
-            distance: old.distance,
-            index: Indexes::Plain {},
-            hnsw_config: old.hnsw_config,
-            quantization_config: old.quantization_config,
-            on_disk: old.on_disk,
-        }
-    }
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
