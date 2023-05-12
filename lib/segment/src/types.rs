@@ -294,7 +294,7 @@ pub struct SearchParams {
     pub quantization: Option<QuantizationSearchParams>,
 }
 
-/// Vector index configuration of the segment
+/// Vector index configuration
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
@@ -305,6 +305,15 @@ pub enum Indexes {
     /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
     /// but require additional space to store index and additional time to build it.
     Hnsw(HnswConfig),
+}
+
+impl Indexes {
+    pub fn is_indexed(&self) -> bool {
+        match self {
+            Indexes::Plain {} => false,
+            Indexes::Hnsw(_) => true,
+        }
+    }
 }
 
 /// Config of HNSW index
@@ -505,8 +514,6 @@ pub enum PayloadStorageType {
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_data: HashMap<String, VectorDataConfig>,
-    /// Type of index used for search
-    pub index: Indexes,
     /// Type of vector storage
     pub storage_type: StorageType,
     /// Defines payload storage type
@@ -526,11 +533,16 @@ impl SegmentConfig {
             .and_then(|v| v.quantization_config.as_ref())
     }
 
-    pub fn is_vector_indexed(&self) -> bool {
-        match self.index {
-            Indexes::Plain {} => false,
-            Indexes::Hnsw(_) => true,
-        }
+    pub fn is_any_vector_indexed(&self) -> bool {
+        self.vector_data
+            .values()
+            .any(|config| config.index.is_indexed())
+    }
+
+    pub fn are_all_vectors_indexed(&self) -> bool {
+        self.vector_data
+            .values()
+            .all(|config| config.index.is_indexed())
     }
 
     pub fn is_memmaped(&self) -> bool {
@@ -592,6 +604,8 @@ pub struct VectorDataConfig {
     pub size: usize,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Type of index used for search
+    pub index: Indexes,
     /// Vector specific HNSW config that overrides collection config
     #[serde(default)]
     pub hnsw_config: Option<HnswConfig>,
@@ -636,6 +650,7 @@ impl From<VectorDataConfigV5> for VectorDataConfig {
         Self {
             size: old.size,
             distance: old.distance,
+            index: Indexes::Plain {},
             hnsw_config: old.hnsw_config,
             quantization_config: old.quantization_config,
             on_disk: old.on_disk,

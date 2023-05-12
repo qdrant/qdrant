@@ -82,10 +82,10 @@ impl IndexingOptimizer {
                 }
 
                 let segment_config = read_segment.config();
-                let is_vector_indexed = segment_config.is_vector_indexed();
+                let is_any_vector_indexed = segment_config.is_any_vector_indexed();
                 let is_memmaped = segment_config.is_memmaped();
 
-                if !(is_vector_indexed || is_memmaped) {
+                if !(is_any_vector_indexed || is_memmaped) {
                     return None;
                 }
 
@@ -128,7 +128,7 @@ impl IndexingOptimizer {
                 }
 
                 // Apply indexing to plain segments which have grown too big
-                let is_vector_indexed = segment_config.is_vector_indexed();
+                let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
                 let is_memmaped = segment_config.is_memmaped();
 
                 let big_for_mmap = vector_size
@@ -143,7 +143,7 @@ impl IndexingOptimizer {
                         .saturating_mul(BYTES_IN_KB);
 
                 let require_indexing =
-                    (big_for_mmap && !is_memmaped) || (big_for_index && !is_vector_indexed);
+                    (big_for_mmap && !is_memmaped) || (big_for_index && !are_all_vectors_indexed);
 
                 require_indexing.then_some((*idx, vector_size))
             })

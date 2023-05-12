@@ -126,35 +126,29 @@ fn create_segment(
                 .load_quantization(&quantized_data_path)?;
         }
 
-        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &config.index {
+        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &vector_config.index {
             Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
                 id_tracker.clone(),
                 vector_storage.clone(),
                 payload_index.clone(),
             ))),
-            Indexes::Hnsw(collection_hnsw_config) => {
-                let hnsw_config = vector_config
-                    .hnsw_config
-                    .clone()
-                    .unwrap_or_else(|| collection_hnsw_config.clone());
-                sp(if hnsw_config.on_disk == Some(true) {
-                    VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
-                        &vector_index_path,
-                        id_tracker.clone(),
-                        vector_storage.clone(),
-                        payload_index.clone(),
-                        hnsw_config,
-                    )?)
-                } else {
-                    VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
-                        &vector_index_path,
-                        id_tracker.clone(),
-                        vector_storage.clone(),
-                        payload_index.clone(),
-                        hnsw_config,
-                    )?)
-                })
-            }
+            Indexes::Hnsw(vector_hnsw_config) => sp(if vector_hnsw_config.on_disk == Some(true) {
+                VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
+                    &vector_index_path,
+                    id_tracker.clone(),
+                    vector_storage.clone(),
+                    payload_index.clone(),
+                    vector_hnsw_config.clone(),
+                )?)
+            } else {
+                VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
+                    &vector_index_path,
+                    id_tracker.clone(),
+                    vector_storage.clone(),
+                    payload_index.clone(),
+                    vector_hnsw_config.clone(),
+                )?)
+            }),
         };
 
         vector_data.insert(
@@ -166,9 +160,10 @@ fn create_segment(
         );
     }
 
-    let segment_type = match config.index {
-        Indexes::Plain {} => SegmentType::Plain,
-        Indexes::Hnsw { .. } => SegmentType::Indexed,
+    let segment_type = if config.is_any_vector_indexed() {
+        SegmentType::Indexed
+    } else {
+        SegmentType::Plain
     };
 
     let appendable_flag =

@@ -22,6 +22,7 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
 use crate::config::CollectionParams;
+use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 const BYTES_IN_KB: usize = 1024;
@@ -77,7 +78,6 @@ pub trait SegmentOptimizer {
         let config = SegmentConfig {
             vector_data: collection_params
                 .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?,
-            index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
                 true => PayloadStorageType::OnDisk,
@@ -148,14 +148,26 @@ pub trait SegmentOptimizer {
         let is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
+        let mut vector_data = collection_params
+            .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?;
+
+        // If indexing, change to HNSW index
+        if is_indexed {
+            let collection_hnsw = self.hnsw_config();
+            vector_data.iter_mut().for_each(|(vector_name, config)| {
+                let param_hnsw = collection_params
+                    .vectors
+                    .get_params(vector_name)
+                    .and_then(|params| params.hnsw_config);
+                let vector_hnsw = param_hnsw
+                    .and_then(|c| c.update(collection_hnsw).ok())
+                    .unwrap_or_else(|| collection_hnsw.clone());
+                config.index = Indexes::Hnsw(vector_hnsw);
+            });
+        }
+
         let optimized_config = SegmentConfig {
-            vector_data: collection_params
-                .get_all_vector_params(self.hnsw_config(), self.quantization_config().as_ref())?,
-            index: if is_indexed {
-                Indexes::Hnsw(self.hnsw_config().clone())
-            } else {
-                Indexes::Plain {}
-            },
+            vector_data,
             storage_type: if is_on_disk {
                 StorageType::Mmap
             } else {

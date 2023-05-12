@@ -1508,12 +1508,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
+                    index: Indexes::Plain {},
                     hnsw_config: None,
                     quantization_config: None,
                     on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             ..Default::default()
         };
@@ -1580,12 +1580,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
+                    index: Indexes::Plain {},
                     hnsw_config: None,
                     quantization_config: None,
                     on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             ..Default::default()
         };
@@ -1671,12 +1671,12 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
+                    index: Indexes::Plain {},
                     hnsw_config: None,
                     quantization_config: None,
                     on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             ..Default::default()
         };
@@ -1761,12 +1761,12 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
+                    index: Indexes::Plain {},
                     hnsw_config: None,
                     quantization_config: None,
                     on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             ..Default::default()
         };
@@ -1794,12 +1794,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
+                    index: Indexes::Plain {},
                     hnsw_config: None,
                     quantization_config: None,
                     on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
             payload_storage_type: Default::default(),
         };

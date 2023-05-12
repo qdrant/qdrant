@@ -468,17 +468,10 @@ async fn search_in_segment(
 ///
 /// If the index is `Plain`, `None` is returned.
 fn get_hnsw_ef_construct(config: SegmentConfig, vector_name: &str) -> Option<usize> {
-    match config.index {
+    config.vector_data.get(vector_name).and_then(|config| match &config.index {
         Indexes::Plain {} => None,
-        Indexes::Hnsw(hnsw_config) => Some(
-            config
-                .vector_data
-                .get(vector_name)
-                .and_then(|c| c.hnsw_config.as_ref())
-                .map(|c| c.ef_construct)
-                .unwrap_or(hnsw_config.ef_construct),
-        ),
-    }
+        Indexes::Hnsw(hnsw) => Some(hnsw),
+    }).map(|hnsw| hnsw.ef_construct)
 }
 
 #[cfg(test)]
