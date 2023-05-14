@@ -13,6 +13,13 @@ storage:
     # Number of parallel threads used for search operations. If 0 - auto selection.
     max_search_threads: 4
 
+  wal:
+    # Size of a single WAL segment
+    wal_capacity_mb: 1
+
+    # Number of WAL segments to create ahead of actual data requirement
+    wal_segments_ahead: 0
+
   optimizers:
     # Minimum interval between forced flushes.
     flush_interval_sec: 5

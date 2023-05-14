@@ -395,6 +395,8 @@ pub trait SegmentOptimizer {
 
         let tmp_segment = self.temp_segment()?;
 
+        panic!("test");
+
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let proxy_created_indexes = Arc::new(RwLock::new(HashMap::<
