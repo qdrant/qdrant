@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::hash::Hash;
+
 use segment::types::{GroupId, PointGroup, PointIdType, ScoredPoint};
+
 use crate::grouping::types::AggregatorError::BadKeyType;
 
 #[derive(PartialEq, Debug)]
