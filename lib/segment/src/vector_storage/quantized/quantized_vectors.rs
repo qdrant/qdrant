@@ -222,7 +222,7 @@ impl QuantizedVectors {
         Ok(QuantizedVectors {
             storage_impl: quantized_store,
             config,
-            path: data_path,
+            path: path.to_path_buf(),
             distance,
         })
     }
