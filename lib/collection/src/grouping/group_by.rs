@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::future::Future;
 
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, PointGroup,
     ScoredPoint, WithPayloadInterface, WithVector,
@@ -9,11 +11,10 @@ use tokio::sync::RwLockReadGuard;
 
 use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
-use crate::grouping::types::HashablePoint;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
     BaseGroupRequest, CollectionResult, RecommendGroupsRequest, RecommendRequest,
-    SearchGroupsRequest, SearchRequest,
+    SearchGroupsRequest, SearchRequest, UsingVector,
 };
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
@@ -28,6 +29,19 @@ pub enum SourceRequest {
 }
 
 impl SourceRequest {
+    fn vector_field_name(&self) -> &str {
+        match self {
+            SourceRequest::Search(request) => request.vector.get_name(),
+            SourceRequest::Recommend(request) => {
+                if let Some(UsingVector::Name(name)) = &request.using {
+                    name
+                } else {
+                    DEFAULT_VECTOR_NAME
+                }
+            }
+        }
+    }
+
     fn merge_filter(&mut self, filter: &Filter) {
         match self {
             SourceRequest::Search(request) => {
@@ -227,8 +241,19 @@ where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
-    let mut aggregator =
-        GroupsAggregator::new(request.limit, request.per_group, request.group_by.clone());
+    let score_ordering = {
+        let vector_name = request.source.vector_field_name();
+        let collection_params = collection.collection_config.read().await;
+        let vector_params = collection_params.params.get_vector_params(vector_name)?;
+        vector_params.distance.distance_order()
+    };
+
+    let mut aggregator = GroupsAggregator::new(
+        request.limit,
+        request.per_group,
+        request.group_by.clone(),
+        score_ordering,
+    );
 
     // Try to complete amount of groups
     for _ in 0..MAX_GET_GROUPS_REQUESTS {
@@ -321,11 +346,10 @@ where
         .iter()
         .cloned()
         .flat_map(|group| group.hits)
-        .map(ScoredPoint::from)
         .collect();
 
     // enrich with payload and vector
-    let enriched_points = collection
+    let enriched_points: HashMap<_, _> = collection
         .fill_search_result_with_payload(
             bare_points,
             request.source.with_payload(),
@@ -335,7 +359,7 @@ where
         )
         .await?
         .into_iter()
-        .map(HashablePoint::from)
+        .map(|point| (point.id, point))
         .collect();
 
     // hydrate groups with enriched points
@@ -368,11 +392,11 @@ fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::HashMap;
 
     use segment::types::{Payload, ScoredPoint};
 
-    use crate::grouping::types::{Group, GroupKey, HashablePoint};
+    use crate::grouping::types::{Group, GroupKey};
 
     #[test]
     fn test_hydrated_from() {
@@ -422,7 +446,7 @@ mod tests {
         .for_each(|(key, points)| {
             let group = Group {
                 key: GroupKey::from(key),
-                hits: points.into_iter().map(HashablePoint::from).collect(),
+                hits: points.into_iter().collect(),
             };
             groups.push(group);
         });
@@ -461,7 +485,7 @@ mod tests {
             },
         ];
 
-        let set: HashSet<_> = hydrated.iter().cloned().map(HashablePoint::from).collect();
+        let set: HashMap<_, _> = hydrated.into_iter().map(|p| (p.id, p)).collect();
 
         // act
         groups.iter_mut().for_each(|group| group.hydrate_from(&set));
@@ -474,7 +498,13 @@ mod tests {
         let a = groups.get(0).unwrap();
         let b = groups.get(1).unwrap();
 
-        assert!(a.hits.iter().all(|x| x.payload() == Some(&payload_a)));
-        assert!(b.hits.iter().all(|x| x.payload() == Some(&payload_b)));
+        assert!(a
+            .hits
+            .iter()
+            .all(|x| x.payload.as_ref() == Some(&payload_a)));
+        assert!(b
+            .hits
+            .iter()
+            .all(|x| x.payload.as_ref() == Some(&payload_b)));
     }
 }

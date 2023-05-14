@@ -1,14 +1,16 @@
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
-use priority_queue::PriorityQueue;
-use segment::types::{ExtendedPointId, ScoredPoint};
+use ordered_float::OrderedFloat;
+use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
+use segment::types::{ExtendedPointId, Order, PointIdType, ScoreType, ScoredPoint};
 use serde_json::Value;
 
 use super::types::AggregatorError::{self, *};
-use super::types::{Group, GroupKey, HashablePoint};
+use super::types::{Group, GroupKey};
 
-type Hits = HashSet<HashablePoint>;
+type Hits = HashMap<PointIdType, ScoredPoint>;
 
 pub(super) struct GroupsAggregator {
     groups: HashMap<GroupKey, Hits>,
@@ -16,47 +18,85 @@ pub(super) struct GroupsAggregator {
     grouped_by: String,
     max_groups: usize,
     full_groups: HashSet<GroupKey>,
-    best_group_keys: PriorityQueue<GroupKey, HashablePoint>,
+    group_max_scores: HashMap<GroupKey, ScoreType>,
+    group_min_scores: HashMap<GroupKey, ScoreType>,
+    order: Order,
 }
 
 impl GroupsAggregator {
-    pub(super) fn new(groups: usize, group_size: usize, grouped_by: String) -> Self {
+    pub(super) fn new(groups: usize, group_size: usize, grouped_by: String, order: Order) -> Self {
         Self {
             groups: HashMap::with_capacity(groups),
             max_group_size: group_size,
             grouped_by,
             max_groups: groups,
             full_groups: HashSet::with_capacity(groups),
-            best_group_keys: PriorityQueue::with_capacity(groups),
+            group_max_scores: Default::default(),
+            group_min_scores: Default::default(),
+            order,
         }
     }
 
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
     fn add_point(&mut self, point: ScoredPoint) -> Result<(), AggregatorError> {
-        // if the key contains multiple values, grabs the first one
-        let group_key = point
+        // extract all values from the group_by field
+        let payload_values: Vec<_> = point
             .payload
             .as_ref()
-            .and_then(|p| p.get_value(&self.grouped_by).into_iter().next().cloned())
-            .ok_or(KeyNotFound)
-            .and_then(GroupKey::try_from)?;
+            .map(|p| {
+                p.get_value(&self.grouped_by)
+                    .values()
+                    .into_iter()
+                    .flat_map(|v| match v {
+                        Value::Array(arr) => arr.into_iter().collect(),
+                        _ => vec![v],
+                    })
+                    .collect()
+            })
+            .ok_or(KeyNotFound)?;
 
-        let point = HashablePoint::minimal_from(point);
+        let group_keys = payload_values
+            .into_iter()
+            .map(|v| GroupKey::try_from(v))
+            .collect::<Result<Vec<GroupKey>, AggregatorError>>()?;
 
-        let group = self
-            .groups
-            .entry(group_key.clone())
-            .or_insert_with(|| HashSet::with_capacity(self.max_group_size));
+        let unique_group_keys: Vec<_> = group_keys.into_iter().unique().collect();
 
-        group.insert(point.clone());
+        for group_key in unique_group_keys {
+            let group = self
+                .groups
+                .entry(group_key.clone())
+                .or_insert_with(|| HashMap::with_capacity(self.max_group_size));
 
-        if group.len() == self.max_group_size {
-            self.full_groups.insert(group_key.clone());
+            let entry = group.entry(point.id);
+
+            // if the point is already in the group, check if it has newer version
+            match entry {
+                Entry::Occupied(mut o) => {
+                    if o.get().version < point.version {
+                        o.insert(point.clone());
+                    }
+                }
+                Entry::Vacant(v) => {
+                    v.insert(point.clone());
+                }
+            }
+
+            if group.len() == self.max_group_size {
+                self.full_groups.insert(group_key.clone());
+            }
+
+            // Insert score if
+            self.group_max_scores
+                .entry(group_key.clone())
+                .and_modify(|e| *e = point.score.max(*e))
+                .or_insert(point.score);
+
+            self.group_min_scores
+                .entry(group_key.clone())
+                .and_modify(|e| *e = point.score.min(*e))
+                .or_insert(point.score);
         }
-
-        // keep track of best groups
-        self.best_group_keys.push_increase(group_key, point);
-
         Ok(())
     }
 
@@ -74,22 +114,44 @@ impl GroupsAggregator {
         self.groups.len()
     }
 
+    /// Return `max_groups` number of keys of the groups with the best score
+    fn best_group_keys(&self) -> Vec<&GroupKey> {
+        match self.order {
+            Order::LargeBetter => {
+                self.group_max_scores
+                    .iter()
+                    .sorted_by_key(|(_, score)| OrderedFloat(**score))
+                    .rev() // Large goes first
+                    .take(self.max_groups)
+                    .map(|(k, _)| k)
+                    .collect()
+            }
+            Order::SmallBetter => self
+                .group_min_scores
+                .iter()
+                .sorted_by_key(|(_, score)| OrderedFloat(**score))
+                .take(self.max_groups)
+                .map(|(k, _)| k)
+                .collect(),
+        }
+    }
+
     // Gets the keys of the groups that have less than the max group size
     pub(super) fn keys_of_unfilled_best_groups(&self) -> Vec<Value> {
-        self.best_group_keys
-            .clone()
-            .into_sorted_vec()
+        let best_group_keys = self.best_group_keys();
+        best_group_keys
             .into_iter()
-            .take(self.max_groups)
-            .filter_map(|key| {
-                let hits = self.groups.get(&key)?;
-
-                if hits.len() < self.max_group_size {
-                    Some(Value::from(key))
-                } else {
-                    None
-                }
+            .filter(|key| {
+                self.groups
+                    .get(key)
+                    .map(|g| g.len() < self.max_group_size)
+                    .unwrap_or_else(|| {
+                        debug_assert!(false, "group key {:?} not found", key);
+                        true
+                    }) // if the group doesn't exist, it is not full
             })
+            .cloned()
+            .map(Value::from)
             .collect()
     }
 
@@ -100,12 +162,18 @@ impl GroupsAggregator {
 
     /// Gets the amount of best groups that have reached the max group size
     pub(super) fn len_of_filled_best_groups(&self) -> usize {
-        self.best_group_keys
-            .clone()
-            .into_sorted_vec()
-            .iter()
-            .take(self.max_groups)
-            .filter(|key| self.full_groups.contains(key))
+        let best_group_keys = self.best_group_keys();
+        best_group_keys
+            .into_iter()
+            .filter(|key| {
+                self.groups
+                    .get(key)
+                    .map(|g| g.len() >= self.max_group_size)
+                    .unwrap_or_else(|| {
+                        debug_assert!(false, "group key {:?} not found", key);
+                        false
+                    }) // if the group doesn't exist, it is not full
+            })
             .count()
     }
 
@@ -114,330 +182,283 @@ impl GroupsAggregator {
         self.groups
             .iter()
             .flat_map(|(_, hits)| hits.iter())
-            .map(|p| p.id())
+            .map(|(pid, _)| *pid)
             .collect()
     }
 
     /// Returns the best groups sorted by their best hit. The hits are sorted too.
     pub(super) fn distill(mut self) -> Vec<Group> {
-        self.best_group_keys
-            .clone()
-            .into_sorted_vec()
-            .into_iter()
-            .filter_map(|key| {
-                let hits = self
-                    .groups
-                    .remove(&key)? // it should always have it
-                    .into_iter()
-                    .sorted_by(|a, b| b.cmp(a))
-                    .take(self.max_group_size)
-                    .collect::<Vec<_>>();
+        let best_groups: Vec<_> = self.best_group_keys().into_iter().cloned().collect();
+        let mut groups = Vec::with_capacity(best_groups.len());
 
-                Some(Group { hits, key })
-            })
-            .take(self.max_groups)
-            .collect()
+        for group_key in best_groups {
+            let mut group = self.groups.remove(&group_key).unwrap();
+            let scored_points_iter = group.drain().map(|(_, hit)| hit);
+            let hits = match self.order {
+                Order::LargeBetter => {
+                    peek_top_largest_iterable(scored_points_iter, self.max_group_size)
+                }
+                Order::SmallBetter => {
+                    peek_top_smallest_iterable(scored_points_iter, self.max_group_size)
+                }
+            };
+            groups.push(Group {
+                hits,
+                key: group_key,
+            });
+        }
+
+        groups
     }
 }
 
 #[cfg(test)]
 mod unit_tests {
 
-    use segment::types::Payload;
+    use segment::types::{Payload, ScoreType};
     use serde_json::json;
 
     use super::*;
 
+    fn point(idx: u64, score: ScoreType, payloads: Value) -> ScoredPoint {
+        ScoredPoint {
+            id: idx.into(),
+            version: 0,
+            score,
+            payload: Some(Payload::from(serde_json::json!({ "docId": payloads }))),
+            vector: None,
+        }
+    }
+
+    fn empty_point(idx: u64, score: ScoreType) -> ScoredPoint {
+        ScoredPoint {
+            id: idx.into(),
+            version: 0,
+            score,
+            payload: None,
+            vector: None,
+        }
+    }
+
+    #[test]
+    fn test_group_with_multiple_payload_values() {
+        let scored_points = vec![
+            point(1, 0.99, json!(["a", "a"])),
+            point(2, 0.85, json!(["a", "b"])),
+            point(3, 0.75, json!("b")),
+        ];
+
+        let mut aggregator = GroupsAggregator::new(3, 2, "docId".to_string(), Order::LargeBetter);
+        for point in scored_points {
+            aggregator.add_point(point).unwrap();
+        }
+
+        let result = aggregator.distill();
+
+        assert_eq!(result.len(), 2);
+
+        assert_eq!(result[0].hits.len(), 2);
+        assert_eq!(result[0].hits[0].id, 1.into());
+        assert_eq!(result[0].hits[1].id, 2.into());
+
+        assert_eq!(result[1].hits.len(), 2);
+        assert_eq!(result[1].hits[0].id, 2.into());
+        assert_eq!(result[1].hits[1].id, 3.into());
+    }
+
+    struct Case {
+        point: ScoredPoint,
+        key: Value,
+        group_size: usize,
+        groups_count: usize,
+        expected_result: Result<(), AggregatorError>,
+    }
+
+    impl Case {
+        fn new(
+            key: Value,
+            group_size: usize,
+            groups_count: usize,
+            expected_result: Result<(), AggregatorError>,
+            point: ScoredPoint,
+        ) -> Self {
+            Self {
+                point,
+                key,
+                group_size,
+                groups_count,
+                expected_result,
+            }
+        }
+    }
+
     #[test]
     fn it_adds_single_points() {
-        let mut aggregator = GroupsAggregator::new(3, 2, "docId".to_string());
+        let mut aggregator = GroupsAggregator::new(4, 3, "docId".to_string(), Order::LargeBetter);
 
         // cases
+        #[cfg_attr(rustfmt, rustfmt_skip)]
         [
-            (
-                // point
-                ScoredPoint {
-                    id: 1.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": "a"}))),
-                    vector: None,
-                },
-                // key
-                json!("a"),
-                // expected group size
-                1,
-                // expected groups count
-                1,
-                // expected result
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 1.into(), // same id as the previous one
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": "a"}))),
-                    vector: None,
-                },
-                json!("a"),
-                1, // should not add it because it already has a point with the same id
-                1,
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 2.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": ["a", "b"]}))),
-                    vector: None,
-                },
-                json!("a"),
-                2,
-                1, // add it to same group
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 3.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": "a"}))),
-                    vector: None,
-                },
-                json!("a"),
-                3, // group already full, but will still keep growing (we want the best results)
-                1,
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 4.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": "b"}))),
-                    vector: None,
-                },
-                json!("b"),
-                1,
-                2,
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 5.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": 3}))),
-                    vector: None,
-                },
-                json!(3),
-                1,
-                3,
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 6.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": "d"}))),
-                    vector: None,
-                },
-                json!("d"),
-                1, // already enough groups, but we still want to grow to keep the best ones
-                4,
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 7.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": "b"}))),
-                    vector: None,
-                },
-                json!("b"),
-                2,
-                4,
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 8.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": false}))),
-                    vector: None,
-                },
-                json!("false"),
-                0,
-                4,
-                Err(BadKeyType),
-            ),
-            (
-                ScoredPoint {
-                    id: 9.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: None,
-                    vector: None,
-                },
-                json!("none"),
-                0,
-                4,
-                Err(KeyNotFound),
-            ),
-            (
-                ScoredPoint {
-                    id: 10.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": 3}))),
-                    vector: None,
-                },
-                json!(3),
-                2,
-                4,
-                Ok(()),
-            ),
-            (
-                ScoredPoint {
-                    id: 11.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: Some(Payload::from(serde_json::json!({"docId": 3}))),
-                    vector: None,
-                },
-                json!(3),
-                3,
-                4,
-                Ok(()),
-            ),
+            Case::new(json!("a"), 1, 1, Ok(()), point(1, 0.99, json!("a"))),
+            Case::new(json!("a"), 1, 1, Ok(()), point(1, 0.97, json!("a"))), // should not add it because it already has a point with the same id
+            Case::new(json!("a"), 2, 2, Ok(()), point(2, 0.81, json!(["a", "b"]))), // to both groups
+            Case::new(json!("b"), 2, 2, Ok(()), point(3, 0.84, json!("b"))), // check that `b` of size 2
+            Case::new(json!("a"), 3, 2, Ok(()), point(4, 0.9, json!("a"))), // grow beyond the max groups, as we sort later
+            Case::new(json!(3), 1, 3, Ok(()), point(5, 0.4, json!(3))),     // check that `3` of size 2
+            Case::new(json!("d"), 1, 4, Ok(()), point(6, 0.3, json!("d"))),
+            Case::new(json!("a"), 4, 4, Ok(()), point(100, 0.31, json!("a"))), // small score 'a'
+            Case::new(json!("a"), 5, 4, Ok(()), point(101, 0.32, json!("a"))), // small score 'a'
+            Case::new(json!("a"), 6, 4, Ok(()), point(102, 0.33, json!("a"))), // small score 'a'
+            Case::new(json!("a"), 7, 4, Ok(()), point(103, 0.34, json!("a"))), // small score 'a'
+            Case::new(json!("a"), 8, 4, Ok(()), point(104, 0.35, json!("a"))), // small score 'a'
+            Case::new(json!("a"), 9, 4, Ok(()), point(105, 0.36, json!("a"))), // small score 'a'
+            Case::new(json!("b"), 3, 4, Ok(()), point(7, 1.0, json!("b"))),
+            Case::new(json!("false"), 0, 4, Err(BadKeyType), point(8, 1.0, json!(false))),
+            Case::new(json!("none"), 0, 4, Err(KeyNotFound), empty_point(9, 1.0)),
+            Case::new(json!(3), 2, 4, Ok(()), point(10, 0.6, json!(3))),
+            Case::new(json!(3), 3, 4, Ok(()), point(11, 0.1, json!(3))),
         ]
         .into_iter()
         .enumerate()
-        .for_each(|(_case, (point, key, size, groups, res))| {
-            let result = aggregator.add_point(point);
+        .for_each(|(case_idx, case)| {
+            let result = aggregator.add_point(case.point);
 
-            assert_eq!(result, res, "case {_case}");
+            assert_eq!(result, case.expected_result, "case {case_idx}");
 
-            assert_eq!(aggregator.len(), groups, "case {_case}");
+            assert_eq!(aggregator.len(), case.groups_count, "case {case_idx}");
 
-            let key = &GroupKey::try_from(key).unwrap();
-            if size > 0 {
+            let key = &GroupKey::try_from(&case.key).unwrap();
+            if case.group_size > 0 {
                 assert_eq!(
                     aggregator.groups.get(key).unwrap().len(),
-                    size,
-                    "case {_case}"
+                    case.group_size,
+                    "case {case_idx}"
                 );
             } else {
-                assert!(aggregator.groups.get(key).is_none(), "case {_case}");
+                assert!(aggregator.groups.get(key).is_none(), "case {case_idx}");
             }
         });
 
         // assert final groups
         assert_eq!(aggregator.full_groups.len(), 3);
 
-        let groups = aggregator.groups;
+        assert_eq!(aggregator.keys_of_unfilled_best_groups(), vec![json!("d")]);
 
-        [
-            (
-                GroupKey::from("a"),
-                [
-                    ScoredPoint {
-                        id: 1.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    },
-                    ScoredPoint {
-                        id: 2.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    },
-                    ScoredPoint {
-                        id: 3.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    },
-                ]
-                .to_vec(),
-            ),
+        assert_eq!(aggregator.len_of_filled_best_groups(), 3);
+
+        let groups = aggregator.distill();
+
+        #[cfg_attr(rustfmt, rustfmt_skip)]
+        let expected_groups = vec![
             (
                 GroupKey::from("b"),
-                [
-                    ScoredPoint {
-                        id: 4.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    },
-                    ScoredPoint {
-                        id: 7.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    },
-                ]
-                .to_vec(),
+                vec![
+                    empty_point(7, 1.0),
+                    empty_point(3, 0.84),
+                    empty_point(2, 0.81),
+                ],
             ),
             (
-                GroupKey::try_from(json!(3)).unwrap(),
-                [
-                    ScoredPoint {
-                        id: 5.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    },
-                    ScoredPoint {
-                        id: 10.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    },
-                    ScoredPoint {
-                        id: 11.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                    },
-                ]
-                .to_vec(),
+                GroupKey::from("a"),
+                vec![
+                    empty_point(1, 0.99),
+                    empty_point(4, 0.9),
+                    empty_point(2, 0.81)
+                ],
+            ),
+            (
+                GroupKey::try_from(&json!(3)).unwrap(),
+                vec![
+                    empty_point(10, 0.6),
+                    empty_point(5, 0.4),
+                    empty_point(11, 0.1),
+                ],
             ),
             (
                 GroupKey::from("d"),
-                [ScoredPoint {
-                    id: 6.into(),
-                    version: 0,
-                    score: 1.0,
-                    payload: None,
-                    vector: None,
-                }]
-                .to_vec(),
+                vec![
+                    empty_point(6, 0.3),
+                ],
             ),
+        ];
+
+        for ((key, expected_group_points), group) in
+            expected_groups.into_iter().zip(groups.into_iter())
+        {
+            assert_eq!(key, group.key);
+            let expected_id_score: Vec<_> = expected_group_points
+                .into_iter()
+                .map(|x| (x.id, x.score))
+                .collect();
+            let group_id_score: Vec<_> = group.hits.into_iter().map(|x| (x.id, x.score)).collect();
+            assert_eq!(expected_id_score, group_id_score);
+        }
+    }
+
+    #[test]
+    fn test_aggregate_less_groups() {
+        let mut aggregator = GroupsAggregator::new(3, 2, "docId".to_string(), Order::LargeBetter);
+
+        // cases
+        [
+            point(1, 0.99, json!("a")),
+            point(1, 0.97, json!("a")), // should not add it because it already has a point with the same id
+            point(2, 0.81, json!(["a", "b"])), // to both groups
+            point(3, 0.84, json!("b")), // check that `b` of size 2
+            point(4, 0.9, json!("a")),  // grow beyond the max groups, as we sort later
+            point(5, 0.4, json!(3)),    // check that `3` of size 2
+            point(6, 0.3, json!("d")),
+            point(100, 0.31, json!("a")), // small score 'a'
+            point(101, 0.32, json!("a")), // small score 'a'
+            point(102, 0.33, json!("a")), // small score 'a'
+            point(103, 0.34, json!("a")), // small score 'a'
+            point(104, 0.35, json!("a")), // small score 'a'
+            point(105, 0.36, json!("a")), // small score 'a'
+            point(7, 1.0, json!("b")),
+            point(10, 0.6, json!(3)),
+            point(11, 0.1, json!(3)),
         ]
-        .iter()
-        .for_each(|(key, points)| {
-            let group = groups.get(key).unwrap();
-
-            for point in points {
-                assert!(group.contains(&point.clone().into()));
-            }
-
-            assert_eq!(group.len(), points.len());
+        .into_iter()
+        .for_each(|point| {
+            aggregator.add_point(point).unwrap();
         });
+
+        let groups = aggregator.distill();
+
+        #[cfg_attr(rustfmt, rustfmt_skip)]
+            let expected_groups = vec![
+            (
+                GroupKey::from("b"),
+                vec![
+                    empty_point(7, 1.0),
+                    empty_point(3, 0.84),
+                ],
+            ),
+            (
+                GroupKey::from("a"),
+                vec![
+                    empty_point(1, 0.99),
+                    empty_point(4, 0.9),
+                ],
+            ),
+            (
+                GroupKey::try_from(&json!(3)).unwrap(),
+                vec![
+                    empty_point(10, 0.6),
+                    empty_point(5, 0.4),
+                ],
+            ),
+        ];
+        for ((key, expected_group_points), group) in
+            expected_groups.into_iter().zip(groups.into_iter())
+        {
+            assert_eq!(key, group.key);
+            let expected_id_score: Vec<_> = expected_group_points
+                .into_iter()
+                .map(|x| (x.id, x.score))
+                .collect();
+            let group_id_score: Vec<_> = group.hits.into_iter().map(|x| (x.id, x.score)).collect();
+            assert_eq!(expected_id_score, group_id_score);
+        }
     }
 }
