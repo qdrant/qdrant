@@ -13,6 +13,8 @@ pub mod segment_constructor;
 pub mod spaces;
 pub mod telemetry;
 
+#[allow(deprecated)]
+mod compat;
 pub mod data_types;
 #[allow(deprecated)]
 pub mod types;

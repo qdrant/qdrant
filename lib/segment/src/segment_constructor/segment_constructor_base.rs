@@ -25,8 +25,7 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
-    Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentConfigV5, SegmentState,
-    SegmentStateV5, SegmentType, SeqNumberType, StorageTypeV5, VectorDataConfigV5,
+    Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
 };
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
@@ -257,7 +256,10 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 }
 
 /// Load v0.3.* segment data and migrate to current version
+#[allow(deprecated)]
 fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
+    use crate::compat::{SegmentConfigV5, StorageTypeV5, VectorDataConfigV5};
+
     #[derive(Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[deprecated]
@@ -323,7 +325,10 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
 }
 
 /// Load v0.5.0 segment data and migrate to current version
+#[allow(deprecated)]
 fn load_segment_state_v5(segment_path: &Path) -> OperationResult<SegmentState> {
+    use crate::compat::SegmentStateV5;
+
     let path = segment_path.join(SEGMENT_STATE_FILE);
 
     let mut contents = String::new();
