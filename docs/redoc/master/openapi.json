@@ -6794,8 +6794,8 @@
       "SegmentConfig": {
         "type": "object",
         "required": [
-          "index",
-          "storage_type",
+          "appendable",
+          "payload_storage_type",
           "vector_data"
         ],
         "properties": {
@@ -6805,26 +6805,12 @@
               "$ref": "#/components/schemas/VectorDataConfig"
             }
           },
-          "index": {
-            "$ref": "#/components/schemas/Indexes"
-          },
-          "storage_type": {
-            "$ref": "#/components/schemas/StorageType"
+          "appendable": {
+            "description": "Whether this segment should support appending new data.",
+            "type": "boolean"
           },
           "payload_storage_type": {
             "$ref": "#/components/schemas/PayloadStorageType"
-          },
-          "quantization_config": {
-            "description": "Quantization parameters. If none - quantization is disabled.",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
           }
         }
       },
@@ -6833,11 +6819,13 @@
         "type": "object",
         "required": [
           "distance",
+          "index",
+          "on_disk",
           "size"
         ],
         "properties": {
           "size": {
-            "description": "Size of a vectors used",
+            "description": "Size/dimensionality of the vectors used",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -6845,21 +6833,11 @@
           "distance": {
             "$ref": "#/components/schemas/Distance"
           },
-          "hnsw_config": {
-            "description": "Vector specific HNSW config that overrides collection config",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HnswConfig"
-              },
-              {
-                "nullable": true
-              }
-            ]
+          "index": {
+            "$ref": "#/components/schemas/Indexes"
           },
           "quantization_config": {
             "description": "Vector specific quantization config that overrides collection config",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QuantizationConfig"
@@ -6870,14 +6848,13 @@
             ]
           },
           "on_disk": {
-            "description": "If true - vectors will not be stored in memory. Instead, it will store vectors on mmap-files. If enabled, search performance will defined by disk speed and fraction of vectors that fit in RAM.",
-            "type": "boolean",
-            "nullable": true
+            "description": "False to keep in memory, true to store on disk. If true, memory mapped files are used. Then search performance is defined by disk speed and the fraction fraction of vectors that fit in RAM.",
+            "type": "boolean"
           }
         }
       },
       "Indexes": {
-        "description": "Vector index configuration of the segment",
+        "description": "Vector index configuration",
         "oneOf": [
           {
             "description": "Do not use any index, scan whole vector collection during search. Guarantee 100% precision, but may be time consuming on large collections.",
@@ -6914,39 +6891,6 @@
               },
               "options": {
                 "$ref": "#/components/schemas/HnswConfig"
-              }
-            }
-          }
-        ]
-      },
-      "StorageType": {
-        "description": "Type of vector storage",
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "in_memory"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "mmap"
-                ]
               }
             }
           }
