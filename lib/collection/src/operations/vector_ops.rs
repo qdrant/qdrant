@@ -35,6 +35,7 @@ pub struct PointVectors {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct DeleteVectors {
     /// Point selector
+    #[serde(flatten)]
     pub point_selector: PointsSelector,
     /// Vector names
     #[serde(alias = "vectors")]

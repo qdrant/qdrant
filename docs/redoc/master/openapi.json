@@ -7618,14 +7618,18 @@
       },
       "DeleteVectors": {
         "type": "object",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PointIdsList"
+          },
+          {
+            "$ref": "#/components/schemas/FilterSelector"
+          }
+        ],
         "required": [
-          "point_selector",
           "vector"
         ],
         "properties": {
-          "point_selector": {
-            "$ref": "#/components/schemas/PointsSelector"
-          },
           "vector": {
             "description": "Vector names",
             "type": "array",
