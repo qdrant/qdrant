@@ -29,7 +29,7 @@ impl SegmentBuilder {
         temp_dir: &Path,
         segment_config: &SegmentConfig,
     ) -> OperationResult<Self> {
-        let segment = build_segment(temp_dir, segment_config)?;
+        let segment = build_segment(temp_dir, segment_config, true)?;
         let temp_path = segment.current_path.clone();
 
         let destination_path = segment_path.join(temp_path.file_name().unwrap());

@@ -34,6 +34,7 @@ pub fn build_simple_segment(
             index: Indexes::Plain {},
             ..Default::default()
         },
+        true,
     )
 }
 
@@ -72,6 +73,7 @@ pub fn build_multivec_segment(
             index: Indexes::Plain {},
             ..Default::default()
         },
+        true,
     )
 }
 

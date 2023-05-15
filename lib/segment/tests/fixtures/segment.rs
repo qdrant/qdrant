@@ -146,6 +146,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
             index: Indexes::Plain {},
             ..Default::default()
         },
+        true,
     )
     .unwrap();
 
