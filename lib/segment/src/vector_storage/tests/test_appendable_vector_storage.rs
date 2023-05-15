@@ -319,9 +319,11 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
             assert!((orig - quant).abs() < 0.15);
         }
     }
+    let files = borrowed_storage.files();
 
     // test save-load
     borrowed_storage.load_quantization(dir.path()).unwrap();
+    assert_eq!(files, borrowed_storage.files());
 
     let scorer_quant = borrowed_storage.quantized_storage().unwrap().raw_scorer(
         &query,
