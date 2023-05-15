@@ -31,9 +31,11 @@ use crate::index::visited_pool::VisitedList;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
+#[cfg(debug_assertions)]
+use crate::types::PointOffsetType;
 use crate::types::{
     default_quantization_ignore_value, default_quantization_rescore_value, FieldCondition, Filter,
-    HnswConfig, PointOffsetType, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
+    HnswConfig, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
 
