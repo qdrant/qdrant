@@ -146,7 +146,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("SearchPointGroups.group_by", "custom = \"crate::grpc::validate::validate_group_by_field\""),
             ("SearchPointGroups.vector_name", "custom = \"crate::grpc::validate::validate_not_empty\""),
-            ("SearchPointGroups.per_group", "range(min = 1)"),
+            ("SearchPointGroups.group_size", "range(min = 1)"),
             ("SearchPointGroups.limit", "range(min = 1)"),
             ("ScrollPoints.collection_name", "length(min = 1, max = 255)"),
             ("ScrollPoints.limit", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
@@ -155,7 +155,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendBatchPoints.recommend_points", ""),
             ("RecommendPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("RecommendPointGroups.group_by", "custom = \"crate::grpc::validate::validate_group_by_field\""),
-            ("RecommendPointGroups.per_group", "range(min = 1)"),
+            ("RecommendPointGroups.group_size", "range(min = 1)"),
             ("RecommendPointGroups.limit", "range(min = 1)"),
             ("CountPoints.collection_name", "length(min = 1, max = 255)"),
         ], &[])

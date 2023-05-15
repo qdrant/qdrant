@@ -47,8 +47,7 @@ impl From<GroupId> for serde_json::Value {
 impl TryFrom<&serde_json::Value> for GroupId {
     type Error = ();
 
-    /// Only allows Strings and Numbers to be converted into GroupKey
-    /// When dealing with arrays, it will consider only the first element
+    /// Only allows Strings and Numbers to be converted into GroupId
     fn try_from(value: &serde_json::Value) -> Result<Self, Self::Error> {
         match value {
             serde_json::Value::String(s) => Ok(Self::String(s.to_string())),

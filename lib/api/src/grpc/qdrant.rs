@@ -2863,6 +2863,7 @@ pub struct SearchPointGroups {
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
     #[prost(uint32, tag = "11")]
+    #[validate(range(min = 1))]
     pub group_size: u32,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "12")]
@@ -3009,6 +3010,7 @@ pub struct RecommendPointGroups {
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
     #[prost(uint32, tag = "13")]
+    #[validate(range(min = 1))]
     pub group_size: u32,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]

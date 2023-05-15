@@ -595,7 +595,7 @@ mod grouping {
         let group_req = resources.request;
 
         assert_eq!(result.len(), group_req.limit);
-        assert_eq!(result[0].hits.len(), group_req.per_group);
+        assert_eq!(result[0].hits.len(), group_req.group_size);
 
         // is sorted?
         let mut last_group_best_score = f32::MAX;
@@ -650,7 +650,7 @@ mod grouping {
 
         let mut last_group_best_score = f32::MAX;
         for group in result {
-            assert_eq!(group.hits.len(), request.per_group);
+            assert_eq!(group.hits.len(), request.group_size);
 
             // is sorted?
             assert!(group.hits[0].score <= last_group_best_score);
@@ -747,7 +747,7 @@ mod grouping {
         assert_eq!(result.len(), 4);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.per_group);
+            assert_eq!(group.hits.len(), group_by_request.group_size);
             assert!(group.hits[0].payload.is_some());
             assert!(group.hits[0].vector.is_some());
         }
@@ -793,12 +793,12 @@ mod grouping {
         assert_eq!(result.len(), 4);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.per_group);
+            assert_eq!(group.hits.len(), group_by_request.group_size);
         }
     }
 
     #[tokio::test]
-    async fn zero_per_group() {
+    async fn zero_group_size() {
         let Resources {
             collection,
             read_consistency,
@@ -917,7 +917,7 @@ mod grouping {
         assert_eq!(result.len(), group_by_request.limit);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.per_group);
+            assert_eq!(group.hits.len(), group_by_request.group_size);
         }
     }
 
@@ -961,7 +961,7 @@ mod grouping {
         assert_eq!(result.len(), group_by_request.limit);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.per_group);
+            assert_eq!(group.hits.len(), group_by_request.group_size);
         }
     }
 }

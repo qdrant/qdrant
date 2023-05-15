@@ -122,8 +122,7 @@ impl GroupsAggregator {
             Order::LargeBetter => {
                 self.group_max_scores
                     .iter()
-                    .sorted_by_key(|(_, score)| OrderedFloat(**score))
-                    .rev() // Large goes first
+                    .sorted_by_key(|(_, score)| -OrderedFloat(**score)) // Large goes first
                     .take(self.max_groups)
                     .map(|(k, _)| k)
                     .collect()

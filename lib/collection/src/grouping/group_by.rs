@@ -77,7 +77,7 @@ pub struct GroupRequest {
     pub group_by: String,
 
     /// Limit of points to return per group
-    pub per_group: usize,
+    pub group_size: usize,
 
     /// Limit of groups to return
     pub limit: usize,
@@ -87,7 +87,7 @@ impl GroupRequest {
     pub fn with_limit_from_request(
         source: SourceRequest,
         group_by: String,
-        per_group: usize,
+        group_size: usize,
     ) -> Self {
         let limit = match &source {
             SourceRequest::Search(request) => request.limit,
@@ -96,7 +96,7 @@ impl GroupRequest {
         Self {
             source,
             group_by,
-            per_group,
+            group_size,
             limit,
         }
     }
@@ -121,7 +121,7 @@ impl GroupRequest {
 
         match self.source.clone() {
             SourceRequest::Search(mut request) => {
-                request.limit = self.limit * self.per_group;
+                request.limit = self.limit * self.group_size;
 
                 request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
 
@@ -134,7 +134,7 @@ impl GroupRequest {
                     .await
             }
             SourceRequest::Recommend(mut request) => {
-                request.limit = self.limit * self.per_group;
+                request.limit = self.limit * self.group_size;
 
                 request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
 
@@ -160,7 +160,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
             group_request:
                 BaseGroupRequest {
                     group_by,
-                    group_size: per_group,
+                    group_size,
                     limit,
                 },
         } = request;
@@ -179,7 +179,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
         GroupRequest {
             source: SourceRequest::Search(search),
             group_by,
-            per_group: per_group as usize,
+            group_size: group_size as usize,
             limit: limit as usize,
         }
     }
@@ -200,7 +200,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
             group_request:
                 BaseGroupRequest {
                     group_by,
-                    group_size: per_group,
+                    group_size,
                     limit,
                 },
         } = request;
@@ -222,7 +222,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
         GroupRequest {
             source: SourceRequest::Recommend(recommend),
             group_by,
-            per_group: per_group as usize,
+            group_size: group_size as usize,
             limit: limit as usize,
         }
     }
@@ -250,7 +250,7 @@ where
 
     let mut aggregator = GroupsAggregator::new(
         request.limit,
-        request.per_group,
+        request.group_size,
         request.group_by.clone(),
         score_ordering,
     );
