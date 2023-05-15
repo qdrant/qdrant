@@ -505,7 +505,6 @@ pub struct SegmentConfig {
     /// Whether this segment should support appending new data.
     pub appendable: bool,
     /// Defines payload storage type
-    #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
 }
 
@@ -553,12 +552,10 @@ pub struct VectorDataConfig {
     /// Type of index used for search
     pub index: Indexes,
     /// Vector specific quantization config that overrides collection config
-    #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
     /// False to keep in memory, true to store on disk.
     /// If true, memory mapped files are used. Then search performance is defined by disk speed and
     /// the fraction fraction of vectors that fit in RAM.
-    #[serde(default)]
     pub on_disk: bool,
 }
 
