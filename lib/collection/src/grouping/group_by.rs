@@ -394,9 +394,10 @@ fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
 mod tests {
     use std::collections::HashMap;
 
+    use segment::data_types::groups::GroupId;
     use segment::types::{Payload, ScoredPoint};
 
-    use crate::grouping::types::{Group, GroupKey};
+    use crate::grouping::types::Group;
 
     #[test]
     fn test_hydrated_from() {
@@ -445,7 +446,7 @@ mod tests {
         .into_iter()
         .for_each(|(key, points)| {
             let group = Group {
-                key: GroupKey::from(key),
+                key: GroupId::from(key),
                 hits: points.into_iter().collect(),
             };
             groups.push(group);

@@ -19,6 +19,7 @@ use validator::{Validate, ValidationErrors};
 
 use crate::common::utils;
 use crate::common::utils::MultiValue;
+use crate::data_types::groups::GroupId;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
@@ -204,56 +205,6 @@ pub struct PointGroup {
     pub hits: Vec<ScoredPoint>,
     /// Value of the group_by key shared by all the hits
     pub id: GroupId,
-}
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Eq, PartialEq, Clone, Hash)]
-#[serde(untagged)]
-pub enum GroupId {
-    String(String),
-    NumberU64(u64),
-    NumberI64(i64),
-}
-
-impl From<u64> for GroupId {
-    fn from(id: u64) -> Self {
-        GroupId::NumberU64(id)
-    }
-}
-
-impl From<i64> for GroupId {
-    fn from(id: i64) -> Self {
-        GroupId::NumberI64(id)
-    }
-}
-
-impl From<String> for GroupId {
-    fn from(id: String) -> Self {
-        GroupId::String(id)
-    }
-}
-
-impl From<&str> for GroupId {
-    fn from(id: &str) -> Self {
-        GroupId::String(id.to_string())
-    }
-}
-
-impl GroupId {
-    pub fn as_i64(&self) -> Option<i64> {
-        match self {
-            GroupId::NumberI64(id) => Some(*id),
-            GroupId::NumberU64(id) => i64::try_from(*id).ok(),
-            GroupId::String(_) => None,
-        }
-    }
-
-    pub fn as_u64(&self) -> Option<u64> {
-        match self {
-            GroupId::NumberI64(id) => u64::try_from(*id).ok(),
-            GroupId::NumberU64(id) => Some(*id),
-            GroupId::String(_) => None,
-        }
-    }
 }
 
 /// Type of segment

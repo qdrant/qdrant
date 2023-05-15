@@ -3,23 +3,24 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
+use segment::data_types::groups::GroupId;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{ExtendedPointId, Order, PointIdType, ScoreType, ScoredPoint};
 use serde_json::Value;
 
 use super::types::AggregatorError::{self, *};
-use super::types::{Group, GroupKey};
+use super::types::Group;
 
 type Hits = HashMap<PointIdType, ScoredPoint>;
 
 pub(super) struct GroupsAggregator {
-    groups: HashMap<GroupKey, Hits>,
+    groups: HashMap<GroupId, Hits>,
     max_group_size: usize,
     grouped_by: String,
     max_groups: usize,
-    full_groups: HashSet<GroupKey>,
-    group_max_scores: HashMap<GroupKey, ScoreType>,
-    group_min_scores: HashMap<GroupKey, ScoreType>,
+    full_groups: HashSet<GroupId>,
+    group_max_scores: HashMap<GroupId, ScoreType>,
+    group_min_scores: HashMap<GroupId, ScoreType>,
     order: Order,
 }
 
@@ -57,8 +58,9 @@ impl GroupsAggregator {
 
         let group_keys = payload_values
             .into_iter()
-            .map(GroupKey::try_from)
-            .collect::<Result<Vec<GroupKey>, AggregatorError>>()?;
+            .map(GroupId::try_from)
+            .collect::<Result<Vec<GroupId>, ()>>()
+            .map_err(|_| BadKeyType)?;
 
         let unique_group_keys: Vec<_> = group_keys.into_iter().unique().collect();
 
@@ -115,7 +117,7 @@ impl GroupsAggregator {
     }
 
     /// Return `max_groups` number of keys of the groups with the best score
-    fn best_group_keys(&self) -> Vec<&GroupKey> {
+    fn best_group_keys(&self) -> Vec<&GroupId> {
         match self.order {
             Order::LargeBetter => {
                 self.group_max_scores
@@ -327,7 +329,7 @@ mod unit_tests {
 
             assert_eq!(aggregator.len(), case.groups_count, "case {case_idx}");
 
-            let key = &GroupKey::try_from(&case.key).unwrap();
+            let key = &GroupId::try_from(&case.key).unwrap();
             if case.group_size > 0 {
                 assert_eq!(
                     aggregator.groups.get(key).unwrap().len(),
@@ -351,7 +353,7 @@ mod unit_tests {
         #[rustfmt::skip]
         let expected_groups = vec![
             (
-                GroupKey::from("b"),
+                GroupId::from("b"),
                 vec![
                     empty_point(7, 1.0),
                     empty_point(3, 0.84),
@@ -359,7 +361,7 @@ mod unit_tests {
                 ],
             ),
             (
-                GroupKey::from("a"),
+                GroupId::from("a"),
                 vec![
                     empty_point(1, 0.99),
                     empty_point(4, 0.9),
@@ -367,7 +369,7 @@ mod unit_tests {
                 ],
             ),
             (
-                GroupKey::try_from(&json!(3)).unwrap(),
+                GroupId::try_from(&json!(3)).unwrap(),
                 vec![
                     empty_point(10, 0.6),
                     empty_point(5, 0.4),
@@ -375,7 +377,7 @@ mod unit_tests {
                 ],
             ),
             (
-                GroupKey::from("d"),
+                GroupId::from("d"),
                 vec![
                     empty_point(6, 0.3),
                 ],
@@ -428,21 +430,21 @@ mod unit_tests {
         #[rustfmt::skip]
         let expected_groups = vec![
             (
-                GroupKey::from("b"),
+                GroupId::from("b"),
                 vec![
                     empty_point(7, 1.0),
                     empty_point(3, 0.84),
                 ],
             ),
             (
-                GroupKey::from("a"),
+                GroupId::from("a"),
                 vec![
                     empty_point(1, 0.99),
                     empty_point(4, 0.9),
                 ],
             ),
             (
-                GroupKey::try_from(&json!(3)).unwrap(),
+                GroupId::try_from(&json!(3)).unwrap(),
                 vec![
                     empty_point(10, 0.6),
                     empty_point(5, 0.4),

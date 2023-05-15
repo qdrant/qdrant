@@ -434,16 +434,16 @@ impl From<segment::types::PointGroup> for PointGroup {
     }
 }
 
-impl From<segment::types::GroupId> for GroupId {
-    fn from(key: segment::types::GroupId) -> Self {
+impl From<segment::data_types::groups::GroupId> for GroupId {
+    fn from(key: segment::data_types::groups::GroupId) -> Self {
         match key {
-            segment::types::GroupId::String(str) => Self {
+            segment::data_types::groups::GroupId::String(str) => Self {
                 kind: Some(crate::grpc::qdrant::group_id::Kind::StringValue(str)),
             },
-            segment::types::GroupId::NumberU64(n) => Self {
+            segment::data_types::groups::GroupId::NumberU64(n) => Self {
                 kind: Some(crate::grpc::qdrant::group_id::Kind::UnsignedValue(n)),
             },
-            segment::types::GroupId::NumberI64(n) => Self {
+            segment::data_types::groups::GroupId::NumberI64(n) => Self {
                 kind: Some(crate::grpc::qdrant::group_id::Kind::IntegerValue(n)),
             },
         }
