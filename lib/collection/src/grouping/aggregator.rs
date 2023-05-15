@@ -19,8 +19,7 @@ pub(super) struct GroupsAggregator {
     grouped_by: String,
     max_groups: usize,
     full_groups: HashSet<GroupId>,
-    group_max_scores: HashMap<GroupId, ScoreType>,
-    group_min_scores: HashMap<GroupId, ScoreType>,
+    group_best_scores: HashMap<GroupId, ScoreType>,
     order: Order,
 }
 
@@ -32,8 +31,7 @@ impl GroupsAggregator {
             grouped_by,
             max_groups: groups,
             full_groups: HashSet::with_capacity(groups),
-            group_max_scores: Default::default(),
-            group_min_scores: Default::default(),
+            group_best_scores: HashMap::with_capacity(groups),
             order,
         }
     }
@@ -88,15 +86,15 @@ impl GroupsAggregator {
                 self.full_groups.insert(group_key.clone());
             }
 
-            // Insert score if
-            self.group_max_scores
+            // Insert score if better than the group best score
+            self.group_best_scores
                 .entry(group_key.clone())
-                .and_modify(|e| *e = point.score.max(*e))
-                .or_insert(point.score);
-
-            self.group_min_scores
-                .entry(group_key.clone())
-                .and_modify(|e| *e = point.score.min(*e))
+                .and_modify(|e| {
+                    *e = match self.order {
+                        Order::LargeBetter => point.score.max(*e),
+                        Order::SmallBetter => point.score.min(*e),
+                    }
+                })
                 .or_insert(point.score);
         }
         Ok(())
@@ -118,23 +116,15 @@ impl GroupsAggregator {
 
     /// Return `max_groups` number of keys of the groups with the best score
     fn best_group_keys(&self) -> Vec<&GroupId> {
-        match self.order {
-            Order::LargeBetter => {
-                self.group_max_scores
-                    .iter()
-                    .sorted_by_key(|(_, score)| -OrderedFloat(**score)) // Large goes first
-                    .take(self.max_groups)
-                    .map(|(k, _)| k)
-                    .collect()
-            }
-            Order::SmallBetter => self
-                .group_min_scores
-                .iter()
-                .sorted_by_key(|(_, score)| OrderedFloat(**score))
-                .take(self.max_groups)
-                .map(|(k, _)| k)
-                .collect(),
-        }
+        self.group_best_scores
+            .iter()
+            .sorted_by_key(|(_, score)| match self.order {
+                Order::LargeBetter => -OrderedFloat(**score),
+                Order::SmallBetter => OrderedFloat(**score),
+            })
+            .take(self.max_groups)
+            .map(|(k, _)| k)
+            .collect()
     }
 
     // Gets the keys of the groups that have less than the max group size
