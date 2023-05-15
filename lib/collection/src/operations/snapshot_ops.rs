@@ -59,7 +59,9 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
         created_time
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
-            .map(|duration| NaiveDateTime::from_timestamp(duration.as_secs() as i64, 0))
+            .map(|duration| {
+                NaiveDateTime::from_timestamp_opt(duration.as_secs() as i64, 0).unwrap()
+            })
     });
     let size = file_meta.len();
     Ok(SnapshotDescription {
