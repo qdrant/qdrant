@@ -4706,7 +4706,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=660ccf17b117e7a0667a17177e96fdaeb166851b#660ccf17b117e7a0667a17177e96fdaeb166851b"
+source = "git+https://github.com/qdrant/wal.git?rev=f3029ad0e1632d5e375db55695e33121df54aa5c#f3029ad0e1632d5e375db55695e33121df54aa5c"
 dependencies = [
  "byteorder",
  "crc",
@@ -4715,7 +4715,7 @@ dependencies = [
  "env_logger",
  "fs4",
  "log",
- "memmap2 0.5.10",
+ "memmap2 0.6.1",
  "rand 0.8.5",
  "rand_distr",
  "rustix 0.37.4",
