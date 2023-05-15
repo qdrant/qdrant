@@ -113,7 +113,14 @@ impl GroupRequest {
         F: Fn(String) -> Fut,
         Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
     {
-        let only_group_by_key = Some(WithPayloadInterface::Fields(vec![self.group_by.clone()]));
+        // Hack: "with_payload" returns empty payload when the requested field ends with `[]`.
+        // Remove the ending `[]`.
+        let include_group_by = match self.group_by.as_str() {
+            s if s.ends_with("[]") => s[..s.len() - 2].to_owned(),
+            s => s.to_owned(),
+        };
+
+        let only_group_by_key = Some(WithPayloadInterface::Fields(vec![include_group_by]));
 
         let key_not_null = Filter::new_must_not(Condition::IsNull(IsNullCondition::from(
             self.group_by.clone(),

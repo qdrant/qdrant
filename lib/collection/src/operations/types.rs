@@ -24,7 +24,7 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
-use validator::{Validate, ValidationError, ValidationErrors};
+use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::HnswConfigDiff;
@@ -871,7 +871,7 @@ pub struct BaseGroupRequest {
     /// Payload field to group by, must be a string or number field.
     /// If the field contains more than 1 value, all values will be used for grouping.
     /// One point can be in multiple groups.
-    #[validate(custom = "validate_group_by_field")]
+    #[validate(length(min = 1))]
     pub group_by: String,
 
     /// Maximum amount of points to return per group
@@ -881,14 +881,4 @@ pub struct BaseGroupRequest {
     /// Maximum amount of groups to return
     #[validate(range(min = 1))]
     pub limit: u32,
-}
-
-fn validate_group_by_field(group_by: &str) -> Result<(), ValidationError> {
-    if group_by.is_empty() {
-        return Err(ValidationError::new("not_empty"));
-    }
-    if group_by.contains("[]") {
-        return Err(ValidationError::new("no_bracket_syntax"));
-    }
-    Ok(())
 }

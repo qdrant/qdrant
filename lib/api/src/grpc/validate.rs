@@ -138,17 +138,6 @@ pub fn validate_f64_range_1(value: &Option<f64>) -> Result<(), ValidationError> 
     validate_range_generic(value, Some(0.0), Some(1.0))
 }
 
-/// Validate that the key is not empty and does not use brackets
-pub fn validate_group_by_field(group_by: &String) -> Result<(), ValidationError> {
-    if group_by.is_empty() {
-        return Err(ValidationError::new("not_empty"));
-    }
-    if group_by.contains("[]") {
-        return Err(ValidationError::new("no_bracket_syntax"));
-    }
-    Ok(())
-}
-
 /// Validate the value is in `[min, max]` or `None`.
 #[inline]
 pub fn validate_range_generic<N>(

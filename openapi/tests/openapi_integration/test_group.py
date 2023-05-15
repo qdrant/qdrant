@@ -28,13 +28,13 @@ def upsert_chunked_docs(collection_name, docs=50, chunks=5):
     assert response.ok
 
 
-def upsert_points_with_array_fields(collection_name, docs=5, chunks=5, id_offset=5000):
+def upsert_points_with_array_fields(collection_name, docs=3, chunks=5, id_offset=5000):
     points = []
     for doc in range(docs):
         for chunk in range(chunks):
-            doc_ids = [f"valid_{doc}", "unused"]
+            doc_ids = [f"valid_{doc}", f"valid_too_{doc}"]
             i = doc * chunks + chunk + id_offset
-            p = {"id": i, "vector": [0.0, 1.0, 0.0, 0.0], "payload": {"compoundId": doc_ids}}
+            p = {"id": i, "vector": [0.0, 1.0, 0.0, 0.0], "payload": {"multiId": doc_ids}}
             points.append(p)
 
     response = request_with_validation(
@@ -177,25 +177,33 @@ def test_inexistent_group_by():
 
     assert len(groups) == 0
 
-
-def test_group_by_does_not_support_bracket_notation():
+def search_array_group_by(group_by: str):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search/groups',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "vector": [0.0, 1.0, 0.0, 0.0],
-            "limit": 5,
+            "limit": 6,
             "with_payload": True,
-            "group_by": "compoundId[]",  # bracket notation
+            "group_by": group_by,
             "group_size": 3,
         }
     )
-    assert not response.ok
+    assert response.ok
 
-    error = response.json()["status"]["error"]
-
-    assert "\"compoundId[]\" is invalid" in error
+    groups = response.json()["result"]["groups"]
+    assert len(groups) == 6
+    
+    group_ids = [g["id"] for g in groups]
+    
+    for i in range(3):
+        assert f"valid_{i}" in group_ids
+        assert f"valid_too_{i}" in group_ids
+    
+def test_multi_value_group_by():
+    search_array_group_by("multiId")
+    search_array_group_by("multiId[]")
 
 
 def test_groups_by_heterogenous_fields():
