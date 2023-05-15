@@ -669,6 +669,23 @@ pub struct SegmentState {
     pub config: SegmentConfig,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+#[deprecated = "use SegmentState instead"]
+pub struct SegmentStateV5 {
+    pub version: Option<SeqNumberType>,
+    pub config: SegmentConfigV5,
+}
+
+impl From<SegmentStateV5> for SegmentState {
+    fn from(old: SegmentStateV5) -> Self {
+        Self {
+            version: old.version,
+            config: old.config.into(),
+        }
+    }
+}
+
 /// Geo point payload schema
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(try_from = "GeoPointShadow")]
