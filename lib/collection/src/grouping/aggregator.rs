@@ -144,18 +144,9 @@ impl GroupsAggregator {
 
     /// Gets the amount of best groups that have reached the max group size
     pub(super) fn len_of_filled_best_groups(&self) -> usize {
-        let best_group_keys = self.best_group_keys();
+        let best_group_keys: HashSet<_> = self.best_group_keys().into_iter().cloned().collect();
         best_group_keys
-            .into_iter()
-            .filter(|key| {
-                self.groups
-                    .get(key)
-                    .map(|g| g.len() >= self.max_group_size)
-                    .unwrap_or_else(|| {
-                        debug_assert!(false, "group key {:?} not found", key);
-                        false
-                    }) // if the group doesn't exist, it is not full
-            })
+            .intersection(&self.full_groups)
             .count()
     }
 
