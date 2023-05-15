@@ -313,9 +313,11 @@ impl LocalShard {
             let path_clone = segments_path.clone();
             let segment_config = SegmentConfig {
                 vector_data: vector_params.clone(),
-                payload_storage_type: match config.params.on_disk_payload {
-                    true => PayloadStorageType::OnDisk,
-                    false => PayloadStorageType::InMemory,
+                appendable: true,
+                payload_storage_type: if config.params.on_disk_payload {
+                    PayloadStorageType::OnDisk
+                } else {
+                    PayloadStorageType::InMemory
                 },
             };
             let segment = thread::Builder::new()

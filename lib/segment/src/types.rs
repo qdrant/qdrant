@@ -514,6 +514,8 @@ pub enum PayloadStorageType {
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_data: HashMap<String, VectorDataConfig>,
+    /// Whether this segment should support appending new data.
+    pub appendable: bool,
     /// Defines payload storage type
     #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
@@ -600,8 +602,11 @@ impl From<SegmentConfigV5> for SegmentConfig {
             })
             .collect();
 
+        let appendable = old_segment.storage_type == StorageType::InMemory;
+
         SegmentConfig {
             vector_data,
+            appendable,
             payload_storage_type: old_segment.payload_storage_type,
         }
     }

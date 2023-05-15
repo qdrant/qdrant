@@ -32,7 +32,8 @@ pub fn build_simple_segment(
                     storage_type: Default::default(),
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         },
     )
 }
@@ -71,7 +72,8 @@ pub fn build_multivec_segment(
         path,
         &SegmentConfig {
             vector_data: vectors_config,
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         },
     )
 }

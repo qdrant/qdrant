@@ -107,6 +107,7 @@ impl Anonymize for SegmentConfig {
     fn anonymize(&self) -> Self {
         SegmentConfig {
             vector_data: self.vector_data.anonymize(),
+            appendable: self.appendable,
             payload_storage_type: self.payload_storage_type,
         }
     }

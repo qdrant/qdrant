@@ -44,7 +44,8 @@ mod tests {
                     storage_type: StorageType::InMemory,
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         };
 
         let mut plain_segment = build_segment(path_plain, &config).unwrap();
@@ -157,7 +158,8 @@ mod tests {
                     storage_type: StorageType::InMemory,
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         };
 
         let mut plain_segment = build_segment(path_plain, &config).unwrap();

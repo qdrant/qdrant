@@ -78,6 +78,7 @@ pub trait SegmentOptimizer {
         let config = SegmentConfig {
             vector_data: collection_params
                 .into_base_vector_data(self.quantization_config().as_ref())?,
+            appendable: true,
             payload_storage_type: if collection_params.on_disk_payload {
                 PayloadStorageType::OnDisk
             } else {
@@ -174,8 +175,12 @@ pub trait SegmentOptimizer {
             });
         }
 
+        // TODO: before, we were appendable when storing in memory. Keep it like this?
+        let appendable = !is_on_disk;
+
         let optimized_config = SegmentConfig {
             vector_data,
+            appendable,
             payload_storage_type: if collection_params.on_disk_payload {
                 PayloadStorageType::OnDisk
             } else {

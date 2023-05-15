@@ -94,7 +94,8 @@ mod tests {
                     storage_type: Default::default(),
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         };
 
         let mut builder =

@@ -146,7 +146,8 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     },
                 ),
             ]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         },
     )
     .unwrap();

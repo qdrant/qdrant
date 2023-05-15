@@ -52,7 +52,8 @@ mod tests {
                     storage_type: StorageType::InMemory,
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         };
 
         let int_key = "int";

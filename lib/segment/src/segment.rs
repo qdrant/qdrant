@@ -1523,7 +1523,8 @@ mod tests {
                     storage_type: StorageType::InMemory,
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config).unwrap();
 
@@ -1594,7 +1595,8 @@ mod tests {
                     storage_type: StorageType::InMemory,
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
@@ -1684,7 +1686,8 @@ mod tests {
                     storage_type: StorageType::InMemory,
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
@@ -1773,7 +1776,8 @@ mod tests {
                     storage_type: StorageType::InMemory,
                 },
             )]),
-            ..Default::default()
+            appendable: true,
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
@@ -1805,6 +1809,7 @@ mod tests {
                     storage_type: StorageType::InMemory,
                 },
             )]),
+            appendable: true,
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config).unwrap();

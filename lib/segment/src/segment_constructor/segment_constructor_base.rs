@@ -92,25 +92,26 @@ fn create_segment(
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
-        let vector_storage = match vector_config.storage_type {
-            StorageType::InMemory => {
-                if vector_config.on_disk {
-                    open_appendable_memmap_vector_storage(
-                        &vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    )?
-                } else {
-                    let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-                    open_simple_vector_storage(
-                        database.clone(),
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                    )?
-                }
+        // Select suitable vector storage type based on configuration
+        let vector_storage = match (vector_config.on_disk, config.appendable) {
+            // In memory
+            (false, _) => {
+                let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+                open_simple_vector_storage(
+                    database.clone(),
+                    &db_column_name,
+                    vector_config.size,
+                    vector_config.distance,
+                )?
             }
-            StorageType::Mmap => open_memmap_vector_storage(
+            // On disk, appendable
+            (true, true) => open_appendable_memmap_vector_storage(
+                &vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+            )?,
+            // On disk, non appendable
+            (true, false) => open_memmap_vector_storage(
                 &vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
