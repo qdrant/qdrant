@@ -267,6 +267,41 @@ def test_update_empty_vectors():
     update_empty_vectors()
 
 
+def update_vectors_unknown_point():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "text": [0.05, 0.61, 0.76, 0.74, 0.05, 0.61, 0.76, 0.74],
+                    },
+                    "payload": {"city": "Berlin"}
+                },
+                {
+                    "id": 424242424242424242,
+                    "vector": {
+                        "image": [0.19, 0.81, 0.75, 0.11],
+                    },
+                    "payload": {"city": ["Berlin", "London"]}
+                }
+            ]
+        }
+    )
+    assert not response.ok
+    assert response.status_code == 404
+    error = response.json()["status"]["error"]
+    assert error == "Not found: No point with id 424242424242424242 found"
+
+
+def test_update_vectors_unknown_point():
+    update_vectors_unknown_point()
+
+
 def no_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
