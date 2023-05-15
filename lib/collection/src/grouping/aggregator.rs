@@ -129,26 +129,17 @@ impl GroupsAggregator {
 
     // Gets the keys of the groups that have less than the max group size
     pub(super) fn keys_of_unfilled_best_groups(&self) -> Vec<Value> {
-        let best_group_keys = self.best_group_keys();
+        let best_group_keys: HashSet<_> = self.best_group_keys().into_iter().cloned().collect();
         best_group_keys
-            .into_iter()
-            .filter(|key| {
-                self.groups
-                    .get(key)
-                    .map(|g| g.len() < self.max_group_size)
-                    .unwrap_or_else(|| {
-                        debug_assert!(false, "group key {:?} not found", key);
-                        true
-                    }) // if the group doesn't exist, it is not full
-            })
+            .difference(&self.full_groups)
             .cloned()
-            .map(Value::from)
+            .map_into()
             .collect()
     }
 
     /// Gets the keys of the groups that have reached the max group size
     pub(super) fn keys_of_filled_groups(&self) -> Vec<Value> {
-        self.full_groups.iter().cloned().map(Value::from).collect()
+        self.full_groups.iter().cloned().map_into().collect()
     }
 
     /// Gets the amount of best groups that have reached the max group size
