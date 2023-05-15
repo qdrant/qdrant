@@ -115,7 +115,7 @@ impl GroupsAggregator {
     }
 
     /// Return `max_groups` number of keys of the groups with the best score
-    fn best_group_keys(&self) -> Vec<&GroupId> {
+    fn best_group_keys(&self) -> impl Iterator<Item = &GroupId> {
         self.group_best_scores
             .iter()
             .sorted_by_key(|(_, score)| match self.order {
@@ -124,12 +124,11 @@ impl GroupsAggregator {
             })
             .take(self.max_groups)
             .map(|(k, _)| k)
-            .collect()
     }
 
-    // Gets the keys of the groups that have less than the max group size
+    /// Gets the keys of the groups that have less than the max group size
     pub(super) fn keys_of_unfilled_best_groups(&self) -> Vec<Value> {
-        let best_group_keys: HashSet<_> = self.best_group_keys().into_iter().cloned().collect();
+        let best_group_keys: HashSet<_> = self.best_group_keys().cloned().collect();
         best_group_keys
             .difference(&self.full_groups)
             .cloned()
@@ -144,10 +143,8 @@ impl GroupsAggregator {
 
     /// Gets the amount of best groups that have reached the max group size
     pub(super) fn len_of_filled_best_groups(&self) -> usize {
-        let best_group_keys: HashSet<_> = self.best_group_keys().into_iter().cloned().collect();
-        best_group_keys
-            .intersection(&self.full_groups)
-            .count()
+        let best_group_keys: HashSet<_> = self.best_group_keys().cloned().collect();
+        best_group_keys.intersection(&self.full_groups).count()
     }
 
     /// Gets the ids of the already present points across all the groups
@@ -161,7 +158,7 @@ impl GroupsAggregator {
 
     /// Returns the best groups sorted by their best hit. The hits are sorted too.
     pub(super) fn distill(mut self) -> Vec<Group> {
-        let best_groups: Vec<_> = self.best_group_keys().into_iter().cloned().collect();
+        let best_groups: Vec<_> = self.best_group_keys().cloned().collect();
         let mut groups = Vec::with_capacity(best_groups.len());
 
         for group_key in best_groups {
