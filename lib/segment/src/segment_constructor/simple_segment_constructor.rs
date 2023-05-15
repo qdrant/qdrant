@@ -28,7 +28,7 @@ pub fn build_simple_segment(
                     distance,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
+                    on_disk: false,
                     storage_type: Default::default(),
                 },
             )]),
@@ -51,7 +51,7 @@ pub fn build_multivec_segment(
             distance,
             index: Indexes::Plain {},
             quantization_config: None,
-            on_disk: None,
+            on_disk: false,
             storage_type: Default::default(),
         },
     );
@@ -62,7 +62,7 @@ pub fn build_multivec_segment(
             distance,
             index: Indexes::Plain {},
             quantization_config: None,
-            on_disk: None,
+            on_disk: false,
             storage_type: Default::default(),
         },
     );

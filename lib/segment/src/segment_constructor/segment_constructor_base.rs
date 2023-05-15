@@ -94,7 +94,7 @@ fn create_segment(
 
         let vector_storage = match vector_config.storage_type {
             StorageType::InMemory => {
-                if vector_config.on_disk.unwrap_or(false) {
+                if vector_config.on_disk {
                     open_appendable_memmap_vector_storage(
                         &vector_storage_path,
                         vector_config.size,

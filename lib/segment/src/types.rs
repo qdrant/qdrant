@@ -588,7 +588,11 @@ impl From<SegmentConfigV5> for SegmentConfig {
                         .quantization_config
                         .as_ref()
                         .and(old_data.quantization_config),
-                    on_disk: old_data.on_disk,
+                    // We now only have an on_disk flag. Use if explicitly fleg, otherwise defer
+                    // this from the storage type setting we used before.
+                    on_disk: old_data
+                        .on_disk
+                        .unwrap_or_else(|| old_segment.storage_type == StorageType::Mmap),
                     storage_type: old_segment.storage_type,
                 };
 
@@ -616,13 +620,11 @@ pub struct VectorDataConfig {
     /// Vector specific quantization config that overrides collection config
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
-    /// If true - vectors will not be stored in memory.
-    /// Instead, it will store vectors on mmap-files.
-    /// If enabled, search performance will defined by disk speed
-    /// and fraction of vectors that fit in RAM.
+    /// False to keep in memory, true to store on disk.
+    /// If true, memory mapped files are used. Then search performance is defined by disk speed and
+    /// the fraction fraction of vectors that fit in RAM.
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_disk: Option<bool>,
+    pub on_disk: bool,
     /// Type of vector storage
     pub storage_type: StorageType,
 }

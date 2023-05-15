@@ -47,7 +47,7 @@ mod tests {
                     distance,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
+                    on_disk: false,
                     storage_type: StorageType::InMemory,
                 },
             )]),

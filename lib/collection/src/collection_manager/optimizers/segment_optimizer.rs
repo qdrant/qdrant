@@ -166,9 +166,10 @@ pub trait SegmentOptimizer {
             });
         }
 
-        // If storing on disk, change to mmap
+        // If storing on disk, set the flag
         if is_on_disk {
             vector_data.values_mut().for_each(|config| {
+                config.on_disk = true;
                 config.storage_type = StorageType::Mmap;
             });
         }
