@@ -60,6 +60,10 @@ service Points {
     */
   rpc SearchBatch (SearchBatchPoints) returns (SearchBatchResponse) {}
   /*
+  Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
+   */
+  rpc SearchGroups (SearchPointGroups) returns (SearchGroupsResponse) {}
+  /*
   Iterate over all or filtered points points
   */
   rpc Scroll (ScrollPoints) returns (ScrollResponse) {}
@@ -71,6 +75,10 @@ service Points {
   Look for the points which are closer to stored positive examples and at the same time further to negative examples.
    */
   rpc RecommendBatch (RecommendBatchPoints) returns (RecommendBatchResponse) {}
+    /*
+  Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
+   */
+  rpc RecommendGroups (RecommendPointGroups) returns (RecommendGroupsResponse) {}
   /*
    Count points in collection with given filtering conditions
    */

@@ -89,6 +89,8 @@
     - [GeoRadius](#qdrant-GeoRadius)
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
+    - [GroupId](#qdrant-GroupId)
+    - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [IsNullCondition](#qdrant-IsNullCondition)
@@ -99,6 +101,7 @@
     - [NestedCondition](#qdrant-NestedCondition)
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
+    - [PointGroup](#qdrant-PointGroup)
     - [PointId](#qdrant-PointId)
     - [PointStruct](#qdrant-PointStruct)
     - [PointStruct.PayloadEntry](#qdrant-PointStruct-PayloadEntry)
@@ -111,6 +114,8 @@
     - [ReadConsistency](#qdrant-ReadConsistency)
     - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
     - [RecommendBatchResponse](#qdrant-RecommendBatchResponse)
+    - [RecommendGroupsResponse](#qdrant-RecommendGroupsResponse)
+    - [RecommendPointGroups](#qdrant-RecommendPointGroups)
     - [RecommendPoints](#qdrant-RecommendPoints)
     - [RecommendResponse](#qdrant-RecommendResponse)
     - [RepeatedIntegers](#qdrant-RepeatedIntegers)
@@ -123,7 +128,9 @@
     - [ScrollResponse](#qdrant-ScrollResponse)
     - [SearchBatchPoints](#qdrant-SearchBatchPoints)
     - [SearchBatchResponse](#qdrant-SearchBatchResponse)
+    - [SearchGroupsResponse](#qdrant-SearchGroupsResponse)
     - [SearchParams](#qdrant-SearchParams)
+    - [SearchPointGroups](#qdrant-SearchPointGroups)
     - [SearchPoints](#qdrant-SearchPoints)
     - [SearchResponse](#qdrant-SearchResponse)
     - [SetPayloadPoints](#qdrant-SetPayloadPoints)
@@ -1543,6 +1550,38 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-GroupId"></a>
+
+### GroupId
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| unsigned_value | [uint64](#uint64) |  | Represents a double value. |
+| integer_value | [int64](#int64) |  | Represents an integer value |
+| string_value | [string](#string) |  | Represents a string value. |
+
+
+
+
+
+
+<a name="qdrant-GroupsResult"></a>
+
+### GroupsResult
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| groups | [PointGroup](#qdrant-PointGroup) | repeated | Groups |
+
+
+
+
+
+
 <a name="qdrant-HasIdCondition"></a>
 
 ### HasIdCondition
@@ -1695,6 +1734,22 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | fields | [string](#string) | repeated | List of payload keys to include into result |
+
+
+
+
+
+
+<a name="qdrant-PointGroup"></a>
+
+### PointGroup
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [GroupId](#qdrant-GroupId) |  | Group id |
+| hits | [ScoredPoint](#qdrant-ScoredPoint) | repeated | Points in the group |
 
 
 
@@ -1890,6 +1945,50 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | result | [BatchResult](#qdrant-BatchResult) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-RecommendGroupsResponse"></a>
+
+### RecommendGroupsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [GroupsResult](#qdrant-GroupsResult) |  |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-RecommendPointGroups"></a>
+
+### RecommendPointGroups
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| positive | [PointId](#qdrant-PointId) | repeated | Look for vectors closest to those |
+| negative | [PointId](#qdrant-PointId) | repeated | Try to avoid vectors like this |
+| filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
+| limit | [uint32](#uint32) |  | Max number of groups in result |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
+| params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+| score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
+| using | [string](#string) | optional | Define which vector to use for recommendation, if not specified - default vector |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
+| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
+| group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
 
@@ -2108,6 +2207,22 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-SearchGroupsResponse"></a>
+
+### SearchGroupsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [GroupsResult](#qdrant-GroupsResult) |  |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
 <a name="qdrant-SearchParams"></a>
 
 ### SearchParams
@@ -2119,6 +2234,32 @@ The JSON representation for `Value` is a JSON value.
 | hnsw_ef | [uint64](#uint64) | optional | Params relevant to HNSW index. Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search. |
 | exact | [bool](#bool) | optional | Search without approximation. If set to true, search may run long but with exact results. |
 | quantization | [QuantizationSearchParams](#qdrant-QuantizationSearchParams) | optional | If set to true, search will ignore quantized vector data |
+
+
+
+
+
+
+<a name="qdrant-SearchPointGroups"></a>
+
+### SearchPointGroups
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| vector | [float](#float) | repeated | Vector to compare against |
+| filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
+| limit | [uint32](#uint32) |  | Max number of result |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
+| params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+| score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
+| vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
+| group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
 
@@ -2461,9 +2602,11 @@ The JSON representation for `Value` is a JSON value.
 | DeleteFieldIndex | [DeleteFieldIndexCollection](#qdrant-DeleteFieldIndexCollection) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete field index for collection |
 | Search | [SearchPoints](#qdrant-SearchPoints) | [SearchResponse](#qdrant-SearchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
 | SearchBatch | [SearchBatchPoints](#qdrant-SearchBatchPoints) | [SearchBatchResponse](#qdrant-SearchBatchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
+| SearchGroups | [SearchPointGroups](#qdrant-SearchPointGroups) | [SearchGroupsResponse](#qdrant-SearchGroupsResponse) | Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field |
 | Scroll | [ScrollPoints](#qdrant-ScrollPoints) | [ScrollResponse](#qdrant-ScrollResponse) | Iterate over all or filtered points points |
 | Recommend | [RecommendPoints](#qdrant-RecommendPoints) | [RecommendResponse](#qdrant-RecommendResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 | RecommendBatch | [RecommendBatchPoints](#qdrant-RecommendBatchPoints) | [RecommendBatchResponse](#qdrant-RecommendBatchResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
+| RecommendGroups | [RecommendPointGroups](#qdrant-RecommendPointGroups) | [RecommendGroupsResponse](#qdrant-RecommendGroupsResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field |
 | Count | [CountPoints](#qdrant-CountPoints) | [CountResponse](#qdrant-CountResponse) | Count points in collection with given filtering conditions |
 
  

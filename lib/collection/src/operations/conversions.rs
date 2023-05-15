@@ -12,6 +12,7 @@ use segment::types::{
 };
 use tonic::Status;
 
+use super::types::{BaseGroupRequest, GroupsResult, RecommendGroupsRequest, SearchGroupsRequest};
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams, WalConfig,
@@ -719,6 +720,51 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
     }
 }
 
+impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::SearchPointGroups) -> Result<Self, Self::Error> {
+        let search_points = api::grpc::qdrant::SearchPoints {
+            vector: value.vector,
+            filter: value.filter,
+            params: value.params,
+            with_payload: value.with_payload,
+            with_vectors: value.with_vectors,
+            score_threshold: value.score_threshold,
+            vector_name: value.vector_name,
+            limit: 0,
+            offset: None,
+            collection_name: String::new(),
+            read_consistency: None,
+        };
+
+        let SearchRequest {
+            vector,
+            filter,
+            params,
+            limit: _,
+            offset: _,
+            with_payload,
+            with_vector,
+            score_threshold,
+        } = search_points.try_into()?;
+
+        Ok(SearchGroupsRequest {
+            vector,
+            filter,
+            params,
+            with_payload,
+            with_vector,
+            score_threshold,
+            group_request: BaseGroupRequest {
+                group_by: value.group_by,
+                limit: value.limit,
+                group_size: value.group_size,
+            },
+        })
+    }
+}
+
 impl From<api::grpc::qdrant::LookupLocation> for LookupLocation {
     fn from(value: api::grpc::qdrant::LookupLocation) -> Self {
         Self {
@@ -758,6 +804,67 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequest {
             using: value.using.map(|name| name.into()),
             lookup_from: value.lookup_from.map(|x| x.into()),
         })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::RecommendPointGroups) -> Result<Self, Self::Error> {
+        let recommend_points = api::grpc::qdrant::RecommendPoints {
+            positive: value.positive,
+            negative: value.negative,
+            using: value.using,
+            lookup_from: value.lookup_from,
+            filter: value.filter,
+            params: value.params,
+            with_payload: value.with_payload,
+            with_vectors: value.with_vectors,
+            score_threshold: value.score_threshold,
+            read_consistency: None,
+            limit: 0,
+            offset: None,
+            collection_name: String::new(),
+        };
+
+        let RecommendRequest {
+            positive,
+            negative,
+            using,
+            lookup_from,
+            filter,
+            params,
+            with_payload,
+            with_vector,
+            score_threshold,
+            limit: _,
+            offset: _,
+        } = recommend_points.try_into()?;
+
+        Ok(RecommendGroupsRequest {
+            positive,
+            negative,
+            using,
+            lookup_from,
+            filter,
+            params,
+            with_payload,
+            with_vector,
+            score_threshold,
+            group_request: BaseGroupRequest {
+                group_by: value.group_by,
+                limit: value.limit,
+                group_size: value.group_size,
+            },
+        })
+    }
+}
+
+impl From<GroupsResult> for api::grpc::qdrant::GroupsResult {
+    fn from(value: GroupsResult) -> Self {
+        Self {
+            groups: value.groups.into_iter().map(Into::into).collect(),
+        }
     }
 }
 

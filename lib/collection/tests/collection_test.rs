@@ -491,3 +491,477 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
     collection.before_drop().await;
 }
+
+mod grouping {
+
+    use collection::collection::Collection;
+    use collection::grouping::group_by::{group_by, GroupRequest, SourceRequest};
+    use collection::operations::consistency_params::ReadConsistency;
+    use collection::shards::shard::ShardId;
+    use rand::distributions::Uniform;
+    use rand::rngs::ThreadRng;
+    use rand::Rng;
+    use segment::data_types::vectors::VectorType;
+    use segment::types::WithVector;
+    use serde_json::json;
+
+    use super::*;
+
+    struct Resources {
+        request: GroupRequest,
+        collection: Collection,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    }
+
+    fn rand_vector(rng: &mut ThreadRng, size: usize) -> VectorType {
+        rng.sample_iter(Uniform::new(0.4, 0.6)).take(size).collect()
+    }
+
+    async fn setup(docs: u64, chunks: u64) -> Resources {
+        let mut rng = rand::thread_rng();
+
+        let source = SourceRequest::Search(SearchRequest {
+            vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+            filter: None,
+            params: None,
+            limit: 4,
+            offset: 0,
+            with_payload: None,
+            with_vector: None,
+            score_threshold: None,
+        });
+
+        let request = GroupRequest::with_limit_from_request(source, "docId".to_string(), 3);
+
+        let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+
+        let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+        let insert_points = CollectionUpdateOperations::PointOperation(
+            Batch {
+                // 8 docs, 4 chunks per doc
+                ids: (0..docs * chunks).map(|x| x.into()).collect_vec(),
+                vectors: (0..docs * chunks)
+                    .map(|_| rand_vector(&mut rng, 4))
+                    .collect_vec()
+                    .into(),
+                payloads: (0..docs)
+                    .flat_map(|x| {
+                        (0..chunks).map(move |_| {
+                            Some(Payload::from(
+                                json!({ "docId": x , "other_stuff": x.to_string() + "foo" }),
+                            ))
+                        })
+                    })
+                    .collect_vec()
+                    .into(),
+            }
+            .into(),
+        );
+
+        let insert_result = collection
+            .update_from_client(insert_points, true, WriteOrdering::default())
+            .await
+            .expect("insert failed");
+
+        assert_eq!(insert_result.status, UpdateStatus::Completed);
+
+        Resources {
+            request,
+            collection,
+            read_consistency: None,
+            shard_selection: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn searching() {
+        let resources = setup(16, 8).await;
+
+        let result = group_by(
+            resources.request.clone(),
+            &resources.collection,
+            |_name| async { unreachable!() },
+            resources.read_consistency,
+            resources.shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        let group_req = resources.request;
+
+        assert_eq!(result.len(), group_req.limit);
+        assert_eq!(result[0].hits.len(), group_req.group_size);
+
+        // is sorted?
+        let mut last_group_best_score = f32::MAX;
+        for group in result {
+            assert!(group.hits[0].score <= last_group_best_score);
+            last_group_best_score = group.hits[0].score;
+
+            let mut last_score = f32::MAX;
+            for hit in group.hits {
+                assert!(hit.score <= last_score);
+                last_score = hit.score;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn recommending() {
+        let resources = setup(16, 8).await;
+
+        let request = GroupRequest::with_limit_from_request(
+            SourceRequest::Recommend(RecommendRequest {
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+                positive: vec![1.into(), 2.into(), 3.into()],
+                negative: Vec::new(),
+                using: None,
+                lookup_from: None,
+            }),
+            "docId".to_string(),
+            2,
+        );
+
+        let result = group_by(
+            request.clone(),
+            &resources.collection,
+            |_name| async { unreachable!() },
+            resources.read_consistency,
+            resources.shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), request.limit);
+
+        let mut last_group_best_score = f32::MAX;
+        for group in result {
+            assert_eq!(group.hits.len(), request.group_size);
+
+            // is sorted?
+            assert!(group.hits[0].score <= last_group_best_score);
+            last_group_best_score = group.hits[0].score;
+
+            let mut last_score = f32::MAX;
+            for hit in group.hits {
+                assert!(hit.score <= last_score);
+                last_score = hit.score;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn with_filter() {
+        let resources = setup(16, 8).await;
+
+        let filter: Filter = serde_json::from_value(json!({
+            "must": [
+                {
+                    "key": "docId",
+                    "range": {
+                        "gte": 1,
+                        "lte": 2
+                    }
+                }
+            ]
+        }))
+        .unwrap();
+
+        let group_by_request = GroupRequest::with_limit_from_request(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: Some(filter.clone()),
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request,
+            &resources.collection,
+            |_name| async { unreachable!() },
+            resources.read_consistency,
+            resources.shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn with_payload_and_vectors() {
+        let resources = setup(16, 8).await;
+
+        let group_by_request = GroupRequest::with_limit_from_request(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: Some(WithVector::Bool(true)),
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &resources.collection,
+            |_name| async { unreachable!() },
+            resources.read_consistency,
+            resources.shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 4);
+
+        for group in result {
+            assert_eq!(group.hits.len(), group_by_request.group_size);
+            assert!(group.hits[0].payload.is_some());
+            assert!(group.hits[0].vector.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn group_by_string_field() {
+        let Resources {
+            collection,
+            read_consistency,
+            shard_selection,
+            ..
+        } = setup(16, 8).await;
+
+        let group_by_request = GroupRequest::with_limit_from_request(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: Some(WithVector::Bool(true)),
+                score_threshold: None,
+            }),
+            "other_stuff".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+            shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 4);
+
+        for group in result {
+            assert_eq!(group.hits.len(), group_by_request.group_size);
+        }
+    }
+
+    #[tokio::test]
+    async fn zero_group_size() {
+        let Resources {
+            collection,
+            read_consistency,
+            shard_selection,
+            ..
+        } = setup(16, 8).await;
+
+        let group_by_request = GroupRequest::with_limit_from_request(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 4,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            0,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+            shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn zero_limit_groups() {
+        let Resources {
+            collection,
+            read_consistency,
+            shard_selection,
+            ..
+        } = setup(16, 8).await;
+
+        let group_by_request = GroupRequest::with_limit_from_request(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 0,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+            shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn big_limit_groups() {
+        let Resources {
+            collection,
+            read_consistency,
+            shard_selection,
+            ..
+        } = setup(1000, 5).await;
+
+        let group_by_request = GroupRequest::with_limit_from_request(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 500,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            3,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+            shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), group_by_request.limit);
+
+        for group in result {
+            assert_eq!(group.hits.len(), group_by_request.group_size);
+        }
+    }
+
+    #[tokio::test]
+    async fn big_top_groups() {
+        let Resources {
+            collection,
+            read_consistency,
+            shard_selection,
+            ..
+        } = setup(10, 500).await;
+
+        let group_by_request = GroupRequest::with_limit_from_request(
+            SourceRequest::Search(SearchRequest {
+                vector: vec![0.5, 0.5, 0.5, 0.5].into(),
+                filter: None,
+                params: None,
+                limit: 3,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            "docId".to_string(),
+            400,
+        );
+
+        let result = group_by(
+            group_by_request.clone(),
+            &collection,
+            |_name| async { unreachable!() },
+            read_consistency,
+            shard_selection,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+
+        assert_eq!(result.len(), group_by_request.limit);
+
+        for group in result {
+            assert_eq!(group.hits.len(), group_by_request.group_size);
+        }
+    }
+}

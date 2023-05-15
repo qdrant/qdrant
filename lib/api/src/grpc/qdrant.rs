@@ -2874,6 +2874,52 @@ pub struct SearchBatchPoints {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchPointGroups {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Vector to compare against
+    #[prost(float, repeated, tag = "2")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "3")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of result
+    #[prost(uint32, tag = "4")]
+    #[validate(range(min = 1))]
+    pub limit: u32,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "5")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "6")]
+    pub params: ::core::option::Option<SearchParams>,
+    /// If provided - cut off results with worse scores
+    #[prost(float, optional, tag = "7")]
+    pub score_threshold: ::core::option::Option<f32>,
+    /// Which vector to use for search, if not specified - use default vector
+    #[prost(string, optional, tag = "8")]
+    #[validate(custom = "crate::grpc::validate::validate_not_empty")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "9")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+    #[prost(string, tag = "10")]
+    #[validate(length(min = 1))]
+    pub group_by: ::prost::alloc::string::String,
+    /// Maximum amount of points to return per group
+    #[prost(uint32, tag = "11")]
+    #[validate(range(min = 1))]
+    pub group_size: u32,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "12")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
@@ -2970,6 +3016,57 @@ pub struct RecommendBatchPoints {
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendPointGroups {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "2")]
+    pub positive: ::prost::alloc::vec::Vec<PointId>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "3")]
+    pub negative: ::prost::alloc::vec::Vec<PointId>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "4")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of groups in result
+    #[prost(uint32, tag = "5")]
+    #[validate(range(min = 1))]
+    pub limit: u32,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "6")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "7")]
+    pub params: ::core::option::Option<SearchParams>,
+    /// If provided - cut off results with worse scores
+    #[prost(float, optional, tag = "8")]
+    pub score_threshold: ::core::option::Option<f32>,
+    /// Define which vector to use for recommendation, if not specified - default vector
+    #[prost(string, optional, tag = "9")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "10")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Name of the collection to use for points lookup, if not specified - use current collection
+    #[prost(message, optional, tag = "11")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
+    /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+    #[prost(string, tag = "12")]
+    #[validate(length(min = 1))]
+    pub group_by: ::prost::alloc::string::String,
+    /// Maximum amount of points to return per group
+    #[prost(uint32, tag = "13")]
+    #[validate(range(min = 1))]
+    pub group_size: u32,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "14")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+}
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
@@ -3022,6 +3119,45 @@ pub struct ScoredPoint {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GroupId {
+    #[prost(oneof = "group_id::Kind", tags = "1, 2, 3")]
+    pub kind: ::core::option::Option<group_id::Kind>,
+}
+/// Nested message and enum types in `GroupId`.
+pub mod group_id {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Kind {
+        /// Represents a double value.
+        #[prost(uint64, tag = "1")]
+        UnsignedValue(u64),
+        /// Represents an integer value
+        #[prost(int64, tag = "2")]
+        IntegerValue(i64),
+        /// Represents a string value.
+        #[prost(string, tag = "3")]
+        StringValue(::prost::alloc::string::String),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointGroup {
+    /// Group id
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<GroupId>,
+    /// Points in the group
+    #[prost(message, repeated, tag = "2")]
+    pub hits: ::prost::alloc::vec::Vec<ScoredPoint>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GroupsResult {
+    /// Groups
+    #[prost(message, repeated, tag = "1")]
+    pub groups: ::prost::alloc::vec::Vec<PointGroup>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
@@ -3040,6 +3176,15 @@ pub struct BatchResult {
 pub struct SearchBatchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<BatchResult>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchGroupsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<GroupsResult>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -3104,6 +3249,15 @@ pub struct RecommendResponse {
 pub struct RecommendBatchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<BatchResult>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendGroupsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<GroupsResult>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -3870,6 +4024,33 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         ///
+        /// Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
+        pub async fn search_groups(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchPointGroups>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchGroupsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/SearchGroups",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "SearchGroups"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
         /// Iterate over all or filtered points points
         pub async fn scroll(
             &mut self,
@@ -3939,6 +4120,33 @@ pub mod points_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("qdrant.Points", "RecommendBatch"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
+        /// Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
+        pub async fn recommend_groups(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecommendPointGroups>,
+        ) -> std::result::Result<
+            tonic::Response<super::RecommendGroupsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/RecommendGroups",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "RecommendGroups"));
             self.inner.unary(req, path, codec).await
         }
         ///
@@ -4083,6 +4291,15 @@ pub mod points_server {
             tonic::Status,
         >;
         ///
+        /// Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
+        async fn search_groups(
+            &self,
+            request: tonic::Request<super::SearchPointGroups>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchGroupsResponse>,
+            tonic::Status,
+        >;
+        ///
         /// Iterate over all or filtered points points
         async fn scroll(
             &self,
@@ -4104,6 +4321,15 @@ pub mod points_server {
             request: tonic::Request<super::RecommendBatchPoints>,
         ) -> std::result::Result<
             tonic::Response<super::RecommendBatchResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
+        async fn recommend_groups(
+            &self,
+            request: tonic::Request<super::RecommendPointGroups>,
+        ) -> std::result::Result<
+            tonic::Response<super::RecommendGroupsResponse>,
             tonic::Status,
         >;
         ///
@@ -4766,6 +4992,50 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/SearchGroups" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchGroupsSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::SearchPointGroups>
+                    for SearchGroupsSvc<T> {
+                        type Response = super::SearchGroupsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchPointGroups>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).search_groups(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchGroupsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/qdrant.Points/Scroll" => {
                     #[allow(non_camel_case_types)]
                     struct ScrollSvc<T: Points>(pub Arc<T>);
@@ -4881,6 +5151,52 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = RecommendBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/RecommendGroups" => {
+                    #[allow(non_camel_case_types)]
+                    struct RecommendGroupsSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::RecommendPointGroups>
+                    for RecommendGroupsSvc<T> {
+                        type Response = super::RecommendGroupsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RecommendPointGroups>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).recommend_groups(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RecommendGroupsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
