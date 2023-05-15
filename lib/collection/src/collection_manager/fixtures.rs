@@ -1,7 +1,9 @@
+use std::collections::HashSet;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
 
 use parking_lot::RwLock;
+use rand::rngs::ThreadRng;
 use rand::Rng;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::only_default_vector;
@@ -24,6 +26,33 @@ pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
+/// A generator for random point IDs
+#[derive(Default)]
+struct PointIdGenerator {
+    thread_rng: ThreadRng,
+    used: HashSet<u64>,
+}
+
+impl PointIdGenerator {
+    #[inline]
+    pub fn random(&mut self) -> PointIdType {
+        self.thread_rng.gen_range(1..u64::MAX).into()
+    }
+
+    #[inline]
+    pub fn unique(&mut self) -> PointIdType {
+        for _ in 0..100_000 {
+            let id = self.random();
+            if let PointIdType::NumId(num) = id {
+                if self.used.insert(num) {
+                    return id;
+                }
+            }
+        }
+        panic!("failed to generate unique point ID after 100000 attempts");
+    }
+}
+
 pub fn random_multi_vec_segment(
     path: &Path,
     opnum: SeqNumberType,
@@ -31,6 +60,7 @@ pub fn random_multi_vec_segment(
     dim1: usize,
     dim2: usize,
 ) -> Segment {
+    let mut id_gen = PointIdGenerator::default();
     let mut segment = build_multivec_segment(path, dim1, dim2, Distance::Dot).unwrap();
     let mut rnd = rand::thread_rng();
     let payload_key = "number";
@@ -42,7 +72,7 @@ pub fn random_multi_vec_segment(
         vectors.insert("vector1".to_owned(), random_vector1);
         vectors.insert("vector2".to_owned(), random_vector2);
 
-        let point_id: PointIdType = rnd.gen_range(1..100_000_000).into();
+        let point_id: PointIdType = id_gen.unique();
         let payload_value = rnd.gen_range(1..1_000);
         let random_keyword = format!("keyword_{}", rnd.gen_range(1..10));
         let payload: Payload =
@@ -54,12 +84,13 @@ pub fn random_multi_vec_segment(
 }
 
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
+    let mut id_gen = PointIdGenerator::default();
     let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
     let mut rnd = rand::thread_rng();
     let payload_key = "number";
     for _ in 0..num_vectors {
         let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0..1.0)).collect();
-        let point_id: PointIdType = rnd.gen_range(1..100_000_000).into();
+        let point_id: PointIdType = id_gen.unique();
         let payload_value = rnd.gen_range(1..1_000);
         let payload: Payload = json!({ payload_key: vec![payload_value] }).into();
         segment
