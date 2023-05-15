@@ -3112,6 +3112,7 @@ dependencies = [
  "tower-layer",
  "uuid",
  "validator",
+ "wal",
 ]
 
 [[package]]
