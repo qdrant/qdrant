@@ -869,13 +869,14 @@ pub enum NodeType {
 #[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone)]
 pub struct BaseGroupRequest {
     /// Payload field to group by, must be a string or number field.
-    /// If the field contains more than 1 value (e.g. when it's an array), the first value will be used
+    /// If the field contains more than 1 value, all values will be used for grouping.
+    /// One point can be in multiple groups.
     #[validate(custom = "validate_group_by_field")]
     pub group_by: String,
 
     /// Maximum amount of points to return per group
     #[validate(range(min = 1))]
-    pub per_group: u32,
+    pub group_size: u32,
 
     /// Maximum amount of groups to return
     #[validate(range(min = 1))]

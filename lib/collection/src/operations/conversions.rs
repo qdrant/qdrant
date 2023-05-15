@@ -736,7 +736,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
             group_request: BaseGroupRequest {
                 group_by: value.group_by,
                 limit: value.limit,
-                per_group: value.per_group,
+                group_size: value.group_size,
             },
         })
     }
@@ -831,7 +831,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             group_request: BaseGroupRequest {
                 group_by: value.group_by,
                 limit: value.limit,
-                per_group: value.per_group,
+                group_size: value.group_size,
             },
         })
     }

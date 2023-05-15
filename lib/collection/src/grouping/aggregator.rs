@@ -48,7 +48,7 @@ impl GroupsAggregator {
                     .values()
                     .into_iter()
                     .flat_map(|v| match v {
-                        Value::Array(arr) => arr.into_iter().collect(),
+                        Value::Array(arr) => arr.iter().collect(),
                         _ => vec![v],
                     })
                     .collect()
@@ -57,7 +57,7 @@ impl GroupsAggregator {
 
         let group_keys = payload_values
             .into_iter()
-            .map(|v| GroupKey::try_from(v))
+            .map(GroupKey::try_from)
             .collect::<Result<Vec<GroupKey>, AggregatorError>>()?;
 
         let unique_group_keys: Vec<_> = group_keys.into_iter().unique().collect();
@@ -297,7 +297,7 @@ mod unit_tests {
         let mut aggregator = GroupsAggregator::new(4, 3, "docId".to_string(), Order::LargeBetter);
 
         // cases
-        #[cfg_attr(rustfmt, rustfmt_skip)]
+        #[rustfmt::skip]
         [
             Case::new(json!("a"), 1, 1, Ok(()), point(1, 0.99, json!("a"))),
             Case::new(json!("a"), 1, 1, Ok(()), point(1, 0.97, json!("a"))), // should not add it because it already has a point with the same id
@@ -348,7 +348,7 @@ mod unit_tests {
 
         let groups = aggregator.distill();
 
-        #[cfg_attr(rustfmt, rustfmt_skip)]
+        #[rustfmt::skip]
         let expected_groups = vec![
             (
                 GroupKey::from("b"),
@@ -425,8 +425,8 @@ mod unit_tests {
 
         let groups = aggregator.distill();
 
-        #[cfg_attr(rustfmt, rustfmt_skip)]
-            let expected_groups = vec![
+        #[rustfmt::skip]
+        let expected_groups = vec![
             (
                 GroupKey::from("b"),
                 vec![

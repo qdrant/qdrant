@@ -160,7 +160,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
             group_request:
                 BaseGroupRequest {
                     group_by,
-                    per_group,
+                    group_size: per_group,
                     limit,
                 },
         } = request;
@@ -200,7 +200,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
             group_request:
                 BaseGroupRequest {
                     group_by,
-                    per_group,
+                    group_size: per_group,
                     limit,
                 },
         } = request;

@@ -1524,7 +1524,7 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| double_value | [double](#double) |  | Represents a double value. |
+| unsigned_value | [uint64](#uint64) |  | Represents a double value. |
 | integer_value | [int64](#int64) |  | Represents an integer value |
 | string_value | [string](#string) |  | Represents a string value. |
 
@@ -1952,8 +1952,8 @@ The JSON representation for `Value` is a JSON value.
 | using | [string](#string) | optional | Define which vector to use for recommendation, if not specified - default vector |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | Name of the collection to use for points lookup, if not specified - use current collection |
-| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it&#39;s an array), the first value will be used |
-| per_group | [uint32](#uint32) |  | Maximum amount of points to return per group |
+| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
+| group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 
@@ -2223,8 +2223,8 @@ The JSON representation for `Value` is a JSON value.
 | score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
 | vector_name | [string](#string) | optional | Which vector to use for search, if not specified - use default vector |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
-| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it&#39;s an array), the first value will be used |
-| per_group | [uint32](#uint32) |  | Maximum amount of points to return per group |
+| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
+| group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 
 

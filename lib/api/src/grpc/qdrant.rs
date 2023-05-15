@@ -2857,14 +2857,13 @@ pub struct SearchPointGroups {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "9")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
-    /// Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
+    /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
     #[prost(string, tag = "10")]
     #[validate(custom = "crate::grpc::validate::validate_group_by_field")]
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
     #[prost(uint32, tag = "11")]
-    #[validate(range(min = 1))]
-    pub per_group: u32,
+    pub group_size: u32,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
@@ -3004,14 +3003,13 @@ pub struct RecommendPointGroups {
     /// Name of the collection to use for points lookup, if not specified - use current collection
     #[prost(message, optional, tag = "11")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
-    /// Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
+    /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
     #[prost(string, tag = "12")]
     #[validate(custom = "crate::grpc::validate::validate_group_by_field")]
     pub group_by: ::prost::alloc::string::String,
     /// Maximum amount of points to return per group
     #[prost(uint32, tag = "13")]
-    #[validate(range(min = 1))]
-    pub per_group: u32,
+    pub group_size: u32,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
@@ -3081,8 +3079,8 @@ pub mod group_id {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
         /// Represents a double value.
-        #[prost(double, tag = "1")]
-        DoubleValue(f64),
+        #[prost(uint64, tag = "1")]
+        UnsignedValue(u64),
         /// Represents an integer value
         #[prost(int64, tag = "2")]
         IntegerValue(i64),

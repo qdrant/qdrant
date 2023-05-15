@@ -239,8 +239,8 @@ message SearchPointGroups {
   optional float score_threshold = 7; // If provided - cut off results with worse scores
   optional string vector_name = 8; // Which vector to use for search, if not specified - use default vector
   optional WithVectorsSelector with_vectors = 9; // Options for specifying which vectors to include into response
-  string group_by = 10; // Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
-  uint32 per_group = 11; // Maximum amount of points to return per group
+  string group_by = 10; // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+  uint32 group_size = 11; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
 }
 
@@ -295,8 +295,8 @@ message RecommendPointGroups {
   optional string using = 9; // Define which vector to use for recommendation, if not specified - default vector
   optional WithVectorsSelector with_vectors = 10; // Options for specifying which vectors to include into response
   optional LookupLocation lookup_from = 11; // Name of the collection to use for points lookup, if not specified - use current collection
-  string group_by = 12; // Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used
-  uint32 per_group = 13; // Maximum amount of points to return per group
+  string group_by = 12; // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+  uint32 group_size = 13; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
 }
 
@@ -338,7 +338,7 @@ message ScoredPoint {
 message GroupId {
   oneof kind {
     // Represents a double value.
-    double double_value = 1;
+    uint64 unsigned_value = 1;
     // Represents an integer value
     int64 integer_value = 2;
     // Represents a string value.

@@ -437,17 +437,14 @@ impl From<segment::types::PointGroup> for PointGroup {
 impl From<segment::types::GroupId> for GroupId {
     fn from(key: segment::types::GroupId) -> Self {
         match key {
-            segment::types::GroupId::Number(n) => Self {
-                kind: if let Some(int) = n.as_i64() {
-                    Some(crate::grpc::qdrant::group_id::Kind::IntegerValue(int))
-                } else {
-                    Some(crate::grpc::qdrant::group_id::Kind::DoubleValue(
-                        n.as_f64().unwrap(),
-                    ))
-                },
-            },
             segment::types::GroupId::String(str) => Self {
                 kind: Some(crate::grpc::qdrant::group_id::Kind::StringValue(str)),
+            },
+            segment::types::GroupId::NumberU64(n) => Self {
+                kind: Some(crate::grpc::qdrant::group_id::Kind::UnsignedValue(n)),
+            },
+            segment::types::GroupId::NumberI64(n) => Self {
+                kind: Some(crate::grpc::qdrant::group_id::Kind::IntegerValue(n)),
             },
         }
     }

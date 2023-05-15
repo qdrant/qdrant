@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use segment::types::{GroupId, PointGroup, PointIdType, ScoredPoint};
+use serde_json::json;
 
 use crate::grouping::types::AggregatorError::BadKeyType;
 
@@ -48,7 +49,15 @@ impl TryFrom<&serde_json::Value> for GroupKey {
     fn try_from(value: &serde_json::Value) -> Result<Self, Self::Error> {
         match value {
             serde_json::Value::String(s) => Ok(Self(GroupId::String(s.to_string()))),
-            serde_json::Value::Number(n) => Ok(Self(GroupId::Number(n.to_owned()))),
+            serde_json::Value::Number(n) => {
+                if let Some(n_i64) = n.as_i64() {
+                    Ok(Self(GroupId::NumberI64(n_i64)))
+                } else if let Some(n_u64) = n.as_u64() {
+                    Ok(Self(GroupId::NumberU64(n_u64)))
+                } else {
+                    Err(BadKeyType)
+                }
+            }
             _ => Err(BadKeyType),
         }
     }
@@ -65,7 +74,8 @@ impl From<GroupKey> for serde_json::Value {
     fn from(key: GroupKey) -> Self {
         match key {
             GroupKey(GroupId::String(s)) => serde_json::Value::String(s),
-            GroupKey(GroupId::Number(n)) => serde_json::Value::Number(n),
+            GroupKey(GroupId::NumberU64(n)) => json!(n),
+            GroupKey(GroupId::NumberI64(n)) => json!(n),
         }
     }
 }
@@ -84,21 +94,14 @@ mod test {
 
         let string = GroupKey::try_from(&json!("string")).unwrap();
         let int = GroupKey::try_from(&json!(1)).unwrap();
-        let float = GroupKey::try_from(&json!(2.42)).unwrap();
-        let int_array = GroupKey::try_from(&json!([5, 6, 7])).unwrap();
-        let str_array = GroupKey::try_from(&json!(["a", "b", "c"])).unwrap();
+
+        assert!(GroupKey::try_from(&json!(2.42)).is_err());
+
+        assert!(GroupKey::try_from(&json!([5, 6, 7])).is_err());
+        assert!(GroupKey::try_from(&json!(["a", "b", "c"])).is_err());
 
         assert_eq!(string, GroupKey(GroupId::String("string".to_string())));
-        assert_eq!(int, GroupKey(GroupId::Number(serde_json::Number::from(1))));
-        assert_eq!(
-            float,
-            GroupKey(GroupId::Number(serde_json::Number::from_f64(2.42).unwrap()))
-        );
-        assert_eq!(
-            int_array,
-            GroupKey(GroupId::Number(serde_json::Number::from(5)))
-        );
-        assert_eq!(str_array, GroupKey(GroupId::String("a".to_string())));
+        assert_eq!(int.0.as_u64().unwrap(), 1);
 
         let bad_key = GroupKey::try_from(&json!(true));
         assert!(bad_key.is_err());

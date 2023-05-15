@@ -7799,7 +7799,13 @@
             "type": "string"
           },
           {
-            "type": "number"
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          {
+            "type": "integer",
+            "format": "int64"
           }
         ]
       },
@@ -7807,8 +7813,8 @@
         "type": "object",
         "required": [
           "group_by",
+          "group_size",
           "limit",
-          "per_group",
           "vector"
         ],
         "properties": {
@@ -7867,10 +7873,10 @@
             "nullable": true
           },
           "group_by": {
-            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used",
+            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value, all values will be used for grouping. One point can be in multiple groups.",
             "type": "string"
           },
-          "per_group": {
+          "group_size": {
             "description": "Maximum amount of points to return per group",
             "type": "integer",
             "format": "uint32",
@@ -7888,8 +7894,8 @@
         "type": "object",
         "required": [
           "group_by",
+          "group_size",
           "limit",
-          "per_group",
           "positive"
         ],
         "properties": {
@@ -7984,10 +7990,10 @@
             ]
           },
           "group_by": {
-            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value (e.g. when it's an array), the first value will be used",
+            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value, all values will be used for grouping. One point can be in multiple groups.",
             "type": "string"
           },
-          "per_group": {
+          "group_size": {
             "description": "Maximum amount of points to return per group",
             "type": "integer",
             "format": "uint32",
