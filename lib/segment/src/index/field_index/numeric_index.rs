@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::collections::btree_map::Iter;
 use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
@@ -292,6 +293,10 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             points_values_count: self.histogram.get_total_count(),
             histogram_bucket_size: Some(self.histogram.current_bucket_size()),
         }
+    }
+
+    pub fn iter(&self) -> Iter<Vec<u8>, u32> {
+        self.map.iter()
     }
 }
 

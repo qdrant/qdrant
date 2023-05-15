@@ -13,8 +13,8 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, OrderBy, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
+    QuantizationConfig, ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -184,6 +184,8 @@ pub struct ScrollRequest {
     /// Whether to return the point vector with the result?
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
+    /// Specify order by arbitrary key and offset
+    pub order_by: Option<OrderBy>,
 }
 
 impl Default for ScrollRequest {
@@ -194,6 +196,7 @@ impl Default for ScrollRequest {
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
             with_vector: WithVector::Bool(false),
+            order_by: None,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, OrderBy, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -70,6 +70,7 @@ impl ShardOperation for LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
@@ -80,7 +81,7 @@ impl ShardOperation for LocalShard {
                 segment
                     .get()
                     .read()
-                    .read_filtered(offset, Some(limit), filter)
+                    .read_filtered(offset, Some(limit), filter, order_by)
             })
             .sorted()
             .dedup()
