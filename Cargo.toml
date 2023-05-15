@@ -42,7 +42,7 @@ clap = { version = "4.2.7", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
 uuid = { version = "1.3", features = ["v4", "serde"] }
 sys-info = "0.9.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "660ccf17b117e7a0667a17177e96fdaeb166851b" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "f3029ad0e1632d5e375db55695e33121df54aa5c" }
 
 config = "~0.13.3"
 
