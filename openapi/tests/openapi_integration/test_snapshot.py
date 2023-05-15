@@ -104,8 +104,8 @@ def test_snapshot_operations():
     assert response.ok
     assert len(response.json()['result']) == 0
 
-
-def test_test_snapshot_operations_non_wait():
+@pytest.mark.timeout(20)
+def test_snapshot_operations_non_wait():
     # there no snapshot on collection
     response = request_with_validation(
         api='/collections/{collection_name}/snapshots',
@@ -123,20 +123,25 @@ def test_test_snapshot_operations_non_wait():
         query_params={'wait': 'false'},
     )
     assert response.status_code == 202
-
-    # wait for snapshot to be created
-    sleep(1)
-
+    
     # validate it exists
-    response = request_with_validation(
-        api='/collections/{collection_name}/snapshots',
-        method="GET",
-        path_params={'collection_name': collection_name},
-    )
-    assert response.ok
-    assert len(response.json()['result']) == 1
-    snapshot_name = response.json()['result'][0]['name']
-
+    snapshot_name = None
+    while True:
+        try:
+            response = request_with_validation(
+                api='/collections/{collection_name}/snapshots',
+                method="GET",
+                path_params={'collection_name': collection_name},
+            )
+            assert response.ok
+            assert len(response.json()['result']) == 1
+            snapshot_name = response.json()['result'][0]['name']
+            break
+        except AssertionError:
+            # wait for snapshot to be created
+            sleep(0.1)
+            continue
+        
     # delete it
     response = request_with_validation(
         api='/collections/{collection_name}/snapshots/{snapshot_name}',
@@ -146,18 +151,23 @@ def test_test_snapshot_operations_non_wait():
         query_params={'wait': 'false'},
     )
     assert response.status_code == 202
-    # wait for snapshot to be deleted
-    sleep(2)
 
     # validate it is gone
-    response = request_with_validation(
-        api='/collections/{collection_name}/snapshots',
-        method="GET",
-        path_params={'collection_name': collection_name},
-    )
-    assert response.ok
-    assert len(response.json()['result']) == 0
-
+    while True:
+        try:
+            response = request_with_validation(
+                api='/collections/{collection_name}/snapshots',
+                method="GET",
+                path_params={'collection_name': collection_name},
+            )
+            assert response.ok
+            assert len(response.json()['result']) == 0
+            break
+        except AssertionError:
+            # wait for snapshot to be deleted
+            sleep(0.1)
+            continue
+        
     # no full snapshot
     response = request_with_validation(
         api='/snapshots',
@@ -173,18 +183,23 @@ def test_test_snapshot_operations_non_wait():
         query_params={'wait': 'false'},
     )
     assert response.status_code == 202
-    # wait for snapshot to be created
-    sleep(2)
 
     # validate it exists
-    response = request_with_validation(
-        api='/snapshots',
-        method="GET",
-    )
-    assert response.ok
-    assert len(response.json()['result']) == 1
-    snapshot_name = response.json()['result'][0]['name']
-
+    while True:
+        try: 
+            response = request_with_validation(
+                api='/snapshots',
+                method="GET",
+            )
+            assert response.ok
+            assert len(response.json()['result']) == 1
+            snapshot_name = response.json()['result'][0]['name']
+            break
+        except AssertionError:
+            # wait for snapshot to be created
+            sleep(0.1)
+            continue
+        
     # delete it
     response = request_with_validation(
         api='/snapshots/{snapshot_name}',
@@ -194,12 +209,16 @@ def test_test_snapshot_operations_non_wait():
     )
     assert response.status_code == 202
 
-    # wait for snapshot to be deleted
-    sleep(1)
-
-    response = request_with_validation(
-        api='/snapshots',
-        method="GET",
-    )
-    assert response.ok
-    assert len(response.json()['result']) == 0
+    while True:
+        try:    
+            response = request_with_validation(
+                api='/snapshots',
+                method="GET",
+            )
+            assert response.ok
+            assert len(response.json()['result']) == 0
+            break
+        except AssertionError:
+            # wait for snapshot to be deleted
+            sleep(0.1)
+            continue
