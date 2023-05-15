@@ -22,7 +22,7 @@ mod tests {
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes,
         IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig,
-        StorageType, VectorDataConfig, WithPayload,
+        VectorDataConfig, WithPayload,
     };
     use tempfile::Builder;
 
@@ -41,7 +41,6 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
-                    storage_type: StorageType::InMemory,
                 },
             )]),
             appendable: true,
@@ -155,7 +154,6 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
-                    storage_type: StorageType::InMemory,
                 },
             )]),
             appendable: true,

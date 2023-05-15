@@ -1471,7 +1471,7 @@ mod tests {
     use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use crate::entry::entry_point::OperationError::PointIdError;
     use crate::segment_constructor::{build_segment, load_segment};
-    use crate::types::{Distance, Indexes, SegmentConfig, StorageType, VectorDataConfig};
+    use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
 
     // no longer valid since users are now allowed to store arbitrary json objects.
     // TODO(gvelo): add tests for invalid payload types on indexed fields.
@@ -1520,7 +1520,6 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
-                    storage_type: StorageType::InMemory,
                 },
             )]),
             appendable: true,
@@ -1592,7 +1591,6 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
-                    storage_type: StorageType::InMemory,
                 },
             )]),
             appendable: true,
@@ -1683,7 +1681,6 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
-                    storage_type: StorageType::InMemory,
                 },
             )]),
             appendable: true,
@@ -1773,7 +1770,6 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
-                    storage_type: StorageType::InMemory,
                 },
             )]),
             appendable: true,
@@ -1806,7 +1802,6 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
-                    storage_type: StorageType::InMemory,
                 },
             )]),
             appendable: true,

@@ -16,7 +16,7 @@ mod tests {
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
         PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType,
-        StorageType, VectorDataConfig,
+        VectorDataConfig,
     };
     use serde_json::json;
     use tempfile::Builder;
@@ -49,7 +49,6 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
-                    storage_type: StorageType::InMemory,
                 },
             )]),
             appendable: true,

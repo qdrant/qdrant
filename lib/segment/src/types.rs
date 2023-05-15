@@ -546,9 +546,7 @@ impl SegmentConfig {
     }
 
     pub fn is_any_mmap(&self) -> bool {
-        self.vector_data
-            .values()
-            .any(|config| config.storage_type == StorageType::Mmap)
+        self.vector_data.values().any(|config| config.on_disk)
     }
 }
 
@@ -595,7 +593,6 @@ impl From<SegmentConfigV5> for SegmentConfig {
                     on_disk: old_data
                         .on_disk
                         .unwrap_or_else(|| old_segment.storage_type == StorageType::Mmap),
-                    storage_type: old_segment.storage_type,
                 };
 
                 (vector_name, new_data)
@@ -630,8 +627,6 @@ pub struct VectorDataConfig {
     /// the fraction fraction of vectors that fit in RAM.
     #[serde(default)]
     pub on_disk: bool,
-    /// Type of vector storage
-    pub storage_type: StorageType,
 }
 
 /// Config of single vector data storage
