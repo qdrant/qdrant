@@ -486,18 +486,6 @@ pub enum PayloadIndexType {
     Struct,
 }
 
-/// Type of vector storage
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type", content = "options")]
-pub enum StorageType {
-    // Store vectors in memory and use persistence storage only if vectors are changed
-    #[default]
-    InMemory,
-    // Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
-    Mmap,
-}
-
 /// Type of payload storage
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -550,6 +538,26 @@ impl SegmentConfig {
     }
 }
 
+/// Config of single vector data storage
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorDataConfig {
+    /// Size/dimensionality of the vectors used
+    pub size: usize,
+    /// Type of distance function used for measuring distance between vectors
+    pub distance: Distance,
+    /// Type of index used for search
+    pub index: Indexes,
+    /// Vector specific quantization config that overrides collection config
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
+    /// False to keep in memory, true to store on disk.
+    /// If true, memory mapped files are used. Then search performance is defined by disk speed and
+    /// the fraction fraction of vectors that fit in RAM.
+    #[serde(default)]
+    pub on_disk: bool,
+}
+
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 #[deprecated = "use SegmentConfig instead"]
@@ -558,7 +566,7 @@ pub struct SegmentConfigV5 {
     /// Type of index used for search
     pub index: Indexes,
     /// Type of vector storage
-    pub storage_type: StorageType,
+    pub storage_type: StorageTypeV5,
     /// Defines payload storage type
     #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
@@ -592,14 +600,14 @@ impl From<SegmentConfigV5> for SegmentConfig {
                     // this from the storage type setting we used before.
                     on_disk: old_data
                         .on_disk
-                        .unwrap_or_else(|| old_segment.storage_type == StorageType::Mmap),
+                        .unwrap_or_else(|| old_segment.storage_type == StorageTypeV5::Mmap),
                 };
 
                 (vector_name, new_data)
             })
             .collect();
 
-        let appendable = old_segment.storage_type == StorageType::InMemory;
+        let appendable = old_segment.storage_type == StorageTypeV5::InMemory;
 
         SegmentConfig {
             vector_data,
@@ -609,24 +617,17 @@ impl From<SegmentConfigV5> for SegmentConfig {
     }
 }
 
-/// Config of single vector data storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+/// Type of vector storage
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub struct VectorDataConfig {
-    /// Size/dimensionality of the vectors used
-    pub size: usize,
-    /// Type of distance function used for measuring distance between vectors
-    pub distance: Distance,
-    /// Type of index used for search
-    pub index: Indexes,
-    /// Vector specific quantization config that overrides collection config
-    #[serde(default)]
-    pub quantization_config: Option<QuantizationConfig>,
-    /// False to keep in memory, true to store on disk.
-    /// If true, memory mapped files are used. Then search performance is defined by disk speed and
-    /// the fraction fraction of vectors that fit in RAM.
-    #[serde(default)]
-    pub on_disk: bool,
+#[serde(tag = "type", content = "options")]
+#[deprecated]
+pub enum StorageTypeV5 {
+    // Store vectors in memory and use persistence storage only if vectors are changed
+    #[default]
+    InMemory,
+    // Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
+    Mmap,
 }
 
 /// Config of single vector data storage

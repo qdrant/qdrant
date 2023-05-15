@@ -26,7 +26,7 @@ use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentConfigV5, SegmentState,
-    SegmentType, SeqNumberType, StorageType, VectorDataConfigV5,
+    SegmentType, SeqNumberType, StorageTypeV5, VectorDataConfigV5,
 };
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
@@ -273,7 +273,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
         /// Type of index used for search
         pub index: Indexes,
         /// Type of vector storage
-        pub storage_type: StorageType,
+        pub storage_type: StorageTypeV5,
         /// Defines payload storage type
         #[serde(default)]
         pub payload_storage_type: PayloadStorageType,
