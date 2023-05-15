@@ -1,14 +1,13 @@
 import pytest
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import request_with_validation
 from .test_basic_retrieve_api import points_retrieve, exclude_payload, is_empty_condition, \
     recommendation, query_nested
 
 collection_name = 'test_collection'
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def setup():
     basic_collection_setup(collection_name=collection_name, on_disk_payload=True)
     yield
