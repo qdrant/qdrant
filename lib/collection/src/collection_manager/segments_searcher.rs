@@ -464,9 +464,9 @@ async fn search_in_segment(
     Ok((result, further_results))
 }
 
-/// Find the maximum segment or vector specific HNSW ef_construct in this config
+/// Find the HNSW ef_construct for a named vector
 ///
-/// If the index is `Plain`, `None` is returned.
+/// If the given named vector has no HNSW index, `None` is returned.
 fn get_hnsw_ef_construct(config: SegmentConfig, vector_name: &str) -> Option<usize> {
     config
         .vector_data

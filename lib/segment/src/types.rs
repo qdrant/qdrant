@@ -533,6 +533,10 @@ impl SegmentConfig {
             .all(|config| config.index.is_indexed())
     }
 
+    /// Check if any vector storage is mmap'ed
+    ///
+    /// This assumes that when the storage for a named vector requests to be stored on disk; it is
+    /// mmap'ed.
     pub fn is_any_mmap(&self) -> bool {
         self.vector_data.values().any(|config| config.on_disk)
     }
