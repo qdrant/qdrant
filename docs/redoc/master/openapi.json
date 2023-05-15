@@ -3459,6 +3459,94 @@
         }
       }
     },
+    "/collections/{collection_name}/points/search/groups": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Search point groups",
+        "description": "Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field",
+        "operationId": "search_point_groups",
+        "requestBody": {
+          "description": "Search request with optional filtering, grouped by a given payload field",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchGroupsRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/GroupsResult"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/points/recommend": {
       "post": {
         "tags": [
@@ -3635,6 +3723,94 @@
                           "$ref": "#/components/schemas/ScoredPoint"
                         }
                       }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/points/recommend/groups": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Recommend point groups",
+        "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.",
+        "operationId": "recommend_point_groups",
+        "requestBody": {
+          "description": "Request points based on positive and negative examples, grouped by a payload field.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendGroupsRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/GroupsResult"
                     }
                   }
                 }
@@ -7634,6 +7810,255 @@
             },
             "minItems": 1,
             "uniqueItems": true
+          }
+        }
+      },
+      "PointGroup": {
+        "type": "object",
+        "required": [
+          "hits",
+          "id"
+        ],
+        "properties": {
+          "hits": {
+            "description": "Scored points that have the same value of the group_by key",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScoredPoint"
+            }
+          },
+          "id": {
+            "$ref": "#/components/schemas/GroupId"
+          }
+        }
+      },
+      "GroupId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          {
+            "type": "integer",
+            "format": "int64"
+          }
+        ]
+      },
+      "SearchGroupsRequest": {
+        "type": "object",
+        "required": [
+          "group_by",
+          "group_size",
+          "limit",
+          "vector"
+        ],
+        "properties": {
+          "vector": {
+            "$ref": "#/components/schemas/NamedVectorStruct"
+          },
+          "filter": {
+            "description": "Look only for points which satisfies this conditions",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "params": {
+            "description": "Additional search params",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_payload": {
+            "description": "Select which payload to return with the response. Default: None",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "score_threshold": {
+            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "group_by": {
+            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value, all values will be used for grouping. One point can be in multiple groups.",
+            "type": "string",
+            "minLength": 1
+          },
+          "group_size": {
+            "description": "Maximum amount of points to return per group",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1
+          },
+          "limit": {
+            "description": "Maximum amount of groups to return",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1
+          }
+        }
+      },
+      "RecommendGroupsRequest": {
+        "type": "object",
+        "required": [
+          "group_by",
+          "group_size",
+          "limit",
+          "positive"
+        ],
+        "properties": {
+          "positive": {
+            "description": "Look for vectors closest to those",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            }
+          },
+          "negative": {
+            "description": "Try to avoid vectors like this",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            }
+          },
+          "filter": {
+            "description": "Look only for points which satisfies this conditions",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "params": {
+            "description": "Additional search params",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_payload": {
+            "description": "Select which payload to return with the response. Default: None",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_vector": {
+            "description": "Whether to return the point vector with the result?",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "score_threshold": {
+            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "using": {
+            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsingVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "lookup_from": {
+            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LookupLocation"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "group_by": {
+            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value, all values will be used for grouping. One point can be in multiple groups.",
+            "type": "string",
+            "minLength": 1
+          },
+          "group_size": {
+            "description": "Maximum amount of points to return per group",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1
+          },
+          "limit": {
+            "description": "Maximum amount of groups to return",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1
+          }
+        }
+      },
+      "GroupsResult": {
+        "type": "object",
+        "required": [
+          "groups"
+        ],
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PointGroup"
+            }
           }
         }
       }

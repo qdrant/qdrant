@@ -25,7 +25,7 @@ cargo run --package qdrant --bin schema_generator > ./openapi/schemas/AllDefinit
 
 (
     cd tools/schema2openapi/
-    docker buildx build --load . --tag schema2openapi
+    docker build . --tag schema2openapi
 )
 
 docker run --rm \

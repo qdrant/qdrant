@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
+use std::hash::Hash;
 use std::mem::size_of;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -18,6 +19,7 @@ use validator::{Validate, ValidationErrors};
 
 use crate::common::utils;
 use crate::common::utils::MultiValue;
+use crate::data_types::groups::GroupId;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
@@ -195,6 +197,14 @@ impl PartialEq for ScoredPoint {
     fn eq(&self, other: &Self) -> bool {
         (self.id, &self.score) == (other.id, &other.score)
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+pub struct PointGroup {
+    /// Scored points that have the same value of the group_by key
+    pub hits: Vec<ScoredPoint>,
+    /// Value of the group_by key shared by all the hits
+    pub id: GroupId,
 }
 
 /// Type of segment
@@ -939,6 +949,28 @@ pub enum Match {
     Any(MatchAny),
 }
 
+impl Match {
+    #[cfg(test)]
+    fn new_value(value: ValueVariants) -> Self {
+        Self::Value(MatchValue { value })
+    }
+
+    #[cfg(test)]
+    fn new_text(text: &str) -> Self {
+        Self::Text(MatchText { text: text.into() })
+    }
+
+    pub fn new_any(any: AnyVariants) -> Self {
+        Self::Any(MatchAny { any })
+    }
+}
+
+impl From<AnyVariants> for Match {
+    fn from(any: AnyVariants) -> Self {
+        Self::Any(MatchAny { any })
+    }
+}
+
 impl From<MatchInterface> for Match {
     fn from(value: MatchInterface) -> Self {
         match value {
@@ -1176,6 +1208,14 @@ pub struct IsEmptyCondition {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct IsNullCondition {
     pub is_null: PayloadField,
+}
+
+impl From<String> for IsNullCondition {
+    fn from(key: String) -> Self {
+        IsNullCondition {
+            is_null: PayloadField { key },
+        }
+    }
 }
 
 /// ID-based filtering condition
@@ -1424,7 +1464,7 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
@@ -1458,6 +1498,25 @@ impl Filter {
             should: None,
             must: None,
             must_not: Some(vec![condition]),
+        }
+    }
+
+    pub fn merge(&self, other: &Filter) -> Filter {
+        let merge_component = |this, other| -> Option<Vec<Condition>> {
+            match (this, other) {
+                (None, None) => None,
+                (Some(this), None) => Some(this),
+                (None, Some(other)) => Some(other),
+                (Some(mut this), Some(other)) => {
+                    this.extend(other);
+                    Some(this)
+                }
+            }
+        };
+        Filter {
+            should: merge_component(self.should.clone(), other.should.clone()),
+            must: merge_component(self.must.clone(), other.must.clone()),
+            must_not: merge_component(self.must_not.clone(), other.must_not.clone()),
         }
     }
 }
@@ -1583,7 +1642,6 @@ mod tests {
         "#;
 
         let filter: Filter = serde_json::from_str(query).unwrap();
-        println!("{filter:?}");
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
@@ -2008,6 +2066,34 @@ mod tests {
         let query = r#""keyword""#;
         let field_type: PayloadSchemaType = serde_json::from_str(query).unwrap();
         eprintln!("field_type = {field_type:?}");
+    }
+
+    #[test]
+    fn merge_filters() {
+        let condition1 = Condition::Field(FieldCondition::new_match(
+            "summary",
+            Match::new_text("Berlin"),
+        ));
+        let mut this = Filter::new_must(condition1.clone());
+        this.should = Some(vec![condition1.clone()]);
+
+        let condition2 = Condition::Field(FieldCondition::new_match(
+            "city",
+            Match::new_value(ValueVariants::Keyword("Osaka".into())),
+        ));
+        let other = Filter::new_must(condition2.clone());
+
+        let merged = this.merge(&other);
+
+        assert!(merged.must.is_some());
+        assert!(merged.must.as_ref().unwrap().len() == 2);
+        assert!(merged.must_not.is_none());
+        assert!(merged.should.is_some());
+        assert!(merged.should.as_ref().unwrap().len() == 1);
+
+        assert!(merged.must.as_ref().unwrap().contains(&condition1));
+        assert!(merged.must.as_ref().unwrap().contains(&condition2));
+        assert!(merged.should.as_ref().unwrap().contains(&condition1));
     }
 }
 

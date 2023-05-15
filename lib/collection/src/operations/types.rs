@@ -13,8 +13,8 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointGroup, PointIdType,
+    QuantizationConfig, ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -246,6 +246,35 @@ pub struct SearchRequestBatch {
     pub searches: Vec<SearchRequest>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct SearchGroupsRequest {
+    /// Look for vectors closest to this
+    pub vector: NamedVectorStruct,
+
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+
+    /// Additional search params
+    pub params: Option<SearchParams>,
+
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Whether to return the point vector with the result?
+    #[serde(default, alias = "with_vectors")]
+    pub with_vector: Option<WithVector>,
+
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
+
+    #[serde(flatten)]
+    #[validate]
+    pub group_request: BaseGroupRequest,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointRequest {
@@ -291,7 +320,7 @@ pub struct LookupLocation {
 /// Service should look for the points which are closer to positive examples and at the same time
 /// further to negative examples. The concrete way of how to compare negative and positive distances
 /// is up to implementation in `segment` crate.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
     /// Look for vectors closest to those
@@ -334,6 +363,52 @@ pub struct RecommendRequest {
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequestBatch {
     pub searches: Vec<RecommendRequest>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct RecommendGroupsRequest {
+    /// Look for vectors closest to those
+    pub positive: Vec<PointIdType>,
+
+    /// Try to avoid vectors like this
+    #[serde(default)]
+    pub negative: Vec<PointIdType>,
+
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+
+    /// Additional search params
+    pub params: Option<SearchParams>,
+
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Whether to return the point vector with the result?
+    #[serde(default, alias = "with_vectors")]
+    pub with_vector: Option<WithVector>,
+
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
+
+    /// Define which vector to use for recommendation, if not specified - try to use default vector
+    #[serde(default)]
+    pub using: Option<UsingVector>,
+
+    /// The location used to lookup vectors. If not specified - use current collection.
+    /// Note: the other collection should have the same vector size as the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
+
+    #[serde(flatten)]
+    pub group_request: BaseGroupRequest,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GroupsResult {
+    pub groups: Vec<PointGroup>,
 }
 
 /// Count Request
@@ -789,4 +864,21 @@ pub enum NodeType {
     /// This is useful for nodes that are only used for writing data
     /// and backup purposes
     Listener,
+}
+
+#[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone)]
+pub struct BaseGroupRequest {
+    /// Payload field to group by, must be a string or number field.
+    /// If the field contains more than 1 value, all values will be used for grouping.
+    /// One point can be in multiple groups.
+    #[validate(length(min = 1))]
+    pub group_by: String,
+
+    /// Maximum amount of points to return per group
+    #[validate(range(min = 1))]
+    pub group_size: u32,
+
+    /// Maximum amount of groups to return
+    #[validate(range(min = 1))]
+    pub limit: u32,
 }

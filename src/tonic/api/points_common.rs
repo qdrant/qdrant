@@ -6,9 +6,10 @@ use api::grpc::qdrant::{
     BatchResult, ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, FieldType,
     GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponse,
-    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchPoints,
-    SearchResponse, SetPayloadPoints, SyncPoints, UpdatePointVectors, UpsertPoints,
+    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
+    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
+    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
+    SetPayloadPoints, SyncPoints, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::write_ordering_from_proto;
@@ -617,6 +618,40 @@ pub async fn search_batch(
     Ok(Response::new(response))
 }
 
+pub async fn search_groups(
+    toc: &TableOfContent,
+    search_point_groups: SearchPointGroups,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<SearchGroupsResponse>, Status> {
+    let search_groups_request = search_point_groups.clone().try_into()?;
+
+    let SearchPointGroups {
+        collection_name,
+        read_consistency,
+        ..
+    } = search_point_groups;
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let groups_result = crate::common::points::do_search_point_groups(
+        toc,
+        &collection_name,
+        search_groups_request,
+        read_consistency,
+        shard_selection,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = SearchGroupsResponse {
+        result: Some(groups_result.into()),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
 pub async fn recommend(
     toc: &TableOfContent,
     recommend_points: RecommendPoints,
@@ -715,6 +750,37 @@ pub async fn recommend_batch(
     Ok(Response::new(response))
 }
 
+pub async fn recommend_groups(
+    toc: &TableOfContent,
+    recommend_point_groups: RecommendPointGroups,
+) -> Result<Response<RecommendGroupsResponse>, Status> {
+    let recommend_groups_request = recommend_point_groups.clone().try_into()?;
+
+    let RecommendPointGroups {
+        collection_name,
+        read_consistency,
+        ..
+    } = recommend_point_groups;
+
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let timing = Instant::now();
+    let groups_result = crate::common::points::do_recommend_point_groups(
+        toc,
+        &collection_name,
+        recommend_groups_request,
+        read_consistency,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = RecommendGroupsResponse {
+        result: Some(groups_result.into()),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
 pub async fn scroll(
     toc: &TableOfContent,
     scroll_points: ScrollPoints,

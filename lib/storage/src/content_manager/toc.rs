@@ -12,14 +12,15 @@ use collection::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams,
 };
+use collection::grouping::group_by::{group_by, GroupRequest};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    AliasDescription, CollectionResult, CountRequest, CountResult, PointRequest, RecommendRequest,
-    RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch,
-    UpdateResult, VectorsConfig,
+    AliasDescription, CollectionResult, CountRequest, CountResult, GroupsResult, PointRequest,
+    RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchRequest,
+    SearchRequestBatch, UpdateResult, VectorsConfig,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::{recommend_batch_by, recommend_by};
@@ -1176,6 +1177,29 @@ impl TableOfContent {
             .retrieve(request, read_consistency, shard_selection)
             .await
             .map_err(|err| err.into())
+    }
+
+    pub async fn group(
+        &self,
+        collection_name: &str,
+        request: GroupRequest,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: Option<ShardId>,
+    ) -> Result<GroupsResult, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+
+        let collection_by_name = |name| self.get_collection_opt(name);
+
+        group_by(
+            request,
+            &collection,
+            collection_by_name,
+            read_consistency,
+            shard_selection,
+        )
+        .await
+        .map(|groups| GroupsResult { groups })
+        .map_err(|err| err.into())
     }
 
     /// List of all collections

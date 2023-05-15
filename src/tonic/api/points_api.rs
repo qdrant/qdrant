@@ -5,14 +5,15 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, GetPoints,
     GetResponse, PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse,
-    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints,
-    SearchBatchResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpdatePointVectors,
+    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
+    ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
+    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdatePointVectors,
     UpsertPoints,
 };
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
-use super::points_common::{delete_vectors, update_vectors};
+use super::points_common::{delete_vectors, recommend_groups, search_groups, update_vectors};
 use super::validate;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
@@ -145,6 +146,14 @@ impl Points for PointsService {
         .await
     }
 
+    async fn search_groups(
+        &self,
+        request: Request<SearchPointGroups>,
+    ) -> Result<Response<SearchGroupsResponse>, Status> {
+        validate(request.get_ref())?;
+        search_groups(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
     async fn scroll(
         &self,
         request: Request<ScrollPoints>,
@@ -178,6 +187,14 @@ impl Points for PointsService {
             read_consistency,
         )
         .await
+    }
+
+    async fn recommend_groups(
+        &self,
+        request: Request<RecommendPointGroups>,
+    ) -> Result<Response<RecommendGroupsResponse>, Status> {
+        validate(request.get_ref())?;
+        recommend_groups(self.toc.as_ref(), request.into_inner()).await
     }
 
     async fn count(
