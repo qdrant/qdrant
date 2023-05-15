@@ -161,8 +161,10 @@ impl CollectionParams {
             })
     }
 
-    /// This will create vector data configurations with the default index and storage settings.
-    /// No settings optimization (based on thresholds) will be done.
+    /// Convert into unoptimized named vector data configs
+    ///
+    /// It is the job of the segment optimizer to change this configuration with optimized settings
+    /// based on threshold configurations.
     pub fn into_base_vector_data(
         &self,
         collection_quantization: Option<&QuantizationConfig>,
@@ -176,6 +178,7 @@ impl CollectionParams {
                     VectorDataConfig {
                         size: params.size.get() as usize,
                         distance: params.distance,
+                        // Plain (disabled) index
                         index: Indexes::Plain {},
                         // Only set if enabled on segment level as well
                         // TODO: decide this outside this function?
