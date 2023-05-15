@@ -180,10 +180,10 @@ impl CollectionParams {
                         distance: params.distance,
                         // Plain (disabled) index
                         index: Indexes::Plain {},
-                        // Only set if enabled on segment level as well
-                        // TODO: decide this outside this function?
+                        // Only set if enabled on segment level as well, prefer vector level config
                         quantization_config: collection_quantization
                             .and(params.quantization_config.as_ref())
+                            .or(collection_quantization)
                             .cloned(),
                         on_disk: params.on_disk.unwrap_or_default(),
                     },
