@@ -99,7 +99,9 @@ impl RemoteShard {
         self.channel_service
             .channel_pool
             .with_channel(&current_address, |channel| {
-                f(PointsInternalClient::new(channel))
+                let client = PointsInternalClient::new(channel);
+                let client = client.max_decoding_message_size(usize::MAX);
+                f(client)
             })
             .await
             .map_err(|err| err.into())
@@ -113,7 +115,9 @@ impl RemoteShard {
         self.channel_service
             .channel_pool
             .with_channel(&current_address, |channel| {
-                f(CollectionsInternalClient::new(channel))
+                let client = CollectionsInternalClient::new(channel);
+                let client = client.max_decoding_message_size(usize::MAX);
+                f(client)
             })
             .await
             .map_err(|err| err.into())
