@@ -70,7 +70,7 @@ def basic_collection_setup(collection_name='test_collection'):
     assert response.ok
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def setup():
     basic_collection_setup(collection_name=collection_name)
     yield
