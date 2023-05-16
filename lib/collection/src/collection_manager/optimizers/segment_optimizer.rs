@@ -152,10 +152,12 @@ pub trait SegmentOptimizer {
         let mut vector_data =
             collection_params.into_base_vector_data(self.quantization_config().as_ref())?;
 
-        // If indexing, change to HNSW index
+        // If indexing, change to HNSW index and quantization
         if is_indexed {
             let collection_hnsw = self.hnsw_config();
+            let collection_quantization = self.quantization_config();
             vector_data.iter_mut().for_each(|(vector_name, config)| {
+                // Assign HNSW index
                 let param_hnsw = collection_params
                     .vectors
                     .get_params(vector_name)
@@ -164,6 +166,16 @@ pub trait SegmentOptimizer {
                     .and_then(|c| c.update(collection_hnsw).ok())
                     .unwrap_or_else(|| collection_hnsw.clone());
                 config.index = Indexes::Hnsw(vector_hnsw);
+
+                // Assign quantization config
+                let param_quantization = collection_params
+                    .vectors
+                    .get_params(vector_name)
+                    .and_then(|params| params.quantization_config.as_ref());
+                let vector_quantization = param_quantization
+                    .or(collection_quantization.as_ref())
+                    .cloned();
+                config.quantization_config = vector_quantization;
             });
         }
 
