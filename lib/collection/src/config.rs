@@ -165,10 +165,7 @@ impl CollectionParams {
     ///
     /// It is the job of the segment optimizer to change this configuration with optimized settings
     /// based on threshold configurations.
-    pub fn into_base_vector_data(
-        &self,
-        collection_quantization: Option<&QuantizationConfig>,
-    ) -> CollectionResult<HashMap<String, VectorDataConfig>> {
+    pub fn into_base_vector_data(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         Ok(self
             .vectors
             .params_iter()

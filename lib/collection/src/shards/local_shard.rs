@@ -306,7 +306,7 @@ impl LocalShard {
 
         let vector_params = config
             .params
-            .into_base_vector_data(config.quantization_config.as_ref())?;
+            .into_base_vector_data()?;
         let segment_number = config.optimizer_config.get_number_segments();
 
         for _sid in 0..segment_number {
