@@ -6,7 +6,7 @@ from .helpers.helpers import request_with_validation
 collection_name = 'test_collection'
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def setup():
     multivec_collection_setup(collection_name=collection_name)
     yield

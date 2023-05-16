@@ -6,7 +6,7 @@ from .helpers.collection_setup import basic_collection_setup, drop_collection
 
 collection_name = 'test_collection_telemetry'
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def setup():
     basic_collection_setup(collection_name=collection_name)
     yield

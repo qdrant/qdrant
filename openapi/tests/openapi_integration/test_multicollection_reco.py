@@ -7,7 +7,7 @@ collection_name = 'test_collection_reco'
 collection_name2 = 'test_collection_reco2'
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def setup():
     basic_collection_setup(collection_name=collection_name)
     yield
