@@ -6794,7 +6794,6 @@
       "SegmentConfig": {
         "type": "object",
         "required": [
-          "appendable",
           "payload_storage_type",
           "vector_data"
         ],
@@ -6804,10 +6803,6 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/VectorDataConfig"
             }
-          },
-          "appendable": {
-            "description": "Whether this segment should support appending new data.",
-            "type": "boolean"
           },
           "payload_storage_type": {
             "$ref": "#/components/schemas/PayloadStorageType"
@@ -6820,8 +6815,8 @@
         "required": [
           "distance",
           "index",
-          "on_disk",
-          "size"
+          "size",
+          "storage_type"
         ],
         "properties": {
           "size": {
@@ -6832,6 +6827,9 @@
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"
+          },
+          "storage_type": {
+            "$ref": "#/components/schemas/VectorStorageType"
           },
           "index": {
             "$ref": "#/components/schemas/Indexes"
@@ -6846,12 +6844,34 @@
                 "nullable": true
               }
             ]
-          },
-          "on_disk": {
-            "description": "False to keep in memory, true to store on disk. If true, memory mapped files are used. Then search performance is defined by disk speed and the fraction fraction of vectors that fit in RAM.",
-            "type": "boolean"
           }
         }
+      },
+      "VectorStorageType": {
+        "description": "Storage types for vectors",
+        "oneOf": [
+          {
+            "description": "Storage in memory (RAM)\n\nWill be very fast at the cost of consuming a lot of memory.",
+            "type": "string",
+            "enum": [
+              "Memory"
+            ]
+          },
+          {
+            "description": "Storage in mmap file, not appendable\n\nSearch performance is defined by disk speed and the fraction of vectors that fit in memory.",
+            "type": "string",
+            "enum": [
+              "Mmap"
+            ]
+          },
+          {
+            "description": "Storage in chunked mmap files, appendable\n\nSearch performance is defined by disk speed and the fraction of vectors that fit in memory.",
+            "type": "string",
+            "enum": [
+              "ChunkedMmap"
+            ]
+          }
+        ]
       },
       "Indexes": {
         "description": "Vector index configuration",
