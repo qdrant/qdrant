@@ -502,8 +502,6 @@ pub enum PayloadStorageType {
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_data: HashMap<String, VectorDataConfig>,
-    /// Whether this segment should support appending new data.
-    pub appendable: bool,
     /// Defines payload storage type
     pub payload_storage_type: PayloadStorageType,
 }
@@ -537,7 +535,9 @@ impl SegmentConfig {
     /// This assumes that when the storage for a named vector requests to be stored on disk; it is
     /// mmap'ed.
     pub fn is_any_mmap(&self) -> bool {
-        self.vector_data.values().any(|config| config.on_disk)
+        self.vector_data
+            .values()
+            .any(|config| config.storage_type.is_mmap())
     }
 }
 
@@ -559,6 +559,16 @@ pub enum VectorStorageType {
     ChunkedMmap,
 }
 
+impl VectorStorageType {
+    /// Whether this storage type is a mmap on disk
+    fn is_mmap(&self) -> bool {
+        match self {
+            Self::Memory => false,
+            Self::Mmap | Self::ChunkedMmap => true,
+        }
+    }
+}
+
 /// Config of single vector data storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -567,16 +577,12 @@ pub struct VectorDataConfig {
     pub size: usize,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Type of storage this vector uses
+    pub storage_type: VectorStorageType,
     /// Type of index used for search
     pub index: Indexes,
     /// Vector specific quantization config that overrides collection config
     pub quantization_config: Option<QuantizationConfig>,
-    /// False to keep in memory, true to store on disk.
-    /// If true, memory mapped files are used. Then search performance is defined by disk speed and
-    /// the fraction fraction of vectors that fit in RAM.
-    pub on_disk: bool,
-    /// Type of storage this vector uses.
-    pub storage_type: VectorStorageType,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>

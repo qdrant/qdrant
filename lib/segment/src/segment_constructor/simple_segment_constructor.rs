@@ -26,13 +26,11 @@ pub fn build_simple_segment(
                 VectorDataConfig {
                     size: dim,
                     distance,
+                    storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: false,
-                    storage_type: VectorStorageType::Memory,
                 },
             )]),
-            appendable: true,
             payload_storage_type: Default::default(),
         },
     )
@@ -50,10 +48,9 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim1,
             distance,
+            storage_type: VectorStorageType::Memory,
             index: Indexes::Plain {},
             quantization_config: None,
-            on_disk: false,
-            storage_type: VectorStorageType::Memory,
         },
     );
     vectors_config.insert(
@@ -61,10 +58,9 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim2,
             distance,
+            storage_type: VectorStorageType::Memory,
             index: Indexes::Plain {},
             quantization_config: None,
-            on_disk: false,
-            storage_type: VectorStorageType::Memory,
         },
     );
 
@@ -72,7 +68,6 @@ pub fn build_multivec_segment(
         path,
         &SegmentConfig {
             vector_data: vectors_config,
-            appendable: true,
             payload_storage_type: Default::default(),
         },
     )

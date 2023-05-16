@@ -48,11 +48,6 @@ impl From<SegmentConfigV5> for SegmentConfig {
                         .quantization_config
                         .as_ref()
                         .and(old_data.quantization_config),
-                    // We now only have an on_disk flag. Use if explicitly flag, otherwise defer
-                    // this from the storage type setting we used before.
-                    on_disk: old_data
-                        .on_disk
-                        .unwrap_or_else(|| old_segment.storage_type == StorageTypeV5::Mmap),
                     // Mmap if explicitly on disk, otherwise convert old storage type
                     storage_type: (old_data.on_disk == Some(true))
                         .then_some(VectorStorageType::Mmap)
@@ -63,11 +58,8 @@ impl From<SegmentConfigV5> for SegmentConfig {
             })
             .collect();
 
-        let appendable = old_segment.storage_type == StorageTypeV5::InMemory;
-
         SegmentConfig {
             vector_data,
-            appendable,
             payload_storage_type: old_segment.payload_storage_type,
         }
     }

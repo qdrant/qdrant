@@ -1517,13 +1517,11 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: false,
-                    storage_type: VectorStorageType::Memory,
                 },
             )]),
-            appendable: true,
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config).unwrap();
@@ -1589,13 +1587,11 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: false,
-                    storage_type: VectorStorageType::Memory,
                 },
             )]),
-            appendable: true,
             payload_storage_type: Default::default(),
         };
 
@@ -1680,13 +1676,11 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: false,
-                    storage_type: VectorStorageType::Memory,
                 },
             )]),
-            appendable: true,
             payload_storage_type: Default::default(),
         };
 
@@ -1770,13 +1764,11 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: false,
-                    storage_type: VectorStorageType::Memory,
                 },
             )]),
-            appendable: true,
             payload_storage_type: Default::default(),
         };
 
@@ -1803,13 +1795,11 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: false,
-                    storage_type: VectorStorageType::Memory,
                 },
             )]),
-            appendable: true,
             payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config).unwrap();

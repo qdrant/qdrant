@@ -77,7 +77,6 @@ pub trait SegmentOptimizer {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
             vector_data: collection_params.into_base_vector_data()?,
-            appendable: true,
             payload_storage_type: if collection_params.on_disk_payload {
                 PayloadStorageType::OnDisk
             } else {
@@ -177,20 +176,15 @@ pub trait SegmentOptimizer {
             });
         }
 
-        // If storing on disk, set the flag
+        // If storing on disk, set storage type
         if is_on_disk {
             vector_data.values_mut().for_each(|config| {
-                config.on_disk = true;
                 config.storage_type = VectorStorageType::Mmap;
             });
         }
 
-        // TODO: before, we were appendable when storing in memory. Keep it like this?
-        let appendable = !is_on_disk;
-
         let optimized_config = SegmentConfig {
             vector_data,
-            appendable,
             payload_storage_type: if collection_params.on_disk_payload {
                 PayloadStorageType::OnDisk
             } else {

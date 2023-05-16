@@ -181,7 +181,7 @@ impl CollectionParams {
                         index: Indexes::Plain {},
                         // Disabled quantization
                         quantization_config: None,
-                        on_disk: params.on_disk.unwrap_or_default(),
+                        // Default to in memory storage
                         storage_type: VectorStorageType::Memory,
                     },
                 )

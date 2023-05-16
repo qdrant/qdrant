@@ -52,13 +52,11 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance,
+                    storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: false,
-                    storage_type: VectorStorageType::Memory,
                 },
             )]),
-            appendable: true,
             payload_storage_type: Default::default(),
         };
 

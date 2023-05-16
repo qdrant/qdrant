@@ -117,10 +117,9 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        on_disk: false,
-                        storage_type: VectorStorageType::Memory,
                     },
                 ),
                 (
@@ -128,10 +127,9 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 1,
                         distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        on_disk: false,
-                        storage_type: VectorStorageType::Memory,
                     },
                 ),
                 (
@@ -139,14 +137,12 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Euclid,
+                        storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        on_disk: false,
-                        storage_type: VectorStorageType::Memory,
                     },
                 ),
             ]),
-            appendable: true,
             payload_storage_type: Default::default(),
         },
     )

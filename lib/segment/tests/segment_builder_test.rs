@@ -88,13 +88,11 @@ mod tests {
                 VectorDataConfig {
                     size: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].size,
                     distance: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                    storage_type: VectorStorageType::Memory,
                     index: Indexes::Hnsw(Default::default()),
                     quantization_config: None,
-                    on_disk: false,
-                    storage_type: VectorStorageType::Memory,
                 },
             )]),
-            appendable: true,
             payload_storage_type: Default::default(),
         };
 
