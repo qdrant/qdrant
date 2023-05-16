@@ -173,24 +173,6 @@ impl MmapVectors {
     pub fn deleted_vector_bitslice(&self) -> &BitSlice {
         &self.deleted
     }
-
-    /// Lock memory map of deleted flags into RAM for optimal access performance
-    ///
-    /// Because the deleted flags are backed by a memory mapped file, its pages may be swapped out
-    /// to disk. This will hurt performance in case of quantization because the access times may be
-    /// huge. Calling this will lock the deleted flags in memory to prevent this.
-    ///
-    /// This is only supported on Unix.
-    #[allow(unused)]
-    fn lock_deleted_flags(&self) {
-        #[cfg(unix)]
-        if let Err(err) = self.deleted.mlock() {
-            log::error!(
-                "Failed to lock deleted flags for quantized mmap segment in memory: {}",
-                err,
-            );
-        }
-    }
 }
 
 /// Ensure the given mmap file exists and is the given size

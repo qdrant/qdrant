@@ -22,8 +22,6 @@
 //! utmost care. Security is critical here as this is an easy place to introduce undefined
 //! behavior. Problems caused by this are very hard to debug.
 
-#[cfg(unix)]
-use std::io;
 use std::ops::{Deref, DerefMut};
 #[cfg(windows)]
 use std::ptr::NonNull;
@@ -172,14 +170,6 @@ impl<T> MmapType<T>
 where
     T: ?Sized + 'static,
 {
-    /// Lock memory mapped pages in memory
-    ///
-    /// See [`MmapMut::lock`] for details.
-    #[cfg(unix)]
-    pub fn mlock(&self) -> io::Result<()> {
-        self.mmap.lock()
-    }
-
     /// Get flusher to explicitly flush mmap at a later time
     pub fn flusher(&self) -> Flusher {
         // TODO: if we explicitly flush when dropping this type, we can switch to a weak reference
@@ -270,14 +260,6 @@ impl<T> MmapSlice<T> {
         MmapType::try_slice_from(mmap_with_slice).map(|mmap| Self { mmap })
     }
 
-    /// Lock memory mapped pages in memory
-    ///
-    /// See [`MmapMut::lock`] for details.
-    #[cfg(unix)]
-    pub fn mlock(&self) -> io::Result<()> {
-        self.mmap.mlock()
-    }
-
     /// Get flusher to explicitly flush mmap at a later time
     pub fn flusher(&self) -> Flusher {
         self.mmap.flusher()
@@ -342,14 +324,6 @@ impl MmapBitSlice {
                 mmap,
             },
         })
-    }
-
-    /// Lock memory mapped pages in memory
-    ///
-    /// See [`MmapMut::lock`] for details.
-    #[cfg(unix)]
-    pub fn mlock(&self) -> io::Result<()> {
-        self.mmap.mlock()
     }
 
     /// Get flusher to explicitly flush mmap at a later time
