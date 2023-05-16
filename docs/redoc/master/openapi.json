@@ -7618,18 +7618,29 @@
       },
       "DeleteVectors": {
         "type": "object",
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/PointIdsList"
-          },
-          {
-            "$ref": "#/components/schemas/FilterSelector"
-          }
-        ],
         "required": [
           "vector"
         ],
         "properties": {
+          "points": {
+            "description": "Deletes values from each point in this list",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            },
+            "nullable": true
+          },
+          "filter": {
+            "description": "Deletes values from points that satisfy this filter condition",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "vector": {
             "description": "Vector names",
             "type": "array",
