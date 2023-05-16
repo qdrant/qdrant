@@ -7,7 +7,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
+use segment::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 use serde_json::json;
 
 pub fn empty_segment(path: &Path) -> Segment {
@@ -120,6 +120,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         on_disk: false,
+                        storage_type: VectorStorageType::Memory,
                     },
                 ),
                 (
@@ -130,6 +131,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         on_disk: false,
+                        storage_type: VectorStorageType::Memory,
                     },
                 ),
                 (
@@ -140,6 +142,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         on_disk: false,
+                        storage_type: VectorStorageType::Memory,
                     },
                 ),
             ]),

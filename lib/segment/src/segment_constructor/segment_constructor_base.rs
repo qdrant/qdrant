@@ -26,6 +26,7 @@ use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
+    VectorStorageType,
 };
 use crate::vector_storage::appendable_mmap_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
@@ -92,9 +93,9 @@ fn create_segment(
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         // Select suitable vector storage type based on configuration
-        let vector_storage = match (vector_config.on_disk, config.appendable) {
+        let vector_storage = match vector_config.storage_type {
             // In memory
-            (false, _) => {
+            VectorStorageType::Memory => {
                 let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
                 open_simple_vector_storage(
                     database.clone(),
@@ -103,14 +104,14 @@ fn create_segment(
                     vector_config.distance,
                 )?
             }
-            // On disk, appendable
-            (true, true) => open_appendable_memmap_vector_storage(
+            // Mmap on disk, not appendable
+            VectorStorageType::Mmap => open_memmap_vector_storage(
                 &vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
             )?,
-            // On disk, non appendable
-            (true, false) => open_memmap_vector_storage(
+            // Chunked mmap on disk, appendable
+            VectorStorageType::ChunkedMmap => open_appendable_memmap_vector_storage(
                 &vector_storage_path,
                 vector_config.size,
                 vector_config.distance,

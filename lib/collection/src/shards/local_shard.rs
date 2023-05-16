@@ -304,9 +304,7 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
 
-        let vector_params = config
-            .params
-            .into_base_vector_data()?;
+        let vector_params = config.params.into_base_vector_data()?;
         let segment_number = config.optimizer_config.get_number_segments();
 
         for _sid in 0..segment_number {

@@ -14,7 +14,7 @@ use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
-    QuantizationConfig, SegmentConfig, VECTOR_ELEMENT_SIZE,
+    QuantizationConfig, SegmentConfig, VectorStorageType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -181,6 +181,7 @@ pub trait SegmentOptimizer {
         if is_on_disk {
             vector_data.values_mut().for_each(|config| {
                 config.on_disk = true;
+                config.storage_type = VectorStorageType::Mmap;
             });
         }
 

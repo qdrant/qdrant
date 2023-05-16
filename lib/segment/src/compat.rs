@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{
     Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentConfig,
-    SegmentState, SeqNumberType, VectorDataConfig,
+    SegmentState, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -48,11 +48,15 @@ impl From<SegmentConfigV5> for SegmentConfig {
                         .quantization_config
                         .as_ref()
                         .and(old_data.quantization_config),
-                    // We now only have an on_disk flag. Use if explicitly fleg, otherwise defer
+                    // We now only have an on_disk flag. Use if explicitly flag, otherwise defer
                     // this from the storage type setting we used before.
                     on_disk: old_data
                         .on_disk
                         .unwrap_or_else(|| old_segment.storage_type == StorageTypeV5::Mmap),
+                    // Mmap if explicitly on disk, otherwise convert old storage type
+                    storage_type: (old_data.on_disk == Some(true))
+                        .then_some(VectorStorageType::Mmap)
+                        .unwrap_or_else(|| old_segment.storage_type.into()),
                 };
 
                 (vector_name, new_data)
@@ -80,6 +84,15 @@ pub enum StorageTypeV5 {
     InMemory,
     // Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
     Mmap,
+}
+
+impl From<StorageTypeV5> for VectorStorageType {
+    fn from(old: StorageTypeV5) -> Self {
+        match old {
+            StorageTypeV5::InMemory => Self::Memory,
+            StorageTypeV5::Mmap => Self::Mmap,
+        }
+    }
 }
 
 /// Config of single vector data storage

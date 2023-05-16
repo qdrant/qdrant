@@ -541,6 +541,24 @@ impl SegmentConfig {
     }
 }
 
+/// Storage types for vectors
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+pub enum VectorStorageType {
+    /// Storage in memory (RAM)
+    ///
+    /// Will be very fast at the cost of consuming a lot of memory.
+    #[default]
+    Memory,
+    /// Storage in mmap file, not appendable
+    ///
+    /// Search performance is defined by disk speed and the fraction of vectors that fit in memory.
+    Mmap,
+    /// Storage in chunked mmap files, appendable
+    ///
+    /// Search performance is defined by disk speed and the fraction of vectors that fit in memory.
+    ChunkedMmap,
+}
+
 /// Config of single vector data storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -557,6 +575,8 @@ pub struct VectorDataConfig {
     /// If true, memory mapped files are used. Then search performance is defined by disk speed and
     /// the fraction fraction of vectors that fit in RAM.
     pub on_disk: bool,
+    /// Type of storage this vector uses.
+    pub storage_type: VectorStorageType,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>

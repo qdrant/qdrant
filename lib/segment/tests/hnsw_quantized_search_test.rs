@@ -14,7 +14,7 @@ mod tests {
     use segment::types::{
         CompressionRatio, Distance, HnswConfig, Indexes, ProductQuantizationConfig,
         QuantizationConfig, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
-        VectorDataConfig,
+        VectorDataConfig, VectorStorageType,
     };
     use segment::vector_storage::{ScoredPointOffset, VectorStorage};
     use tempfile::Builder;
@@ -55,6 +55,7 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     on_disk: false,
+                    storage_type: VectorStorageType::Memory,
                 },
             )]),
             appendable: true,

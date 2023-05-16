@@ -9,7 +9,9 @@ use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::types::{HnswConfig, Indexes, QuantizationConfig, VectorDataConfig};
+use segment::types::{
+    HnswConfig, Indexes, QuantizationConfig, VectorDataConfig, VectorStorageType,
+};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
@@ -180,6 +182,7 @@ impl CollectionParams {
                         // Disabled quantization
                         quantization_config: None,
                         on_disk: params.on_disk.unwrap_or_default(),
+                        storage_type: VectorStorageType::Memory,
                     },
                 )
             })
