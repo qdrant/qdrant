@@ -188,7 +188,7 @@ def update_empty_vectors():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "point_selector": {"points": [1]},
+            "points": [1],
             "vector": ["image", "text"]
         }
     )
@@ -333,7 +333,7 @@ def delete_vectors():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "point_selector": {"points": [1, 2]},
+            "points": [1, 2],
             "vector": ["image"]
         }
     )
@@ -344,7 +344,7 @@ def delete_vectors():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "point_selector": {"points": [2, 3]},
+            "points": [2, 3],
             "vector": ["text"]
         }
     )
@@ -393,7 +393,7 @@ def delete_all_vectors():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "point_selector": {"filter": {}},
+            "filter": {},
             "vector": ["image", "text"]
         }
     )
@@ -411,7 +411,7 @@ def delete_unknown_vectors():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "point_selector": {"points": [1, 2]},
+            "points": [1, 2],
             "vector": ["a"]
         }
     )

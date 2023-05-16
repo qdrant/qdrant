@@ -7,7 +7,7 @@ use segment::types::{Filter, PointIdType};
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError};
 
-use super::point_ops::{PointIdsList, PointsSelector};
+use super::point_ops::PointIdsList;
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
 use crate::shards::shard::ShardId;
@@ -34,8 +34,10 @@ pub struct PointVectors {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct DeleteVectors {
-    /// Point selector
-    pub point_selector: PointsSelector,
+    /// Deletes values from each point in this list
+    pub points: Option<Vec<PointIdType>>,
+    /// Deletes values from points that satisfy this filter condition
+    pub filter: Option<Filter>,
     /// Vector names
     #[serde(alias = "vectors")]
     #[validate(length(min = 1, message = "must specify vector names to delete"))]

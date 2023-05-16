@@ -100,24 +100,42 @@ pub async fn do_delete_vectors(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
-    let vector_names = operation.vector.into_iter().collect();
-    let vectors_operation = match operation.point_selector {
-        PointsSelector::PointIdsSelector(points) => {
-            VectorOperations::DeleteVectors(points, vector_names)
-        }
-        PointsSelector::FilterSelector(filter) => {
-            VectorOperations::DeleteVectorsByFilter(filter.filter, vector_names)
-        }
-    };
-    let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
-    toc.update(
-        collection_name,
-        collection_operation,
-        shard_selection,
-        wait,
-        ordering,
-    )
-    .await
+    let vector_names: Vec<_> = operation.vector.into_iter().collect();
+
+    let mut result = None;
+
+    if let Some(filter) = operation.filter {
+        let vectors_operation =
+            VectorOperations::DeleteVectorsByFilter(filter, vector_names.clone());
+        let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
+        result = Some(
+            toc.update(
+                collection_name,
+                collection_operation,
+                shard_selection,
+                wait,
+                ordering,
+            )
+            .await?,
+        );
+    }
+
+    if let Some(points) = operation.points {
+        let vectors_operation = VectorOperations::DeleteVectors(points.into(), vector_names);
+        let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
+        result = Some(
+            toc.update(
+                collection_name,
+                collection_operation,
+                shard_selection,
+                wait,
+                ordering,
+            )
+            .await?,
+        );
+    }
+
+    result.ok_or_else(|| StorageError::bad_request("No filter or points provided"))
 }
 
 pub async fn do_set_payload(
