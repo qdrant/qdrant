@@ -127,3 +127,177 @@ impl From<SegmentStateV5> for SegmentState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{ScalarQuantization, ScalarQuantizationConfig};
+
+    #[test]
+    fn convert_from_v5_to_newest() {
+        let old_segment = SegmentConfigV5 {
+            vector_data: vec![
+                (
+                    "vec1".to_string(),
+                    VectorDataConfigV5 {
+                        size: 10,
+                        distance: Distance::Dot,
+                        hnsw_config: Some(HnswConfig {
+                            m: 20,
+                            ef_construct: 100,
+                            full_scan_threshold: 10000,
+                            max_indexing_threads: 0,
+                            on_disk: None,
+                            payload_m: Some(10),
+                        }),
+                        quantization_config: None,
+                        on_disk: None,
+                    },
+                ),
+                (
+                    "vec2".to_string(),
+                    VectorDataConfigV5 {
+                        size: 10,
+                        distance: Distance::Dot,
+                        hnsw_config: None,
+                        quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
+                            scalar: ScalarQuantizationConfig {
+                                r#type: Default::default(),
+                                quantile: Some(0.99),
+                                always_ram: Some(true),
+                            },
+                        })),
+                        on_disk: None,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            index: Indexes::Hnsw(HnswConfig {
+                m: 25,
+                ef_construct: 120,
+                full_scan_threshold: 10000,
+                max_indexing_threads: 0,
+                on_disk: None,
+                payload_m: None,
+            }),
+            storage_type: StorageTypeV5::InMemory,
+            payload_storage_type: PayloadStorageType::default(),
+            quantization_config: None,
+        };
+
+        let new_segment: SegmentConfig = old_segment.into();
+
+        eprintln!("new = {:#?}", new_segment);
+
+        match &new_segment.vector_data.get("vec1").unwrap().index {
+            Indexes::Plain { .. } => panic!("expected HNSW index"),
+            Indexes::Hnsw(hnsw) => {
+                assert_eq!(hnsw.m, 20);
+            }
+        }
+
+        match &new_segment.vector_data.get("vec2").unwrap().index {
+            Indexes::Plain { .. } => panic!("expected HNSW index"),
+            Indexes::Hnsw(hnsw) => {
+                assert_eq!(hnsw.m, 25);
+            }
+        }
+
+        if new_segment
+            .vector_data
+            .get("vec1")
+            .unwrap()
+            .quantization_config
+            .is_some()
+        {
+            panic!("expected no quantization");
+        }
+    }
+
+    #[test]
+    fn convert_from_v5_to_newest_2() {
+        let old_segment = SegmentConfigV5 {
+            vector_data: vec![
+                (
+                    "vec1".to_string(),
+                    VectorDataConfigV5 {
+                        size: 10,
+                        distance: Distance::Dot,
+                        hnsw_config: None,
+                        quantization_config: None,
+                        on_disk: None,
+                    },
+                ),
+                (
+                    "vec2".to_string(),
+                    VectorDataConfigV5 {
+                        size: 10,
+                        distance: Distance::Dot,
+                        hnsw_config: None,
+                        quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
+                            scalar: ScalarQuantizationConfig {
+                                r#type: Default::default(),
+                                quantile: Some(0.99),
+                                always_ram: Some(true),
+                            },
+                        })),
+                        on_disk: None,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            index: Indexes::Hnsw(HnswConfig {
+                m: 25,
+                ef_construct: 120,
+                full_scan_threshold: 10000,
+                max_indexing_threads: 0,
+                on_disk: None,
+                payload_m: None,
+            }),
+            storage_type: StorageTypeV5::InMemory,
+            payload_storage_type: PayloadStorageType::default(),
+            quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
+                scalar: ScalarQuantizationConfig {
+                    r#type: Default::default(),
+                    quantile: Some(0.95),
+                    always_ram: Some(true),
+                },
+            })),
+        };
+
+        let new_segment: SegmentConfig = old_segment.into();
+
+        eprintln!("new = {:#?}", new_segment);
+
+        if new_segment
+            .vector_data
+            .get("vec1")
+            .unwrap()
+            .quantization_config
+            .is_some()
+        {
+            panic!("expected no quantization");
+        }
+
+        match &new_segment
+            .vector_data
+            .get("vec2")
+            .unwrap()
+            .quantization_config
+        {
+            Some(q) => match q {
+                QuantizationConfig::Scalar(scalar) => {
+                    assert_eq!(scalar.scalar.quantile, Some(0.99));
+                }
+                QuantizationConfig::Product(_) => {
+                    panic!("expected scalar quantization")
+                }
+            },
+            _ => {
+                panic!("expected quantization")
+            }
+        }
+    }
+}
