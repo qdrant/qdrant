@@ -82,14 +82,12 @@ impl MmapVectors {
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<()> {
-        // In theory, we can lock deleted flags here, as we assume that it is the hottest data.
-        // Uncomment the following code if you want to do that:
-        //
-        // self.lock_deleted_flags();
-        //
-        // But it seems, that mlock functionality is not working properly if qdrant is running
-        // inside docker container with limited memory.
-        // Additionally, the speedup is not measured explicitly.
+        // In theory, we can lock deleted flags here, as we assume that it is the hottest data. We
+        // can use mlock to achieve that. Docker (and some other systems) has a very low default
+        // limit for lockable memory however, which is causing lock errors. Since this is the
+        // default configuration it is hard to make practical use of this. Additionally, the
+        // speedup is not measured explicitly.
+        // See <https://github.com/qdrant/qdrant/pull/1885#issuecomment-1547408116>
 
         let vector_data_iterator = (0..self.num_vectors as u32).map(|i| {
             let offset = self.data_offset(i as PointOffsetType).unwrap_or_default();
@@ -115,14 +113,13 @@ impl MmapVectors {
         distance: Distance,
     ) -> OperationResult<()> {
         if QuantizedVectors::config_exists(data_path) {
-            // In theory, we can lock deleted flags here, as we assume that it is the hottest data.
-            // Uncomment the following code if you want to do that:
-            //
-            // self.lock_deleted_flags();
-            //
-            // But it seems, that mlock functionality is not working properly if qdrant is running
-            // inside docker container with limited memory.
-            // Additionally, the speedup is not measured explicitly.
+            // In theory, we can lock deleted flags here, as we assume that it is the hottest data. We
+            // can use mlock to achieve that. Docker (and some other systems) has a very low default
+            // limit for lockable memory however, which is causing lock errors. Since this is the
+            // default configuration it is hard to make practical use of this. Additionally, the
+            // speedup is not measured explicitly.
+            // See <https://github.com/qdrant/qdrant/pull/1885#issuecomment-1547408116>
+
             self.quantized_vectors = Some(QuantizedVectors::load(data_path, true, distance)?);
         }
         Ok(())
@@ -175,24 +172,6 @@ impl MmapVectors {
     /// vectors in this segment.
     pub fn deleted_vector_bitslice(&self) -> &BitSlice {
         &self.deleted
-    }
-
-    /// Lock memory map of deleted flags into RAM for optimal access performance
-    ///
-    /// Because the deleted flags are backed by a memory mapped file, its pages may be swapped out
-    /// to disk. This will hurt performance in case of quantization because the access times may be
-    /// huge. Calling this will lock the deleted flags in memory to prevent this.
-    ///
-    /// This is only supported on Unix.
-    #[allow(unused)]
-    fn lock_deleted_flags(&self) {
-        #[cfg(unix)]
-        if let Err(err) = self.deleted.mlock() {
-            log::error!(
-                "Failed to lock deleted flags for quantized mmap segment in memory: {}",
-                err,
-            );
-        }
     }
 }
 
