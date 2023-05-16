@@ -177,6 +177,9 @@ impl VectorStorage for AppendableMmapVectorStorage {
     fn files(&self) -> Vec<PathBuf> {
         let mut files = self.vectors.files();
         files.extend(self.deleted.files());
+        if let Some(quantized_vectors) = &self.quantized_vectors {
+            files.extend(quantized_vectors.files())
+        }
         files
     }
 
