@@ -7795,12 +7795,27 @@
       "DeleteVectors": {
         "type": "object",
         "required": [
-          "point_selector",
           "vector"
         ],
         "properties": {
-          "point_selector": {
-            "$ref": "#/components/schemas/PointsSelector"
+          "points": {
+            "description": "Deletes values from each point in this list",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            },
+            "nullable": true
+          },
+          "filter": {
+            "description": "Deletes values from points that satisfy this filter condition",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "vector": {
             "description": "Vector names",
