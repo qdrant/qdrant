@@ -304,7 +304,7 @@ pub struct SearchParams {
     pub quantization: Option<QuantizationSearchParams>,
 }
 
-/// Vector index configuration of the segment
+/// Vector index configuration
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
@@ -315,6 +315,15 @@ pub enum Indexes {
     /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
     /// but require additional space to store index and additional time to build it.
     Hnsw(HnswConfig),
+}
+
+impl Indexes {
+    pub fn is_indexed(&self) -> bool {
+        match self {
+            Indexes::Plain {} => false,
+            Indexes::Hnsw(_) => true,
+        }
+    }
 }
 
 /// Config of HNSW index
@@ -487,18 +496,6 @@ pub enum PayloadIndexType {
     Struct,
 }
 
-/// Type of vector storage
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type", content = "options")]
-pub enum StorageType {
-    // Store vectors in memory and use persistence storage only if vectors are changed
-    #[default]
-    InMemory,
-    // Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
-    Mmap,
-}
-
 /// Type of payload storage
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -515,43 +512,69 @@ pub enum PayloadStorageType {
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_data: HashMap<String, VectorDataConfig>,
-    /// Type of index used for search
-    pub index: Indexes,
-    /// Type of vector storage
-    pub storage_type: StorageType,
     /// Defines payload storage type
-    #[serde(default)]
     pub payload_storage_type: PayloadStorageType,
-    /// Quantization parameters. If none - quantization is disabled.
-    #[serde(default)]
-    pub quantization_config: Option<QuantizationConfig>,
 }
 
 impl SegmentConfig {
     /// Helper to get vector specific quantization config.
     ///
-    /// This grabs the quantization config for the given vector name if it exists. Falls back to
-    /// the collection quantization config.
+    /// This grabs the quantization config for the given vector name if it exists.
     ///
     /// If no quantization is configured, `None` is returned.
     pub fn quantization_config(&self, vector_name: &str) -> Option<&QuantizationConfig> {
         self.vector_data
             .get(vector_name)
             .and_then(|v| v.quantization_config.as_ref())
-            .or(self.quantization_config.as_ref())
     }
 
-    pub fn is_vector_indexed(&self) -> bool {
-        match self.index {
-            Indexes::Plain {} => false,
-            Indexes::Hnsw(_) => true,
-        }
+    pub fn is_any_vector_indexed(&self) -> bool {
+        self.vector_data
+            .values()
+            .any(|config| config.index.is_indexed())
     }
 
-    pub fn is_memmaped(&self) -> bool {
-        match self.storage_type {
-            StorageType::InMemory => false,
-            StorageType::Mmap => true,
+    pub fn are_all_vectors_indexed(&self) -> bool {
+        self.vector_data
+            .values()
+            .all(|config| config.index.is_indexed())
+    }
+
+    /// Check if any vector storage is mmap'ed
+    ///
+    /// This assumes that when the storage for a named vector requests to be stored on disk; it is
+    /// mmap'ed.
+    pub fn is_any_mmap(&self) -> bool {
+        self.vector_data
+            .values()
+            .any(|config| config.storage_type.is_mmap())
+    }
+}
+
+/// Storage types for vectors
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+pub enum VectorStorageType {
+    /// Storage in memory (RAM)
+    ///
+    /// Will be very fast at the cost of consuming a lot of memory.
+    #[default]
+    Memory,
+    /// Storage in mmap file, not appendable
+    ///
+    /// Search performance is defined by disk speed and the fraction of vectors that fit in memory.
+    Mmap,
+    /// Storage in chunked mmap files, appendable
+    ///
+    /// Search performance is defined by disk speed and the fraction of vectors that fit in memory.
+    ChunkedMmap,
+}
+
+impl VectorStorageType {
+    /// Whether this storage type is a mmap on disk
+    fn is_mmap(&self) -> bool {
+        match self {
+            Self::Memory => false,
+            Self::Mmap | Self::ChunkedMmap => true,
         }
     }
 }
@@ -560,23 +583,16 @@ impl SegmentConfig {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataConfig {
-    /// Size of a vectors used
+    /// Size/dimensionality of the vectors used
     pub size: usize,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
-    /// Vector specific HNSW config that overrides collection config
-    #[serde(default)]
-    pub hnsw_config: Option<HnswConfig>,
+    /// Type of storage this vector uses
+    pub storage_type: VectorStorageType,
+    /// Type of index used for search
+    pub index: Indexes,
     /// Vector specific quantization config that overrides collection config
-    #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
-    /// If true - vectors will not be stored in memory.
-    /// Instead, it will store vectors on mmap-files.
-    /// If enabled, search performance will defined by disk speed
-    /// and fraction of vectors that fit in RAM.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_disk: Option<bool>,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>

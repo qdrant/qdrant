@@ -22,7 +22,7 @@ mod tests {
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes,
         IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig,
-        StorageType, VectorDataConfig, WithPayload,
+        VectorDataConfig, VectorStorageType, WithPayload,
     };
     use tempfile::Builder;
 
@@ -38,14 +38,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
 
         let mut plain_segment = build_segment(path_plain, &config).unwrap();
@@ -152,14 +150,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
 
         let mut plain_segment = build_segment(path_plain, &config).unwrap();

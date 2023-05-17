@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;

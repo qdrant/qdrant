@@ -7,7 +7,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
+use segment::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 use serde_json::json;
 
 pub fn empty_segment(path: &Path) -> Segment {
@@ -117,9 +117,9 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Dot,
-                        hnsw_config: None,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
                         quantization_config: None,
-                        on_disk: None,
                     },
                 ),
                 (
@@ -127,9 +127,9 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 1,
                         distance: Distance::Dot,
-                        hnsw_config: None,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
                         quantization_config: None,
-                        on_disk: None,
                     },
                 ),
                 (
@@ -137,14 +137,13 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Euclid,
-                        hnsw_config: None,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
                         quantization_config: None,
-                        on_disk: None,
                     },
                 ),
             ]),
-            index: Indexes::Plain {},
-            ..Default::default()
+            payload_storage_type: Default::default(),
         },
     )
     .unwrap();

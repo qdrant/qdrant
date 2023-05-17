@@ -787,13 +787,7 @@ pub enum VectorsConfig {
 impl VectorsConfig {
     pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
         match self {
-            VectorsConfig::Single(params) => {
-                if name == DEFAULT_VECTOR_NAME {
-                    Some(params)
-                } else {
-                    None
-                }
-            }
+            VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
             VectorsConfig::Multi(params) => params.get(name),
         }
     }

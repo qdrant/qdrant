@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 pub mod common;
 pub mod entry;
 pub mod fixtures;
@@ -13,8 +11,8 @@ pub mod segment_constructor;
 pub mod spaces;
 pub mod telemetry;
 
+mod compat;
 pub mod data_types;
-#[allow(deprecated)]
 pub mod types;
 pub mod utils;
 pub mod vector_storage;

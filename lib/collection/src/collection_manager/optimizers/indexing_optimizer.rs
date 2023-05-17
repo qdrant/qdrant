@@ -82,10 +82,10 @@ impl IndexingOptimizer {
                 }
 
                 let segment_config = read_segment.config();
-                let is_vector_indexed = segment_config.is_vector_indexed();
-                let is_memmaped = segment_config.is_memmaped();
+                let is_any_vector_indexed = segment_config.is_any_vector_indexed();
+                let is_any_mmap = segment_config.is_any_mmap();
 
-                if !(is_vector_indexed || is_memmaped) {
+                if !(is_any_vector_indexed || is_any_mmap) {
                     return None;
                 }
 
@@ -128,8 +128,8 @@ impl IndexingOptimizer {
                 }
 
                 // Apply indexing to plain segments which have grown too big
-                let is_vector_indexed = segment_config.is_vector_indexed();
-                let is_memmaped = segment_config.is_memmaped();
+                let are_all_vectors_indexed = segment_config.are_all_vectors_indexed();
+                let is_any_mmap = segment_config.is_any_mmap();
 
                 let big_for_mmap = vector_size
                     >= self
@@ -143,7 +143,7 @@ impl IndexingOptimizer {
                         .saturating_mul(BYTES_IN_KB);
 
                 let require_indexing =
-                    (big_for_mmap && !is_memmaped) || (big_for_index && !is_vector_indexed);
+                    (big_for_mmap && !is_any_mmap) || (big_for_index && !are_all_vectors_indexed);
 
                 require_indexing.then_some((*idx, vector_size))
             })
@@ -251,7 +251,7 @@ mod tests {
     use rand::thread_rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
-    use segment::types::{Payload, PayloadSchemaType, StorageType};
+    use segment::types::{Payload, PayloadSchemaType};
     use serde_json::json;
     use tempfile::Builder;
 
@@ -526,10 +526,7 @@ mod tests {
             "Testing that 2 segments are actually indexed"
         );
 
-        let mmap_count = configs
-            .iter()
-            .filter(|config| config.storage_type == StorageType::Mmap)
-            .count();
+        let mmap_count = configs.iter().filter(|config| config.is_any_mmap()).count();
         assert_eq!(
             mmap_count, 1,
             "Testing that only largest segment is not Mmap"

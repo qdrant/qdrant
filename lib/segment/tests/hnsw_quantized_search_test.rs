@@ -14,7 +14,7 @@ mod tests {
     use segment::types::{
         CompressionRatio, Distance, HnswConfig, Indexes, ProductQuantizationConfig,
         QuantizationConfig, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType,
-        StorageType, VectorDataConfig,
+        VectorDataConfig, VectorStorageType,
     };
     use segment::vector_storage::{ScoredPointOffset, VectorStorage};
     use tempfile::Builder;
@@ -52,14 +52,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();

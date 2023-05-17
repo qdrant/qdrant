@@ -9,12 +9,13 @@ use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::types::{HnswConfig, QuantizationConfig, VectorDataConfig};
+use segment::types::{
+    HnswConfig, Indexes, QuantizationConfig, VectorDataConfig, VectorStorageType,
+};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
-use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult, VectorParams, VectorsConfig};
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -162,14 +163,11 @@ impl CollectionParams {
             })
     }
 
-    /// Get all vector params as `VectorDataConfig`
+    /// Convert into unoptimized named vector data configs
     ///
-    /// The vector specific HNSW configuration will be based upon the given `collection_hnsw`.
-    pub fn get_all_vector_params(
-        &self,
-        collection_hnsw: &HnswConfig,
-        collection_quantization: Option<&QuantizationConfig>,
-    ) -> CollectionResult<HashMap<String, VectorDataConfig>> {
+    /// It is the job of the segment optimizer to change this configuration with optimized settings
+    /// based on threshold configurations.
+    pub fn into_base_vector_data(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         Ok(self
             .vectors
             .params_iter()
@@ -179,15 +177,12 @@ impl CollectionParams {
                     VectorDataConfig {
                         size: params.size.get() as usize,
                         distance: params.distance,
-                        hnsw_config: params
-                            .hnsw_config
-                            .and_then(|c| c.update(collection_hnsw).ok()),
-                        quantization_config: params
-                            .quantization_config
-                            .as_ref()
-                            .or(collection_quantization)
-                            .cloned(),
-                        on_disk: params.on_disk,
+                        // Plain (disabled) index
+                        index: Indexes::Plain {},
+                        // Disabled quantization
+                        quantization_config: None,
+                        // Default to in memory storage
+                        storage_type: VectorStorageType::Memory,
                     },
                 )
             })
