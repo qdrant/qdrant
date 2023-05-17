@@ -8,8 +8,9 @@ use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
+use segment::common::version::StorageVersion;
 use segment::entry::entry_point::{check_process_stopped, SegmentEntry};
-use segment::segment::Segment;
+use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
@@ -73,7 +74,7 @@ pub trait SegmentOptimizer {
     fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>>;
 
     /// Build temp segment
-    fn temp_segment(&self) -> CollectionResult<LockedSegment> {
+    fn temp_segment(&self, save_version: bool) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
             vector_data: collection_params.into_base_vector_data()?,
@@ -86,6 +87,7 @@ pub trait SegmentOptimizer {
         Ok(LockedSegment::new(build_segment(
             self.collection_path(),
             &config,
+            save_version,
         )?))
     }
 
@@ -411,7 +413,7 @@ pub trait SegmentOptimizer {
 
         check_process_stopped(stopped)?;
 
-        let tmp_segment = self.temp_segment()?;
+        let tmp_segment = self.temp_segment(false)?;
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
@@ -431,9 +433,18 @@ pub trait SegmentOptimizer {
             );
             // Wrapped segment is fresh, so it has no operations
             // Operation with number 0 will be applied
-            let op_num = 0;
-            proxy.replicate_field_indexes(op_num)?;
+            proxy.replicate_field_indexes(0)?;
             proxies.push(proxy);
+        }
+
+        // Save segment version once all payload indices have been converted
+        // If this ends up not being saved due to a crash, the segment will not be used
+        match &tmp_segment {
+            LockedSegment::Original(segment) => {
+                let segment_path = &segment.read().current_path;
+                SegmentVersion::save(segment_path)?;
+            }
+            LockedSegment::Proxy(_) => unreachable!(),
         }
 
         let proxy_ids: Vec<_> = {

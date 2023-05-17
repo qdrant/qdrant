@@ -46,8 +46,8 @@ mod tests {
             payload_storage_type: Default::default(),
         };
 
-        let mut plain_segment = build_segment(path_plain, &config).unwrap();
-        let mut struct_segment = build_segment(path_struct, &config).unwrap();
+        let mut plain_segment = build_segment(path_plain, &config, true).unwrap();
+        let mut struct_segment = build_segment(path_struct, &config, true).unwrap();
 
         let num_points = 3000;
         let points_to_delete = 500;
@@ -158,8 +158,8 @@ mod tests {
             payload_storage_type: Default::default(),
         };
 
-        let mut plain_segment = build_segment(path_plain, &config).unwrap();
-        let mut struct_segment = build_segment(path_struct, &config).unwrap();
+        let mut plain_segment = build_segment(path_plain, &config, true).unwrap();
+        let mut struct_segment = build_segment(path_struct, &config, true).unwrap();
 
         let num_points = 3000;
         let points_to_delete = 500;

@@ -145,6 +145,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
             ]),
             payload_storage_type: Default::default(),
         },
+        true,
     )
     .unwrap();
 
