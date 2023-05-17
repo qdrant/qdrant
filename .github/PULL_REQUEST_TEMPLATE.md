@@ -8,8 +8,8 @@
 ### New Feature Submissions:
 
 1. [ ] Does your submission pass tests?
-2. [ ] Have you formatted your code locally using ``cargo fmt`` command prior to submission?
-3. [ ] Have you checked your code using ```cargo clippy``` command?
+2. [ ] Have you formatted your code locally using `cargo fmt` command prior to submission?
+3. [ ] Have you checked your code using `cargo clippy` command?
 
 ### Changes to Core Features:
 
