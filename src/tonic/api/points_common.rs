@@ -24,7 +24,6 @@ use collection::operations::types::{
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::shard::ShardId;
-use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::NamedVector;
 use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
 use storage::content_manager::conversions::error_to_status;
@@ -176,20 +175,10 @@ pub async fn update_vectors(
             None => return Err(Status::invalid_argument("id is expected")),
         };
         let vector = match point.vectors {
-            Some(vectors) => {
-                let vectors = vectors
-                    .vectors
-                    .into_iter()
-                    .map(|(k, v)| (k, v.data))
-                    .collect();
-                NamedVectors::from_map(vectors)
-            }
+            Some(vectors) => vectors.try_into()?,
             None => return Err(Status::invalid_argument("vectors is expected")),
         };
-        op_points.push(PointVectors {
-            id,
-            vector: vector.into(),
-        });
+        op_points.push(PointVectors { id, vector });
     }
 
     let operation = UpdateVectors { points: op_points };
