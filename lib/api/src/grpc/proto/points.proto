@@ -80,7 +80,7 @@ message UpdatePointVectors {
 
 message PointVectors {
   PointId id = 1; // ID to update vectors for
-  NamedVectors vectors = 2; // Named vectors to update, leave others intact
+  Vectors vectors = 2; // Named vectors to update, leave others intact
 }
 
 message DeletePointVectors {

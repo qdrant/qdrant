@@ -1814,7 +1814,7 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | id | [PointId](#qdrant-PointId) |  | ID to update vectors for |
-| vectors | [NamedVectors](#qdrant-NamedVectors) |  | Named vectors to update, leave others intact |
+| vectors | [Vectors](#qdrant-Vectors) |  | Named vectors to update, leave others intact |
 
 
 
