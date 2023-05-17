@@ -2,6 +2,7 @@
 pub mod actix_telemetry;
 pub mod api;
 pub mod api_key;
+mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
@@ -16,9 +17,6 @@ use actix_multipart::form::MultipartFormConfig;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use collection::operations::validation;
-use rustls::server::AllowAnyAuthenticatedClient;
-use rustls::{Certificate, RootCertStore, ServerConfig};
-use rustls_pemfile::Item;
 use storage::dispatcher::Dispatcher;
 
 use crate::actix::api::cluster_api::config_cluster_api;
@@ -107,49 +105,7 @@ pub fn init(
         let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
 
         server = if settings.service.enable_tls {
-            let config = ServerConfig::builder().with_safe_defaults();
-
-            let tls_config = settings
-                .tls
-                .ok_or_else(Settings::tls_config_is_undefined_error)?;
-
-            let config = if settings.service.verify_https_client_certificate {
-                // Verify client CA
-                let mut root_cert_store = RootCertStore::empty();
-                let ca_certs: Vec<Vec<u8>> =
-                    with_buf_read(&tls_config.ca_cert, rustls_pemfile::certs)?;
-                root_cert_store.add_parsable_certificates(&ca_certs[..]);
-                config.with_client_cert_verifier(AllowAnyAuthenticatedClient::new(root_cert_store))
-            } else {
-                // no verification
-                config.with_no_client_auth()
-            };
-            // Server side TLS configuration
-            let certs: Vec<Certificate> =
-                with_buf_read(&tls_config.cert, rustls_pemfile::read_all)?
-                    .into_iter()
-                    .filter_map(|item| {
-                        if let Item::X509Certificate(data) = item {
-                            Some(Certificate(data))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-            if certs.is_empty() {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "No server certificate found",
-                ));
-            }
-            let private_key_item = with_buf_read(&tls_config.key, rustls_pemfile::read_one)?
-                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No private key found"))?;
-            let (Item::RSAKey(pkey) | Item::PKCS8Key(pkey) | Item::ECKey(pkey)) = private_key_item else {
-                return Err(io::Error::new(io::ErrorKind::Other, "No private key found"))
-            };
-            let config = config
-                .with_single_cert(certs, rustls::PrivateKey(pkey))
-                .expect("Setting up TLS failed");
+            let config = certificate_helpers::actix_tls_server_config(&settings)?;
             server.bind_rustls(bind_addr, config)?
         } else {
             server.bind(bind_addr)?
