@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use geo::algorithm::haversine_distance::HaversineDistance;
+#[allow(deprecated)]
 use geo::{Coordinate, Point};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
@@ -16,6 +17,7 @@ const LON_RANGE: Range<f64> = -180.0..180.0;
 const LAT_RANGE: Range<f64> = -90.0..90.0;
 const COORD_EPS: f64 = 1e-12;
 
+#[allow(deprecated)]
 impl From<GeoPoint> for Coordinate<f64> {
     fn from(point: GeoPoint) -> Self {
         Self {
@@ -71,6 +73,7 @@ fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<GeoHash, Geoh
     let lon = sphere_lon(coord.x + 2f64 * lon_err.abs() * dlng);
     let lat = sphere_lat(coord.y + 2f64 * lat_err.abs() * dlat);
 
+    #[allow(deprecated)]
     let neighbor_coord = Coordinate { x: lon, y: lat };
     encode(neighbor_coord, hash_str.len())
 }

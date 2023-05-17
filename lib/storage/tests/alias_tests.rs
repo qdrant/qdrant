@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 use std::num::NonZeroU64;
 use std::sync::Arc;
 

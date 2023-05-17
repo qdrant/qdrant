@@ -12,7 +12,7 @@ mod tests {
     use segment::entry::entry_point::{OperationError, SegmentEntry};
     use segment::segment::Segment;
     use segment::segment_constructor::segment_builder::SegmentBuilder;
-    use segment::types::{Indexes, SegmentConfig, VectorDataConfig};
+    use segment::types::{Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
     use tempfile::Builder;
 
     use crate::fixtures::segment::{build_segment_1, build_segment_2, empty_segment};
@@ -88,13 +88,12 @@ mod tests {
                 VectorDataConfig {
                     size: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].size,
                     distance: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Hnsw(Default::default()),
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Hnsw(Default::default()),
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
 
         let mut builder =

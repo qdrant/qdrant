@@ -15,7 +15,7 @@ mod tests {
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
         PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType,
-        StorageType, VectorDataConfig,
+        VectorDataConfig, VectorStorageType,
     };
     use serde_json::json;
     use tempfile::Builder;
@@ -45,14 +45,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
 
         let int_key = "int";

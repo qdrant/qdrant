@@ -122,9 +122,9 @@ impl VacuumOptimizer {
                 return None;
             }
 
-            // Segment must have an index
+            // Segment must have any index
             let segment_config = read_segment.config();
-            if !segment_config.is_vector_indexed() {
+            if !segment_config.is_any_vector_indexed() {
                 return None;
             }
         }

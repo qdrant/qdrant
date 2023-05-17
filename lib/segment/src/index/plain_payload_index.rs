@@ -297,6 +297,10 @@ impl VectorIndex for PlainIndex {
     fn indexed_vector_count(&self) -> usize {
         0
     }
+
+    fn is_appendable(&self) -> bool {
+        true
+    }
 }
 
 pub struct PlainFilterContext<'a> {

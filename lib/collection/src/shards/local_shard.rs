@@ -304,22 +304,18 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
 
-        let vector_params = config
-            .params
-            .get_all_vector_params(&config.hnsw_config, config.quantization_config.as_ref())?;
+        let vector_params = config.params.into_base_vector_data()?;
         let segment_number = config.optimizer_config.get_number_segments();
 
         for _sid in 0..segment_number {
             let path_clone = segments_path.clone();
             let segment_config = SegmentConfig {
                 vector_data: vector_params.clone(),
-                index: Default::default(),
-                storage_type: Default::default(),
-                payload_storage_type: match config.params.on_disk_payload {
-                    true => PayloadStorageType::OnDisk,
-                    false => PayloadStorageType::InMemory,
+                payload_storage_type: if config.params.on_disk_payload {
+                    PayloadStorageType::OnDisk
+                } else {
+                    PayloadStorageType::InMemory
                 },
-                quantization_config: Default::default(),
             };
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))

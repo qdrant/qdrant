@@ -86,6 +86,15 @@ pub struct VectorData {
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
 }
 
+impl VectorData {
+    /// Whether this vector data can be appended to
+    ///
+    /// This requires an index and storage type that both support appending.
+    pub fn is_appendable(&self) -> bool {
+        self.vector_index.borrow().is_appendable() && self.vector_storage.borrow().is_appendable()
+    }
+}
+
 impl Segment {
     /// Replace vectors in-place
     ///
@@ -1462,7 +1471,7 @@ mod tests {
     use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use crate::entry::entry_point::OperationError::PointIdError;
     use crate::segment_constructor::{build_segment, load_segment};
-    use crate::types::{Distance, Indexes, SegmentConfig, StorageType, VectorDataConfig};
+    use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 
     // no longer valid since users are now allowed to store arbitrary json objects.
     // TODO(gvelo): add tests for invalid payload types on indexed fields.
@@ -1508,14 +1517,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
         let mut segment = build_segment(dir.path(), &config).unwrap();
 
@@ -1580,14 +1587,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
@@ -1671,14 +1676,12 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
@@ -1761,14 +1764,12 @@ mod tests {
                 VectorDataConfig {
                     size: 2,
                     distance: Distance::Dot,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
-            ..Default::default()
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
@@ -1794,15 +1795,12 @@ mod tests {
                 VectorDataConfig {
                     size: dim,
                     distance: Distance::Dot,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            storage_type: StorageType::InMemory,
             payload_storage_type: Default::default(),
-            quantization_config: None,
         };
         let mut segment = build_segment(dir.path(), &config).unwrap();
 

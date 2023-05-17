@@ -5,7 +5,7 @@ use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::entry::entry_point::OperationResult;
 use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
-use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig};
+use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 
 /// Build new segment with plain index in given directory
 ///
@@ -26,13 +26,12 @@ pub fn build_simple_segment(
                 VectorDataConfig {
                     size: dim,
                     distance,
-                    hnsw_config: None,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
                     quantization_config: None,
-                    on_disk: None,
                 },
             )]),
-            index: Indexes::Plain {},
-            ..Default::default()
+            payload_storage_type: Default::default(),
         },
     )
 }
@@ -49,9 +48,9 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim1,
             distance,
-            hnsw_config: None,
+            storage_type: VectorStorageType::Memory,
+            index: Indexes::Plain {},
             quantization_config: None,
-            on_disk: None,
         },
     );
     vectors_config.insert(
@@ -59,9 +58,9 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim2,
             distance,
-            hnsw_config: None,
+            storage_type: VectorStorageType::Memory,
+            index: Indexes::Plain {},
             quantization_config: None,
-            on_disk: None,
         },
     );
 
@@ -69,8 +68,7 @@ pub fn build_multivec_segment(
         path,
         &SegmentConfig {
             vector_data: vectors_config,
-            index: Indexes::Plain {},
-            ..Default::default()
+            payload_storage_type: Default::default(),
         },
     )
 }

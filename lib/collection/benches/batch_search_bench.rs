@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
