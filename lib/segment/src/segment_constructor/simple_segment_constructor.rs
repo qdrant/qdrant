@@ -33,6 +33,7 @@ pub fn build_simple_segment(
             )]),
             payload_storage_type: Default::default(),
         },
+        true,
     )
 }
 
@@ -70,6 +71,7 @@ pub fn build_multivec_segment(
             vector_data: vectors_config,
             payload_storage_type: Default::default(),
         },
+        true,
     )
 }
 

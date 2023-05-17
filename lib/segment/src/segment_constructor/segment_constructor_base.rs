@@ -239,9 +239,12 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
 ///
 /// * `path` - A path to collection. Segment folder will be created in this directory
 /// * `config` - Segment configuration
+/// * `ready` - Whether the segment is ready after building; will save segment version
 ///
-///
-pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Segment> {
+/// To load a segment, saving the segment version is required. If `ready` is false, the version
+/// will not be stored. Then the segment is skipped on restart when trying to load it again. In
+/// that case, the segment version must be stored manually to make it ready.
+pub fn build_segment(path: &Path, config: &SegmentConfig, ready: bool) -> OperationResult<Segment> {
     let segment_path = path.join(Uuid::new_v4().to_string());
 
     std::fs::create_dir_all(&segment_path)?;
@@ -251,7 +254,9 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.
     // If it is not saved, segment will be skipped.
-    SegmentVersion::save(&segment_path)?;
+    if ready {
+        SegmentVersion::save(&segment_path)?;
+    }
 
     Ok(segment)
 }

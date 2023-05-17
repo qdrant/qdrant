@@ -60,7 +60,7 @@ mod tests {
             payload_storage_type: Default::default(),
         };
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
         for n in 0..num_vectors {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);

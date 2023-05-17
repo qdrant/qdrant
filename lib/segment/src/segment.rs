@@ -1524,7 +1524,7 @@ mod tests {
             )]),
             payload_storage_type: Default::default(),
         };
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
@@ -1595,7 +1595,7 @@ mod tests {
             payload_storage_type: Default::default(),
         };
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
         segment
             .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
@@ -1684,7 +1684,7 @@ mod tests {
             payload_storage_type: Default::default(),
         };
 
-        let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
+        let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
 
         segment
             .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
@@ -1772,7 +1772,7 @@ mod tests {
             payload_storage_type: Default::default(),
         };
 
-        let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
+        let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
         segment
             .upsert_point(0, 0.into(), &only_default_vector(&[1.0, 1.0]))
             .unwrap();
@@ -1802,7 +1802,7 @@ mod tests {
             )]),
             payload_storage_type: Default::default(),
         };
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
