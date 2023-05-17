@@ -4,9 +4,9 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollection,
     DeleteFieldIndexCollectionInternal, DeletePayloadPoints, DeletePayloadPointsInternal,
-    DeletePointVectors, DeletePoints, DeletePointsInternal, DeleteVectorsInternal,
-    PointVectors, PointsIdsList, PointsSelector, SetPayloadPoints, SetPayloadPointsInternal,
-    SyncPoints, SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
+    DeletePointVectors, DeletePoints, DeletePointsInternal, DeleteVectorsInternal, PointVectors,
+    PointsIdsList, PointsSelector, SetPayloadPoints, SetPayloadPointsInternal, SyncPoints,
+    SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
     UpsertPointsInternal, VectorsSelector,
 };
 use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
