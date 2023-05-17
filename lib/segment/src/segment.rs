@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{check_vector_name, check_vectors_set};
+use crate::common::{check_vector_name, check_vectors_set, mmap_ops};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;
@@ -657,6 +657,15 @@ impl Segment {
 
     pub fn total_point_count(&self) -> usize {
         self.id_tracker.borrow().total_point_count()
+    }
+
+    pub fn preheat_disk_cache(&self) -> impl Iterator<Item = mmap_ops::PreheatDiskCache> + '_ {
+        self.vector_data
+            .values()
+            .filter_map(|storage| match &*storage.vector_storage.borrow() {
+                VectorStorageEnum::Memmap(storage) => storage.preheat_disk_cache(),
+                _ => None,
+            })
     }
 }
 

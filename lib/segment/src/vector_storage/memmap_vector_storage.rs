@@ -54,6 +54,16 @@ pub fn open_memmap_vector_storage(
     ))))
 }
 
+impl MemmapVectorStorage {
+    pub fn preheat_disk_cache(&self) -> Option<mmap_ops::PreheatDiskCache> {
+        Some(
+            self.mmap_store
+                .as_ref()?
+                .preheat_disk_cache(&self.vectors_path),
+        )
+    }
+}
+
 impl VectorStorage for MemmapVectorStorage {
     fn vector_dim(&self) -> usize {
         self.mmap_store.as_ref().unwrap().dim

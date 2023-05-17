@@ -1,15 +1,14 @@
-use std::env;
-use std::fs::{File, OpenOptions};
-use std::mem;
+use std::fs::OpenOptions;
 use std::mem::size_of;
-use std::ops;
-use std::path::Path;
-use std::time;
+use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Arc};
+use std::{mem, ops, thread, time};
 
-use memmap2::{Mmap, MmapMut, MmapOptions};
+use memmap2::{Mmap, MmapMut};
 
-use crate::{entry::entry_point::{OperationResult, OperationError}, madvise::Madviseable};
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::madvise;
+use crate::madvise::Madviseable;
 
 pub fn create_and_ensure_length(path: &Path, length: usize) -> OperationResult<()> {
     let file = OpenOptions::new()
@@ -30,7 +29,10 @@ pub fn open_read_mmap(path: &Path) -> OperationResult<Mmap> {
         .create(true)
         .open(path)?;
 
-    open_mmap(path, &file, |file, opts| unsafe { opts.map(file) })
+    let mmap = unsafe { Mmap::map(&file)? };
+    madvise::madvise(&mmap, madvise::get_global())?;
+
+    Ok(mmap)
 }
 
 pub fn open_write_mmap(path: &Path) -> OperationResult<MmapMut> {
@@ -40,83 +42,105 @@ pub fn open_write_mmap(path: &Path) -> OperationResult<MmapMut> {
         .create(false)
         .open(path)?;
 
-    open_mmap(path, &file, |file, opts| unsafe { opts.map_mut(file) })
-}
-
-fn open_mmap<F, T, E>(path: &Path, file: &File, open: F) -> OperationResult<T>
-where
-    F: FnOnce(&File, &MmapOptions) -> Result<T, E>,
-    T: ops::Deref<Target = [u8]> + Madviseable,
-    OperationError: From<E>,
-{
-    let mut opts = MmapOptions::new();
-
-    if let Ok(_) = env::var("MAP_POPULATE") {
-        log::info!("Loading mmap {path:?} with MAP_POPULATE");
-        opts.populate();
-    }
-
-    let instant = time::Instant::now();
-    let mmap = open(&file, &opts)?;
-    log::info!("Loading mmap {path:?} took {:?}", instant.elapsed());
-
-    if let Ok(_) = env::var("MADV_WILLNEED")
-        .or_else(|_| env::var("MADV_WILLNEED_FIRST"))
-        .or_else(|_| env::var("MADV_WILLNEED_SPARSE")) {
-
-        log::info!("Advising mmap {path:?} with MADV_WILLNEED");
-
-        madvise::madvise(&mmap, madvise::Advice::WillNeed)?;
-
-        if let Ok(_) = env::var("MADV_WILLNEED_FIRST") {
-            log::info!("Reading the first byte of mmap {path:?} to force page read-ahead");
-            let instant = time::Instant::now();
-            let _ = mmap[0];
-            log::info!("Reading the first byte of mmap {path:?} took {:?}", instant.elapsed());
-        } else if let Ok(_) = env::var("MADV_WILLNEED_SPARSE") {
-            log::info!("Making 10 sparse reads of mmap {path:?} to force page read-ahead");
-
-            let mut timings = Vec::with_capacity(9);
-
-            for iter in 0..10 {
-                let index = mmap.len() / 11 * iter;
-
-                let instant = time::Instant::now();
-                let _ = mmap[index];
-                timings.push(instant.elapsed());
-            }
-
-            log::info!("Sparse reads of mmap {path:?} took {timings:?}");
-        }
-    }
-
-    if let Ok(_) = env::var("MMAP_READ_ALL") {
-        log::info!("Reading mmap {path:?} (size: {} bytes) to populate caches", mmap.len());
-
-        let mut dst = vec![0; 8096];
-
-        let instant = time::Instant::now();
-
-        for iter in 0..(mmap.len() / dst.len()) {
-            let start = dst.len() * iter;
-            let end = start + dst.len();
-
-            dst.copy_from_slice(&mmap[start..end]);
-        }
-
-        let rem = mmap.len() % dst.len();
-        let start = mmap.len() - rem;
-
-        if rem > 0 {
-            dst[..rem].copy_from_slice(&mmap[start..]);
-        }
-
-        log::info!("Reading mmap {path:?} took {:?}", instant.elapsed());
-    }
-
+    let mmap = unsafe { MmapMut::map_mut(&file)? };
     madvise::madvise(&mmap, madvise::get_global())?;
 
     Ok(mmap)
+}
+
+#[derive(Debug)]
+pub struct PreheatDiskCacheWorker {
+    receiver: mpsc::Receiver<PreheatDiskCache>,
+}
+
+impl PreheatDiskCacheWorker {
+    pub fn spawn() -> PreheatDiskCacheHandle {
+        let (sender, receiver) = mpsc::sync_channel(32);
+
+        let handle = PreheatDiskCacheHandle { sender };
+
+        let worker = Self { receiver };
+        let _ = thread::spawn(move || worker.exec());
+
+        handle
+    }
+
+    fn exec(self) {
+        while let Ok(task) = self.receiver.recv() {
+            task.exec();
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PreheatDiskCacheHandle {
+    sender: mpsc::SyncSender<PreheatDiskCache>,
+}
+
+impl PreheatDiskCacheHandle {
+    pub fn schedule(&self, task: PreheatDiskCache) -> OperationResult<()> {
+        self.sender.send(task).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to send preheat mmap disk-cache task{} to the worker: {err}",
+                err.0
+                    .path
+                    .as_ref()
+                    .map_or(String::new(), |path| format!(" ({path:?})")),
+            ))
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PreheatDiskCache {
+    mmap: Arc<Mmap>,
+    path: Option<PathBuf>,
+}
+
+impl PreheatDiskCache {
+    pub fn new(mmap: Arc<Mmap>, path: Option<impl Into<PathBuf>>) -> Self {
+        Self {
+            mmap,
+            path: path.map(Into::into),
+        }
+    }
+
+    pub fn exec(&self) {
+        preheat_disk_cache(self.mmap.as_ref(), self.path.as_deref());
+    }
+}
+
+fn preheat_disk_cache<T>(mmap: &T, path: Option<&Path>)
+where
+    T: Madviseable + ops::Deref<Target = [u8]>,
+{
+    let separator = path.map_or("", |_| " "); // space if `path` is `Some` or nothing
+    let path = path.unwrap_or(Path::new("")); // path if `path` is `Some` or nothing
+
+    log::debug!("Reading mmap{separator}{path:?} to populate cache...");
+
+    let instant = time::Instant::now();
+
+    let mut dst = [0; 8096];
+
+    for iter in 0..(mmap.len() / dst.len()) {
+        let start = dst.len() * iter;
+        let end = start + dst.len();
+
+        dst.copy_from_slice(&mmap[start..end]);
+    }
+
+    let rem = mmap.len() % dst.len();
+    let start = mmap.len() - rem;
+
+    if rem > 0 {
+        dst[..rem].copy_from_slice(&mmap[start..]);
+    }
+
+    log::debug!(
+        "Reading mmap{separator}{path:?} to populate cache took {:?}",
+        instant.elapsed()
+    );
 }
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {

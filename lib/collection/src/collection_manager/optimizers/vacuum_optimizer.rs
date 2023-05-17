@@ -470,7 +470,10 @@ mod tests {
         let changed = index_optimizer
             .optimize(locked_holder.clone(), vec![segment_id], &false.into())
             .unwrap();
-        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(
+            changed.is_some(),
+            "optimizer should have rebuilt this segment"
+        );
         assert!(
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
@@ -579,7 +582,10 @@ mod tests {
         let changed = vacuum_optimizer
             .optimize(locked_holder.clone(), suggested_to_optimize, &false.into())
             .unwrap();
-        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(
+            changed.is_some(),
+            "optimizer should have rebuilt this segment"
+        );
 
         // Ensure deleted points and vectors are optimized
         locked_holder

@@ -236,6 +236,8 @@ impl LocalShard {
 
         collection.load_from_wal(collection_id)?;
 
+        collection.schedule_preheat_disk_cache_tasks().await;
+
         Ok(collection)
     }
 
@@ -737,6 +739,13 @@ impl LocalShard {
             config: collection_config,
             payload_schema: schema,
         }
+    }
+
+    pub async fn schedule_preheat_disk_cache_tasks(&self) {
+        self.update_handler
+            .lock()
+            .await
+            .schedule_preheat_disk_cache_tasks();
     }
 }
 

@@ -13,7 +13,9 @@ use tokio::task::JoinHandle;
 use tokio::time::Duration;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentId,
+};
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -219,11 +221,15 @@ impl UpdateHandler {
                     }
                     let callback_cloned = callback.clone();
 
+                    let segments = segments.clone();
+
                     handles.push(spawn_stoppable(move |stopped| {
                         match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
-                            Ok(result) => {
-                                callback_cloned(result); // Perform some actions when optimization if finished
-                                result
+                            Ok(optimized_segment_id) => {
+                                schedule_preheat_disk_cache_task(&segments, optimized_segment_id);
+
+                                callback_cloned(optimized_segment_id.is_some()); // Perform some actions when optimization if finished
+                                optimized_segment_id.is_some()
                             }
                             Err(error) => match error {
                                 CollectionError::Cancelled { description } => {
@@ -444,5 +450,42 @@ impl UpdateHandler {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
         })
+    }
+
+    pub fn schedule_preheat_disk_cache_tasks(&self) {
+        let segments = self.segments.read();
+
+        for (_, segment) in segments.iter() {
+            let segment = match segment {
+                LockedSegment::Original(segment) => segment,
+                _ => continue,
+            };
+
+            for task in segment.read().preheat_disk_cache() {
+                // TODO: Schedule preheat disk-cache tasks here...
+                log::debug!("Schedulling preheat disk-cache task ({task:?})...");
+            }
+        }
+    }
+}
+
+fn schedule_preheat_disk_cache_task(segments: &LockedSegmentHolder, segment_id: Option<SegmentId>) {
+    let segment_id = match segment_id {
+        Some(id) => id,
+        None => return,
+    };
+
+    let segment = {
+        let segments = segments.read();
+
+        match segments.get(segment_id) {
+            Some(LockedSegment::Original(segment)) => segment.clone(),
+            _ => return,
+        }
+    };
+
+    for task in segment.read().preheat_disk_cache() {
+        // TODO: Schedule preheat disk-cache tasks here...
+        log::debug!("Schedulling preheat disk-cache task ({task:?})...");
     }
 }

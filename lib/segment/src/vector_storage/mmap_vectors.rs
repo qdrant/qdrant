@@ -3,6 +3,7 @@ use std::io::Write;
 use std::mem::{self, size_of, transmute};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::Mmap;
@@ -27,7 +28,7 @@ pub struct MmapVectors {
     /// Memory mapped file for vector data
     ///
     /// Has an exact size to fit a header and `num_vectors` of vectors.
-    mmap: Mmap,
+    mmap: Arc<Mmap>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -63,7 +64,7 @@ impl MmapVectors {
         Ok(MmapVectors {
             dim,
             num_vectors,
-            mmap,
+            mmap: mmap.into(),
             deleted,
             deleted_count,
             quantized_vectors: None,
@@ -172,6 +173,10 @@ impl MmapVectors {
     /// vectors in this segment.
     pub fn deleted_vector_bitslice(&self) -> &BitSlice {
         &self.deleted
+    }
+
+    pub fn preheat_disk_cache(&self, path: &Path) -> mmap_ops::PreheatDiskCache {
+        mmap_ops::PreheatDiskCache::new(self.mmap.clone(), Some(path))
     }
 }
 
