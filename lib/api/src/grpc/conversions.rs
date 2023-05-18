@@ -4,9 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{
-    default_quantization_ignore_value, default_quantization_rescore_value, NestedContainer,
-};
+use segment::types::{default_quantization_ignore_value, default_quantization_rescore_value};
 use tonic::Status;
 use uuid::Uuid;
 
@@ -687,7 +685,7 @@ impl TryFrom<Condition> for segment::types::Condition {
                     Ok(segment::types::Condition::IsNull(is_null.into()))
                 }
                 ConditionOneOf::Nested(nested) => Ok(segment::types::Condition::Nested(
-                    NestedContainer::new(nested.try_into()?),
+                    segment::types::NestedCondition::new(nested.try_into()?),
                 )),
             };
         }
@@ -716,7 +714,7 @@ impl From<segment::types::Condition> for Condition {
     }
 }
 
-impl TryFrom<NestedCondition> for segment::types::NestedCondition {
+impl TryFrom<NestedCondition> for segment::types::Nested {
     type Error = Status;
 
     fn try_from(value: NestedCondition) -> Result<Self, Self::Error> {
@@ -732,8 +730,8 @@ impl TryFrom<NestedCondition> for segment::types::NestedCondition {
     }
 }
 
-impl From<segment::types::NestedCondition> for NestedCondition {
-    fn from(value: segment::types::NestedCondition) -> Self {
+impl From<segment::types::Nested> for NestedCondition {
+    fn from(value: segment::types::Nested) -> Self {
         Self {
             key: value.key,
             filter: Some(value.filter.into()),
