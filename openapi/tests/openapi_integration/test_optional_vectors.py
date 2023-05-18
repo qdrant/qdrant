@@ -15,7 +15,7 @@ def setup():
 
 def test_retrieve_deleted_vector():
     # Delete vector
-    resource = request_with_validation(
+    response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
         path_params={'collection_name': collection_name},
@@ -24,10 +24,10 @@ def test_retrieve_deleted_vector():
             "vector": ["text"]
         }
     )
-    assert resource.ok
+    assert response.ok
 
     # Retrieve deleted vector
-    resource = request_with_validation(
+    response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="POST",
         path_params={'collection_name': collection_name},
@@ -38,8 +38,8 @@ def test_retrieve_deleted_vector():
         }
     )
 
-    assert resource.ok
-    result = resource.json()["result"]
+    assert response.ok
+    result = response.json()["result"]
     assert len(result) == 4
 
     id_to_result = {r["id"]: r for r in result}
