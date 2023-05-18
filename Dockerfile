@@ -4,10 +4,6 @@
 FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.69.0 AS chef
 WORKDIR /qdrant
 
-ARG RUST_BUILD_PROFILE=release
-
-ARG MOLD_VERSION=1.11.0
-
 # # Choose MOLD arch based on TARGETARCH: amd64 -> x86_64, arm64 -> aarch64
 
 FROM chef AS planner
@@ -19,6 +15,9 @@ FROM chef as builder
 # based on https://github.com/docker/buildx/issues/510
 ARG TARGETARCH
 ENV TARGETARCH=${TARGETARCH:-amd64}
+
+ARG RUST_BUILD_PROFILE=release
+ARG MOLD_VERSION=1.11.0
 
 WORKDIR /qdrant
 
