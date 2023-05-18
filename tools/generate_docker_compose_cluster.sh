@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# Generate a docker-compose configuration for a cluster.
+#
+# Parameters:
+# - $1: number of nodes (default: 5)
+# - $2: base port (default: 6330)
+#
+# Example usage:
+# ./generate_docker_compose_cluster.sh 5 > docker-compose.yaml
+
 set -euo pipefail
 
 declare NODES="${1:-5}"
