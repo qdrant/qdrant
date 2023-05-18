@@ -1,6 +1,7 @@
 use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
+use std::fmt::Write as _;
 use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
@@ -680,8 +681,8 @@ impl From<RequestError<tonic::Status>> for CollectionError {
                 let mut err = err.source();
 
                 while let Some(src) = err {
-                    msg += &format!(": {src}");
                     err = src.source();
+                    write!(&mut msg, ": {src}").unwrap(); // Writing into `String` never fails
                 }
 
                 CollectionError::service_error(msg)
