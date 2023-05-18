@@ -13,6 +13,50 @@ def setup():
     drop_collection(collection_name=collection_name)
 
 
+def test_retrieve_deleted_vector():
+    # Delete vector
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors/delete',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "points": [1, 3],
+            "vector": ["text"]
+        }
+    )
+    assert response.ok
+
+    # Retrieve deleted vector
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "ids": [1, 2, 3, 4],
+            "with_vectors": ["text", "image"],
+            "with_payload": True,
+        }
+    )
+
+    assert response.ok
+    result = response.json()["result"]
+    assert len(result) == 4
+
+    id_to_result = {r["id"]: r for r in result}
+
+    assert id_to_result[1]["vector"].get("image") is not None
+    assert id_to_result[1]["vector"].get("text") is None
+
+    assert id_to_result[2]["vector"].get("image") is not None
+    assert id_to_result[2]["vector"].get("text") is not None
+
+    assert id_to_result[3]["vector"].get("image") is not None
+    assert id_to_result[3]["vector"].get("text") is None
+
+    assert id_to_result[4]["vector"].get("image") is not None
+    assert id_to_result[4]["vector"].get("text") is not None
+
+
 def upsert_partial_vectors():
     response = request_with_validation(
         api='/collections/{collection_name}/points',

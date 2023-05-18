@@ -286,18 +286,8 @@ impl SegmentsSearcher {
                             WithVector::Selector(vector_names) => {
                                 let mut selected_vectors = NamedVectors::default();
                                 for vector_name in vector_names {
-                                    let vector_opt = segment.vector(vector_name, id)?;
-                                    match vector_opt {
-                                        Some(vector) => {
-                                            selected_vectors.insert(vector_name.clone(), vector);
-                                        }
-                                        None => {
-                                            // ToDo: Allow to return partial result
-                                            return Err(OperationError::service_error(format!(
-                                                "Vector {} not found for point {}",
-                                                vector_name, id
-                                            )));
-                                        }
+                                    if let Some(vector) = segment.vector(vector_name, id)? {
+                                        selected_vectors.insert(vector_name.into(), vector);
                                     }
                                 }
                                 Some(selected_vectors.into())

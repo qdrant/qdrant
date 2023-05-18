@@ -95,6 +95,29 @@ def points_retrieve():
         assert len(point['vector']['image']) == 4
 
 
+def test_retrieve_invalid_vector():
+    retrieve_invalid_vector()
+
+
+def retrieve_invalid_vector():
+    # Retrieve non-existant vector name
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "ids": [1, 2, 3, 4],
+            "with_vectors": ["text", "image", "i_do_no_exist"],
+            "with_payload": True,
+        }
+    )
+
+    assert not response.ok
+    assert response.status_code == 400
+    error = response.json()["status"]["error"]
+    assert error == "Wrong input: Not existing vector name error: i_do_no_exist"
+
+
 def test_exclude_payload():
     exclude_payload()
 
