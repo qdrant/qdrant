@@ -5,7 +5,7 @@ use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::nested_query_checker::{
     check_nested_is_empty_condition, check_nested_is_null_condition, nested_check_field_condition,
 };
-use crate::types::{Condition, NestedContainer, PointOffsetType};
+use crate::types::{Condition, NestedCondition, PointOffsetType};
 
 /// Given a point_id, returns the list of nested indices matching the condition and the total number of nested elements in the payload
 type NestedMatchingIndicesFn<'a> = Box<dyn Fn(PointOffsetType) -> BitVec + 'a>;
@@ -156,7 +156,7 @@ pub fn nested_condition_converter<'a>(
 
 fn check_nested_must(
     point_id: PointOffsetType,
-    nested: &NestedContainer,
+    nested: &NestedCondition,
     field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
     nested_path: JsonPathPayload,
@@ -179,7 +179,7 @@ fn check_nested_must(
 
 fn check_nested_must_not(
     point_id: PointOffsetType,
-    nested: &NestedContainer,
+    nested: &NestedCondition,
     field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
     nested_path: &JsonPathPayload,
@@ -202,7 +202,7 @@ fn check_nested_must_not(
 
 fn check_nested_should(
     point_id: PointOffsetType,
-    nested: &NestedContainer,
+    nested: &NestedCondition,
     field_indexes: &IndexesMap,
     payload_provider: PayloadProvider,
     nested_path: JsonPathPayload,

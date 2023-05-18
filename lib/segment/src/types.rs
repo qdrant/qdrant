@@ -1248,19 +1248,19 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 
 /// Select points with payload for a specified nested field
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-pub struct NestedCondition {
+pub struct Nested {
     pub key: PayloadKeyType,
     pub filter: Filter,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-pub struct NestedContainer {
-    pub nested: NestedCondition,
+pub struct NestedCondition {
+    pub nested: Nested,
 }
 
 /// Container to workaround the untagged enum limitation for condition
-impl NestedContainer {
-    pub fn new(nested: NestedCondition) -> Self {
+impl NestedCondition {
+    pub fn new(nested: Nested) -> Self {
         Self { nested }
     }
 
@@ -1299,13 +1299,13 @@ pub enum Condition {
     /// Nested filter
     Filter(Filter),
     /// Nested filters
-    Nested(NestedContainer),
+    Nested(NestedCondition),
 }
 
 impl Condition {
     pub fn new_nested(key: impl Into<String>, filter: Filter) -> Self {
-        Self::Nested(NestedContainer {
-            nested: NestedCondition {
+        Self::Nested(NestedCondition {
+            nested: Nested {
                 key: key.into(),
                 filter,
             },
