@@ -291,13 +291,7 @@ impl SegmentsSearcher {
                                         Some(vector) => {
                                             selected_vectors.insert(vector_name.clone(), vector);
                                         }
-                                        None => {
-                                            // ToDo: Allow to return partial result
-                                            return Err(OperationError::service_error(format!(
-                                                "Vector {} not found for point {}",
-                                                vector_name, id
-                                            )));
-                                        }
+                                        None => {}
                                     }
                                 }
                                 Some(selected_vectors.into())
