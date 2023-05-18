@@ -4937,10 +4937,10 @@
             "$ref": "#/components/schemas/HasIdCondition"
           },
           {
-            "$ref": "#/components/schemas/Filter"
+            "$ref": "#/components/schemas/NestedCondition"
           },
           {
-            "$ref": "#/components/schemas/NestedCondition"
+            "$ref": "#/components/schemas/Filter"
           }
         ]
       },

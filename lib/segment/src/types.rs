@@ -1296,10 +1296,10 @@ pub enum Condition {
     IsNull(IsNullCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
-    /// Nested filter
-    Filter(Filter),
     /// Nested filters
     Nested(NestedCondition),
+    /// Nested filter
+    Filter(Filter),
 }
 
 impl Condition {
