@@ -13,8 +13,7 @@ pub async fn make_grpc_channel(
 ) -> Result<Channel, TonicError> {
     let mut endpoint = Channel::builder(uri)
         .timeout(timeout)
-        .connect_timeout(connection_timeout)
-        .keep_alive_while_idle(true);
+        .connect_timeout(connection_timeout);
     if let Some(config) = tls_config {
         endpoint = endpoint.tls_config(config)?;
     }
