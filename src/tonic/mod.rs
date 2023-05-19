@@ -155,7 +155,15 @@ pub fn init_internal(
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
-            let mut server = Server::builder();
+            let mut server = Server::builder()
+                // Internally use a high limit for pending accept streams.
+                // We can have a huge number of reset/dropped HTTP2 streams in our internal
+                // communcation when there are a lot of clients dropping connections. This
+                // internally causes an GOAWAY/ENHANCE_YOUR_CALM error breaking cluster consensus.
+                // We prefer to keep more pending reset streams even though this may be expensive,
+                // versus an internal error that is very hard to handle.
+                // More info: <https://github.com/qdrant/qdrant/issues/1907>
+                .http2_max_pending_accept_reset_streams(Some(1024));
 
             if let Some(config) = tls_config {
                 log::info!("TLS enabled for internal gRPC API (TTL not supported)");
