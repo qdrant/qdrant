@@ -114,8 +114,8 @@ impl GroupRequest {
             |field| {
                 // Hack 2: `with_payload` doesn't work with `[]` at the end of the field name.
                 // Remove the ending `[]`.
-                let field = if field.ends_with("[]") {
-                    &field[..field.len() - 2]
+                let field = if let Some(stripped_field) = field.strip_suffix("[]") {
+                    stripped_field
                 } else {
                     field
                 };
