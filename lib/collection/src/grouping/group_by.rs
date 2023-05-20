@@ -13,7 +13,7 @@ use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
-    BaseGroupRequest, CollectionResult, RecommendGroupsRequest, RecommendRequest,
+    BaseGroupRequest, CollectionError, CollectionResult, RecommendGroupsRequest, RecommendRequest,
     SearchGroupsRequest, SearchRequest, UsingVector,
 };
 use crate::recommendations::recommend_by;
@@ -101,6 +101,30 @@ impl GroupRequest {
         }
     }
 
+    /// Apply a bunch of hacks to make `group_by` field selector work with as `with_payload`.
+    fn _group_by_to_payload_selector(&self, group_by: &str) -> CollectionResult<String> {
+        // Hack 1: `with_payload` only works with top-level fields. (ToDo: maybe fix this?)
+        group_by.split('.').next().map_or_else(
+            || {
+                Err(CollectionError::bad_request(format!(
+                    "Malformed group_by parameter: {}",
+                    group_by
+                )))
+            },
+            |field| {
+                // Hack 2: `with_payload` doesn't work with `[]` at the end of the field name.
+                // Remove the ending `[]`.
+                let field = if field.ends_with("[]") {
+                    &field[..field.len() - 2]
+                } else {
+                    field
+                };
+
+                Ok(field.to_owned())
+            },
+        )
+    }
+
     async fn r#do<'a, F, Fut>(
         &self,
         collection: &Collection,
@@ -113,12 +137,7 @@ impl GroupRequest {
         F: Fn(String) -> Fut,
         Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
     {
-        // Hack: "with_payload" returns empty payload when the requested field ends with `[]`.
-        // Remove the ending `[]`.
-        let include_group_by = match self.group_by.as_str() {
-            s if s.ends_with("[]") => s[..s.len() - 2].to_owned(),
-            s => s.to_owned(),
-        };
+        let include_group_by = self._group_by_to_payload_selector(&self.group_by)?;
 
         let only_group_by_key = Some(WithPayloadInterface::Fields(vec![include_group_by]));
 
