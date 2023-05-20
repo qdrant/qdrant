@@ -11,6 +11,7 @@ use crate::index::query_optimization::optimized_filter::OptimizedCondition;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::types::{Condition, PointOffsetType};
 
+#[allow(dead_code)]
 pub fn optimize_nested_must<'a, F>(
     conditions: &'a [Condition],
     field_indexes: &'a IndexesMap,
@@ -36,6 +37,7 @@ where
     (vec![OptimizedCondition::Checker(merged)], estimation)
 }
 
+#[allow(dead_code)]
 pub fn optimize_nested_must_not<'a, F>(
     conditions: &'a [Condition],
     field_indexes: &'a IndexesMap,
@@ -64,6 +66,7 @@ where
     (vec![OptimizedCondition::Checker(merged)], estimation)
 }
 
+#[allow(dead_code)]
 pub fn optimize_nested_should<'a, F>(
     conditions: &'a [Condition],
     field_indexes: &'a IndexesMap,

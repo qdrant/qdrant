@@ -2,16 +2,13 @@ use std::cmp::Reverse;
 
 use itertools::Itertools;
 
-use crate::common::utils::{IndexesMap, JsonPathPayload};
+use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::{
     combine_must_estimations, combine_should_estimations, invert_estimation,
 };
 use crate::index::query_optimization::condition_converter::condition_converter;
-use crate::index::query_optimization::nested_optimizer::{
-    optimize_nested_must, optimize_nested_must_not, optimize_nested_should,
-};
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::types::{Condition, Filter};
@@ -43,7 +40,6 @@ pub fn optimize_filter<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-    nested_path: Option<JsonPathPayload>,
 ) -> (OptimizedFilter<'a>, CardinalityEstimation)
 where
     F: Fn(&Condition) -> CardinalityEstimation,
@@ -53,25 +49,14 @@ where
     let optimized_filter = OptimizedFilter {
         should: filter.should.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
-                let (optimized_conditions, estimation) = if let Some(np) = &nested_path {
-                    optimize_nested_should(
-                        conditions,
-                        field_indexes,
-                        payload_provider.clone(),
-                        estimator,
-                        total,
-                        np.clone(),
-                    )
-                } else {
-                    optimize_should(
-                        conditions,
-                        id_tracker,
-                        field_indexes,
-                        payload_provider.clone(),
-                        estimator,
-                        total,
-                    )
-                };
+                let (optimized_conditions, estimation) = optimize_should(
+                    conditions,
+                    id_tracker,
+                    field_indexes,
+                    payload_provider.clone(),
+                    estimator,
+                    total,
+                );
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -80,25 +65,14 @@ where
         }),
         must: filter.must.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
-                let (optimized_conditions, estimation) = if let Some(np) = &nested_path {
-                    optimize_nested_must(
-                        conditions,
-                        field_indexes,
-                        payload_provider.clone(),
-                        estimator,
-                        total,
-                        np.clone(),
-                    )
-                } else {
-                    optimize_must(
-                        conditions,
-                        id_tracker,
-                        field_indexes,
-                        payload_provider.clone(),
-                        estimator,
-                        total,
-                    )
-                };
+                let (optimized_conditions, estimation) = optimize_must(
+                    conditions,
+                    id_tracker,
+                    field_indexes,
+                    payload_provider.clone(),
+                    estimator,
+                    total,
+                );
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -107,25 +81,14 @@ where
         }),
         must_not: filter.must_not.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
-                let (optimized_conditions, estimation) = if let Some(np) = &nested_path {
-                    optimize_nested_must_not(
-                        conditions,
-                        field_indexes,
-                        payload_provider.clone(),
-                        estimator,
-                        total,
-                        np.clone(),
-                    )
-                } else {
-                    optimize_must_not(
-                        conditions,
-                        id_tracker,
-                        field_indexes,
-                        payload_provider.clone(),
-                        estimator,
-                        total,
-                    )
-                };
+                let (optimized_conditions, estimation) = optimize_must_not(
+                    conditions,
+                    id_tracker,
+                    field_indexes,
+                    payload_provider.clone(),
+                    estimator,
+                    total,
+                );
                 filter_estimations.push(estimation);
                 Some(optimized_conditions)
             } else {
@@ -154,18 +117,6 @@ where
     conditions
         .iter()
         .map(|condition| match condition {
-            Condition::Nested(nested_filter) => {
-                let (optimized_filter, estimation) = optimize_filter(
-                    nested_filter.filter(),
-                    id_tracker,
-                    field_indexes,
-                    payload_provider.clone(),
-                    estimator,
-                    total,
-                    Some(JsonPathPayload::new(nested_filter.array_key())),
-                );
-                (OptimizedCondition::Filter(optimized_filter), estimation)
-            }
             Condition::Filter(filter) => {
                 let (optimized_filter, estimation) = optimize_filter(
                     filter,
@@ -174,7 +125,6 @@ where
                     payload_provider.clone(),
                     estimator,
                     total,
-                    None,
                 );
                 (OptimizedCondition::Filter(optimized_filter), estimation)
             }

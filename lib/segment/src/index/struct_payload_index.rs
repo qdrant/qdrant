@@ -31,8 +31,8 @@ use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
-    IsEmptyCondition, IsNullCondition, Payload, PayloadField, PayloadFieldSchema, PayloadKeyType,
-    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    IsEmptyCondition, IsNullCondition, Payload, PayloadContainer, PayloadField, PayloadFieldSchema,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";

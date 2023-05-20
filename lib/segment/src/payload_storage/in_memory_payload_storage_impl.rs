@@ -62,7 +62,9 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::common::utils::IndexesMap;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+    use crate::id_tracker::IdTracker;
     use crate::payload_storage::query_checker::check_payload;
     use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
 
@@ -109,9 +111,10 @@ mod tests {
                 }
                 payload.borrow().as_ref().cloned().unwrap()
             },
-            &id_tracker,
+            |offset| id_tracker.external_id(offset),
             &query,
             0,
+            &IndexesMap::new(),
         );
     }
 

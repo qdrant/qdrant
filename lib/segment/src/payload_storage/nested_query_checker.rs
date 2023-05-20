@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Deref;
 
 use bitvec::bitvec;
@@ -5,9 +6,11 @@ use bitvec::prelude::BitVec;
 use serde_json::Value;
 
 use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};
+use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
+    Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef,
+    PayloadContainer, PayloadKeyType,
 };
 
 /// Executes condition checks for all `must` conditions of the nester objects.
@@ -60,7 +63,7 @@ where
             field_condition,
             get_payload().deref(),
             nested_path,
-            &Default::default(),
+            &IndexesMap::new(),
         ),
         Condition::IsEmpty(is_empty) => {
             check_nested_is_empty_condition(nested_path, is_empty, get_payload().deref())
@@ -88,7 +91,7 @@ where
 pub fn check_nested_is_empty_condition(
     nested_path: &JsonPathPayload,
     is_empty: &IsEmptyCondition,
-    payload: &Payload,
+    payload: &impl PayloadContainer,
 ) -> BitVec {
     let full_path = nested_path.extend(&is_empty.is_empty.key);
     let field_values = payload.get_value(&full_path.path).values();
@@ -107,7 +110,7 @@ pub fn check_nested_is_empty_condition(
 pub fn check_nested_is_null_condition(
     nested_path: &JsonPathPayload,
     is_null: &IsNullCondition,
-    payload: &Payload,
+    payload: &impl PayloadContainer,
 ) -> BitVec {
     let full_path = nested_path.extend(&is_null.is_null.key);
     let field_values = payload.get_value(&full_path.path);
@@ -136,12 +139,15 @@ pub fn check_nested_is_null_condition(
 }
 
 /// Return indexes of the elements matching the condition in the payload values
-pub fn nested_check_field_condition(
+pub fn nested_check_field_condition<R>(
     field_condition: &FieldCondition,
-    payload: &Payload,
+    payload: &impl PayloadContainer,
     nested_path: &JsonPathPayload,
-    field_indexes: &IndexesMap,
-) -> BitVec {
+    field_indexes: &HashMap<PayloadKeyType, R>,
+) -> BitVec
+where
+    R: AsRef<Vec<FieldIndex>>,
+{
     let full_path = nested_path.extend(&field_condition.key);
     let field_values = payload.get_value(&full_path.path).values();
     let mut result = BitVec::with_capacity(field_values.len());
@@ -154,7 +160,7 @@ pub fn nested_check_field_condition(
         // because non-nested payload is checked by the index directly.
         let mut index_check_res = None;
         if let Some(field_indexes) = field_indexes {
-            for index in field_indexes {
+            for index in field_indexes.as_ref() {
                 index_check_res = index.check_condition(field_condition, p);
                 if index_check_res.is_some() {
                     break;
@@ -185,7 +191,8 @@ mod tests {
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
     use crate::payload_storage::{ConditionChecker, PayloadStorage};
     use crate::types::{
-        FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadField, Range, ValuesCount,
+        FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, Payload, PayloadField, Range,
+        ValuesCount,
     };
 
     #[test]

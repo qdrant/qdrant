@@ -1,18 +1,20 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
-use crate::common::utils::JsonPathPayload;
+use crate::common::utils::{IndexesMap, JsonPathPayload};
 use crate::id_tracker::IdTrackerSS;
+use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::nested_query_checker::check_nested_filter;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
-    PointOffsetType,
+    PayloadContainer, PayloadKeyType, PointIdType, PointOffsetType,
 };
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
@@ -67,23 +69,26 @@ where
     }
 }
 
-pub fn check_payload<'a, F>(
+pub fn check_payload<'a, F, G, R>(
     get_payload: F,
-    id_tracker: &IdTrackerSS,
+    get_external_id: G,
     query: &Filter,
     point_id: PointOffsetType,
+    field_indexes: &HashMap<PayloadKeyType, R>,
 ) -> bool
 where
     F: Fn() -> OwnedPayloadRef<'a>,
+    G: Fn(PointOffsetType) -> Option<PointIdType>,
+    R: AsRef<Vec<FieldIndex>>,
 {
     let checker = |condition: &Condition| match condition {
         Condition::Field(field_condition) => {
-            check_field_condition(field_condition, get_payload().deref())
+            check_field_condition(field_condition, get_payload().deref(), field_indexes)
         }
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
         Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
         Condition::HasId(has_id) => {
-            let external_id = match id_tracker.external_id(point_id) {
+            let external_id = match get_external_id(point_id) {
                 None => return false,
                 Some(id) => id,
             };
@@ -100,22 +105,62 @@ where
     check_filter(&checker, query)
 }
 
-pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) -> bool {
+pub fn check_is_empty_condition(
+    is_empty: &IsEmptyCondition,
+    payload: &impl PayloadContainer,
+) -> bool {
     payload.get_value(&is_empty.is_empty.key).check_is_empty()
 }
 
-pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &Payload) -> bool {
+pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &impl PayloadContainer) -> bool {
     payload.get_value(&is_null.is_null.key).check_is_null()
 }
 
-pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
+pub fn check_field_condition<R>(
+    field_condition: &FieldCondition,
+    payload: &impl PayloadContainer,
+    field_indexes: &HashMap<PayloadKeyType, R>,
+) -> bool
+where
+    R: AsRef<Vec<FieldIndex>>,
+{
     let field_values = payload.get_value(&field_condition.key);
+    let field_indexes = field_indexes.get(&field_condition.key);
 
-    let mut res = false;
-    for p in field_values {
-        res |= field_condition.check(p);
+    // This covers a case, when a field index affects the result of the condition.
+    if let Some(field_indexes) = field_indexes {
+        for p in field_values {
+            let mut index_checked = false;
+            for index in field_indexes.as_ref() {
+                if let Some(index_check_res) = index.check_condition(field_condition, p) {
+                    if index_check_res {
+                        // If at least one object matches the condition, we can return true
+                        return true;
+                    }
+                    index_checked = true;
+                    // If index check of the condition returned something, we don't need to check
+                    // other indexes
+                    break;
+                }
+            }
+            if !index_checked {
+                // If none of the indexes returned anything, we need to check the condition
+                // against the payload
+                if field_condition.check(p) {
+                    return true;
+                }
+            }
+        }
+        false
+    } else {
+        // Fallback to regular condition check if there are no indexes for the field
+        for p in field_values {
+            if field_condition.check(p) {
+                return true;
+            }
+        }
+        false
     }
-    res
 }
 
 /// Only used for testing
@@ -143,6 +188,8 @@ impl ConditionChecker for SimpleConditionChecker {
         let payload_storage_guard = self.payload_storage.borrow();
 
         let payload_ref_cell: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
+        let id_tracker = self.id_tracker.borrow();
+
         check_payload(
             || {
                 if payload_ref_cell.borrow().is_none() {
@@ -180,9 +227,10 @@ impl ConditionChecker for SimpleConditionChecker {
                 }
                 payload_ref_cell.borrow().as_ref().cloned().unwrap()
             },
-            self.id_tracker.borrow().deref(),
+            |offset| id_tracker.external_id(offset),
             query,
             point_id,
+            &IndexesMap::new(),
         )
     }
 }

@@ -1,4 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+
+use serde_json::Value;
 
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
@@ -6,11 +8,12 @@ use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::query_checker::{
-    check_field_condition, check_is_empty_condition, check_is_null_condition,
+    check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
 };
 use crate::types::{
     AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match,
-    MatchAny, MatchText, MatchValue, PointOffsetType, Range, ValueVariants,
+    MatchAny, MatchText, MatchValue, OwnedPayloadRef, PayloadContainer, PointOffsetType, Range,
+    ValueVariants,
 };
 
 pub fn condition_converter<'a>(
@@ -30,7 +33,7 @@ pub fn condition_converter<'a>(
             .unwrap_or_else(|| {
                 Box::new(move |point_id| {
                     payload_provider.with_payload(point_id, |payload| {
-                        check_field_condition(field_condition, &payload)
+                        check_field_condition(field_condition, &payload, field_indexes)
                     })
                 })
             }),
@@ -56,8 +59,46 @@ pub fn condition_converter<'a>(
                 .collect();
             Box::new(move |point_id| segment_ids.contains(&point_id))
         }
+        Condition::Nested(nested) => {
+            // Select indexes for nested fields. Trim nested part from key, so
+            // that nested condition can address fields without nested part
+            let nester_indexes: HashMap<_, _> = field_indexes
+                .iter()
+                .filter_map(|(key, indexes)| {
+                    if key.starts_with(&nested.array_key()) {
+                        // Trim nested part from key
+                        let nested_key = key[(nested.array_key().len() + 1)..].to_string();
+                        Some((nested_key, indexes))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            Box::new(move |point_id| {
+                payload_provider.with_payload(point_id, |payload| {
+                    let field_values = payload.get_value(&nested.array_key()).values();
+
+                    for value in field_values {
+                        if let Value::Object(object) = value {
+                            let get_payload = || OwnedPayloadRef::from(object);
+                            if check_payload(
+                                get_payload,
+                                |_| None,
+                                &nested.nested.filter,
+                                point_id,
+                                &nester_indexes,
+                            ) {
+                                // If at least one nested object matches, return true
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                })
+            })
+        }
         Condition::Filter(_) => unreachable!(),
-        Condition::Nested(_) => unreachable!(),
     }
 }
 
