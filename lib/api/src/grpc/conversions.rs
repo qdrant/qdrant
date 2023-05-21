@@ -997,7 +997,7 @@ impl From<segment::types::Match> for Match {
                 segment::types::AnyVariants::Integers(integers) => {
                     MatchValue::ExceptIntegers(RepeatedIntegers { integers })
                 }
-            }
+            },
         };
         Self {
             match_value: Some(match_value),

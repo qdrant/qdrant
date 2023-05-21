@@ -5,6 +5,7 @@ use std::iter;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
@@ -288,6 +289,19 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             max,
         }
     }
+
+    fn except_iterator<'a>(
+        &'a self,
+        excluded: &'a [N],
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let iter = self
+            .map
+            .keys()
+            .filter(move |key| !excluded.contains(*key))
+            .flat_map(move |key| self.get_iterator(key))
+            .unique();
+        Box::new(iter)
+    }
 }
 
 impl PayloadFieldIndex for MapIndex<String> {
@@ -307,14 +321,25 @@ impl PayloadFieldIndex for MapIndex<String> {
         MapIndex::flusher(self)
     }
 
-    fn filter(
-        &self,
-        condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
             })) => Some(self.get_iterator(keyword)),
+            Some(Match::Any(MatchAny {
+                any: AnyVariants::Keywords(keywords),
+            })) => Some(Box::new(
+                keywords
+                    .iter()
+                    .flat_map(move |keyword| self.get_iterator(keyword))
+                    .unique(),
+            )),
+            Some(Match::Except(MatchExcept {
+                except: AnyVariants::Keywords(keywords),
+            })) => Some(self.except_iterator(keywords)),
             _ => None,
         }
     }
@@ -387,14 +412,25 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         MapIndex::flusher(self)
     }
 
-    fn filter(
-        &self,
-        condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Integer(integer),
             })) => Some(self.get_iterator(integer)),
+            Some(Match::Any(MatchAny {
+                any: AnyVariants::Integers(integers),
+            })) => Some(Box::new(
+                integers
+                    .iter()
+                    .flat_map(move |integer| self.get_iterator(integer))
+                    .unique(),
+            )),
+            Some(Match::Except(MatchExcept {
+                except: AnyVariants::Integers(integers),
+            })) => Some(self.except_iterator(integers)),
             _ => None,
         }
     }

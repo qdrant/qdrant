@@ -5023,6 +5023,9 @@
           },
           {
             "$ref": "#/components/schemas/MatchAny"
+          },
+          {
+            "$ref": "#/components/schemas/MatchExcept"
           }
         ]
       },
@@ -5092,6 +5095,18 @@
             }
           }
         ]
+      },
+      "MatchExcept": {
+        "description": "Should have at least one value not matching the any given values",
+        "type": "object",
+        "required": [
+          "except"
+        ],
+        "properties": {
+          "except": {
+            "$ref": "#/components/schemas/AnyVariants"
+          }
+        }
       },
       "Range": {
         "description": "Range filter request",
