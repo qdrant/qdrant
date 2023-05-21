@@ -12,7 +12,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::PayloadBlockCondition;
-use crate::types::{PayloadKeyType, PointOffsetType, Match, FieldCondition, MatchText};
+use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
 pub fn db_encode_tokens(data: &[u32]) -> Vec<u8> {
     if data.is_empty() {
@@ -149,23 +149,26 @@ impl InvertedIndexOnDisk {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
         Ok(Box::new(self.vocab.lock_db().iter()?.filter_map(
-                                            |(_token_idx, posting_idx)| match self.vocab.get_pinned(&posting_idx, db_decode_tokens) { 
-                                                Ok(Some(val)) if !val.is_empty() && val.len() >= threshold => Some(PayloadBlockCondition {
-                                            condition: FieldCondition {
-                                                key: key.clone(),
-                                                r#match: Some(Match::Text(MatchText {
-                                                    text: String::from_utf8(_token_idx.into()).unwrap(),
-                                                })),
-                                                range: None,
-                                                geo_bounding_box: None,
-                                                geo_radius: None,
-                                                values_count: None,
-                                            },
-                                            cardinality: val.len(),
-                                        }), 
-                                                Ok(Some(_) | None) | Err(_) => None,
-                                            }
-                                        )))
+            move |(_token_idx, posting_idx)| match self.vocab.get_pinned(&posting_idx, db_decode_tokens)
+            {
+                Ok(Some(val)) if !val.is_empty() && val.len() >= threshold => {
+                    Some(PayloadBlockCondition {
+                        condition: FieldCondition {
+                            key: key.clone(),
+                            r#match: Some(Match::Text(MatchText {
+                                text: _token_idx,
+                            })),
+                            range: None,
+                            geo_bounding_box: None,
+                            geo_radius: None,
+                            values_count: None,
+                        },
+                        cardinality: val.len(),
+                    })
+                }
+                Ok(Some(_) | None) | Err(_) => None,
+            },
+        )))
     }
 }
 
