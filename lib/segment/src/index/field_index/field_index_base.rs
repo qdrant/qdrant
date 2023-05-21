@@ -298,4 +298,15 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
         }
     }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        match self {
+            FieldIndex::IntIndex(index) => index.values_count(point_id),
+            FieldIndex::IntMapIndex(index) => index.values_count(point_id),
+            FieldIndex::KeywordIndex(index) => index.values_count(point_id),
+            FieldIndex::FloatIndex(index) => index.values_count(point_id),
+            FieldIndex::GeoIndex(index) => index.values_count(point_id),
+            FieldIndex::FullTextIndex(index) => index.values_count(point_id),
+        }
+    }
 }

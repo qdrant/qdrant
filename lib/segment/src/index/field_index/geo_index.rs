@@ -465,6 +465,10 @@ impl GeoMapIndex {
 
         Box::new(edge_region.into_iter())
     }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
+    }
 }
 
 impl ValueIndexer<GeoPoint> for GeoMapIndex {

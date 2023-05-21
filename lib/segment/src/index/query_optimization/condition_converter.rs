@@ -13,8 +13,8 @@ use crate::payload_storage::query_checker::{
 };
 use crate::types::{
     AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match,
-    MatchAny, MatchText, MatchValue, OwnedPayloadRef, PayloadContainer, PointOffsetType, Range,
-    ValueVariants,
+    MatchAny, MatchExcept, MatchText, MatchValue, OwnedPayloadRef, PayloadContainer,
+    PointOffsetType, Range, ValueVariants,
 };
 
 pub fn condition_converter<'a>(
@@ -259,6 +259,28 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
                 }))
             }
             _ => None,
+        },
+        Match::Except(MatchExcept { except }) => match (except, index) {
+            (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    match index.get_values(point_id) {
+                        None => false,
+                        Some(values) => values.iter().any(|k| !list.contains(k)),
+                    }
+                }))
+            }
+            (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    match index.get_values(point_id) {
+                        None => false,
+                        Some(values) => values.iter().any(|i| !list.contains(i)),
+                    }
+                }))
+            }
+            (_, index) => Some(Box::new(move |point_id: PointOffsetType| {
+                // If there is any other value of any other index, then it's a match
+                index.values_count(point_id) > 0
+            })),
         },
     }
 }

@@ -293,6 +293,10 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
             histogram_bucket_size: Some(self.histogram.current_bucket_size()),
         }
     }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
+    }
 }
 
 impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
