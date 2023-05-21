@@ -1018,6 +1018,10 @@ impl Match {
     pub fn new_any(any: AnyVariants) -> Self {
         Self::Any(MatchAny { any })
     }
+
+    pub fn new_except(except: AnyVariants) -> Self {
+        Self::Except(MatchExcept { except })
+    }
 }
 
 impl From<AnyVariants> for Match {

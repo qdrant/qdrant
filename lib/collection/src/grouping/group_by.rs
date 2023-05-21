@@ -295,8 +295,8 @@ where
         // construct filter to exclude already found groups
         let full_groups = aggregator.keys_of_filled_groups();
         if !full_groups.is_empty() {
-            if let Some(match_any) = match_on(request.group_by.clone(), full_groups) {
-                let exclude_groups = Filter::new_must_not(match_any);
+            if let Some(match_any) = except_on(request.group_by.clone(), full_groups) {
+                let exclude_groups = Filter::new_must(match_any);
                 source.merge_filter(&exclude_groups);
             }
         }
@@ -397,6 +397,23 @@ where
     let groups = groups.into_iter().map(PointGroup::from).collect();
 
     Ok(groups)
+}
+
+/// Uses the set of values to create a Match::Except, if possible
+fn except_on(path: String, values: Vec<Value>) -> Option<Condition> {
+    match values.first() {
+        Some(Value::Number(_)) => Some(Match::new_except(AnyVariants::Integers(
+            values.into_iter().filter_map(|v| v.as_i64()).collect(),
+        ))),
+        Some(Value::String(_)) => Some(Match::new_except(AnyVariants::Keywords(
+            values
+                .into_iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+                .collect(),
+        ))),
+        _ => None, // also considers the case of empty values
+    }
+    .map(|m| Condition::Field(FieldCondition::new_match(path, m)))
 }
 
 /// Uses the set of values to create a Match::Any, if possible
