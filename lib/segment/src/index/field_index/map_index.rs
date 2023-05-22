@@ -194,7 +194,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     /// * `CardinalityEstimation` - estimation of cardinality
     fn except_cardinality(&self, excluded: &[N]) -> CardinalityEstimation {
         // Minimal case: we exclude as many points as possible.
-        // In this case, excluded points does not have any other values except excluded ones.
+        // In this case, excluded points do not have any other values except excluded ones.
         // So the first step - we estimate how many other points is needed to fit unused values.
 
         // Example:
