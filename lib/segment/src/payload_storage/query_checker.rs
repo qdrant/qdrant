@@ -80,13 +80,8 @@ where
     let nester_indexes: HashMap<_, _> = field_indexes
         .iter()
         .filter_map(|(key, indexes)| {
-            if key.starts_with(&nested_prefix) {
-                // Trim nested part from key
-                let nested_key = key[nested_prefix.len()..].to_string();
-                Some((nested_key, indexes.as_ref()))
-            } else {
-                None
-            }
+            key.strip_prefix(&nested_prefix)
+                .map(|key| (key.into(), indexes.as_ref()))
         })
         .collect();
     nester_indexes
@@ -114,24 +109,23 @@ where
         Condition::Nested(nested) => {
             let nested_path = nested.array_key();
             let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
-            let payload = get_payload();
-            let sub_payload = payload.get_value(&nested_path).values();
-            for value in sub_payload {
-                if let Value::Object(object) = value {
-                    let get_payload = || OwnedPayloadRef::from(object);
-                    if check_payload(
-                        Box::new(get_payload),
+            get_payload()
+                .get_value(&nested_path)
+                .values()
+                .iter()
+                .filter_map(|value| match value {
+                    Value::Object(object) => Some(object),
+                    _ => None,
+                })
+                .any(|object| {
+                    check_payload(
+                        Box::new(|| OwnedPayloadRef::from(object)),
                         None,
                         &nested.nested.filter,
                         point_id,
                         &nested_indexes,
-                    ) {
-                        // If at least one nested object matches, return true
-                        return true;
-                    }
-                }
-            }
-            false
+                    )
+                })
         }
         Condition::Filter(_) => unreachable!(),
     };
@@ -188,12 +182,7 @@ where
         false
     } else {
         // Fallback to regular condition check if there are no indexes for the field
-        for p in field_values {
-            if field_condition.check(p) {
-                return true;
-            }
-        }
-        false
+        field_values.into_iter().any(|p| field_condition.check(p))
     }
 }
 
