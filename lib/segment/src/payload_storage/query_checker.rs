@@ -92,16 +92,14 @@ where
     nester_indexes
 }
 
-pub fn check_payload<'a, F, G, R>(
-    get_payload: F,
-    get_external_id: G,
+pub fn check_payload<'a, R>(
+    get_payload: Box<dyn Fn() -> OwnedPayloadRef<'a> + 'a>,
+    get_external_id: Box<dyn Fn(PointOffsetType) -> Option<PointIdType> + 'a>,
     query: &Filter,
     point_id: PointOffsetType,
     field_indexes: &HashMap<PayloadKeyType, R>,
 ) -> bool
 where
-    F: Fn() -> OwnedPayloadRef<'a>,
-    G: Fn(PointOffsetType) -> Option<PointIdType>,
     R: AsRef<Vec<FieldIndex>>,
 {
     let checker = |condition: &Condition| match condition {
@@ -126,8 +124,8 @@ where
                 if let Value::Object(object) = value {
                     let get_payload = || OwnedPayloadRef::from(object);
                     if check_payload(
-                        get_payload,
-                        |_| None,
+                        Box::new(get_payload),
+                        Box::new(|_| None),
                         &nested.nested.filter,
                         point_id,
                         &nested_indexes,
@@ -231,7 +229,7 @@ impl ConditionChecker for SimpleConditionChecker {
         let id_tracker = self.id_tracker.borrow();
 
         check_payload(
-            || {
+            Box::new(|| {
                 if payload_ref_cell.borrow().is_none() {
                     let payload_ptr = match payload_storage_guard.deref() {
                         PayloadStorageEnum::InMemoryPayloadStorage(s) => {
@@ -266,8 +264,8 @@ impl ConditionChecker for SimpleConditionChecker {
                     }));
                 }
                 payload_ref_cell.borrow().as_ref().cloned().unwrap()
-            },
-            |offset| id_tracker.external_id(offset),
+            }),
+            Box::new(|offset| id_tracker.external_id(offset)),
             query,
             point_id,
             &IndexesMap::new(),

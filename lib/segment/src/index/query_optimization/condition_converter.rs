@@ -91,8 +91,8 @@ pub fn condition_converter<'a>(
                         if let Value::Object(object) = value {
                             let get_payload = || OwnedPayloadRef::from(object);
                             if check_payload(
-                                get_payload,
-                                |_| None,
+                                Box::new(get_payload),
+                                Box::new(|_| None),
                                 &nested.nested.filter,
                                 point_id,
                                 &nested_indexes,
