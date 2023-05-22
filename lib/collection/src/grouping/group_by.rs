@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 
+use itertools::Itertools;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, PointGroup,
@@ -289,8 +290,12 @@ where
         // construct filter to exclude already found groups
         let full_groups = aggregator.keys_of_filled_groups();
         if !full_groups.is_empty() {
-            if let Some(match_any) = except_on(request.group_by.clone(), full_groups) {
-                let exclude_groups = Filter::new_must(match_any);
+            let except_any = except_on(&request.group_by, full_groups);
+            if !except_any.is_empty() {
+                let exclude_groups = Filter {
+                    must: Some(except_any),
+                    ..Default::default()
+                };
                 source.merge_filter(&exclude_groups);
             }
         }
@@ -330,8 +335,12 @@ where
 
         // construct filter to only include unsatisfied groups
         let unsatisfied_groups = aggregator.keys_of_unfilled_best_groups();
-        if let Some(match_any) = match_on(request.group_by.clone(), unsatisfied_groups) {
-            let include_groups = Filter::new_must(match_any);
+        let match_any = match_on(&request.group_by, unsatisfied_groups);
+        if !match_any.is_empty() {
+            let include_groups = Filter {
+                must: Some(match_any),
+                ..Default::default()
+            };
             source.merge_filter(&include_groups);
         }
 
@@ -393,38 +402,48 @@ where
     Ok(groups)
 }
 
-/// Uses the set of values to create a Match::Except, if possible
-fn except_on(path: String, values: Vec<Value>) -> Option<Condition> {
-    match values.first() {
-        Some(Value::Number(_)) => Some(Match::new_except(AnyVariants::Integers(
-            values.into_iter().filter_map(|v| v.as_i64()).collect(),
-        ))),
-        Some(Value::String(_)) => Some(Match::new_except(AnyVariants::Keywords(
-            values
-                .into_iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
-                .collect(),
-        ))),
-        _ => None, // also considers the case of empty values
-    }
-    .map(|m| Condition::Field(FieldCondition::new_match(path, m)))
+/// Uses the set of values to create Match::Except's, if possible
+fn except_on(path: &str, values: Vec<Value>) -> Vec<Condition> {
+    values_to_any_variants(values)
+        .into_iter()
+        .map(|v| Condition::Field(FieldCondition::new_match(path, Match::new_except(v))))
+        .collect()
 }
 
-/// Uses the set of values to create a Match::Any, if possible
-fn match_on(path: String, values: Vec<Value>) -> Option<Condition> {
-    match values.first() {
-        Some(Value::Number(_)) => Some(Match::new_any(AnyVariants::Integers(
-            values.into_iter().filter_map(|v| v.as_i64()).collect(),
-        ))),
-        Some(Value::String(_)) => Some(Match::new_any(AnyVariants::Keywords(
-            values
-                .into_iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
-                .collect(),
-        ))),
-        _ => None, // also considers the case of empty values
+/// Uses the set of values to create Match::Any's, if possible
+fn match_on(path: &str, values: Vec<Value>) -> Vec<Condition> {
+    values_to_any_variants(values)
+        .into_iter()
+        .map(move |any_variants| {
+            Condition::Field(FieldCondition::new_match(
+                path,
+                Match::new_any(any_variants),
+            ))
+        })
+        .collect()
+}
+
+fn values_to_any_variants(values: Vec<Value>) -> Vec<AnyVariants> {
+    let mut any_variants = Vec::new();
+
+    // gather int values
+    let ints = values.iter().filter_map(|v| v.as_i64()).collect_vec();
+
+    if !ints.is_empty() {
+        any_variants.push(AnyVariants::Integers(ints));
     }
-    .map(|m| Condition::Field(FieldCondition::new_match(path, m)))
+
+    // gather string values
+    let strs = values
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+        .collect_vec();
+
+    if !strs.is_empty() {
+        any_variants.push(AnyVariants::Keywords(strs));
+    }
+
+    any_variants
 }
 
 #[cfg(test)]
