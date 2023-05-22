@@ -113,10 +113,7 @@ where
                 .get_value(&nested_path)
                 .values()
                 .iter()
-                .filter_map(|value| match value {
-                    Value::Object(object) => Some(object),
-                    _ => None,
-                })
+                .filter_map(|value| value.as_object())
                 .any(|object| {
                     check_payload(
                         Box::new(|| OwnedPayloadRef::from(object)),
