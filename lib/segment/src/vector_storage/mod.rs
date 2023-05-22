@@ -30,6 +30,6 @@ pub use vector_storage_base::*;
 // - <https://github.com/rust-lang/rust/issues/88581>
 // - <https://doc.rust-lang.org/std/primitive.usize.html#method.div_ceil>
 #[inline]
-const fn div_ceil(a: usize, b: usize) -> usize {
+pub(crate) const fn div_ceil(a: usize, b: usize) -> usize {
     (a + b - 1) / b
 }

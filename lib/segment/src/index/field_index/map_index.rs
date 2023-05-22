@@ -5,6 +5,7 @@ use std::iter;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
@@ -12,15 +13,17 @@ use serde_json::Value;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::index::query_estimator::combine_should_estimations;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchValue, PayloadKeyType,
-    PointOffsetType, ValueVariants,
+    AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
+    PayloadKeyType, PointOffsetType, ValueVariants,
 };
+use crate::vector_storage::div_ceil;
 
 /// HashMap-based type of index
 pub struct MapIndex<N: Hash + Eq + Clone + Display> {
@@ -175,6 +178,127 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 
         Ok(())
     }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
+    }
+
+    /// Estimates cardinality for `except` clause
+    ///
+    /// # Arguments
+    ///
+    /// * 'excluded' - values, which are not considered as matching
+    ///
+    /// # Returns
+    ///
+    /// * `CardinalityEstimation` - estimation of cardinality
+    fn except_cardinality(&self, excluded: &[N]) -> CardinalityEstimation {
+        // Minimal case: we exclude as many points as possible.
+        // In this case, excluded points do not have any other values except excluded ones.
+        // So the first step - we estimate how many other points is needed to fit unused values.
+
+        // Example:
+        // Values: 20, 20
+        // Unique values: 5
+        // Total points: 100
+        // Total values: 110
+        // total_excluded_value_count = 40
+        // non_excluded_values_count = 110 - 40 = 70
+        // max_values_per_point = 5 - 2 = 3
+        // min_not_excluded_by_values = 70 / 3 = 24
+        // min = max(24, 100 - 40) = 60
+        // exp = ...
+        // max = min(20, 70) = 20
+
+        // Values: 60, 60
+        // Unique values: 5
+        // Total points: 100
+        // Total values: 200
+        // total_excluded_value_count = 120
+        // non_excluded_values_count = 200 - 120 = 80
+        // max_values_per_point = 5 - 2 = 3
+        // min_not_excluded_by_values = 80 / 3 = 27
+        // min = max(27, 100 - 120) = 27
+        // exp = ...
+        // max = min(60, 80) = 60
+
+        // Values: 60, 60, 60
+        // Unique values: 5
+        // Total points: 100
+        // Total values: 200
+        // total_excluded_value_count = 180
+        // non_excluded_values_count = 200 - 180 = 20
+        // max_values_per_point = 5 - 3 = 2
+        // min_not_excluded_by_values = 20 / 2 = 10
+        // min = max(10, 100 - 180) = 10
+        // exp = ...
+        // max = min(60, 20) = 20
+
+        let excluded_value_counts: Vec<_> = excluded
+            .iter()
+            .map(|val| self.map.get(val).map(|points| points.len()).unwrap_or(0))
+            .collect();
+        let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
+
+        debug_assert!(total_excluded_value_count <= self.values_count);
+
+        let non_excluded_values_count =
+            self.values_count.saturating_sub(total_excluded_value_count);
+        let max_values_per_point = self.map.len().saturating_sub(excluded.len());
+
+        if max_values_per_point == 0 {
+            // All points are excluded, so we can't select any point
+            debug_assert_eq!(non_excluded_values_count, 0);
+            return CardinalityEstimation::exact(0);
+        }
+
+        // Minimal amount of points, required to fit all unused values.
+        // Cardinality can't be less than this value.
+        let min_not_excluded_by_values = div_ceil(non_excluded_values_count, max_values_per_point);
+
+        let min = min_not_excluded_by_values.max(
+            self.indexed_points
+                .saturating_sub(total_excluded_value_count),
+        );
+
+        // Maximum scenario: selected points overlap as much as possible.
+        // From one side, all excluded values should be assigned to the same point
+        // => we can take the value with the maximum amount of points.
+        // From another side, all other values should be enough to fill all other points.
+
+        let max_excluded_value_count = excluded_value_counts.iter().max().copied().unwrap_or(0);
+
+        let max = self
+            .indexed_points
+            .saturating_sub(max_excluded_value_count)
+            .min(non_excluded_values_count);
+
+        // Expected case: we assume that all points are filled equally.
+        // So we can estimate the probability of the point to have non-excluded value.
+        let exp = number_of_selected_points(self.indexed_points, non_excluded_values_count)
+            .max(min)
+            .min(max);
+
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min,
+            exp,
+            max,
+        }
+    }
+
+    fn except_iterator<'a>(
+        &'a self,
+        excluded: &'a [N],
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let iter = self
+            .map
+            .keys()
+            .filter(|key| !excluded.contains(*key))
+            .flat_map(|key| self.get_iterator(key))
+            .unique();
+        Box::new(iter)
+    }
 }
 
 impl PayloadFieldIndex for MapIndex<String> {
@@ -194,14 +318,25 @@ impl PayloadFieldIndex for MapIndex<String> {
         MapIndex::flusher(self)
     }
 
-    fn filter(
-        &self,
-        condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
             })) => Some(self.get_iterator(keyword)),
+            Some(Match::Any(MatchAny {
+                any: AnyVariants::Keywords(keywords),
+            })) => Some(Box::new(
+                keywords
+                    .iter()
+                    .flat_map(|keyword| self.get_iterator(keyword))
+                    .unique(),
+            )),
+            Some(Match::Except(MatchExcept {
+                except: AnyVariants::Keywords(keywords),
+            })) => Some(self.except_iterator(keywords)),
             _ => None,
         }
     }
@@ -229,6 +364,9 @@ impl PayloadFieldIndex for MapIndex<String> {
                     self.indexed_points,
                 ))
             }
+            Some(Match::Except(MatchExcept {
+                except: AnyVariants::Keywords(keywords),
+            })) => Some(self.except_cardinality(keywords)),
             _ => None,
         }
     }
@@ -271,14 +409,25 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         MapIndex::flusher(self)
     }
 
-    fn filter(
-        &self,
-        condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Integer(integer),
             })) => Some(self.get_iterator(integer)),
+            Some(Match::Any(MatchAny {
+                any: AnyVariants::Integers(integers),
+            })) => Some(Box::new(
+                integers
+                    .iter()
+                    .flat_map(|integer| self.get_iterator(integer))
+                    .unique(),
+            )),
+            Some(Match::Except(MatchExcept {
+                except: AnyVariants::Integers(integers),
+            })) => Some(self.except_iterator(integers)),
             _ => None,
         }
     }
@@ -306,6 +455,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                     self.indexed_points,
                 ))
             }
+            Some(Match::Except(MatchExcept {
+                except: AnyVariants::Integers(integers),
+            })) => Some(self.except_cardinality(integers)),
             _ => None,
         }
     }

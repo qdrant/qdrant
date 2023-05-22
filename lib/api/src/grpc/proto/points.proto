@@ -471,6 +471,8 @@ message Match {
     string text = 4; // Match text
     RepeatedStrings keywords = 5; // Match multiple keywords
     RepeatedIntegers integers = 6; // Match multiple integers
+    RepeatedIntegers except_integers = 7; // Match any other value except those integers
+    RepeatedStrings except_keywords = 8; // Match any other value except those keywords
   }
 }
 

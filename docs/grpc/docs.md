@@ -1657,6 +1657,8 @@ The JSON representation for `Value` is a JSON value.
 | text | [string](#string) |  | Match text |
 | keywords | [RepeatedStrings](#qdrant-RepeatedStrings) |  | Match multiple keywords |
 | integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match multiple integers |
+| except_integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match any other value except those integers |
+| except_keywords | [RepeatedStrings](#qdrant-RepeatedStrings) |  | Match any other value except those keywords |
 
 
 
