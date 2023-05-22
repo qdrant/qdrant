@@ -418,10 +418,7 @@ impl GraphLayersBuilder {
                                 for other_point_link in
                                     other_point_links.iter().take(level_m).copied()
                                 {
-                                    candidates.push(ScoredPointOffset {
-                                        idx: other_point_link.idx,
-                                        score: scorer(other_point_link.idx, other_point.idx),
-                                    });
+                                    candidates.push(other_point_link);
                                 }
 
                                 let heuristic2_instant = std::time::Instant::now();
