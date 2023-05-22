@@ -107,7 +107,7 @@ impl GroupRequest {
         group_by.split('.').next().map_or_else(
             || {
                 Err(CollectionError::bad_request(format!(
-                    "Malformed group_by parameter: {}",
+                    "Malformed group_by parameter which uses unsupported nested path: {}",
                     group_by
                 )))
             },
