@@ -975,6 +975,13 @@ pub struct MatchAny {
     pub any: AnyVariants,
 }
 
+/// Should have at least one value not matching the any given values
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchExcept {
+    pub except: AnyVariants,
+}
+
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -983,6 +990,7 @@ pub enum MatchInterface {
     Value(MatchValue),
     Text(MatchText),
     Any(MatchAny),
+    Except(MatchExcept),
 }
 
 /// Match filter request
@@ -993,6 +1001,7 @@ pub enum Match {
     Value(MatchValue),
     Text(MatchText),
     Any(MatchAny),
+    Except(MatchExcept),
 }
 
 impl Match {
@@ -1009,6 +1018,10 @@ impl Match {
     pub fn new_any(any: AnyVariants) -> Self {
         Self::Any(MatchAny { any })
     }
+
+    pub fn new_except(except: AnyVariants) -> Self {
+        Self::Except(MatchExcept { except })
+    }
 }
 
 impl From<AnyVariants> for Match {
@@ -1023,6 +1036,9 @@ impl From<MatchInterface> for Match {
             MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
             MatchInterface::Text(text) => Self::Text(MatchText { text: text.text }),
             MatchInterface::Any(any) => Self::Any(MatchAny { any: any.any }),
+            MatchInterface::Except(except) => Self::Except(MatchExcept {
+                except: except.except,
+            }),
         }
     }
 }
@@ -1059,11 +1075,27 @@ impl From<Vec<String>> for Match {
     }
 }
 
+impl From<Vec<String>> for MatchExcept {
+    fn from(keywords: Vec<String>) -> Self {
+        MatchExcept {
+            except: AnyVariants::Keywords(keywords),
+        }
+    }
+}
+
 impl From<Vec<IntPayloadType>> for Match {
     fn from(integers: Vec<IntPayloadType>) -> Self {
         Self::Any(MatchAny {
             any: AnyVariants::Integers(integers),
         })
+    }
+}
+
+impl From<Vec<IntPayloadType>> for MatchExcept {
+    fn from(integers: Vec<IntPayloadType>) -> Self {
+        MatchExcept {
+            except: AnyVariants::Integers(integers),
+        }
     }
 }
 
@@ -1260,6 +1292,14 @@ impl From<String> for IsNullCondition {
     fn from(key: String) -> Self {
         IsNullCondition {
             is_null: PayloadField { key },
+        }
+    }
+}
+
+impl From<String> for IsEmptyCondition {
+    fn from(key: String) -> Self {
+        IsEmptyCondition {
+            is_empty: PayloadField { key },
         }
     }
 }

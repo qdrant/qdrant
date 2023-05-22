@@ -70,6 +70,14 @@ fn prob_not_select(total: usize, avg: f64, selected: usize) -> f64 {
     .exp()
 }
 
+/// Calculate number of selected points, based on the amount of matched values.
+/// Assuming that values are randomly distributed among points and each point can have multiple values.
+/// Math is based on: https://en.wikipedia.org/wiki/Bloom_filter#Probability_of_false_positives
+pub fn number_of_selected_points(points: usize, values: usize) -> usize {
+    let prob_of_selection = 1. - (-(values as f64 / points as f64)).exp();
+    (prob_of_selection * points as f64).round() as usize
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -79,6 +87,17 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
+
+    #[test]
+    fn test_selected_points_est() {
+        let res = number_of_selected_points(100, 1000);
+        assert!(res > 95);
+        assert!(res <= 100);
+
+        let res = number_of_selected_points(1000, 10);
+        assert!(res > 5);
+        assert!(res <= 10);
+    }
 
     fn simulate(uniq: usize, avg: usize, selected: usize) -> usize {
         let mut data: Vec<_> = vec![];

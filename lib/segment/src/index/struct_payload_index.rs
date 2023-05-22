@@ -77,10 +77,10 @@ impl StructPayloadIndex {
         })
     }
 
-    fn query_field(
-        &self,
-        field_condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    fn query_field<'a>(
+        &'a self,
+        field_condition: &'a FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         let indexes = self
             .field_indexes
             .get(&field_condition.key)

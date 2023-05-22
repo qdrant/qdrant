@@ -72,14 +72,56 @@ def upsert_with_heterogenous_fields(collection_name):
     assert response.ok
 
 
+def upsert_multi_value_payload(collection_name):
+    points = [
+        {"id": 9000 + i, "vector": [0.0, 0.0, 1.0, 1.0], "payload": {"mkey": ["a"]}}
+        for i in range(100)
+    ] + [
+        {"id": 9100 + i, "vector": [0.0, 0.0, 1.0, 0.0], "payload": {"mkey": ["a", "b"]}}
+        for i in range(10)
+    ]
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={"points": points}
+    )
+
+    assert response.ok
+
+
 @pytest.fixture(autouse=True, scope="module")
 def setup():
     basic_collection_setup(collection_name=collection_name)
     upsert_chunked_docs(collection_name=collection_name)
     upsert_points_with_array_fields(collection_name=collection_name)
     upsert_with_heterogenous_fields(collection_name=collection_name)
+    upsert_multi_value_payload(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
+
+
+def test_search_with_multiple_groups():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search/groups',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.0, 0.0, 1.0, 1.0],
+            "limit": 2,
+            "with_payload": True,
+            "group_by": "mkey",
+            "group_size": 2,
+        }
+    )
+    assert response.ok
+    groups = response.json()["result"]["groups"]
+    assert len(groups) == 2
+
+    assert groups[0]["id"] == "a"
+    assert groups[1]["id"] == "b"
 
 
 def test_search():
@@ -177,6 +219,7 @@ def test_inexistent_group_by():
 
     assert len(groups) == 0
 
+
 def search_array_group_by(group_by: str):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search/groups',
@@ -194,13 +237,14 @@ def search_array_group_by(group_by: str):
 
     groups = response.json()["result"]["groups"]
     assert len(groups) == 6
-    
+
     group_ids = [g["id"] for g in groups]
-    
+
     for i in range(3):
         assert f"valid_{i}" in group_ids
         assert f"valid_too_{i}" in group_ids
-    
+
+
 def test_multi_value_group_by():
     search_array_group_by("multiId")
     search_array_group_by("multiId[]")

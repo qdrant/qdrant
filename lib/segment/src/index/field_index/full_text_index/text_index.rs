@@ -117,6 +117,11 @@ impl FullTextIndex {
         let parsed_query = self.parse_query(query);
         self.inverted_index.filter(&parsed_query)
     }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        // Maybe we want number of documents in the future?
+        self.get_doc(point_id).map(|x| x.len()).unwrap_or(0)
+    }
 }
 
 impl ValueIndexer<String> for FullTextIndex {

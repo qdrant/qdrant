@@ -959,6 +959,12 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Text(text) => segment::types::Match::Text(text.into()),
                 MatchValue::Keywords(kwds) => kwds.strings.into(),
                 MatchValue::Integers(ints) => ints.integers.into(),
+                MatchValue::ExceptIntegers(kwds) => {
+                    segment::types::Match::Except(kwds.integers.into())
+                }
+                MatchValue::ExceptKeywords(ints) => {
+                    segment::types::Match::Except(ints.strings.into())
+                }
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -982,6 +988,14 @@ impl From<segment::types::Match> for Match {
                 }
                 segment::types::AnyVariants::Integers(integers) => {
                     MatchValue::Integers(RepeatedIntegers { integers })
+                }
+            },
+            segment::types::Match::Except(except) => match except.except {
+                segment::types::AnyVariants::Keywords(strings) => {
+                    MatchValue::ExceptKeywords(RepeatedStrings { strings })
+                }
+                segment::types::AnyVariants::Integers(integers) => {
+                    MatchValue::ExceptIntegers(RepeatedIntegers { integers })
                 }
             },
         };

@@ -3,8 +3,8 @@
 use serde_json::Value;
 
 use crate::types::{
-    AnyVariants, FieldCondition, GeoBoundingBox, GeoRadius, Match, MatchAny, MatchText, MatchValue,
-    Range, ValueVariants, ValuesCount,
+    AnyVariants, FieldCondition, GeoBoundingBox, GeoRadius, Match, MatchAny, MatchExcept,
+    MatchText, MatchValue, Range, ValueVariants, ValuesCount,
 };
 
 pub trait ValueChecker {
@@ -86,6 +86,19 @@ impl ValueChecker for Match {
                     .map(|num| list.contains(&num))
                     .unwrap_or(false),
                 _ => false,
+            },
+            Match::Except(MatchExcept { except }) => match (payload, except) {
+                (Value::String(stored), AnyVariants::Keywords(list)) => !list.contains(stored),
+                (Value::Number(stored), AnyVariants::Integers(list)) => stored
+                    .as_i64()
+                    .map(|num| !list.contains(&num))
+                    .unwrap_or(true),
+                (Value::Null, _) => false,
+                (Value::Bool(_), _) => true,
+                (Value::Array(_), _) => true, // Array inside array is not flattened
+                (Value::Object(_), _) => true,
+                (Value::Number(_), _) => true,
+                (Value::String(_), _) => true,
             },
         }
     }

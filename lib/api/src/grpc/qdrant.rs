@@ -3352,7 +3352,7 @@ pub struct FieldCondition {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -3378,6 +3378,12 @@ pub mod r#match {
         /// Match multiple integers
         #[prost(message, tag = "6")]
         Integers(super::RepeatedIntegers),
+        /// Match any other value except those integers
+        #[prost(message, tag = "7")]
+        ExceptIntegers(super::RepeatedIntegers),
+        /// Match any other value except those keywords
+        #[prost(message, tag = "8")]
+        ExceptKeywords(super::RepeatedStrings),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

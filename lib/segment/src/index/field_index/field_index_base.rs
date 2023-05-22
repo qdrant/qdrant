@@ -29,10 +29,10 @@ pub trait PayloadFieldIndex {
 
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
-    fn filter(
-        &self,
-        condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>>;
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
     /// Return estimation of points amount which satisfy given condition
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
@@ -222,10 +222,10 @@ impl FieldIndex {
         self.get_payload_field_index().flusher()
     }
 
-    pub fn filter(
-        &self,
-        condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    pub fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         self.get_payload_field_index().filter(condition)
     }
 
@@ -296,6 +296,17 @@ impl FieldIndex {
             FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
             FieldIndex::GeoIndex(index) => index.get_telemetry_data(),
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
+        }
+    }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        match self {
+            FieldIndex::IntIndex(index) => index.values_count(point_id),
+            FieldIndex::IntMapIndex(index) => index.values_count(point_id),
+            FieldIndex::KeywordIndex(index) => index.values_count(point_id),
+            FieldIndex::FloatIndex(index) => index.values_count(point_id),
+            FieldIndex::GeoIndex(index) => index.values_count(point_id),
+            FieldIndex::FullTextIndex(index) => index.values_count(point_id),
         }
     }
 }
