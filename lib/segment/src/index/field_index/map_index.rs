@@ -299,8 +299,8 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         let iter = self
             .map
             .keys()
-            .filter(move |key| !excluded.contains(*key))
-            .flat_map(move |key| self.get_iterator(key))
+            .filter(|key| !excluded.contains(*key))
+            .flat_map(|key| self.get_iterator(key))
             .unique();
         Box::new(iter)
     }
