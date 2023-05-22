@@ -104,14 +104,14 @@ mod tests {
 
         let payload: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
         check_payload(
-            || {
+            Box::new(|| {
                 eprintln!("request payload");
                 if payload.borrow().is_none() {
                     payload.replace(Some(get_payload().into()));
                 }
                 payload.borrow().as_ref().cloned().unwrap()
-            },
-            |offset| id_tracker.external_id(offset),
+            }),
+            Box::new(|offset| id_tracker.external_id(offset)),
             &query,
             0,
             &IndexesMap::new(),
