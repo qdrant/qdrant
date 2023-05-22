@@ -1296,6 +1296,14 @@ impl From<String> for IsNullCondition {
     }
 }
 
+impl From<String> for IsEmptyCondition {
+    fn from(key: String) -> Self {
+        IsEmptyCondition {
+            is_empty: PayloadField { key },
+        }
+    }
+}
+
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {

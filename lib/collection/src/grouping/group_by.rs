@@ -4,8 +4,8 @@ use std::future::Future;
 use itertools::Itertools;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, IsNullCondition, Match, PointGroup,
-    ScoredPoint, WithPayloadInterface, WithVector,
+    AnyVariants, Condition, FieldCondition, Filter, Match, PointGroup, ScoredPoint,
+    WithPayloadInterface, WithVector,
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
@@ -136,15 +136,13 @@ impl GroupRequest {
 
         let only_group_by_key = Some(WithPayloadInterface::Fields(vec![include_group_by]));
 
-        let key_not_null = Filter::new_must_not(Condition::IsNull(IsNullCondition::from(
-            self.group_by.clone(),
-        )));
+        let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
 
         match self.source.clone() {
             SourceRequest::Search(mut request) => {
                 request.limit = self.limit * self.group_size;
 
-                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
+                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
 
                 // We're enriching the final results at the end, so we'll keep this minimal
                 request.with_payload = only_group_by_key;
@@ -157,7 +155,7 @@ impl GroupRequest {
             SourceRequest::Recommend(mut request) => {
                 request.limit = self.limit * self.group_size;
 
-                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_null));
+                request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
 
                 // We're enriching the final results at the end, so we'll keep this minimal
                 request.with_payload = only_group_by_key;
