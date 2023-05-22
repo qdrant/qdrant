@@ -77,14 +77,14 @@ where
     R: AsRef<Vec<FieldIndex>>,
 {
     let nested_prefix = format!("{}.", nested_path);
-    let nester_indexes: HashMap<_, _> = field_indexes
+    let nested_indexes: HashMap<_, _> = field_indexes
         .iter()
         .filter_map(|(key, indexes)| {
             key.strip_prefix(&nested_prefix)
                 .map(|key| (key.into(), indexes.as_ref()))
         })
         .collect();
-    nester_indexes
+    nested_indexes
 }
 
 pub fn check_payload<'a, R>(
