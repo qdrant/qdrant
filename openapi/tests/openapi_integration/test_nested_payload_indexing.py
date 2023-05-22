@@ -203,14 +203,18 @@ def nested_payload_collection_setup(collection_name, on_disk_payload=False):
                     "vector": [0.24, 0.18, 0.22, 0.44],
                     "payload": {
                         "country": {
-                            "name": "Nauru",  # Null capital for testing
-                            "cities": [],  # Empty data for testing
+                            "name": "Nauru",
+                            "cities": [
+                                {
+                                    "name": None,  # Null capital for testing
+                                }
+                            ],
                         }
                     }
                 },
                 {
                     "id": 6,
-                    "vector": [0.35, 0.08, 0.11, 0.44]
+                    "vector": [0.35, 0.08, 0.11, 0.44],
                 }
             ]
         }
@@ -269,7 +273,7 @@ def test_nested_payload_indexing_operations():
     assert response.json()['result']['payload_schema']['country.capital']['data_type'] == "keyword"
     assert response.json()['result']['payload_schema']['country.capital']['points'] == 4
     assert response.json()['result']['payload_schema']['country.cities[].population']['data_type'] == "float"
-    assert response.json()['result']['payload_schema']['country.cities[].population']['points'] == 4 # indexed records
+    assert response.json()['result']['payload_schema']['country.cities[].population']['points'] == 4  # indexed records
 
     # Search nested through with payload index
     response = request_with_validation(
@@ -326,7 +330,7 @@ def test_nested_payload_indexing_operations():
             "filter": {
                 "should": [
                     {
-                        "key": "country.cities.population", # Do not implicitly do inside nested array
+                        "key": "country.cities.population",  # Do not implicitly do inside nested array
                         "range": {
                             "gte": 9.0,
                         }
@@ -456,4 +460,3 @@ def test_nested_payload_indexing_operations():
     )
     assert response.ok
     assert len(response.json()['result']['payload_schema']) == 0
-

@@ -11,6 +11,7 @@ mod tests {
     use segment::payload_storage::PayloadStorage;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, Payload, PayloadSchemaType, PointOffsetType,
+        Range,
     };
     use serde_json::json;
     use tempfile::Builder;
@@ -95,112 +96,159 @@ mod tests {
             .set_indexed("arr1[].text", PayloadSchemaType::Text.into())
             .unwrap();
 
-        let nested_condition_1 = Condition::new_nested(
-            "arr1",
-            Filter {
-                must: Some(vec![
-                    // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
-                    Condition::Field(FieldCondition::new_match("a", 1.into())),
-                    Condition::Field(FieldCondition::new_match("c", 1.into())),
-                    Condition::Field(FieldCondition::new_match("d", 0.into())),
-                ]),
+        {
+            let nested_condition_0 = Condition::new_nested(
+                "arr1",
+                Filter {
+                    must: Some(vec![
+                        // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
+                        Condition::Field(FieldCondition::new_match("a", 1.into())),
+                        Condition::Field(FieldCondition::new_match("c", 1.into())),
+                    ]),
+                    should: None,
+                    must_not: Some(vec![Condition::Field(FieldCondition::new_range(
+                        "d",
+                        Range {
+                            lte: Some(1.into()),
+                            ..Default::default()
+                        },
+                    ))]),
+                },
+            );
+
+            let nested_filter_0 = Filter::new_must(nested_condition_0);
+            let res0: Vec<_> = index.query_points(&nested_filter_0).collect();
+
+            let filter_context = index.filter_context(&nested_filter_0);
+
+            let check_res0: Vec<_> = (0..NUM_POINTS as PointOffsetType)
+                .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+                .collect();
+
+            assert_eq!(res0, check_res0);
+            assert!(!res0.is_empty());
+
+            // i % 2 + 1 == 1
+            // i % 3 == 2
+
+            // result = 2, 8, 14, ...
+            assert!(res0.contains(&2));
+            assert!(res0.contains(&8));
+            assert!(res0.contains(&14));
+        }
+
+        {
+            let nested_condition_1 = Condition::new_nested(
+                "arr1",
+                Filter {
+                    must: Some(vec![
+                        // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
+                        Condition::Field(FieldCondition::new_match("a", 1.into())),
+                        Condition::Field(FieldCondition::new_match("c", 1.into())),
+                        Condition::Field(FieldCondition::new_match("d", 0.into())),
+                    ]),
+                    should: None,
+                    must_not: None,
+                },
+            );
+
+            let nested_filter_1 = Filter::new_must(nested_condition_1);
+
+            let res1: Vec<_> = index.query_points(&nested_filter_1).collect();
+
+            let filter_context = index.filter_context(&nested_filter_1);
+
+            let check_res1: Vec<_> = (0..NUM_POINTS as PointOffsetType)
+                .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+                .collect();
+
+            assert_eq!(res1, check_res1);
+
+            assert!(!res1.is_empty());
+            assert!(res1.contains(&6));
+        }
+
+        {
+            let nested_condition_2 = Condition::new_nested(
+                "arr1",
+                Filter {
+                    must: Some(vec![
+                        // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
+                        Condition::Field(FieldCondition::new_match("a", 1.into())),
+                        Condition::Field(FieldCondition::new_match(
+                            "text",
+                            Match::Text("c1".to_string().into()),
+                        )),
+                        Condition::Field(FieldCondition::new_match("d", 0.into())),
+                    ]),
+                    should: None,
+                    must_not: None,
+                },
+            );
+
+            let nested_filter_2 = Filter::new_must(nested_condition_2);
+
+            let res2: Vec<_> = index.query_points(&nested_filter_2).collect();
+
+            let filter_context = index.filter_context(&nested_filter_2);
+
+            let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
+                .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+                .collect();
+
+            assert_eq!(res2, check_res2);
+
+            assert!(!res2.is_empty());
+        }
+
+        {
+            let nested_condition_3 = Condition::new_nested(
+                "arr1",
+                Filter {
+                    must: Some(vec![Condition::Field(FieldCondition::new_match(
+                        "b",
+                        1.into(),
+                    ))]),
+                    should: None,
+                    must_not: None,
+                },
+            );
+
+            let nester_condition_3_1 = Condition::new_nested(
+                "arr2",
+                Filter {
+                    must: Some(vec![Condition::new_nested(
+                        "arr3",
+                        Filter {
+                            must: Some(vec![Condition::Field(FieldCondition::new_match(
+                                "b",
+                                10.into(),
+                            ))]),
+                            should: None,
+                            must_not: None,
+                        },
+                    )]),
+                    should: None,
+                    must_not: None,
+                },
+            );
+
+            let nested_filter_3 = Filter {
+                must: Some(vec![nested_condition_3, nester_condition_3_1]),
                 should: None,
                 must_not: None,
-            },
-        );
+            };
 
-        let nested_filter_1 = Filter::new_must(nested_condition_1);
+            let res3: Vec<_> = index.query_points(&nested_filter_3).collect();
 
-        let res1: Vec<_> = index.query_points(&nested_filter_1).collect();
+            let filter_context = index.filter_context(&nested_filter_3);
 
-        let filter_context = index.filter_context(&nested_filter_1);
+            let check_res3: Vec<_> = (0..NUM_POINTS as PointOffsetType)
+                .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
+                .collect();
 
-        let check_res1: Vec<_> = (0..NUM_POINTS as PointOffsetType)
-            .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
-            .collect();
-
-        assert_eq!(res1, check_res1);
-
-        assert!(!res1.is_empty());
-        assert!(res1.contains(&6));
-
-        let nested_condition_2 = Condition::new_nested(
-            "arr1",
-            Filter {
-                must: Some(vec![
-                    // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
-                    Condition::Field(FieldCondition::new_match("a", 1.into())),
-                    Condition::Field(FieldCondition::new_match(
-                        "text",
-                        Match::Text("c1".to_string().into()),
-                    )),
-                    Condition::Field(FieldCondition::new_match("d", 0.into())),
-                ]),
-                should: None,
-                must_not: None,
-            },
-        );
-
-        let nested_filter_2 = Filter::new_must(nested_condition_2);
-
-        let res2: Vec<_> = index.query_points(&nested_filter_2).collect();
-
-        let filter_context = index.filter_context(&nested_filter_2);
-
-        let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
-            .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
-            .collect();
-
-        assert_eq!(res2, check_res2);
-
-        assert!(!res2.is_empty());
-
-        let nested_condition_3 = Condition::new_nested(
-            "arr1",
-            Filter {
-                must: Some(vec![Condition::Field(FieldCondition::new_match(
-                    "b",
-                    1.into(),
-                ))]),
-                should: None,
-                must_not: None,
-            },
-        );
-
-        let nester_condition_3_1 = Condition::new_nested(
-            "arr2",
-            Filter {
-                must: Some(vec![Condition::new_nested(
-                    "arr3",
-                    Filter {
-                        must: Some(vec![Condition::Field(FieldCondition::new_match(
-                            "b",
-                            10.into(),
-                        ))]),
-                        should: None,
-                        must_not: None,
-                    },
-                )]),
-                should: None,
-                must_not: None,
-            },
-        );
-
-        let nested_filter_3 = Filter {
-            must: Some(vec![nested_condition_3, nester_condition_3_1]),
-            should: None,
-            must_not: None,
-        };
-
-        let res3: Vec<_> = index.query_points(&nested_filter_3).collect();
-
-        let filter_context = index.filter_context(&nested_filter_3);
-
-        let check_res3: Vec<_> = (0..NUM_POINTS as PointOffsetType)
-            .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
-            .collect();
-
-        assert_eq!(res3, check_res3);
-        assert!(!res3.is_empty());
+            assert_eq!(res3, check_res3);
+            assert!(!res3.is_empty());
+        }
     }
 }

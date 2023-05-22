@@ -4,7 +4,7 @@ use collection::operations::point_ops::{
 use collection::operations::types::ScrollRequest;
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
-use segment::types::{PayloadSelectorExclude, WithPayloadInterface};
+use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
 use serde_json::Value;
 use tempfile::Builder;
 

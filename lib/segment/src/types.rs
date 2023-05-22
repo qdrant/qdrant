@@ -664,6 +664,10 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
     }
 }
 
+pub trait PayloadContainer {
+    fn get_value(&self, path: &str) -> MultiValue<&Value>;
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Payload(pub Map<String, Value>);
 
@@ -675,10 +679,6 @@ impl Payload {
                 _ => self.0.insert(key.to_owned(), value.to_owned()),
             };
         }
-    }
-
-    pub fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        utils::get_value_from_json_map(path, &self.0)
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {
@@ -699,6 +699,24 @@ impl Payload {
 
     pub fn iter(&self) -> serde_json::map::Iter {
         self.0.iter()
+    }
+}
+
+impl PayloadContainer for Map<String, Value> {
+    fn get_value(&self, path: &str) -> MultiValue<&Value> {
+        utils::get_value_from_json_map(path, self)
+    }
+}
+
+impl PayloadContainer for Payload {
+    fn get_value(&self, path: &str) -> MultiValue<&Value> {
+        utils::get_value_from_json_map(path, &self.0)
+    }
+}
+
+impl<'a> PayloadContainer for OwnedPayloadRef<'a> {
+    fn get_value(&self, path: &str) -> MultiValue<&Value> {
+        utils::get_value_from_json_map(path, self.deref())
     }
 }
 
@@ -734,12 +752,12 @@ impl From<Map<String, Value>> for Payload {
 
 #[derive(Clone)]
 pub enum OwnedPayloadRef<'a> {
-    Ref(&'a Payload),
-    Owned(Rc<Payload>),
+    Ref(&'a Map<String, Value>),
+    Owned(Rc<Map<String, Value>>),
 }
 
 impl<'a> Deref for OwnedPayloadRef<'a> {
-    type Target = Payload;
+    type Target = Map<String, Value>;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -749,8 +767,8 @@ impl<'a> Deref for OwnedPayloadRef<'a> {
     }
 }
 
-impl<'a> AsRef<Payload> for OwnedPayloadRef<'a> {
-    fn as_ref(&self) -> &Payload {
+impl<'a> AsRef<Map<String, Value>> for OwnedPayloadRef<'a> {
+    fn as_ref(&self) -> &Map<String, Value> {
         match self {
             OwnedPayloadRef::Ref(reference) => reference,
             OwnedPayloadRef::Owned(owned) => owned.deref(),
@@ -760,12 +778,24 @@ impl<'a> AsRef<Payload> for OwnedPayloadRef<'a> {
 
 impl<'a> From<Payload> for OwnedPayloadRef<'a> {
     fn from(payload: Payload) -> Self {
+        OwnedPayloadRef::Owned(Rc::new(payload.0))
+    }
+}
+
+impl<'a> From<Map<String, Value>> for OwnedPayloadRef<'a> {
+    fn from(payload: Map<String, Value>) -> Self {
         OwnedPayloadRef::Owned(Rc::new(payload))
     }
 }
 
 impl<'a> From<&'a Payload> for OwnedPayloadRef<'a> {
     fn from(payload: &'a Payload) -> Self {
+        OwnedPayloadRef::Ref(&payload.0)
+    }
+}
+
+impl<'a> From<&'a Map<String, Value>> for OwnedPayloadRef<'a> {
+    fn from(payload: &'a Map<String, Value>) -> Self {
         OwnedPayloadRef::Ref(payload)
     }
 }
@@ -1038,7 +1068,7 @@ impl From<Vec<IntPayloadType>> for Match {
 }
 
 /// Range filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
     /// point.key < range.lt
