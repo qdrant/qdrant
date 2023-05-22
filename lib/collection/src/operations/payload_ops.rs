@@ -181,7 +181,7 @@ impl SplitByShard for SetPayload {
 
 #[cfg(test)]
 mod tests {
-    use segment::types::Payload;
+    use segment::types::{Payload, PayloadContainer};
     use serde_json::Value;
 
     use super::*;

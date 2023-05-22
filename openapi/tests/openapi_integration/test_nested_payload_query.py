@@ -136,10 +136,14 @@ def test_nested_payload_indexing_operations():
                             "filter": {
                                 "must": [
                                     {
-                                        "key": "sightseeing",
-                                        "values_count": {
-                                            "gt": 3
-                                        }
+                                        "must": [
+                                            {
+                                                "key": "sightseeing",
+                                                "values_count": {
+                                                    "gt": 3
+                                                }
+                                            }
+                                        ]
                                     }
                                 ]
                             }
@@ -153,6 +157,45 @@ def test_nested_payload_indexing_operations():
     assert response.ok
     assert len(response.json()['result']['points']) == 1
     assert response.json()['result']['points'][0]['payload']['country']['name'] == "France"
+
+    # Search with nested filter and must-not
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": [
+                    {
+                        "nested": {
+                            "key": "country.cities",
+                            "filter": {
+                                "must": [
+                                    {
+                                        "key": "population",
+                                        "range": {
+                                            "gte": 9.0,
+                                        }
+                                    }
+                                ],
+                                "must_not": [
+                                    {
+                                        "key": "sightseeing",
+                                        "values_count": {
+                                            "gt": 1
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 0
 
     # Search with nested filter on indexed payload
     response = request_with_validation(
@@ -283,8 +326,13 @@ def test_nested_payload_indexing_operations():
                                         "range": {
                                             "lt": 8.0,
                                         }
+                                    },
+                                    {
+                                        "is_null": {
+                                            "key": "name"
+                                        }
                                     }
-                                ]
+                                ],
                             }
                         }
                     }
@@ -296,8 +344,8 @@ def test_nested_payload_indexing_operations():
     assert response.ok
     assert len(response.json()['result']['points']) == 2
     # Only 2 records that do NOT have at least one city population < 8.0
-    assert response.json()['result']['points'][0]['payload']['country']['name'] == "England" #London
-    assert response.json()['result']['points'][1]['payload']['country']['name'] == "Japan"   #Tokyo
+    assert response.json()['result']['points'][0]['payload']['country']['name'] == "England"  # London
+    assert response.json()['result']['points'][1]['payload']['country']['name'] == "Japan"  # Tokyo
 
     # Search with nested filter on indexed & non payload (must_not)
     response = request_with_validation(
@@ -323,6 +371,11 @@ def test_nested_payload_indexing_operations():
                                         "values_count": {
                                             "gte": 3
                                         }
+                                    },
+                                    {
+                                        "is_null": {
+                                            "key": "name"
+                                        }
                                     }
                                 ]
                             }
@@ -336,7 +389,7 @@ def test_nested_payload_indexing_operations():
     assert response.ok
     assert len(response.json()['result']['points']) == 1
     # Only 1 record that do NOT have at least one city population < 8.0 and NOT more than 3 sightseeing
-    assert response.json()['result']['points'][0]['payload']['country']['name'] == "Japan"   #Tokyo
+    assert response.json()['result']['points'][0]['payload']['country']['name'] == "Japan"  # Tokyo
 
     # Search nested null field
     response = request_with_validation(
@@ -366,9 +419,8 @@ def test_nested_payload_indexing_operations():
         }
     )
     assert response.ok
-    assert len(response.json()['result']['points']) == 2
+    assert len(response.json()['result']['points']) == 1
     assert response.json()['result']['points'][0]['payload']['country']['name'] == "Nauru"
-    assert response.json()['result']['points'][1]['id'] == 6
 
     # Search nested geobox field
     geo_box_berlin = {

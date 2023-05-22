@@ -62,6 +62,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::common::utils::IndexesMap;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::payload_storage::query_checker::check_payload;
     use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
@@ -102,16 +103,17 @@ mod tests {
 
         let payload: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
         check_payload(
-            || {
+            Box::new(|| {
                 eprintln!("request payload");
                 if payload.borrow().is_none() {
                     payload.replace(Some(get_payload().into()));
                 }
                 payload.borrow().as_ref().cloned().unwrap()
-            },
-            &id_tracker,
+            }),
+            Some(&id_tracker),
             &query,
             0,
+            &IndexesMap::new(),
         );
     }
 

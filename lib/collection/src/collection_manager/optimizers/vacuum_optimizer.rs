@@ -218,7 +218,7 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
-    use segment::types::{Distance, PayloadSchemaType};
+    use segment::types::{Distance, PayloadContainer, PayloadSchemaType};
     use serde_json::{json, Value};
     use tempfile::Builder;
 
