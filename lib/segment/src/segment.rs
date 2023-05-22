@@ -538,14 +538,10 @@ impl Segment {
                     WithVector::Selector(vectors) => {
                         let mut result = NamedVectors::default();
                         for vector_name in vectors {
-                            let vector_opt = self.vector_by_offset(vector_name, point_offset)?;
-                            match vector_opt {
-                                None => {
-                                    return Err(OperationError::service_error(
-                                        "Vector {vector_name} not found at offset {point_offset}",
-                                    ))
-                                }
-                                Some(vector) => result.insert(vector_name.clone(), vector),
+                            if let Some(vector) =
+                                self.vector_by_offset(vector_name, point_offset)?
+                            {
+                                result.insert(vector_name.clone(), vector);
                             }
                         }
                         Some(result.into())

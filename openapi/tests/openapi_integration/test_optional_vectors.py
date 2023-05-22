@@ -13,6 +13,35 @@ def setup():
     drop_collection(collection_name=collection_name)
 
 
+def test_delete_and_search():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors/delete',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "points": [2, 3],
+            "vector": ["text"]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": {
+                "name": "image",
+                "vector": [0.0, 0.0, 1.0, 1.0]
+            },
+            "limit": 10,
+            "with_payload": True,
+            "with_vector": ["text"],
+        }
+    )
+
+    assert response.ok
+
 def test_retrieve_deleted_vector():
     # Delete vector
     response = request_with_validation(
@@ -364,7 +393,8 @@ def no_vectors():
     assert not response.ok
     assert response.status_code == 422
     error = response.json()["status"]["error"]
-    assert error.__contains__("Validation error in JSON body: [points[0].vector: must specify vectors to update for point]")
+    assert error.__contains__(
+        "Validation error in JSON body: [points[0].vector: must specify vectors to update for point]")
 
 
 def test_no_vectors():
