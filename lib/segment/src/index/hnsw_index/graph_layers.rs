@@ -97,7 +97,7 @@ pub trait GraphLayersBase {
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
-        existing_links: &[PointOffsetType],
+        existing_links: &[ScoredPointOffset],
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
@@ -106,10 +106,10 @@ pub trait GraphLayersBase {
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
 
         for &existing_link in existing_links {
-            if !visited_list.check(existing_link) {
+            if !visited_list.check(existing_link.idx) {
                 search_context.process_candidate(ScoredPointOffset {
-                    idx: existing_link,
-                    score: points_scorer.score_point(existing_link),
+                    idx: existing_link.idx,
+                    score: points_scorer.score_point(existing_link.idx),
                 });
             }
         }

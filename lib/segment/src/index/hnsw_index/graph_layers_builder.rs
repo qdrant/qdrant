@@ -3,6 +3,7 @@ use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
+use itertools::Itertools;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
@@ -10,7 +11,7 @@ use rand::Rng;
 use super::graph_links::GraphLinks;
 use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
-use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
+use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase};
 use crate::index::hnsw_index::graph_links::GraphLinksConverter;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
@@ -18,6 +19,7 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::ScoredPointOffset;
 
+pub type LinkContainer = Vec<ScoredPointOffset>;
 pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 
@@ -61,7 +63,7 @@ impl GraphLayersBase for GraphLayersBuilder {
     {
         let links = self.links_layers[point_id as usize][level].read();
         for link in links.iter() {
-            f(*link);
+            f(link.idx);
         }
     }
 
@@ -86,7 +88,11 @@ impl GraphLayersBuilder {
         let unlocker_links_layers = self
             .links_layers
             .into_iter()
-            .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
+            .map(|l| {
+                l.into_iter()
+                    .map(|l| l.into_inner().iter().map(|x| x.idx).collect_vec())
+                    .collect()
+            })
             .collect();
 
         let mut links_converter = GraphLinksConverter::new(unlocker_links_layers);
@@ -182,11 +188,11 @@ impl GraphLayersBuilder {
                     visited_list.next_iteration();
                     let mut current_links = current_layers[level].write();
                     current_links.iter().copied().for_each(|x| {
-                        visited_list.check_and_update_visited(x);
+                        visited_list.check_and_update_visited(x.idx);
                     });
                     for other_link in other_links
                         .into_iter()
-                        .filter(|x| !visited_list.check_and_update_visited(*x))
+                        .filter(|x| !visited_list.check_and_update_visited(x.idx))
                     {
                         current_links.push(other_link);
                     }
@@ -249,7 +255,7 @@ impl GraphLayersBuilder {
 
         let mut id_to_insert = links.len();
         for (i, &item) in links.iter().enumerate() {
-            let target_to_link = score_internal(target_point_id, item);
+            let target_to_link = score_internal(target_point_id, item.idx);
             if target_to_link < new_to_target {
                 id_to_insert = i;
                 break;
@@ -257,10 +263,22 @@ impl GraphLayersBuilder {
         }
 
         if links.len() < level_m {
-            links.insert(id_to_insert, new_point_id);
+            links.insert(
+                id_to_insert,
+                ScoredPointOffset {
+                    idx: new_point_id,
+                    score: new_to_target,
+                },
+            );
         } else if id_to_insert != links.len() {
             links.pop();
-            links.insert(id_to_insert, new_point_id);
+            links.insert(
+                id_to_insert,
+                ScoredPointOffset {
+                    idx: new_point_id,
+                    score: new_to_target,
+                },
+            );
         }
     }
 
@@ -269,11 +287,11 @@ impl GraphLayersBuilder {
         candidates: impl Iterator<Item = ScoredPointOffset>,
         m: usize,
         mut score_internal: F,
-    ) -> Vec<PointOffsetType>
+    ) -> Vec<ScoredPointOffset>
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let mut result_list = vec![];
+        let mut result_list: Vec<ScoredPointOffset> = vec![];
         result_list.reserve(m);
         for current_closest in candidates {
             if result_list.len() >= m {
@@ -281,14 +299,15 @@ impl GraphLayersBuilder {
             }
             let mut is_good = true;
             for &selected_point in &result_list {
-                let dist_to_already_selected = score_internal(current_closest.idx, selected_point);
+                let dist_to_already_selected =
+                    score_internal(current_closest.idx, selected_point.idx);
                 if dist_to_already_selected > current_closest.score {
                     is_good = false;
                     break;
                 }
             }
             if is_good {
-                result_list.push(current_closest.idx);
+                result_list.push(current_closest);
             }
         }
 
@@ -300,7 +319,7 @@ impl GraphLayersBuilder {
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
         score_internal: F,
-    ) -> Vec<PointOffsetType>
+    ) -> Vec<ScoredPointOffset>
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
@@ -381,24 +400,27 @@ impl GraphLayersBuilder {
 
                         for &other_point in &selected_nearest {
                             let mut other_point_links =
-                                self.links_layers[other_point as usize][curr_level].write();
+                                self.links_layers[other_point.idx as usize][curr_level].write();
                             if other_point_links.len() < level_m {
                                 // If linked point is lack of neighbours
-                                other_point_links.push(point_id);
+                                other_point_links.push(ScoredPointOffset {
+                                    idx: point_id,
+                                    score: other_point.score,
+                                });
                             } else {
                                 let heuristic_instant = std::time::Instant::now();
 
                                 let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                 candidates.push(ScoredPointOffset {
                                     idx: point_id,
-                                    score: scorer(point_id, other_point),
+                                    score: scorer(point_id, other_point.idx),
                                 });
                                 for other_point_link in
                                     other_point_links.iter().take(level_m).copied()
                                 {
                                     candidates.push(ScoredPointOffset {
-                                        idx: other_point_link,
-                                        score: scorer(other_point_link, other_point),
+                                        idx: other_point_link.idx,
+                                        score: scorer(other_point_link.idx, other_point.idx),
                                     });
                                 }
 
@@ -682,7 +704,11 @@ mod tests {
         for idx in 0..builder_len {
             let links_orig = &graph_layers_orig.links.links(idx as PointOffsetType, 0);
             let links_builder = graph_layers_builder.links_layers[idx][0].read();
-            let link_container_from_builder = links_builder.iter().copied().collect::<Vec<_>>();
+            let link_container_from_builder = links_builder
+                .iter()
+                .copied()
+                .map(|x| x.idx)
+                .collect::<Vec<_>>();
             assert_eq!(links_orig, &link_container_from_builder);
         }
 
@@ -826,7 +852,7 @@ mod tests {
             |a, b| scorer.score_internal(a, b),
         );
 
-        for x in selected_candidates.iter() {
+        for x in selected_candidates.iter().map(|x| x.idx) {
             eprintln!("selected_candidates = {x}");
         }
     }
@@ -868,7 +894,10 @@ mod tests {
             });
         }
 
-        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates, m, scorer);
+        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates, m, scorer)
+            .iter()
+            .map(|x| x.idx)
+            .collect_vec();
 
         assert_eq!(&res, &vec![1, 3, 6]);
 
