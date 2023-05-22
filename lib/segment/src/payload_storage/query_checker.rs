@@ -254,10 +254,8 @@ impl ConditionChecker for SimpleConditionChecker {
                         }
                     };
 
-                    payload_ref_cell.replace(Some(match payload_ptr {
-                        None => (&self.empty_payload).into(),
-                        Some(x) => x,
-                    }));
+                    payload_ref_cell
+                        .replace(payload_ptr.or_else(|| Some((&self.empty_payload).into())));
                 }
                 payload_ref_cell.borrow().as_ref().cloned().unwrap()
             }),
