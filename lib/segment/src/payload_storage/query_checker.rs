@@ -80,13 +80,8 @@ where
     let nester_indexes: HashMap<_, _> = field_indexes
         .iter()
         .filter_map(|(key, indexes)| {
-            if key.starts_with(&nested_prefix) {
-                // Trim nested part from key
-                let nested_key = key[nested_prefix.len()..].to_string();
-                Some((nested_key, indexes.as_ref()))
-            } else {
-                None
-            }
+            key.strip_prefix(&nested_prefix)
+                .map(|key| (key.into(), indexes.as_ref()))
         })
         .collect();
     nester_indexes
