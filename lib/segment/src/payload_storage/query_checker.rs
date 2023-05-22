@@ -182,12 +182,7 @@ where
         false
     } else {
         // Fallback to regular condition check if there are no indexes for the field
-        for p in field_values {
-            if field_condition.check(p) {
-                return true;
-            }
-        }
-        false
+        field_values.into_iter().any(|p| field_condition.check(p))
     }
 }
 
