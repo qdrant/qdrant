@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use chrono::Duration;
 use log::debug;
 use parking_lot::Mutex;
 use rand::thread_rng;
@@ -540,6 +541,43 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     Ok::<_, OperationError>(())
                 })
             })?;
+
+            let total_time = Duration::microseconds(
+                graph_layers_builder
+                    .total_time
+                    .load(std::sync::atomic::Ordering::Relaxed) as i64,
+            );
+            let search_time = Duration::microseconds(
+                graph_layers_builder
+                    .search_time
+                    .load(std::sync::atomic::Ordering::Relaxed) as i64,
+            );
+            let inserting_time = Duration::microseconds(
+                graph_layers_builder
+                    .inserting_time
+                    .load(std::sync::atomic::Ordering::Relaxed) as i64,
+            );
+            let heuristic_time = Duration::microseconds(
+                graph_layers_builder
+                    .heuristic_time
+                    .load(std::sync::atomic::Ordering::Relaxed) as i64,
+            );
+            let heuristic2_time = Duration::microseconds(
+                graph_layers_builder
+                    .heuristic2_time
+                    .load(std::sync::atomic::Ordering::Relaxed) as i64,
+            );
+            let heuristic3_time = Duration::microseconds(
+                graph_layers_builder
+                    .heuristic3_time
+                    .load(std::sync::atomic::Ordering::Relaxed) as i64,
+            );
+            log::error!("total time: {:?}", total_time);
+            log::error!("search time: {:?}", search_time);
+            log::error!("inserting time: {:?}", inserting_time);
+            log::error!("heuristic time: {:?}", heuristic_time);
+            log::error!("heuristic2 time: {:?}", heuristic2_time);
+            log::error!("heuristic3 time: {:?}", heuristic3_time);
 
             debug!("finish main graph");
         } else {
