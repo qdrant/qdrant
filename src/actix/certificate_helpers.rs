@@ -12,28 +12,25 @@ use super::with_buf_read;
 use crate::settings::{Settings, TlsConfig};
 
 /// A TTL based rotating server certificate resolver
-struct RotatingCertResolver {
+struct RotatingCertificateResolver {
+    /// TLS configuration used for loading/refreshing certified key
     tls_config: TlsConfig,
 
-    /// Last time the certificate was rotated.
-    last_update: Instant,
-
-    /// TTL for each rotation.
+    /// TTL for each rotation
     ttl: Option<Duration>,
 
-    /// Current certified key.
-    certified_key: RwLock<Arc<CertifiedKey>>,
+    /// Current certified key
+    key: RwLock<CertifiedKeyWithAge>,
 }
 
-impl RotatingCertResolver {
+impl RotatingCertificateResolver {
     pub fn new(tls_config: TlsConfig, ttl: Option<Duration>) -> io::Result<Self> {
         let certified_key = load_certified_key(&tls_config)?;
 
         Ok(Self {
             tls_config,
             ttl,
-            last_update: Instant::now(),
-            certified_key: RwLock::new(certified_key),
+            key: RwLock::new(CertifiedKeyWithAge::from(certified_key)),
         })
     }
 
@@ -43,10 +40,10 @@ impl RotatingCertResolver {
     /// If refreshing fails, an error is logged and the old key is persisted.
     fn get_key_or_refresh(&self) -> Option<Arc<CertifiedKey>> {
         // Return current key if TTL has not elapsed
-        let mut key = self.certified_key.read().clone();
+        let mut key = self.key.read().key.clone();
         match self.ttl {
             None => return Some(key),
-            Some(ttl) if self.last_update.elapsed() < ttl => return Some(key),
+            Some(ttl) if !self.key.read().is_expired(ttl) => return Some(key),
             Some(_) => {}
         }
 
@@ -60,19 +57,47 @@ impl RotatingCertResolver {
 
     /// Refresh certificate key, update and return
     fn refresh(&self) -> io::Result<Arc<CertifiedKey>> {
-        let mut lock = self.certified_key.write();
+        log::info!("Refreshing TLS certificates for actix");
 
-        log::info!("Refreshing TLS certificates for actix!");
-
+        let mut lock = self.key.write();
         let key = load_certified_key(&self.tls_config)?;
-        *lock = key.clone();
+        lock.replace(key.clone());
         Ok(key)
     }
 }
 
-impl ResolvesServerCert for RotatingCertResolver {
+impl ResolvesServerCert for RotatingCertificateResolver {
     fn resolve(&self, _client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
         self.get_key_or_refresh()
+    }
+}
+
+struct CertifiedKeyWithAge {
+    /// Last time the certificate was updated/replaced
+    last_update: Instant,
+
+    /// Current certified key
+    key: Arc<CertifiedKey>,
+}
+
+impl CertifiedKeyWithAge {
+    pub fn from(key: Arc<CertifiedKey>) -> Self {
+        Self {
+            last_update: Instant::now(),
+            key,
+        }
+    }
+
+    pub fn replace(&mut self, certified_key: Arc<CertifiedKey>) {
+        *self = Self::from(certified_key);
+    }
+
+    pub fn age(&self) -> Duration {
+        self.last_update.elapsed()
+    }
+
+    pub fn is_expired(&self, ttl: Duration) -> bool {
+        self.age() >= ttl
     }
 }
 
@@ -131,7 +156,7 @@ pub fn actix_tls_server_config(settings: &Settings) -> io::Result<ServerConfig> 
         0 => None,
         seconds => Some(Duration::from_secs(seconds)),
     };
-    let cert_resolver = RotatingCertResolver::new(tls_config, ttl)?;
+    let cert_resolver = RotatingCertificateResolver::new(tls_config, ttl)?;
     let config = config.with_cert_resolver(Arc::new(cert_resolver));
 
     Ok(config)
