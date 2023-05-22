@@ -414,7 +414,7 @@ fn except_on(path: &str, values: Vec<Value>) -> Vec<Condition> {
 fn match_on(path: &str, values: Vec<Value>) -> Vec<Condition> {
     values_to_any_variants(values)
         .into_iter()
-        .map(move |any_variants| {
+        .map(|any_variants| {
             Condition::Field(FieldCondition::new_match(
                 path,
                 Match::new_any(any_variants),
