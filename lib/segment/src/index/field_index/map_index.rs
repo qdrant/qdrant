@@ -210,7 +210,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         // exp = ...
         // max = min(20, 70) = 20
 
-        // Values, 60, 60
+        // Values: 60, 60
         // Unique values: 5
         // Total points: 100
         // Total values: 200
