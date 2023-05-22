@@ -270,10 +270,9 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    match index.get_values(point_id) {
-                        None => false,
-                        Some(values) => values.iter().any(|i| !list.contains(i)),
-                    }
+                    index
+                        .get_values(point_id)
+                        .map_or(false, |values| values.iter().any(|i| !list.contains(i)))
                 }))
             }
             (_, index) => Some(Box::new(|point_id: PointOffsetType| {
