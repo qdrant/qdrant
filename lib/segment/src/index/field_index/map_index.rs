@@ -427,7 +427,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             })) => Some(Box::new(
                 integers
                     .iter()
-                    .flat_map(move |integer| self.get_iterator(integer))
+                    .flat_map(|integer| self.get_iterator(integer))
                     .unique(),
             )),
             Some(Match::Except(MatchExcept {
