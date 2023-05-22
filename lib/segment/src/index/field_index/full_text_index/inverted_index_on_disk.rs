@@ -141,11 +141,11 @@ impl InvertedIndexOnDisk {
     //     };
     // }
 
-    pub fn payload_blocks(
-        &self,
+    pub fn payload_blocks<'a>(
+        &'a self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> OperationResult<Box<dyn Iterator<Item = PayloadBlockCondition> + '_>> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PayloadBlockCondition> + 'a>> {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
         Ok(Box::new(self.vocab.lock_db().iter()?.filter_map(
@@ -156,7 +156,7 @@ impl InvertedIndexOnDisk {
                         condition: FieldCondition {
                             key: key.clone(),
                             r#match: Some(Match::Text(MatchText {
-                                text: _token_idx,
+                                text: String::from_utf8(_token_idx.into()).expect("Token slice read from rocksDB is not valid utf8. This should never happen."),
                             })),
                             range: None,
                             geo_bounding_box: None,

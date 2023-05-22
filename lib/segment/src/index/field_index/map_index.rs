@@ -318,19 +318,11 @@ impl PayloadFieldIndex for MapIndex<String> {
         MapIndex::flusher(self)
     }
 
-<<<<<<< HEAD
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match &condition.r#match {
-=======
-    fn filter(
-        &self,
-        condition: &FieldCondition,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + '_>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         Ok(match &condition.r#match {
->>>>>>> 590af504 (Extract common InvertedIndex functionality into a trait; PayloadFieldIndex.filter is now failable to accomodate InvertedIndex.filter being failable (needed for OnDisk impl as it can fail when reading from DB))
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
             })) => Some(self.get_iterator(keyword)),
@@ -417,19 +409,11 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         MapIndex::flusher(self)
     }
 
-<<<<<<< HEAD
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match &condition.r#match {
-=======
-    fn filter(
-        &self,
-        condition: &FieldCondition,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + '_>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         Ok(match &condition.r#match {
->>>>>>> 590af504 (Extract common InvertedIndex functionality into a trait; PayloadFieldIndex.filter is now failable to accomodate InvertedIndex.filter being failable (needed for OnDisk impl as it can fail when reading from DB))
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Integer(integer),
             })) => Some(self.get_iterator(integer)),

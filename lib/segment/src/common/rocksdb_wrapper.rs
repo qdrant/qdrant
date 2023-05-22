@@ -153,7 +153,7 @@ impl DatabaseColumnWrapper {
         Ok(())
     }
 
-    pub fn lock_db(&self) -> LockedDatabaseColumnWrapper {
+    pub fn lock_db<'a>(&'a self) -> LockedDatabaseColumnWrapper<'a> {
         LockedDatabaseColumnWrapper {
             guard: self.database.read(),
             column_name: &self.column_name,
