@@ -92,7 +92,7 @@ pub fn condition_converter<'a>(
                             let get_payload = || OwnedPayloadRef::from(object);
                             if check_payload(
                                 Box::new(get_payload),
-                                Box::new(|_| None),
+                                None,
                                 &nested.nested.filter,
                                 point_id,
                                 &nested_indexes,
