@@ -100,7 +100,7 @@ def setup():
     upsert_with_heterogenous_fields(collection_name=collection_name)
     upsert_multi_value_payload(collection_name=collection_name)
     yield
-    # drop_collection(collection_name=collection_name)
+    drop_collection(collection_name=collection_name)
 
 
 def test_search_with_multiple_groups():
