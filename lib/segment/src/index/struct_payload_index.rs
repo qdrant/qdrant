@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, remove_file};
+use std::fs::create_dir_all;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -100,14 +100,6 @@ impl StructPayloadIndex {
     fn save_config(&self) -> OperationResult<()> {
         let config_path = self.config_path();
         self.config.save(&config_path)
-    }
-
-    fn get_field_index_dir(path: &Path) -> PathBuf {
-        path.join(PAYLOAD_FIELD_INDEX_PATH)
-    }
-
-    fn get_field_index_path(path: &Path, field: PayloadKeyTypeRef) -> PathBuf {
-        Self::get_field_index_dir(path).join(format!("{field}.idx"))
     }
 
     fn load_all_fields(&mut self) -> OperationResult<()> {
@@ -358,8 +350,8 @@ impl PayloadIndex for StructPayloadIndex {
             .insert(field.to_owned(), payload_schema.clone())
             .is_none()
         {
-            self.save_config()?;
             self.build_and_save(field, payload_schema)?;
+            self.save_config()?;
         }
 
         Ok(())
@@ -367,15 +359,15 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
         self.config.indexed_fields.remove(field);
-        self.save_config()?;
-        self.field_indexes.remove(field);
+        let removed_indexes = self.field_indexes.remove(field);
 
-        let field_index_path = Self::get_field_index_path(&self.path, field);
-
-        if field_index_path.exists() {
-            remove_file(&field_index_path)?;
+        if let Some(indexes) = removed_indexes {
+            for index in indexes {
+                index.clear()?;
+            }
         }
 
+        self.save_config()?;
         Ok(())
     }
 
