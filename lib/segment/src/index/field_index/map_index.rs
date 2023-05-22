@@ -336,7 +336,7 @@ impl PayloadFieldIndex for MapIndex<String> {
             })) => Some(Box::new(
                 keywords
                     .iter()
-                    .flat_map(move |keyword| self.get_iterator(keyword))
+                    .flat_map(|keyword| self.get_iterator(keyword))
                     .unique(),
             )),
             Some(Match::Except(MatchExcept {
