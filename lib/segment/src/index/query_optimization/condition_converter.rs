@@ -277,7 +277,7 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
                     }
                 }))
             }
-            (_, index) => Some(Box::new(move |point_id: PointOffsetType| {
+            (_, index) => Some(Box::new(|point_id: PointOffsetType| {
                 // If there is any other value of any other index, then it's a match
                 index.values_count(point_id) > 0
             })),
