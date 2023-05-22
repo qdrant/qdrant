@@ -234,10 +234,11 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         // exp = ...
         // max = min(60, 20) = 20
 
-        let total_excluded_value_count: usize = excluded
+        let excluded_value_counts: Vec<_> = excluded
             .iter()
             .map(|val| self.map.get(val).map(|points| points.len()).unwrap_or(0))
-            .sum();
+            .collect();
+        let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
 
         debug_assert!(total_excluded_value_count <= self.values_count);
 
