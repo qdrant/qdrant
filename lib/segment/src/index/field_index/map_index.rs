@@ -222,7 +222,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         // exp = ...
         // max = min(60, 80) = 60
 
-        // Values, 60, 60, 60
+        // Values: 60, 60, 60
         // Unique values: 5
         // Total points: 100
         // Total values: 200
@@ -234,11 +234,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         // exp = ...
         // max = min(60, 20) = 20
 
-        let excluded_value_counts: Vec<_> = excluded
+        let total_excluded_value_count: usize = excluded
             .iter()
             .map(|val| self.map.get(val).map(|points| points.len()).unwrap_or(0))
-            .collect();
-        let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
+            .sum();
 
         debug_assert!(total_excluded_value_count <= self.values_count);
 
