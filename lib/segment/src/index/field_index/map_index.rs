@@ -186,10 +186,12 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     /// Estimates cardinality for `except` clause
     ///
     /// # Arguments
-    ///     * `excluded` - values, which are not considered as matching
+    ///
+    /// * 'excluded' - values, which are not considered as matching
     ///
     /// # Returns
-    ///    * `CardinalityEstimation` - estimation of cardinality
+    ///
+    /// * `CardinalityEstimation` - estimation of cardinality
     fn except_cardinality(&self, excluded: &[N]) -> CardinalityEstimation {
         // Minimal case: we exclude as many points as possible.
         // In this case, excluded points does not have any other values except excluded ones.
