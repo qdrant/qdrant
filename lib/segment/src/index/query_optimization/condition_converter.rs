@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use serde_json::Value;
 
@@ -9,6 +9,7 @@ use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
+    select_nested_indexes,
 };
 use crate::types::{
     AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match,
@@ -78,23 +79,13 @@ pub fn condition_converter<'a>(
             // In this case we want to use `nested.field`, but we only have `field` in query.
             // Therefore we need to trim `nested` part from key. So that query executor
             // can address proper index for nested field.
+            let nested_path = nested.array_key();
 
-            let nester_indexes: HashMap<_, _> = field_indexes
-                .iter()
-                .filter_map(|(key, indexes)| {
-                    if key.starts_with(&nested.array_key()) {
-                        // Trim nested part from key
-                        let nested_key = key[(nested.array_key().len() + 1)..].to_string();
-                        Some((nested_key, indexes))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
 
             Box::new(move |point_id| {
                 payload_provider.with_payload(point_id, |payload| {
-                    let field_values = payload.get_value(&nested.array_key()).values();
+                    let field_values = payload.get_value(&nested_path).values();
 
                     for value in field_values {
                         if let Value::Object(object) = value {
@@ -104,7 +95,7 @@ pub fn condition_converter<'a>(
                                 |_| None,
                                 &nested.nested.filter,
                                 point_id,
-                                &nester_indexes,
+                                &nested_indexes,
                             ) {
                                 // If at least one nested object matches, return true
                                 return true;

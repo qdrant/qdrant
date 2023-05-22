@@ -4,12 +4,12 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use serde_json::Value;
 
-use crate::common::utils::{IndexesMap, JsonPathPayload};
+use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
-use crate::payload_storage::nested_query_checker::check_nested_filter;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{
@@ -69,6 +69,29 @@ where
     }
 }
 
+pub fn select_nested_indexes<'a, R>(
+    nested_path: &str,
+    field_indexes: &'a HashMap<PayloadKeyType, R>,
+) -> HashMap<PayloadKeyType, &'a Vec<FieldIndex>>
+where
+    R: AsRef<Vec<FieldIndex>>,
+{
+    let nested_prefix = format!("{}.", nested_path);
+    let nester_indexes: HashMap<_, _> = field_indexes
+        .iter()
+        .filter_map(|(key, indexes)| {
+            if key.starts_with(&nested_prefix) {
+                // Trim nested part from key
+                let nested_key = key[nested_prefix.len()..].to_string();
+                Some((nested_key, indexes.as_ref()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    nester_indexes
+}
+
 pub fn check_payload<'a, F, G, R>(
     get_payload: F,
     get_external_id: G,
@@ -95,10 +118,26 @@ where
             has_id.has_id.contains(&external_id)
         }
         Condition::Nested(nested) => {
-            todo!();
-            let nested_filter = nested.filter();
-            let nested_path = JsonPathPayload::new(nested.array_key());
-            check_nested_filter(&nested_path, nested_filter, &get_payload)
+            let nested_path = nested.array_key();
+            let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
+            let payload = get_payload();
+            let sub_payload = payload.get_value(&nested_path).values();
+            for value in sub_payload {
+                if let Value::Object(object) = value {
+                    let get_payload = || OwnedPayloadRef::from(object);
+                    if check_payload(
+                        get_payload,
+                        |_| None,
+                        &nested.nested.filter,
+                        point_id,
+                        &nested_indexes,
+                    ) {
+                        // If at least one nested object matches, return true
+                        return true;
+                    }
+                }
+            }
+            false
         }
         Condition::Filter(_) => unreachable!(),
     };
