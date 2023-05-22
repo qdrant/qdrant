@@ -61,7 +61,24 @@ pub fn condition_converter<'a>(
         }
         Condition::Nested(nested) => {
             // Select indexes for nested fields. Trim nested part from key, so
-            // that nested condition can address fields without nested part
+            // that nested condition can address fields without nested part.
+
+            // Example:
+            // Index for field `nested.field` will be stored under key `nested.field`
+            // And we have a query:
+            // {
+            //   "nested": {
+            //     "path": "nested",
+            //     "filter": {
+            //         ...
+            //         "match": {"key": "field", "value": "value"}
+            //     }
+            //   }
+
+            // In this case we want to use `nested.field`, but we only have `field` in query.
+            // Therefore we need to trim `nested` part from key. So that query executor
+            // can address proper index for nested field.
+
             let nester_indexes: HashMap<_, _> = field_indexes
                 .iter()
                 .filter_map(|(key, indexes)| {
