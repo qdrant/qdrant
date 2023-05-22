@@ -109,24 +109,23 @@ where
         Condition::Nested(nested) => {
             let nested_path = nested.array_key();
             let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
-            let payload = get_payload();
-            let sub_payload = payload.get_value(&nested_path).values();
-            for value in sub_payload {
-                if let Value::Object(object) = value {
-                    let get_payload = || OwnedPayloadRef::from(object);
-                    if check_payload(
-                        Box::new(get_payload),
+            get_payload()
+                .get_value(&nested_path)
+                .values()
+                .iter()
+                .filter_map(|value| match value {
+                    Value::Object(object) => Some(object),
+                    _ => None,
+                })
+                .any(|object| {
+                    check_payload(
+                        Box::new(|| OwnedPayloadRef::from(object)),
                         None,
                         &nested.nested.filter,
                         point_id,
                         &nested_indexes,
-                    ) {
-                        // If at least one nested object matches, return true
-                        return true;
-                    }
-                }
-            }
-            false
+                    )
+                })
         }
         Condition::Filter(_) => unreachable!(),
     };
