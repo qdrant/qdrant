@@ -4,7 +4,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use serde_json::Value;
 
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
