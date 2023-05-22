@@ -249,12 +249,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         if max_values_per_point == 0 {
             // All points are excluded, so we can't select any point
             debug_assert_eq!(non_excluded_values_count, 0);
-            return CardinalityEstimation {
-                primary_clauses: vec![],
-                min: 0,
-                exp: 0,
-                max: 0,
-            };
+            return CardinalityEstimation::exact(0);
         }
 
         // Minimal amount of points, required to fit all unused values.
