@@ -14,7 +14,7 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
-    PayloadContainer, PayloadKeyType, PointIdType, PointOffsetType,
+    PayloadContainer, PayloadKeyType, PointOffsetType,
 };
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
@@ -94,7 +94,7 @@ where
 
 pub fn check_payload<'a, R>(
     get_payload: Box<dyn Fn() -> OwnedPayloadRef<'a> + 'a>,
-    get_external_id: Box<dyn Fn(PointOffsetType) -> Option<PointIdType> + 'a>,
+    id_tracker: Option<&IdTrackerSS>,
     query: &Filter,
     point_id: PointOffsetType,
     field_indexes: &HashMap<PayloadKeyType, R>,
@@ -108,13 +108,9 @@ where
         }
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
         Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
-        Condition::HasId(has_id) => {
-            let external_id = match get_external_id(point_id) {
-                None => return false,
-                Some(id) => id,
-            };
-            has_id.has_id.contains(&external_id)
-        }
+        Condition::HasId(has_id) => id_tracker
+            .and_then(|id_tracker| id_tracker.external_id(point_id))
+            .map_or(false, |id| has_id.has_id.contains(&id)),
         Condition::Nested(nested) => {
             let nested_path = nested.array_key();
             let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
@@ -125,7 +121,7 @@ where
                     let get_payload = || OwnedPayloadRef::from(object);
                     if check_payload(
                         Box::new(get_payload),
-                        Box::new(|_| None),
+                        None,
                         &nested.nested.filter,
                         point_id,
                         &nested_indexes,
@@ -258,14 +254,12 @@ impl ConditionChecker for SimpleConditionChecker {
                         }
                     };
 
-                    payload_ref_cell.replace(Some(match payload_ptr {
-                        None => (&self.empty_payload).into(),
-                        Some(x) => x,
-                    }));
+                    payload_ref_cell
+                        .replace(payload_ptr.or_else(|| Some((&self.empty_payload).into())));
                 }
                 payload_ref_cell.borrow().as_ref().cloned().unwrap()
             }),
-            Box::new(|offset| id_tracker.external_id(offset)),
+            Some(id_tracker.deref()),
             query,
             point_id,
             &IndexesMap::new(),
