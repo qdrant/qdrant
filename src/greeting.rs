@@ -35,7 +35,7 @@ pub fn welcome() {
     println!("{}", paint(r#" \__, |\__,_|_|  \__,_|_| |_|\__| "#, true_color));
     println!("{}", paint(r#"    |_|                           "#, true_color));
     println!();
-    let ui_link = format!("https://ui.qdrant.tech/?v=v{}", VersionInfo::default().version);
+    let ui_link = format!("https://ui.qdrant.tech/?v=v{}", VersionInfo::default().minor_version());
 
     println!("{} {}",
              "Access web UI at".truecolor(134, 186, 144),
