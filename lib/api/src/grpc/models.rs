@@ -21,7 +21,8 @@ impl Default for VersionInfo {
 
 impl VersionInfo {
     pub fn minor_version(&self) -> String {
-        let minor = self.version
+        let minor = self
+            .version
             .split('.')
             .take(2)
             .collect::<Vec<&str>>()
