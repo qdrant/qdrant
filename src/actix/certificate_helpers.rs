@@ -50,7 +50,7 @@ impl RotatingCertificateResolver {
         // Refresh key
         match self.refresh() {
             Ok(certified_key) => key = certified_key,
-            Err(err) => log::error!("Failed to refresh TLS certificate, reusing current: {err}"),
+            Err(err) => log::error!("Failed to refresh TLS certificate, keeping current: {err}"),
         }
         Some(key)
     }
