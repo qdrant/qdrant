@@ -19,9 +19,25 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::ScoredPointOffset;
 
-pub type LinkContainer = Vec<ScoredPointOffset>;
+pub struct LinkContainer {
+    pass_heuristic: bool,
+    links: Vec<ScoredPointOffset>,
+}
 pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
+
+impl LinkContainer {
+    pub fn new() -> Self {
+        Self {
+            pass_heuristic: false,
+            links: vec![],
+        }
+    }
+
+    pub fn pass_heuristic(&self, m: usize) -> bool {
+        self.pass_heuristic && self.links.len() == m
+    }
+}
 
 /// Same as `GraphLayers`,  but allows to build in parallel
 /// Convertable to `GraphLayers`
@@ -62,7 +78,7 @@ impl GraphLayersBase for GraphLayersBuilder {
         F: FnMut(PointOffsetType),
     {
         let links = self.links_layers[point_id as usize][level].read();
-        for link in links.iter() {
+        for link in links.links.iter() {
             f(link.idx);
         }
     }
@@ -90,7 +106,7 @@ impl GraphLayersBuilder {
             .into_iter()
             .map(|l| {
                 l.into_iter()
-                    .map(|l| l.into_inner().iter().map(|x| x.idx).collect_vec())
+                    .map(|l| l.into_inner().links.iter().map(|x| x.idx).collect_vec())
                     .collect()
             })
             .collect();
@@ -123,9 +139,9 @@ impl GraphLayersBuilder {
         let mut links_layers: Vec<LockedLayersContainer> = vec![];
 
         for _i in 0..num_vectors {
-            let mut links = Vec::new();
+            let mut links = LinkContainer::new();
             if reserve {
-                links.reserve(m0);
+                links.links.reserve(m0);
             }
             links_layers.push(vec![RwLock::new(links)]);
         }
@@ -187,14 +203,15 @@ impl GraphLayersBuilder {
                     let other_links = other_links.into_inner();
                     visited_list.next_iteration();
                     let mut current_links = current_layers[level].write();
-                    current_links.iter().copied().for_each(|x| {
+                    current_links.links.iter().copied().for_each(|x| {
                         visited_list.check_and_update_visited(x.idx);
                     });
                     for other_link in other_links
+                        .links
                         .into_iter()
                         .filter(|x| !visited_list.check_and_update_visited(x.idx))
                     {
-                        current_links.push(other_link);
+                        current_links.links.push(other_link);
                     }
                 }
             }
@@ -232,8 +249,8 @@ impl GraphLayersBuilder {
         }
         let point_layers = &mut self.links_layers[point_id as usize];
         while point_layers.len() <= level {
-            let mut links = vec![];
-            links.reserve(self.m);
+            let mut links = LinkContainer::new();
+            links.links.reserve(self.m);
             point_layers.push(RwLock::new(links));
         }
         self.max_level
@@ -253,8 +270,8 @@ impl GraphLayersBuilder {
         // ToDo: binary search here ? (most likely does not worth it)
         let new_to_target = score_internal(target_point_id, new_point_id);
 
-        let mut id_to_insert = links.len();
-        for (i, &item) in links.iter().enumerate() {
+        let mut id_to_insert = links.links.len();
+        for (i, &item) in links.links.iter().enumerate() {
             let target_to_link = score_internal(target_point_id, item.idx);
             if target_to_link < new_to_target {
                 id_to_insert = i;
@@ -262,17 +279,17 @@ impl GraphLayersBuilder {
             }
         }
 
-        if links.len() < level_m {
-            links.insert(
+        if links.links.len() < level_m {
+            links.links.insert(
                 id_to_insert,
                 ScoredPointOffset {
                     idx: new_point_id,
                     score: new_to_target,
                 },
             );
-        } else if id_to_insert != links.len() {
-            links.pop();
-            links.insert(
+        } else if id_to_insert != links.links.len() {
+            links.links.pop();
+            links.links.insert(
                 id_to_insert,
                 ScoredPointOffset {
                     idx: new_point_id,
@@ -280,6 +297,30 @@ impl GraphLayersBuilder {
                 },
             );
         }
+    }
+
+    fn select_one_candidate_with_heuristic_from_sorted<F>(
+        candidates: &mut Vec<ScoredPointOffset>,
+        current_closest: ScoredPointOffset,
+        mut score_internal: F,
+    ) where
+        F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
+    {
+        let index = candidates
+            .binary_search_by(|a| current_closest.cmp(&a))
+            .unwrap_or_else(|e| e);
+        if index == candidates.len() {
+            candidates.push(current_closest);
+            return;
+        }
+        for &selected_point in &candidates[0..index] {
+            let dist_to_already_selected = score_internal(current_closest.idx, selected_point.idx);
+            if dist_to_already_selected > current_closest.score {
+                return;
+            }
+        }
+        candidates.pop();
+        candidates.insert(index, current_closest);
     }
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
@@ -380,7 +421,7 @@ impl GraphLayersBuilder {
                             curr_level,
                             self.ef_construct,
                             &mut points_scorer,
-                            &existing_links,
+                            &existing_links.links,
                         )
                     };
                     self.search_time.fetch_add(
@@ -396,60 +437,108 @@ impl GraphLayersBuilder {
                             Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
                         self.links_layers[point_id as usize][curr_level]
                             .write()
+                            .links
                             .clone_from(&selected_nearest);
 
                         for &other_point in &selected_nearest {
                             let mut other_point_links =
                                 self.links_layers[other_point.idx as usize][curr_level].write();
-                            if other_point_links.len() < level_m {
+                            if other_point_links.links.len() < level_m {
                                 // If linked point is lack of neighbours
-                                other_point_links.push(ScoredPointOffset {
+                                other_point_links.links.push(ScoredPointOffset {
                                     idx: point_id,
                                     score: other_point.score,
                                 });
+                                other_point_links.pass_heuristic = false;
                             } else {
-                                let heuristic_instant = std::time::Instant::now();
+                                if other_point_links.pass_heuristic {
+                                    let heuristic_instant = std::time::Instant::now();
+                                    let heuristic2_instant = std::time::Instant::now();
+                                    let heuristic3_instant = std::time::Instant::now();
 
-                                let mut candidates = BinaryHeap::with_capacity(level_m + 1);
-                                candidates.push(ScoredPointOffset {
-                                    idx: point_id,
-                                    score: scorer(point_id, other_point.idx),
-                                });
-                                for other_point_link in
-                                    other_point_links.iter().take(level_m).copied()
-                                {
-                                    candidates.push(other_point_link);
-                                }
-
-                                let heuristic2_instant = std::time::Instant::now();
-
-                                let iter = candidates.into_sorted_vec().into_iter().rev();
-
-                                let heuristic3_instant = std::time::Instant::now();
-
-                                let selected_candidates =
-                                    Self::select_candidate_with_heuristic_from_sorted(
-                                        iter, level_m, scorer,
+                                    let l = &mut other_point_links.links;
+                                    Self::select_one_candidate_with_heuristic_from_sorted(
+                                        l,
+                                        ScoredPointOffset {
+                                            idx: point_id,
+                                            score: scorer(point_id, other_point.idx),
+                                        },
+                                        scorer,
                                     );
-                                other_point_links.clear(); // this do not free memory, which is good
 
-                                self.heuristic3_time.fetch_add(
-                                    heuristic3_instant.elapsed().as_micros().try_into().unwrap(),
-                                    std::sync::atomic::Ordering::Relaxed,
-                                );
-                                self.heuristic2_time.fetch_add(
-                                    heuristic2_instant.elapsed().as_micros().try_into().unwrap(),
-                                    std::sync::atomic::Ordering::Relaxed,
-                                );
+                                    self.heuristic3_time.fetch_add(
+                                        heuristic3_instant
+                                            .elapsed()
+                                            .as_micros()
+                                            .try_into()
+                                            .unwrap(),
+                                        std::sync::atomic::Ordering::Relaxed,
+                                    );
+                                    self.heuristic2_time.fetch_add(
+                                        heuristic2_instant
+                                            .elapsed()
+                                            .as_micros()
+                                            .try_into()
+                                            .unwrap(),
+                                        std::sync::atomic::Ordering::Relaxed,
+                                    );
+                                    self.heuristic_time.fetch_add(
+                                        heuristic_instant.elapsed().as_micros().try_into().unwrap(),
+                                        std::sync::atomic::Ordering::Relaxed,
+                                    );
+                                } else {
+                                    let heuristic_instant = std::time::Instant::now();
 
-                                for selected in selected_candidates.iter().copied() {
-                                    other_point_links.push(selected);
+                                    let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                                    candidates.push(ScoredPointOffset {
+                                        idx: point_id,
+                                        score: scorer(point_id, other_point.idx),
+                                    });
+                                    for other_point_link in
+                                        other_point_links.links.iter().take(level_m).copied()
+                                    {
+                                        candidates.push(other_point_link);
+                                    }
+
+                                    let heuristic2_instant = std::time::Instant::now();
+
+                                    let iter = candidates.into_sorted_vec().into_iter().rev();
+
+                                    let heuristic3_instant = std::time::Instant::now();
+
+                                    let selected_candidates =
+                                        Self::select_candidate_with_heuristic_from_sorted(
+                                            iter, level_m, scorer,
+                                        );
+                                    other_point_links.links.clear(); // this do not free memory, which is good
+
+                                    self.heuristic3_time.fetch_add(
+                                        heuristic3_instant
+                                            .elapsed()
+                                            .as_micros()
+                                            .try_into()
+                                            .unwrap(),
+                                        std::sync::atomic::Ordering::Relaxed,
+                                    );
+                                    self.heuristic2_time.fetch_add(
+                                        heuristic2_instant
+                                            .elapsed()
+                                            .as_micros()
+                                            .try_into()
+                                            .unwrap(),
+                                        std::sync::atomic::Ordering::Relaxed,
+                                    );
+
+                                    for selected in selected_candidates.iter().copied() {
+                                        other_point_links.links.push(selected);
+                                    }
+                                    other_point_links.pass_heuristic = true;
+
+                                    self.heuristic_time.fetch_add(
+                                        heuristic_instant.elapsed().as_micros().try_into().unwrap(),
+                                        std::sync::atomic::Ordering::Relaxed,
+                                    );
                                 }
-
-                                self.heuristic_time.fetch_add(
-                                    heuristic_instant.elapsed().as_micros().try_into().unwrap(),
-                                    std::sync::atomic::Ordering::Relaxed,
-                                );
                             }
                         }
                     } else {
@@ -641,7 +730,7 @@ mod tests {
         let total_links_0: usize = graph_layers_builder
             .links_layers
             .iter()
-            .map(|x| x[0].read().len())
+            .map(|x| x[0].read().links.len())
             .sum();
 
         assert!(total_links_0 > 0);
@@ -702,6 +791,7 @@ mod tests {
             let links_orig = &graph_layers_orig.links.links(idx as PointOffsetType, 0);
             let links_builder = graph_layers_builder.links_layers[idx][0].read();
             let link_container_from_builder = links_builder
+                .links
                 .iter()
                 .copied()
                 .map(|x| x.idx)
@@ -728,7 +818,7 @@ mod tests {
         let total_links_0: usize = graph_layers_builder
             .links_layers
             .iter()
-            .map(|x| x[0].read().len())
+            .map(|x| x[0].read().links.len())
             .sum();
 
         assert!(total_links_0 > 0);
