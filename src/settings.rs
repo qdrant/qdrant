@@ -93,13 +93,14 @@ impl Default for ConsensusConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Validate)]
 pub struct TlsConfig {
     pub cert: String,
     pub key: String,
     pub ca_cert: String,
     #[serde(default = "default_tls_cert_ttl")]
-    pub cert_ttl: u64,
+    #[validate(range(min = 1))]
+    pub cert_ttl: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
@@ -117,6 +118,7 @@ pub struct Settings {
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
+    #[validate]
     pub tls: Option<TlsConfig>,
     // Can't use `#[serde(skip)]` here. It prevents overriding the value later.
     #[serde(default)]
@@ -194,9 +196,9 @@ fn default_message_timeout_tics() -> u64 {
     10
 }
 
-const fn default_tls_cert_ttl() -> u64 {
+const fn default_tls_cert_ttl() -> Option<u64> {
     // Default one hour
-    3600
+    Some(3600)
 }
 
 impl Settings {

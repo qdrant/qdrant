@@ -153,8 +153,8 @@ pub fn actix_tls_server_config(settings: &Settings) -> io::Result<ServerConfig> 
 
     // Configure rotating certificate resolver
     let ttl = match tls_config.cert_ttl {
-        0 => None,
-        seconds => Some(Duration::from_secs(seconds)),
+        None | Some(0) => None,
+        Some(seconds) => Some(Duration::from_secs(seconds)),
     };
     let cert_resolver = RotatingCertificateResolver::new(tls_config, ttl)?;
     let config = config.with_cert_resolver(Arc::new(cert_resolver));
