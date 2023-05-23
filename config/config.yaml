@@ -133,7 +133,7 @@ service:
   # Default: true
   enable_cors: true
 
-  # Use HTTPS for the REST API
+  # Enable HTTPS for the REST and gRPC API
   enable_tls: false
 
   # Check user HTTPS client certificate against CA file specified in tls config
