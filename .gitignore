@@ -10,3 +10,4 @@
 /static
 *.log
 .qdrant-initialized
+/tmp

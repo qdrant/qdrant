@@ -104,6 +104,10 @@ impl TableOfContent {
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
+        if storage_config.storage_path != storage_config.tmp_path {
+            let tmp_path = Path::new(&storage_config.tmp_path.clone()).to_owned();
+            create_dir_all(tmp_path).expect("Can't create temporary files directory");
+        }
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
         let mut collections: HashMap<String, Collection> = Default::default();
@@ -210,6 +214,10 @@ impl TableOfContent {
 
     pub fn snapshots_path(&self) -> &str {
         &self.storage_config.snapshots_path
+    }
+
+    pub fn tmp_path(&self) -> &str {
+        &self.storage_config.tmp_path
     }
 
     fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
@@ -1454,9 +1462,9 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<SnapshotDescription, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        // We want to use tmp dir inside the storage, because it is possible, that
+        // We want to use tmp dir inside the tmp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow
-        let tmp_dir = Path::new(&self.storage_config.storage_path).join(SNAPSHOTS_TMP_DIR);
+        let tmp_dir = Path::new(&self.storage_config.tmp_path).join(SNAPSHOTS_TMP_DIR);
         tokio::fs::create_dir_all(&tmp_dir).await?;
         Ok(collection
             .create_snapshot(&tmp_dir, self.this_peer_id)

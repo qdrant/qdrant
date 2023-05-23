@@ -8,6 +8,10 @@ storage:
   # Where to store snapshots
   snapshots_path: ./snapshots
 
+  # Where to store tmp files
+  tmp_path: ./tmp
+
+
   # If true - point's payload will not be stored in memory.
   # It will be read from the disk every time it is requested.
   # This setting saves RAM by (slightly) increasing the response time.

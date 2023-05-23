@@ -28,6 +28,7 @@ fn test_alias_operation() {
             .to_str()
             .unwrap()
             .to_string(),
+        tmp_path: storage_dir.path().to_str().unwrap().to_string(),
         on_disk_payload: false,
         optimizers: OptimizersConfig {
             deleted_threshold: 0.5,
