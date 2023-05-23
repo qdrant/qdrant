@@ -5,6 +5,9 @@ authors = [
     "Andrey Vasnetsov <vasnetsov93@gmail.com>",
     "Qdrant Team <info@qdrant.tech>",
 ]
+readme = "README.md"
+homepage = "https://qdrant.tech/"
+repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
 edition = "2021"
 default-run = "qdrant"
