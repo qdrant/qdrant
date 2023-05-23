@@ -104,6 +104,7 @@ pub fn init(
 
         let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
 
+        // With TLS enabled, bind with certificate helper and Rustls, or bind regularly
         server = if settings.service.enable_tls {
             let config = certificate_helpers::actix_tls_server_config(&settings)?;
             server.bind_rustls(bind_addr, config)?

@@ -57,7 +57,10 @@ impl RotatingCertificateResolver {
 
     /// Refresh certificate key, update and return
     fn refresh(&self) -> io::Result<Arc<CertifiedKey>> {
-        log::info!("Refreshing TLS certificates for actix");
+        log::info!(
+            "Refreshing TLS certificates for actix (TTL: {})",
+            self.ttl.map(|ttl| ttl.as_secs()).unwrap_or(0),
+        );
 
         let mut lock = self.key.write();
         let key = load_certified_key(&self.tls_config)?;
@@ -133,7 +136,9 @@ fn load_certified_key(tls_config: &TlsConfig) -> io::Result<Arc<CertifiedKey>> {
     Ok(Arc::new(certified_key))
 }
 
-/// Generate an actix server configuration with TLS.
+/// Generate an actix server configuration with TLS
+///
+/// Uses TLS settings as configured in configuration by user.
 pub fn actix_tls_server_config(settings: &Settings) -> io::Result<ServerConfig> {
     let config = ServerConfig::builder().with_safe_defaults();
     let tls_config = settings
