@@ -116,6 +116,11 @@
     - [PointsIdsList](#qdrant-PointsIdsList)
     - [PointsOperationResponse](#qdrant-PointsOperationResponse)
     - [PointsSelector](#qdrant-PointsSelector)
+    - [PointsUpdateOperation](#qdrant-PointsUpdateOperation)
+    - [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload)
+    - [PointsUpdateOperation.PointStructList](#qdrant-PointsUpdateOperation-PointStructList)
+    - [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload)
+    - [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry)
     - [QuantizationSearchParams](#qdrant-QuantizationSearchParams)
     - [Range](#qdrant-Range)
     - [ReadConsistency](#qdrant-ReadConsistency)
@@ -142,6 +147,8 @@
     - [SearchResponse](#qdrant-SearchResponse)
     - [SetPayloadPoints](#qdrant-SetPayloadPoints)
     - [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry)
+    - [UpdateBatchPoints](#qdrant-UpdateBatchPoints)
+    - [UpdateBatchResponse](#qdrant-UpdateBatchResponse)
     - [UpdatePointVectors](#qdrant-UpdatePointVectors)
     - [UpdateResult](#qdrant-UpdateResult)
     - [UpsertPoints](#qdrant-UpsertPoints)
@@ -1991,6 +1998,89 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-PointsUpdateOperation"></a>
+
+### PointsUpdateOperation
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| upsert | [PointsUpdateOperation.PointStructList](#qdrant-PointsUpdateOperation-PointStructList) |  |  |
+| delete | [PointsSelector](#qdrant-PointsSelector) |  |  |
+| set_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
+| overwrite_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
+| delete_payload | [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload) |  |  |
+| clear_payload | [PointsSelector](#qdrant-PointsSelector) |  |  |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-DeletePayload"></a>
+
+### PointsUpdateOperation.DeletePayload
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| keys | [string](#string) | repeated |  |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional |  |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-PointStructList"></a>
+
+### PointsUpdateOperation.PointStructList
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| points | [PointStruct](#qdrant-PointStruct) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-SetPayload"></a>
+
+### PointsUpdateOperation.SetPayload
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| payload | [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry) | repeated |  |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional |  |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-SetPayload-PayloadEntry"></a>
+
+### PointsUpdateOperation.SetPayload.PayloadEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
 <a name="qdrant-QuantizationSearchParams"></a>
 
 ### QuantizationSearchParams
@@ -2472,6 +2562,40 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+<a name="qdrant-UpdateBatchPoints"></a>
+
+### UpdateBatchPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | name of the collection |
+| wait | [bool](#bool) | optional | Wait until the changes have been applied? |
+| operations | [PointsUpdateOperation](#qdrant-PointsUpdateOperation) | repeated |  |
+| ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
+
+
+
+
+
+
+<a name="qdrant-UpdateBatchResponse"></a>
+
+### UpdateBatchResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [UpdateResult](#qdrant-UpdateResult) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
 <a name="qdrant-UpdatePointVectors"></a>
 
 ### UpdatePointVectors
@@ -2756,6 +2880,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | RecommendBatch | [RecommendBatchPoints](#qdrant-RecommendBatchPoints) | [RecommendBatchResponse](#qdrant-RecommendBatchResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 | RecommendGroups | [RecommendPointGroups](#qdrant-RecommendPointGroups) | [RecommendGroupsResponse](#qdrant-RecommendGroupsResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field |
 | Count | [CountPoints](#qdrant-CountPoints) | [CountResponse](#qdrant-CountResponse) | Count points in collection with given filtering conditions |
+| UpdateBatch | [UpdateBatchPoints](#qdrant-UpdateBatchPoints) | [UpdateBatchResponse](#qdrant-UpdateBatchResponse) | Perform multiple update operations in one request |
 
  
 

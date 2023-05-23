@@ -146,6 +146,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SetPayloadPoints.collection_name", "length(min = 1, max = 255)"),
             ("DeletePayloadPoints.collection_name", "length(min = 1, max = 255)"),
             ("ClearPayloadPoints.collection_name", "length(min = 1, max = 255)"),
+            ("UpdateBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("CreateFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("CreateFieldIndexCollection.field_name", "length(min = 1)"),
             ("DeleteFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
