@@ -182,7 +182,11 @@ impl CollectionParams {
                         // Disabled quantization
                         quantization_config: None,
                         // Default to in memory storage
-                        storage_type: VectorStorageType::Memory,
+                        storage_type: if params.on_disk.unwrap_or_default() {
+                            VectorStorageType::ChunkedMmap
+                        } else {
+                            VectorStorageType::Memory
+                        },
                     },
                 )
             })
