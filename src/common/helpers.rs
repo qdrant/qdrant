@@ -107,13 +107,22 @@ pub fn load_tls_internal_server_config(tls_config: &TlsConfig) -> io::Result<Ser
 }
 
 fn load_identity(tls_config: &TlsConfig) -> io::Result<Identity> {
-    let cert = fs::read_to_string(&tls_config.cert)?;
-    let key = fs::read_to_string(&tls_config.key)?;
+    let cert = fs::read_to_string(tls_config.cert.as_ref().ok_or(io::Error::new(
+        io::ErrorKind::Other,
+        "No server TLS certificate specified (tls.cert)",
+    ))?)?;
+    let key = fs::read_to_string(tls_config.key.as_ref().ok_or(io::Error::new(
+        io::ErrorKind::Other,
+        "No server TLS private key specified (tls.key)",
+    ))?)?;
     Ok(Identity::from_pem(cert, key))
 }
 
 fn load_ca_certificate(tls_config: &TlsConfig) -> io::Result<Certificate> {
-    let pem = fs::read_to_string(&tls_config.ca_cert)?;
+    let pem = fs::read_to_string(tls_config.ca_cert.as_ref().ok_or(io::Error::new(
+        io::ErrorKind::Other,
+        "No server CA certificate specified (tls.ca_cert)",
+    ))?)?;
     Ok(Certificate::from_pem(pem))
 }
 

@@ -95,9 +95,12 @@ impl Default for ConsensusConfig {
 
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct TlsConfig {
-    pub cert: String,
-    pub key: String,
-    pub ca_cert: String,
+    #[validate(custom = "validation::validate_file_exists")]
+    pub cert: Option<String>,
+    #[validate(custom = "validation::validate_file_exists")]
+    pub key: Option<String>,
+    #[validate(custom = "validation::validate_file_exists")]
+    pub ca_cert: Option<String>,
     #[serde(default = "default_tls_cert_ttl")]
     #[validate(range(min = 1))]
     pub cert_ttl: Option<u64>,

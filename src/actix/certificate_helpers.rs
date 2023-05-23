@@ -101,13 +101,19 @@ impl CertifiedKeyWithAge {
 /// Load TLS configuration and construct certified key.
 fn load_certified_key(tls_config: &TlsConfig) -> io::Result<Arc<CertifiedKey>> {
     // Load certificates
-    let certs: Vec<Certificate> = with_buf_read(&tls_config.cert, rustls_pemfile::read_all)?
-        .into_iter()
-        .filter_map(|item| match item {
-            Item::X509Certificate(data) => Some(Certificate(data)),
-            _ => None,
-        })
-        .collect();
+    let certs: Vec<Certificate> = with_buf_read(
+        tls_config.cert.as_ref().ok_or(io::Error::new(
+            io::ErrorKind::Other,
+            "No server TLS certificate specified (tls.cert)",
+        ))?,
+        rustls_pemfile::read_all,
+    )?
+    .into_iter()
+    .filter_map(|item| match item {
+        Item::X509Certificate(data) => Some(Certificate(data)),
+        _ => None,
+    })
+    .collect();
     if certs.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
@@ -116,8 +122,14 @@ fn load_certified_key(tls_config: &TlsConfig) -> io::Result<Arc<CertifiedKey>> {
     }
 
     // Load private key
-    let private_key_item = with_buf_read(&tls_config.key, rustls_pemfile::read_one)?
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No private key found"))?;
+    let private_key_item = with_buf_read(
+        tls_config.key.as_ref().ok_or(io::Error::new(
+            io::ErrorKind::Other,
+            "No server TLS private key specified (tls.key)",
+        ))?,
+        rustls_pemfile::read_one,
+    )?
+    .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No private key found"))?;
     let (Item::RSAKey(pkey) | Item::PKCS8Key(pkey) | Item::ECKey(pkey)) = private_key_item else {
         return Err(io::Error::new(io::ErrorKind::Other, "No private key found"))
     };
@@ -143,7 +155,13 @@ pub fn actix_tls_server_config(settings: &Settings) -> io::Result<ServerConfig> 
     // Verify client CA or not
     let config = if settings.service.verify_https_client_certificate {
         let mut root_cert_store = RootCertStore::empty();
-        let ca_certs: Vec<Vec<u8>> = with_buf_read(&tls_config.ca_cert, rustls_pemfile::certs)?;
+        let ca_certs: Vec<Vec<u8>> = with_buf_read(
+            tls_config.ca_cert.as_ref().ok_or(io::Error::new(
+                io::ErrorKind::Other,
+                "No server CA certificate specified (tls.ca_cert)",
+            ))?,
+            rustls_pemfile::certs,
+        )?;
         root_cert_store.add_parsable_certificates(&ca_certs[..]);
         config.with_client_cert_verifier(AllowAnyAuthenticatedClient::new(root_cert_store))
     } else {

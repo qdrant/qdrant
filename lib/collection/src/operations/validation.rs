@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use actix_web_validator::error::flatten_errors;
 use validator::{ValidationError, ValidationErrors};
 
@@ -86,9 +88,23 @@ fn describe_error(
             Some(value) => format!("key {value} is invalid, bracket syntax is not supported here"),
             None => err.to_string(),
         },
+        "no_file" => format!(
+            "file '{}' does not exist",
+            params.get("value").and_then(|v| v.as_str()).unwrap_or("?"),
+        ),
         // Undescribed error codes
         _ => err.to_string(),
     }
+}
+
+/// Validate that the file exists
+pub fn validate_file_exists<P: AsRef<Path>>(path: P) -> Result<(), ValidationError> {
+    let path = path.as_ref();
+    if path.is_file() {
+        return Ok(());
+    }
+
+    Err(ValidationError::new("no_file"))
 }
 
 #[cfg(test)]

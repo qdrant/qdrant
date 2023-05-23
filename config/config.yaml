@@ -181,10 +181,10 @@ telemetry_disabled: false
 # Required if either service.enable_tls or cluster.p2p.enable_tls is true.
 tls:
   # Server certificate chain file
-  cert: ./tls/cert.pem
+  cert: null # E.g.: ./tls/cert.pem
 
   # Server private key file
-  key: ./tls/key.pem
+  key: null # E.g.: ./tls/key.pem
 
   # Certificate authority certificate file.
   # This certificate will be used to validate the certificates
@@ -194,7 +194,7 @@ tls:
   # HTTPS client certificate
   #
   # Required if cluster.p2p.enable_tls is true.
-  ca_cert: ./tls/cacert.pem
+  ca_cert: null # E.g.: ./tls/cacert.pem
 
   # TTL in seconds to reload certificate from disk, useful for certificate rotations.
   # Only works for HTTPS endpoints. Does not support gRPC (and intra-cluster communication).
