@@ -55,13 +55,6 @@ pub struct GraphLayersBuilder {
 
     // Fields used on construction phase only
     visited_pool: VisitedPool,
-
-    pub total_time: AtomicUsize,
-    pub search_time: AtomicUsize,
-    pub inserting_time: AtomicUsize,
-    pub heuristic_time: AtomicUsize,
-    pub heuristic2_time: AtomicUsize,
-    pub heuristic3_time: AtomicUsize,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
@@ -156,12 +149,6 @@ impl GraphLayersBuilder {
             links_layers,
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
             visited_pool: VisitedPool::new(),
-            total_time: AtomicUsize::new(0),
-            search_time: AtomicUsize::new(0),
-            inserting_time: AtomicUsize::new(0),
-            heuristic_time: AtomicUsize::new(0),
-            heuristic2_time: AtomicUsize::new(0),
-            heuristic3_time: AtomicUsize::new(0),
         }
     }
 
@@ -372,7 +359,6 @@ impl GraphLayersBuilder {
         // Check if there is an suitable entry point
         //   - entry point level if higher or equal
         //   - it satisfies filters
-        let total_instant = std::time::Instant::now();
 
         let level = self.get_point_level(point_id);
 
@@ -411,8 +397,6 @@ impl GraphLayersBuilder {
 
                 for curr_level in (0..=linking_level).rev() {
                     let level_m = self.get_m(curr_level);
-
-                    let search_time = std::time::Instant::now();
                     let nearest_points = {
                         let existing_links =
                             self.links_layers[point_id as usize][curr_level].read();
@@ -424,14 +408,9 @@ impl GraphLayersBuilder {
                             &existing_links.links,
                         )
                     };
-                    self.search_time.fetch_add(
-                        search_time.elapsed().as_micros().try_into().unwrap(),
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
 
                     let scorer = |a, b| points_scorer.score_internal(a, b);
 
-                    let inserting_instant = std::time::Instant::now();
                     if self.use_heuristic {
                         let selected_nearest =
                             Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
@@ -452,10 +431,6 @@ impl GraphLayersBuilder {
                                 other_point_links.pass_heuristic = false;
                             } else {
                                 if other_point_links.pass_heuristic {
-                                    let heuristic_instant = std::time::Instant::now();
-                                    let heuristic2_instant = std::time::Instant::now();
-                                    let heuristic3_instant = std::time::Instant::now();
-
                                     let l = &mut other_point_links.links;
                                     Self::select_one_candidate_with_heuristic_from_sorted(
                                         l,
@@ -465,30 +440,7 @@ impl GraphLayersBuilder {
                                         },
                                         scorer,
                                     );
-
-                                    self.heuristic3_time.fetch_add(
-                                        heuristic3_instant
-                                            .elapsed()
-                                            .as_micros()
-                                            .try_into()
-                                            .unwrap(),
-                                        std::sync::atomic::Ordering::Relaxed,
-                                    );
-                                    self.heuristic2_time.fetch_add(
-                                        heuristic2_instant
-                                            .elapsed()
-                                            .as_micros()
-                                            .try_into()
-                                            .unwrap(),
-                                        std::sync::atomic::Ordering::Relaxed,
-                                    );
-                                    self.heuristic_time.fetch_add(
-                                        heuristic_instant.elapsed().as_micros().try_into().unwrap(),
-                                        std::sync::atomic::Ordering::Relaxed,
-                                    );
                                 } else {
-                                    let heuristic_instant = std::time::Instant::now();
-
                                     let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                     candidates.push(ScoredPointOffset {
                                         idx: point_id,
@@ -500,11 +452,7 @@ impl GraphLayersBuilder {
                                         candidates.push(other_point_link);
                                     }
 
-                                    let heuristic2_instant = std::time::Instant::now();
-
                                     let iter = candidates.into_sorted_vec().into_iter().rev();
-
-                                    let heuristic3_instant = std::time::Instant::now();
 
                                     let selected_candidates =
                                         Self::select_candidate_with_heuristic_from_sorted(
@@ -512,32 +460,10 @@ impl GraphLayersBuilder {
                                         );
                                     other_point_links.links.clear(); // this do not free memory, which is good
 
-                                    self.heuristic3_time.fetch_add(
-                                        heuristic3_instant
-                                            .elapsed()
-                                            .as_micros()
-                                            .try_into()
-                                            .unwrap(),
-                                        std::sync::atomic::Ordering::Relaxed,
-                                    );
-                                    self.heuristic2_time.fetch_add(
-                                        heuristic2_instant
-                                            .elapsed()
-                                            .as_micros()
-                                            .try_into()
-                                            .unwrap(),
-                                        std::sync::atomic::Ordering::Relaxed,
-                                    );
-
                                     for selected in selected_candidates.iter().copied() {
                                         other_point_links.links.push(selected);
                                     }
                                     other_point_links.pass_heuristic = true;
-
-                                    self.heuristic_time.fetch_add(
-                                        heuristic_instant.elapsed().as_micros().try_into().unwrap(),
-                                        std::sync::atomic::Ordering::Relaxed,
-                                    );
                                 }
                             }
                         }
@@ -572,17 +498,9 @@ impl GraphLayersBuilder {
                             }
                         }
                     }
-                    self.inserting_time.fetch_add(
-                        inserting_instant.elapsed().as_micros().try_into().unwrap(),
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
                 }
             }
         }
-        self.total_time.fetch_add(
-            total_instant.elapsed().as_micros().try_into().unwrap(),
-            std::sync::atomic::Ordering::Relaxed,
-        );
     }
 }
 
