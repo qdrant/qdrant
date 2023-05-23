@@ -25,7 +25,7 @@ pub struct PerformanceConfig {
     pub update_rate_limit: Option<usize>,
 }
 
-fn default_max_optimization_threads() -> usize {
+const fn default_max_optimization_threads() -> usize {
     1
 }
 
@@ -78,11 +78,11 @@ fn default_snapshots_path() -> String {
     "./snapshots".to_string()
 }
 
-fn default_on_disk_payload() -> bool {
+const fn default_on_disk_payload() -> bool {
     false
 }
 
-fn default_mmap_advice() -> madvise::Advice {
+const fn default_mmap_advice() -> madvise::Advice {
     madvise::Advice::Random
 }
 

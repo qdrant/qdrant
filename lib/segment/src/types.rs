@@ -354,7 +354,7 @@ pub struct HnswConfig {
     pub payload_m: Option<usize>,
 }
 
-fn default_max_indexing_threads() -> usize {
+const fn default_max_indexing_threads() -> usize {
     0
 }
 
