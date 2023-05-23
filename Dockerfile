@@ -30,6 +30,7 @@ RUN wget https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-
     && chmod +x /qdrant/mold/bin/mold
 
 COPY ./tools/target_arch.sh ./target_arch.sh
+COPY ./tools/cargo_cmd_arch.sh ./cargo_cmd_arch.sh
 RUN echo "Building for $TARGETARCH, arch: $(bash target_arch.sh)"
 
 COPY --from=planner /qdrant/recipe.json recipe.json
@@ -43,12 +44,12 @@ RUN apt-get update \
 RUN rustup target add $(bash target_arch.sh)
 
 # Build dependencies - this is the caching Docker layer!
-RUN ./mold/bin/mold -run cargo chef cook --profile=${RUST_BUILD_PROFILE} --target $(bash target_arch.sh) --recipe-path recipe.json
+RUN $(bash cargo_cmd_arch.sh) chef cook --profile=${RUST_BUILD_PROFILE} --target $(bash target_arch.sh) --recipe-path recipe.json
 
 COPY . .
 
 # Build actual target here
-RUN ./mold/bin/mold -run cargo build --profile=${RUST_BUILD_PROFILE} --target $(bash target_arch.sh) --bin qdrant
+RUN $(bash cargo_cmd_arch.sh) build --profile=${RUST_BUILD_PROFILE} --target $(bash target_arch.sh) --bin qdrant
 
 RUN mv target/$(bash target_arch.sh)/${RUST_BUILD_PROFILE}/qdrant /qdrant/qdrant
 
