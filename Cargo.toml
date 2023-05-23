@@ -2,6 +2,7 @@
 name = "qdrant"
 version = "0.11.1"
 authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
+license = "Apache-2.0"
 edition = "2021"
 default-run = "qdrant"
 
