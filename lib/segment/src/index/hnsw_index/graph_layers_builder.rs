@@ -297,7 +297,6 @@ impl GraphLayersBuilder {
             .binary_search_by(|a| current_closest.cmp(&a))
             .unwrap_or_else(|e| e);
         if index == candidates.len() {
-            candidates.push(current_closest);
             return;
         }
         for &selected_point in &candidates[0..index] {
@@ -430,7 +429,7 @@ impl GraphLayersBuilder {
                                 });
                                 other_point_links.pass_heuristic = false;
                             } else {
-                                if other_point_links.pass_heuristic {
+                                if other_point_links.pass_heuristic(level_m) {
                                     let l = &mut other_point_links.links;
                                     Self::select_one_candidate_with_heuristic_from_sorted(
                                         l,
