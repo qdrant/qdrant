@@ -1,7 +1,10 @@
 [package]
 name = "collection"
 version = "0.4.2"
-authors = ["Qdrant Team <info@qdrant.tech>"]
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
 license = "Apache-2.0"
 edition = "2021"
 
