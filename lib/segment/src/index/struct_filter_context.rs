@@ -1,4 +1,5 @@
 use crate::common::utils::IndexesMap;
+use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_optimization::optimized_filter::{check_optimized_filter, OptimizedFilter};
@@ -19,9 +20,9 @@ impl<'a> StructFilterContext<'a> {
         field_indexes: &'a IndexesMap,
         estimator: &F,
         total: usize,
-    ) -> Self
+    ) -> OperationResult<Self>
     where
-        F: Fn(&Condition) -> CardinalityEstimation,
+        F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
     {
         let (optimized_filter, _) = optimize_filter(
             filter,
@@ -30,9 +31,9 @@ impl<'a> StructFilterContext<'a> {
             payload_provider,
             estimator,
             total,
-        );
+        )?;
 
-        Self { optimized_filter }
+        Ok(Self { optimized_filter })
     }
 }
 

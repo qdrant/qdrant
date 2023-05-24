@@ -3,6 +3,7 @@ use std::cmp::Reverse;
 use itertools::Itertools;
 
 use crate::common::utils::IndexesMap;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::{
@@ -40,14 +41,14 @@ pub fn optimize_filter<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-) -> (OptimizedFilter<'a>, CardinalityEstimation)
+) -> OperationResult<(OptimizedFilter<'a>, CardinalityEstimation)>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
 
     let optimized_filter = OptimizedFilter {
-        should: filter.should.as_ref().and_then(|conditions| {
+        should: if let Some(conditions) = filter.should.as_ref() {
             if !conditions.is_empty() {
                 let (optimized_conditions, estimation) = optimize_should(
                     conditions,
@@ -56,14 +57,16 @@ where
                     payload_provider.clone(),
                     estimator,
                     total,
-                );
+                )?;
                 filter_estimations.push(estimation);
-                Some(optimized_conditions)
+                Ok::<Option<Vec<OptimizedCondition>>, OperationError>(Some(optimized_conditions))
             } else {
-                None
+                Ok(None)
             }
-        }),
-        must: filter.must.as_ref().and_then(|conditions| {
+        } else {
+            Ok(None)
+        }?,
+        must: if let Some(conditions) = filter.must.as_ref() {
             if !conditions.is_empty() {
                 let (optimized_conditions, estimation) = optimize_must(
                     conditions,
@@ -72,14 +75,16 @@ where
                     payload_provider.clone(),
                     estimator,
                     total,
-                );
+                )?;
                 filter_estimations.push(estimation);
-                Some(optimized_conditions)
+                Ok::<Option<Vec<OptimizedCondition>>, OperationError>(Some(optimized_conditions))
             } else {
-                None
+                Ok(None)
             }
-        }),
-        must_not: filter.must_not.as_ref().and_then(|conditions| {
+        } else {
+            Ok(None)
+        }?,
+        must_not: if let Some(conditions) = filter.must_not.as_ref() {
             if !conditions.is_empty() {
                 let (optimized_conditions, estimation) = optimize_must_not(
                     conditions,
@@ -88,19 +93,21 @@ where
                     payload_provider.clone(),
                     estimator,
                     total,
-                );
+                )?;
                 filter_estimations.push(estimation);
-                Some(optimized_conditions)
+                Ok::<Option<Vec<OptimizedCondition>>, OperationError>(Some(optimized_conditions))
             } else {
-                None
+                Ok(None)
             }
-        }),
+        } else {
+            Ok(None)
+        }?,
     };
 
-    (
+    Ok((
         optimized_filter,
         combine_must_estimations(&filter_estimations, total),
-    )
+    ))
 }
 
 fn convert_conditions<'a, F>(
@@ -110,9 +117,9 @@ fn convert_conditions<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-) -> Vec<(OptimizedCondition<'a>, CardinalityEstimation)>
+) -> OperationResult<Vec<(OptimizedCondition<'a>, CardinalityEstimation)>>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     conditions
         .iter()
@@ -125,8 +132,8 @@ where
                     payload_provider.clone(),
                     estimator,
                     total,
-                );
-                (OptimizedCondition::Filter(optimized_filter), estimation)
+                )?;
+                Ok((OptimizedCondition::Filter(optimized_filter), estimation))
             }
             _ => {
                 let estimation = estimator(condition);
@@ -136,7 +143,7 @@ where
                     payload_provider.clone(),
                     id_tracker,
                 );
-                (OptimizedCondition::Checker(condition_checker), estimation)
+                Ok((OptimizedCondition::Checker(condition_checker), estimation?))
             }
         })
         .collect()
@@ -149,9 +156,9 @@ fn optimize_should<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
+) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let mut converted = convert_conditions(
         conditions,
@@ -160,12 +167,12 @@ where
         payload_provider,
         estimator,
         total,
-    );
+    )?;
     // More probable conditions first
     converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
     let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
-    (conditions, combine_should_estimations(&estimations, total))
+    Ok((conditions, combine_should_estimations(&estimations, total)))
 }
 
 fn optimize_must<'a, F>(
@@ -175,9 +182,9 @@ fn optimize_must<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
+) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let mut converted = convert_conditions(
         conditions,
@@ -186,12 +193,12 @@ where
         payload_provider,
         estimator,
         total,
-    );
+    )?;
     // Less probable conditions first
     converted.sort_by_key(|(_, estimation)| estimation.exp);
     let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
-    (conditions, combine_must_estimations(&estimations, total))
+    Ok((conditions, combine_must_estimations(&estimations, total)))
 }
 
 fn optimize_must_not<'a, F>(
@@ -201,9 +208,9 @@ fn optimize_must_not<'a, F>(
     payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
-) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
+) -> OperationResult<(Vec<OptimizedCondition<'a>>, CardinalityEstimation)>
 where
-    F: Fn(&Condition) -> CardinalityEstimation,
+    F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let mut converted = convert_conditions(
         conditions,
@@ -212,12 +219,12 @@ where
         payload_provider,
         estimator,
         total,
-    );
+    )?;
     // More probable conditions first, as it will be reverted
     converted.sort_by_key(|(_, estimation)| estimation.exp);
     let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
-    (
+    Ok((
         conditions,
         combine_must_estimations(
             &estimations
@@ -226,5 +233,5 @@ where
                 .collect_vec(),
             total,
         ),
-    )
+    ))
 }

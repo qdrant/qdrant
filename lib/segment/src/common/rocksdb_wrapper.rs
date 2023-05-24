@@ -1,9 +1,13 @@
+use std::borrow::BorrowMut;
+use std::marker::PhantomPinned;
 use std::path::Path;
+use std::pin::Pin;
+use std::ptr::{addr_of, addr_of_mut, NonNull};
 use std::sync::Arc;
 
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
-use rocksdb::{ColumnFamily, LogLevel, Options, WriteOptions, DB};
+use rocksdb::{ColumnFamily, DBRawIteratorWithThreadMode, LogLevel, Options, WriteOptions, DB};
 
 use crate::common::Flusher;
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
@@ -24,7 +28,6 @@ pub struct DatabaseColumnWrapper {
 }
 
 pub struct DatabaseColumnIterator<'a> {
-    pub handle: &'a ColumnFamily,
     pub iter: rocksdb::DBRawIterator<'a>,
     pub just_seeked: bool,
 }
@@ -228,10 +231,14 @@ impl DatabaseColumnWrapper {
             ))
         })
     }
+
+    pub fn iter<'a>(&'a self) -> OperationResult<Pin<Box<LockedDatabaseColumnIterator<'a>>>> {
+        LockedDatabaseColumnIterator::from_guard_and_column(self.database.read(), &self.column_name)
+    }
 }
 
 impl<'a> LockedDatabaseColumnWrapper<'a> {
-    pub fn iter(&self) -> OperationResult<DatabaseColumnIterator> {
+    pub fn iter(&'a self) -> OperationResult<DatabaseColumnIterator<'a>> {
         DatabaseColumnIterator::new(&self.guard, self.column_name)
     }
 }
@@ -246,10 +253,86 @@ impl<'a> DatabaseColumnIterator<'a> {
         let mut iter = db.raw_iterator_cf(&handle);
         iter.seek_to_first();
         Ok(DatabaseColumnIterator {
-            handle,
             iter,
             just_seeked: true,
         })
+    }
+
+    pub fn from_db_and_cf(db: &'a DB, column_family: &ColumnFamily) -> Self {
+        let mut iter = db.raw_iterator_cf(column_family);
+        iter.seek_to_first();
+        DatabaseColumnIterator {
+            iter,
+            just_seeked: true,
+        }
+    }
+}
+
+struct LockedDatabaseColumnIterator<'a> {
+    guard: RwLockReadGuard<'a, DB>,
+    iter: *mut DBRawIteratorWithThreadMode<'a, DB>,
+    just_seeked: bool,
+    _marker: PhantomPinned,
+}
+
+impl<'a> LockedDatabaseColumnIterator<'a> {
+    pub fn from_guard_and_column(
+        guard: RwLockReadGuard<'a, DB>,
+        column_name: &str,
+    ) -> OperationResult<Pin<Box<LockedDatabaseColumnIterator<'a>>>> {
+        let db_iter = Self {
+            guard: guard,
+            iter: std::ptr::null_mut(),
+            just_seeked: true,
+            _marker: Default::default(),
+        };
+        let mut boxed = Box::pin(db_iter);
+        let handle = boxed.guard.cf_handle(column_name).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "RocksDB cf_handle error: Cannot find column family {column_name}"
+            ))
+        })?;
+        let mut it = boxed.guard.raw_iterator_cf(handle);
+        let iter: *mut _ = addr_of_mut!(it);
+        // This is safe because modifying a field doesn't move the whole struct
+        // https://doc.rust-lang.org/std/pin/index.html#example-self-referential-struct
+        unsafe {
+            let mut_ref: Pin<&mut Self> = Pin::as_mut(&mut boxed);
+            Pin::get_unchecked_mut(mut_ref).iter = iter;
+        }
+        unsafe {
+            (*boxed.iter).seek_to_first();
+        }
+        Ok(boxed)
+    }
+}
+
+impl<'a> Iterator for Pin<Box<LockedDatabaseColumnIterator<'a>>> {
+    type Item = (Box<[u8]>, Box<[u8]>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut iter = unsafe { *self.iter };
+        if !iter.valid() {
+            return None;
+        }
+
+        // Initial call to next() after seeking should not move the iterator
+        // or the first item will not be returned
+        if self.just_seeked {
+            self.just_seeked = false;
+        } else {
+            iter.next();
+        }
+
+        if iter.valid() {
+            // .key() and .value() only ever return None if valid == false, which we've just checked
+            Some((
+                Box::from(iter.key().unwrap()),
+                Box::from(iter.value().unwrap()),
+            ))
+        } else {
+            None
+        }
     }
 }
 

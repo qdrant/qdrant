@@ -30,14 +30,14 @@ pub trait PayloadIndex {
     /// Estimate amount of points (min, max) which satisfies filtering condition.
     ///
     /// A best estimation of the number of available points should be given.
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation;
+    fn estimate_cardinality(&self, query: &Filter) -> OperationResult<CardinalityEstimation>;
 
     /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
     fn estimate_nested_cardinality(
         &self,
         query: &Filter,
         nested_path: &JsonPathPayload,
-    ) -> CardinalityEstimation;
+    ) -> OperationResult<CardinalityEstimation>;
 
     /// Return list of all point ids, which satisfy filtering criteria
     ///
@@ -45,12 +45,15 @@ pub trait PayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
     /// Return number of points, indexed by this field
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a>;
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> OperationResult<Box<dyn FilterContext + 'a>>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index

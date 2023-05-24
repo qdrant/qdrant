@@ -71,6 +71,11 @@ pub(crate) trait InvertedIndex {
     fn get_points_count(&self) -> usize;
     fn get_doc(&self, idx: PointOffsetType) -> Option<Self::Document<'_>>;
     fn get_token_id(&self, token: &str) -> OperationResult<Option<u32>>;
+    fn estimate_cardinality(
+        &self,
+        query: &ParsedQuery,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation>;
 }
 
 #[derive(Default)]
@@ -85,65 +90,6 @@ impl InvertedIndexInMemory {
     pub fn new() -> InvertedIndexInMemory {
         Default::default()
     }
-
-    pub fn estimate_cardinality(
-        &self,
-        query: &ParsedQuery,
-        condition: &FieldCondition,
-    ) -> CardinalityEstimation {
-        let postings_opt: Option<Vec<_>> = query
-            .tokens
-            .iter()
-            .map(|&vocab_idx| match vocab_idx {
-                None => None,
-                // unwrap safety: same as in filter()
-                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
-            })
-            .collect();
-        if postings_opt.is_none() {
-            // There are unseen tokens -> no matches
-            return CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
-                min: 0,
-                exp: 0,
-                max: 0,
-            };
-        }
-        let postings = postings_opt.unwrap();
-        if postings.is_empty() {
-            // Empty request -> no matches
-            return CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
-                min: 0,
-                exp: 0,
-                max: 0,
-            };
-        }
-        // Smallest posting is the largest possible cardinality
-        let smallest_posting = postings.iter().map(|posting| posting.len()).min().unwrap();
-
-        return if postings.len() == 1 {
-            CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
-                min: smallest_posting,
-                exp: smallest_posting,
-                max: smallest_posting,
-            }
-        } else {
-            let expected_frac: f64 = postings
-                .iter()
-                .map(|posting| posting.len() as f64 / self.points_count as f64)
-                .product();
-            let exp = (expected_frac * self.points_count as f64) as usize;
-            CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
-                min: 0, // ToDo: make better estimation
-                exp,
-                max: smallest_posting,
-            }
-        };
-    }
-
     pub fn payload_blocks(
         &self,
         threshold: usize,
@@ -291,5 +237,63 @@ impl InvertedIndex for InvertedIndexInMemory {
 
     fn get_token_id(&self, token: &str) -> OperationResult<Option<u32>> {
         Ok(self.vocab.get(token).copied())
+    }
+
+    fn estimate_cardinality(
+        &self,
+        query: &ParsedQuery,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation> {
+        let postings_opt: Option<Vec<_>> = query
+            .tokens
+            .iter()
+            .map(|&vocab_idx| match vocab_idx {
+                None => None,
+                // unwrap safety: same as in filter()
+                Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
+            })
+            .collect();
+        if postings_opt.is_none() {
+            // There are unseen tokens -> no matches
+            return Ok(CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                min: 0,
+                exp: 0,
+                max: 0,
+            });
+        }
+        let postings = postings_opt.unwrap();
+        if postings.is_empty() {
+            // Empty request -> no matches
+            return Ok(CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                min: 0,
+                exp: 0,
+                max: 0,
+            });
+        }
+        // Smallest posting is the largest possible cardinality
+        let smallest_posting = postings.iter().map(|posting| posting.len()).min().unwrap();
+
+        return if postings.len() == 1 {
+            Ok(CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                min: smallest_posting,
+                exp: smallest_posting,
+                max: smallest_posting,
+            })
+        } else {
+            let expected_frac: f64 = postings
+                .iter()
+                .map(|posting| posting.len() as f64 / self.points_count as f64)
+                .product();
+            let exp = (expected_frac * self.points_count as f64) as usize;
+            Ok(CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                min: 0, // ToDo: make better estimation
+                exp,
+                max: smallest_posting,
+            })
+        };
     }
 }

@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::iter::empty;
+
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -11,7 +11,7 @@ use super::postings_iterator::intersect_postings_iterator_owned;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::index::field_index::PayloadBlockCondition;
+use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType, PointOffsetType};
 
 pub fn db_encode_tokens(data: &[u32]) -> Vec<u8> {
@@ -82,65 +82,6 @@ impl InvertedIndexOnDisk {
             point_to_docs_flusher()
         })
     }
-
-    // pub fn estimate_cardinality(
-    //     &self,
-    //     query: &ParsedQuery,
-    //     condition: &FieldCondition,
-    // ) -> CardinalityEstimation {
-    //     let postings_opt: Option<Vec<_>> = query
-    //         .tokens
-    //         .iter()
-    //         .map(|&vocab_idx| match vocab_idx {
-    //             None => None,
-    //             // unwrap safety: same as in filter()
-    //             Some(idx) => self.postings.get(idx as usize).unwrap().as_ref(),
-    //         })
-    //         .collect();
-    //     if postings_opt.is_none() {
-    //         // There are unseen tokens -> no matches
-    //         return CardinalityEstimation {
-    //             primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
-    //             min: 0,
-    //             exp: 0,
-    //             max: 0,
-    //         };
-    //     }
-    //     let postings = postings_opt.unwrap();
-    //     if postings.is_empty() {
-    //         // Empty request -> no matches
-    //         return CardinalityEstimation {
-    //             primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
-    //             min: 0,
-    //             exp: 0,
-    //             max: 0,
-    //         };
-    //     }
-    //     // Smallest posting is the largest possible cardinality
-    //     let smallest_posting = postings.iter().map(|posting| posting.len()).min().unwrap();
-
-    //     return if postings.len() == 1 {
-    //         CardinalityEstimation {
-    //             primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
-    //             min: smallest_posting,
-    //             exp: smallest_posting,
-    //             max: smallest_posting,
-    //         }
-    //     } else {
-    //         let expected_frac: f64 = postings
-    //             .iter()
-    //             .map(|posting| posting.len() as f64 / self.points_count as f64)
-    //             .product();
-    //         let exp = (expected_frac * self.points_count as f64) as usize;
-    //         CardinalityEstimation {
-    //             primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
-    //             min: 0, // ToDo: make better estimation
-    //             exp,
-    //             max: smallest_posting,
-    //         }
-    //     };
-    // }
-
     pub fn payload_blocks<'a>(
         &'a self,
         threshold: usize,
@@ -148,7 +89,8 @@ impl InvertedIndexOnDisk {
     ) -> OperationResult<Box<dyn Iterator<Item = PayloadBlockCondition> + 'a>> {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
-        Ok(Box::new(self.vocab.lock_db().iter()?.filter_map(
+
+        Ok(Box::new(self.vocab.iter()?.filter_map(
             move |(_token_idx, posting_idx)| match self.vocab.get_pinned(&posting_idx, db_decode_tokens)
             {
                 Ok(Some(val)) if !val.is_empty() && val.len() >= threshold => {
@@ -297,6 +239,73 @@ impl InvertedIndex for InvertedIndexOnDisk {
             None
         };
         Ok(maybe_token_id)
+    }
+
+    fn estimate_cardinality(
+        &self,
+        query: &ParsedQuery,
+        condition: &FieldCondition,
+    ) -> OperationResult<CardinalityEstimation> {
+        let mut postings = Vec::with_capacity(query.tokens.len());
+
+        for &vocab_idx in query.tokens.iter() {
+            match vocab_idx {
+                Some(idx) => {
+                    if let Some(posting_list) = self
+                        .postings
+                        .get_pinned(&Self::store_key(&idx), db_decode_tokens)?
+                    {
+                        postings.push(PostingList::from(posting_list));
+                    } else {
+                        return Ok(CardinalityEstimation {
+                            primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                            min: 0,
+                            exp: 0,
+                            max: 0,
+                        });
+                    }
+                }
+                None => {
+                    return Ok(CardinalityEstimation {
+                        primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                        min: 0,
+                        exp: 0,
+                        max: 0,
+                    });
+                }
+            }
+        }
+        if postings.is_empty() {
+            return Ok(CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                min: 0,
+                exp: 0,
+                max: 0,
+            });
+        }
+        // Smallest posting is the largest possible cardinality
+        let smallest_posting = postings.iter().map(|posting| posting.len()).min().unwrap();
+
+        Ok(if postings.len() == 1 {
+            CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                min: smallest_posting,
+                exp: smallest_posting,
+                max: smallest_posting,
+            }
+        } else {
+            let expected_frac: f64 = postings
+                .iter()
+                .map(|posting| posting.len() as f64 / self.points_count as f64)
+                .product();
+            let exp = (expected_frac * self.points_count as f64) as usize;
+            CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                min: 0, // ToDo: make better estimation
+                exp,
+                max: smallest_posting,
+            }
+        })
     }
 }
 

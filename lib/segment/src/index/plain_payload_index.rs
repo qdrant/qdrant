@@ -105,14 +105,14 @@ impl PayloadIndex for PlainPayloadIndex {
         self.save_config()
     }
 
-    fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
+    fn estimate_cardinality(&self, _query: &Filter) -> OperationResult<CardinalityEstimation> {
         let available_points = self.id_tracker.borrow().available_point_count();
-        CardinalityEstimation {
+        Ok(CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
             exp: available_points / 2,
             max: available_points,
-        }
+        })
     }
 
     /// Forward to non nested implementation.
@@ -120,34 +120,37 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         query: &Filter,
         _nested_path: &JsonPathPayload,
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         self.estimate_cardinality(query)
     }
 
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let filter_context = self.filter_context(query);
-        Box::new(ArcAtomicRefCellIterator::new(
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        let filter_context = self.filter_context(query)?;
+        Ok(Box::new(ArcAtomicRefCellIterator::new(
             self.id_tracker.clone(),
             move |points_iterator| {
                 points_iterator
                     .iter_ids()
                     .filter(move |id| filter_context.check(*id))
             },
-        ))
+        )))
     }
 
     fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {
         0 // No points are indexed in the plain index
     }
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(PlainFilterContext {
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> OperationResult<Box<dyn FilterContext + 'a>> {
+        Ok(Box::new(PlainFilterContext {
             filter,
             condition_checker: self.condition_checker.clone(),
-        })
+        }))
     }
 
     fn payload_blocks(
@@ -234,14 +237,14 @@ impl VectorIndex for PlainIndex {
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
-    ) -> Vec<Vec<ScoredPointOffset>> {
-        match filter {
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        Ok(match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
                 let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let filtered_ids_vec: Vec<_> = payload_index.query_points(filter).collect();
+                let filtered_ids_vec: Vec<_> = payload_index.query_points(filter)?.collect();
                 vectors
                     .iter()
                     .map(|vector| {
@@ -270,7 +273,7 @@ impl VectorIndex for PlainIndex {
                     })
                     .collect()
             }
-        }
+        })
     }
 
     fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {

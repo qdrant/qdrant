@@ -548,14 +548,17 @@ impl PayloadFieldIndex for GeoMapIndex {
         Ok(None)
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
             let mut estimation = self.match_cardinality(&geo_hashes);
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(condition.clone()));
-            return Some(estimation);
+            return Ok(Some(estimation));
         }
 
         if let Some(geo_radius) = &condition.geo_radius {
@@ -564,10 +567,10 @@ impl PayloadFieldIndex for GeoMapIndex {
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(condition.clone()));
-            return Some(estimation);
+            return Ok(Some(estimation));
         }
 
-        None
+        Ok(None)
     }
 
     fn payload_blocks(
@@ -670,7 +673,7 @@ mod tests {
 
         let field_condition = condition_for_geo_radius("test".to_string(), geo_radius);
         let card = field_index.estimate_cardinality(&field_condition);
-        let card = card.unwrap();
+        let card = card.unwrap().unwrap();
 
         eprintln!("real_cardinality = {real_cardinality:#?}");
         eprintln!("card = {card:#?}");
@@ -776,7 +779,7 @@ mod tests {
         };
         let field_condition = condition_for_geo_radius("test".to_string(), nyc_geo_radius);
         let card = index.estimate_cardinality(&field_condition);
-        let card = card.unwrap();
+        let card = card.unwrap().unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
         assert_eq!(card.exp, 1);
@@ -788,7 +791,7 @@ mod tests {
         };
         let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
         let card = index.estimate_cardinality(&field_condition);
-        let card = card.unwrap();
+        let card = card.unwrap().unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
         assert_eq!(card.exp, 1);
@@ -800,7 +803,7 @@ mod tests {
         };
         let field_condition = condition_for_geo_radius("test".to_string(), tokyo_geo_radius);
         let card = index.estimate_cardinality(&field_condition);
-        let card = card.unwrap();
+        let card = card.unwrap().unwrap();
         // no points found
         assert_eq!(card.min, 0);
         assert_eq!(card.max, 0);
@@ -835,7 +838,7 @@ mod tests {
         };
         let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
         let card = index.estimate_cardinality(&field_condition);
-        let card = card.unwrap();
+        let card = card.unwrap().unwrap();
         // handle properly that a single point matches via two different geo payloads
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);

@@ -568,12 +568,12 @@ impl Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         condition: &Filter,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
         let ids_iterator = payload_index
-            .query_points(condition)
+            .query_points(condition)?
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {
@@ -590,7 +590,7 @@ impl Segment {
             None => ids_iterator.collect(),
         };
         page.sort_unstable();
-        page
+        Ok(page)
     }
 
     pub fn filtered_read_by_id_stream(
@@ -598,16 +598,17 @@ impl Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         condition: &Filter,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         let payload_index = self.payload_index.borrow();
-        let filter_context = payload_index.filter_context(condition);
-        self.id_tracker
+        let filter_context = payload_index.filter_context(condition)?;
+        Ok(self
+            .id_tracker
             .borrow()
             .iter_from(offset)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
             .take(limit.unwrap_or(usize::MAX))
-            .collect()
+            .collect())
     }
 
     /// Check consistency of the segment's data and repair it if possible.
@@ -702,7 +703,7 @@ impl SegmentEntry for Segment {
             &vector_data
                 .vector_index
                 .borrow()
-                .search(&[vector], filter, top, params)[0];
+                .search(&[vector], filter, top, params)?[0];
 
         self.process_search_result(internal_result, with_payload, with_vector)
     }
@@ -732,7 +733,7 @@ impl SegmentEntry for Segment {
         let internal_results = vector_data
             .vector_index
             .borrow()
-            .search(vectors, filter, top, params);
+            .search(vectors, filter, top, params)?;
 
         let res = internal_results
             .iter()
@@ -979,20 +980,20 @@ impl SegmentEntry for Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         match filter {
-            None => self
+            None => Ok(self
                 .id_tracker
                 .borrow()
                 .iter_from(offset)
                 .map(|x| x.0)
                 .take(limit.unwrap_or(usize::MAX))
-                .collect(),
+                .collect()),
             Some(condition) => {
                 let query_cardinality = {
                     let payload_index = self.payload_index.borrow();
                     payload_index.estimate_cardinality(condition)
-                };
+                }?;
 
                 // ToDo: Add telemetry for this heuristics
 
@@ -1053,16 +1054,19 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().deleted_point_count()
     }
 
-    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+    fn estimate_point_count<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> OperationResult<CardinalityEstimation> {
         match filter {
             None => {
                 let available = self.available_point_count();
-                CardinalityEstimation {
+                Ok(CardinalityEstimation {
                     primary_clauses: vec![],
                     min: available,
                     exp: available,
                     max: available,
-                }
+                })
             }
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
@@ -1299,7 +1303,7 @@ impl SegmentEntry for Segment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
-        for point_id in self.read_filtered(None, None, Some(filter)) {
+        for point_id in self.read_filtered(None, None, Some(filter))? {
             deleted_points += self.delete_point(op_num, point_id)? as usize;
         }
 

@@ -209,15 +209,18 @@ impl PayloadFieldIndex for FullTextIndex {
         Ok(None)
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
-            return Some(
-                self.inverted_index
-                    .estimate_cardinality(&parsed_query, condition),
-            );
+            return self
+                .inverted_index
+                .estimate_cardinality(&parsed_query, condition)
+                .map(|r| Some(r));
         }
-        None
+        Ok(None)
     }
 
     fn payload_blocks(

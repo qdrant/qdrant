@@ -291,7 +291,7 @@ pub trait SegmentEntry {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-    ) -> Vec<PointIdType>;
+    ) -> OperationResult<Vec<PointIdType>>;
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
@@ -300,7 +300,10 @@ pub trait SegmentEntry {
     fn has_point(&self, point_id: PointIdType) -> bool;
 
     /// Estimate available point count in this segment for given filter.
-    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
+    fn estimate_point_count<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> OperationResult<CardinalityEstimation>;
 
     fn vector_dim(&self, vector_name: &str) -> OperationResult<usize>;
 

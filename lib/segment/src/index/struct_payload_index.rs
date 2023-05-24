@@ -58,9 +58,9 @@ impl StructPayloadIndex {
         &self,
         condition: &FieldCondition,
         nested_path: Option<&JsonPathPayload>,
-    ) -> Option<CardinalityEstimation> {
+    ) -> OperationResult<Option<CardinalityEstimation>> {
         let full_path = JsonPathPayload::extend_or_new(nested_path, &condition.key);
-        self.field_indexes.get(&full_path.path).and_then(|indexes| {
+        if let Some(indexes) = self.field_indexes.get(&full_path.path) {
             // rewrite condition with fullpath to enable cardinality estimation
             let full_path_condition = FieldCondition {
                 key: full_path.path,
@@ -68,13 +68,15 @@ impl StructPayloadIndex {
             };
             let mut result_estimation: Option<CardinalityEstimation> = None;
             for index in indexes {
-                result_estimation = index.estimate_cardinality(&full_path_condition);
+                result_estimation = index.estimate_cardinality(&full_path_condition)?;
                 if result_estimation.is_some() {
                     break;
                 }
             }
-            result_estimation
-        })
+            Ok(result_estimation)
+        } else {
+            Ok(None)
+        }
     }
 
     fn query_field<'a>(
@@ -215,7 +217,10 @@ impl StructPayloadIndex {
         self.id_tracker.borrow().available_point_count()
     }
 
-    fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
+    fn struct_filtered_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> OperationResult<StructFilterContext<'a>> {
         let estimator = |condition: &Condition| self.condition_cardinality(condition, None);
         let id_tracker = self.id_tracker.borrow();
         let payload_provider = PayloadProvider::new(self.payload.clone());
@@ -233,13 +238,13 @@ impl StructPayloadIndex {
         &self,
         condition: &Condition,
         nested_path: Option<&JsonPathPayload>,
-    ) -> CardinalityEstimation {
-        match condition {
+    ) -> OperationResult<CardinalityEstimation> {
+        Ok(match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::Nested(nested) => {
                 // propagate complete nested path in case of multiple nested layers
                 let full_path = JsonPathPayload::extend_or_new(nested_path, &nested.array_key());
-                self.estimate_nested_cardinality(nested.filter(), &full_path)
+                self.estimate_nested_cardinality(nested.filter(), &full_path)?
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let available_points = self.available_point_count();
@@ -315,9 +320,9 @@ impl StructPayloadIndex {
                 }
             }
             Condition::Field(field_condition) => self
-                .estimate_field_condition(field_condition, nested_path)
+                .estimate_field_condition(field_condition, nested_path)?
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
-        }
+        })
     }
 
     pub fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
@@ -377,7 +382,7 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
+    fn estimate_cardinality(&self, query: &Filter) -> OperationResult<CardinalityEstimation> {
         let available_points = self.available_point_count();
         let estimator = |condition: &Condition| self.condition_cardinality(condition, None);
         estimate_filter(&estimator, query, available_points)
@@ -387,7 +392,7 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         query: &Filter,
         nested_path: &JsonPathPayload,
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         let available_points = self.available_point_count();
         let estimator =
             |condition: &Condition| self.condition_cardinality(condition, Some(nested_path));
@@ -397,18 +402,18 @@ impl PayloadIndex for StructPayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
 
-        let query_cardinality = self.estimate_cardinality(query);
+        let query_cardinality = self.estimate_cardinality(query)?;
 
-        if query_cardinality.primary_clauses.is_empty() {
+        Ok(if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator =
                 ArcAtomicRefCellIterator::new(self.id_tracker.clone(), |points_iterator| {
                     points_iterator.iter_ids()
                 });
 
-            let struct_filtered_context = self.struct_filtered_context(query);
+            let struct_filtered_context = self.struct_filtered_context(query)?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
                 full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
@@ -416,7 +421,7 @@ impl PayloadIndex for StructPayloadIndex {
             Box::new(matched_points)
         } else {
             let points_iterator_ref = self.id_tracker.borrow();
-            let struct_filtered_context = self.struct_filtered_context(query);
+            let struct_filtered_context = self.struct_filtered_context(query)?;
 
             // CPU-optimized strategy here: points are made unique before applying other filters.
             // TODO: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
@@ -425,30 +430,30 @@ impl PayloadIndex for StructPayloadIndex {
                 .get(points_iterator_ref.total_point_count());
 
             #[allow(clippy::needless_collect)]
-                let preselected: Vec<PointOffsetType> = query_cardinality
-                .primary_clauses
-                .iter()
-                .flat_map(|clause| {
-                    match clause {
-                        PrimaryCondition::Condition(field_condition) => {
-                            self.query_field(field_condition).unwrap().unwrap_or_else(
-                                || points_iterator_ref.iter_ids(), /* index is not built */
-                            )
-                        }
-                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
-                        PrimaryCondition::IsEmpty(_) => points_iterator_ref.iter_ids(), /* there are no fast index for IsEmpty */
-                        PrimaryCondition::IsNull(_) => points_iterator_ref.iter_ids(),  /* no fast index for IsNull too */
-                    }
-                })
-                .filter(|&id| !visited_list.check_and_update_visited(id))
-                .filter(move |&i| struct_filtered_context.check(i))
-                .collect();
+                        let preselected: Vec<PointOffsetType> = query_cardinality
+                        .primary_clauses
+                        .iter()
+                        .flat_map(|clause| {
+                            match clause {
+                                PrimaryCondition::Condition(field_condition) => {
+                                    self.query_field(field_condition).unwrap().unwrap_or_else(
+                                        || points_iterator_ref.iter_ids(), /* index is not built */
+                                    )
+                                }
+                                PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
+                                PrimaryCondition::IsEmpty(_) => points_iterator_ref.iter_ids(), /* there are no fast index for IsEmpty */
+                                PrimaryCondition::IsNull(_) => points_iterator_ref.iter_ids(),  /* no fast index for IsNull too */
+                            }
+                        })
+                        .filter(|&id| !visited_list.check_and_update_visited(id))
+                        .filter(move |&i| struct_filtered_context.check(i))
+                        .collect();
 
             self.visited_pool.return_back(visited_list);
 
             let matched_points_iter = preselected.into_iter();
             Box::new(matched_points_iter)
-        }
+        })
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {
@@ -464,8 +469,11 @@ impl PayloadIndex for StructPayloadIndex {
         })
     }
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(self.struct_filtered_context(filter))
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> OperationResult<Box<dyn FilterContext + 'a>> {
+        Ok(Box::new(self.struct_filtered_context(filter)?))
     }
 
     fn payload_blocks(
