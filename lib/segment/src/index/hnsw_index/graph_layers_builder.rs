@@ -256,26 +256,27 @@ impl GraphLayersBuilder {
         candidates: impl Iterator<Item = ScoredPointOffset>,
         m: usize,
         mut score_internal: F,
-    ) -> Vec<PointOffsetType>
+    ) -> Vec<ScoredPointOffset>
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let mut result_list = vec![];
+        let mut result_list: Vec<ScoredPointOffset> = vec![];
         result_list.reserve(m);
         for current_closest in candidates {
             if result_list.len() >= m {
                 break;
             }
             let mut is_good = true;
-            for &selected_point in &result_list {
-                let dist_to_already_selected = score_internal(current_closest.idx, selected_point);
+            for selected_point in &result_list {
+                let dist_to_already_selected =
+                    score_internal(current_closest.idx, selected_point.idx);
                 if dist_to_already_selected > current_closest.score {
                     is_good = false;
                     break;
                 }
             }
             if is_good {
-                result_list.push(current_closest.idx);
+                result_list.push(current_closest);
             }
         }
 
@@ -287,7 +288,7 @@ impl GraphLayersBuilder {
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
         score_internal: F,
-    ) -> Vec<PointOffsetType>
+    ) -> Vec<ScoredPointOffset>
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
@@ -355,13 +356,12 @@ impl GraphLayersBuilder {
                     if self.use_heuristic {
                         let selected_nearest =
                             Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
-                        self.links_layers[point_id as usize][curr_level]
-                            .write()
-                            .clone_from(&selected_nearest);
+                        *self.links_layers[point_id as usize][curr_level].write() =
+                            selected_nearest.iter().map(|x| x.idx).collect::<Vec<_>>();
 
                         for &other_point in &selected_nearest {
                             let mut other_point_links =
-                                self.links_layers[other_point as usize][curr_level].write();
+                                self.links_layers[other_point.idx as usize][curr_level].write();
                             if other_point_links.len() < level_m {
                                 // If linked point is lack of neighbours
                                 other_point_links.push(point_id);
@@ -369,14 +369,14 @@ impl GraphLayersBuilder {
                                 let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                 candidates.push(ScoredPointOffset {
                                     idx: point_id,
-                                    score: scorer(point_id, other_point),
+                                    score: other_point.score,
                                 });
                                 for other_point_link in
                                     other_point_links.iter().take(level_m).copied()
                                 {
                                     candidates.push(ScoredPointOffset {
                                         idx: other_point_link,
-                                        score: scorer(other_point_link, other_point),
+                                        score: scorer(other_point_link, other_point.idx),
                                     });
                                 }
                                 let selected_candidates =
@@ -387,8 +387,12 @@ impl GraphLayersBuilder {
                                     );
                                 other_point_links.clear(); // this do not free memory, which is good
                                 for selected in selected_candidates.iter().copied() {
-                                    other_point_links.push(selected);
+                                    other_point_links.push(selected.idx);
                                 }
+                            }
+
+                            if other_point.score > level_entry.score {
+                                level_entry = other_point;
                             }
                         }
                     } else {
@@ -774,7 +778,10 @@ mod tests {
             sorted_candidates.into_iter(),
             M,
             |a, b| scorer.score_internal(a, b),
-        );
+        )
+        .iter()
+        .map(|x| x.idx)
+        .collect_vec();
 
         for x in selected_candidates.iter() {
             eprintln!("selected_candidates = {x}");
@@ -818,7 +825,10 @@ mod tests {
             });
         }
 
-        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates, m, scorer);
+        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates, m, scorer)
+            .iter()
+            .map(|x| x.idx)
+            .collect_vec();
 
         assert_eq!(&res, &vec![1, 3, 6]);
 
