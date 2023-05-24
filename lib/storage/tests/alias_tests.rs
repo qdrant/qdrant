@@ -72,6 +72,7 @@ fn test_alias_operation() {
         Default::default(),
         0,
         Some(propose_operation_sender),
+        None,
     ));
     let dispatcher = Dispatcher::new(toc);
 

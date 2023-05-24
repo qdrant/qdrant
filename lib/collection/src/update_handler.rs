@@ -85,9 +85,11 @@ pub struct UpdateHandler {
     wal: LockedWal,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     max_optimization_threads: usize,
+    preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
 }
 
 impl UpdateHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         shared_storage_config: Arc<SharedStorageConfig>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
@@ -96,6 +98,7 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: usize,
+        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -110,6 +113,7 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
+            preheat_disk_cache_worker,
         }
     }
 
@@ -120,6 +124,7 @@ impl UpdateHandler {
             tx.clone(),
             rx,
             self.segments.clone(),
+            self.preheat_disk_cache_worker.clone(),
             self.wal.clone(),
             self.optimization_handles.clone(),
             self.max_optimization_threads,
@@ -198,6 +203,7 @@ impl UpdateHandler {
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
+        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
         callback: F,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
@@ -223,11 +229,16 @@ impl UpdateHandler {
                     let callback_cloned = callback.clone();
 
                     let segments = segments.clone();
+                    let preheat_disk_cache_worker = preheat_disk_cache_worker.clone();
 
                     handles.push(spawn_stoppable(move |stopped| {
                         match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
                             Ok(optimized_segment_id) => {
-                                schedule_preheat_disk_cache_task(&segments, optimized_segment_id);
+                                schedule_preheat_disk_cache_task(
+                                    &segments,
+                                    preheat_disk_cache_worker,
+                                    optimized_segment_id,
+                                );
 
                                 callback_cloned(optimized_segment_id.is_some()); // Perform some actions when optimization if finished
                                 optimized_segment_id.is_some()
@@ -261,12 +272,14 @@ impl UpdateHandler {
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
+        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         sender: Sender<OptimizerSignal>,
     ) {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
             segments.clone(),
+            preheat_disk_cache_worker,
             move |_optimization_result| {
                 // After optimization is finished, we still need to check if there are
                 // some further optimizations possible.
@@ -280,11 +293,13 @@ impl UpdateHandler {
         handles.retain(|h| !h.is_finished())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         sender: Sender<OptimizerSignal>,
         mut receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
+        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
         wal: LockedWal,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         max_handles: usize,
@@ -307,9 +322,13 @@ impl UpdateHandler {
                     {
                         continue;
                     }
+
+                    let preheat_disk_cache_worker = preheat_disk_cache_worker.clone();
+
                     Self::process_optimization(
                         optimizers.clone(),
                         segments.clone(),
+                        preheat_disk_cache_worker,
                         optimization_handles.clone(),
                         sender.clone(),
                     )
@@ -454,6 +473,11 @@ impl UpdateHandler {
     }
 
     pub fn schedule_preheat_disk_cache_tasks(&self) {
+        let preheat_disk_cache_worker = match &self.preheat_disk_cache_worker {
+            Some(worker) => worker,
+            None => return,
+        };
+
         let segments = self.segments.read();
 
         for (_, segment) in segments.iter() {
@@ -463,7 +487,7 @@ impl UpdateHandler {
             };
 
             for task in segment.read().preheat_disk_cache() {
-                if let Err(err) = mmap_ops::PreheatDiskCacheWorker::global().schedule(task) {
+                if let Err(err) = preheat_disk_cache_worker.schedule(task) {
                     log::error!("{err}");
                 }
             }
@@ -471,9 +495,18 @@ impl UpdateHandler {
     }
 }
 
-fn schedule_preheat_disk_cache_task(segments: &LockedSegmentHolder, segment_id: Option<SegmentId>) {
+fn schedule_preheat_disk_cache_task(
+    segments: &LockedSegmentHolder,
+    preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
+    segment_id: Option<SegmentId>,
+) {
     let segment_id = match segment_id {
         Some(id) => id,
+        None => return,
+    };
+
+    let preheat_disk_cache_worker = match preheat_disk_cache_worker {
+        Some(worker) => worker,
         None => return,
     };
 
@@ -487,7 +520,7 @@ fn schedule_preheat_disk_cache_task(segments: &LockedSegmentHolder, segment_id: 
     };
 
     for task in segment.read().preheat_disk_cache() {
-        if let Err(err) = mmap_ops::PreheatDiskCacheWorker::global().schedule(task) {
+        if let Err(err) = preheat_disk_cache_worker.schedule(task) {
             log::error!("{err}");
         }
     }

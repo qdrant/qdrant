@@ -22,6 +22,7 @@ use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
+use segment::common::mmap_ops;
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
@@ -212,6 +213,7 @@ fn main() -> anyhow::Result<()> {
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
+        Some(mmap_ops::PreheatDiskCacheWorker::spawn()),
     );
 
     // Here we load all stored collections.

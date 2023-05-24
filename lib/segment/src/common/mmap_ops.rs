@@ -54,10 +54,6 @@ pub struct PreheatDiskCacheWorker {
 }
 
 impl PreheatDiskCacheWorker {
-    pub fn global() -> &'static PreheatDiskCacheHandle {
-        &GLOBAL_WORKER
-    }
-
     pub fn spawn() -> PreheatDiskCacheHandle {
         let (sender, receiver) = mpsc::sync_channel(32);
 
@@ -75,9 +71,6 @@ impl PreheatDiskCacheWorker {
         }
     }
 }
-
-static GLOBAL_WORKER: once_cell::sync::Lazy<PreheatDiskCacheHandle> =
-    once_cell::sync::Lazy::new(PreheatDiskCacheWorker::spawn);
 
 #[derive(Clone, Debug)]
 pub struct PreheatDiskCacheHandle {

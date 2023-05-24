@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use segment::common::mmap_ops;
 use tokio::runtime::Handle;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -200,6 +201,7 @@ impl ShardHolder {
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
+        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
         // ToDo: remove after version 0.11.0
@@ -217,6 +219,7 @@ impl ShardHolder {
                     on_peer_failure.clone(),
                     this_peer_id,
                     update_runtime.clone(),
+                    preheat_disk_cache_worker.clone(),
                 )
                 .await;
 
@@ -231,6 +234,7 @@ impl ShardHolder {
                             collection_config.clone(),
                             shared_storage_config.clone(),
                             update_runtime.clone(),
+                            preheat_disk_cache_worker.clone(),
                         )
                         .await
                         .unwrap();
@@ -255,6 +259,7 @@ impl ShardHolder {
                             collection_config.clone(),
                             shared_storage_config.clone(),
                             update_runtime.clone(),
+                            preheat_disk_cache_worker.clone(),
                         )
                         .await
                         .unwrap();

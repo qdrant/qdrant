@@ -93,6 +93,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         dummy_request_shard_transfer(),
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -132,6 +133,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
+        None,
         None,
         None,
     )
