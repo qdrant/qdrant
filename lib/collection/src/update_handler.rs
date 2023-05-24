@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
+use segment::common::mmap_ops;
 use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
@@ -462,8 +463,9 @@ impl UpdateHandler {
             };
 
             for task in segment.read().preheat_disk_cache() {
-                // TODO: Schedule preheat disk-cache tasks here...
-                log::debug!("Schedulling preheat disk-cache task ({task:?})...");
+                if let Err(err) = mmap_ops::PreheatDiskCacheWorker::global().schedule(task) {
+                    log::error!("{err}");
+                }
             }
         }
     }
@@ -485,7 +487,8 @@ fn schedule_preheat_disk_cache_task(segments: &LockedSegmentHolder, segment_id: 
     };
 
     for task in segment.read().preheat_disk_cache() {
-        // TODO: Schedule preheat disk-cache tasks here...
-        log::debug!("Schedulling preheat disk-cache task ({task:?})...");
+        if let Err(err) = mmap_ops::PreheatDiskCacheWorker::global().schedule(task) {
+            log::error!("{err}");
+        }
     }
 }
