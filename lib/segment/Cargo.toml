@@ -8,7 +8,7 @@ edition = "2021"
 
 [dev-dependencies]
 tempfile = "3.5.0"
-criterion = "0.4"
+criterion = "0.5"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
 walkdir = "2.3.3"
