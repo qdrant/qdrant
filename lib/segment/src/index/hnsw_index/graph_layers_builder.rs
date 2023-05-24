@@ -253,7 +253,7 @@ impl GraphLayersBuilder {
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidate_with_heuristic_from_sorted<F>(
-        candidates: impl Iterator<Item = ScoredPointOffset>,
+        mut candidates: impl Iterator<Item = ScoredPointOffset>,
         m: usize,
         mut score_internal: F,
     ) -> Vec<PointOffsetType>
@@ -262,16 +262,35 @@ impl GraphLayersBuilder {
     {
         let mut result_list = vec![];
         result_list.reserve(m);
+
+        let first_score = if let Some(first_candidate) = candidates.next() {
+            result_list.push(first_candidate.idx);
+            first_candidate.score
+        } else {
+            return result_list;
+        };
+
         for current_closest in candidates {
             if result_list.len() >= m {
                 break;
             }
             let mut is_good = true;
-            for &selected_point in &result_list {
-                let dist_to_already_selected = score_internal(current_closest.idx, selected_point);
-                if dist_to_already_selected > current_closest.score {
-                    is_good = false;
-                    break;
+
+            // We assume, tha tit might be desired for users to index multiple (within the reason)
+            // equal vectors, because of business logic.
+            // Vanilla HNSW doesn't really like this, it tries to exclude too similar vectors from the candidate list
+            // In order to prevent this and be able to find several equal vectors, we introduce this
+            // exception into the heuristic: we keep too close vectors is they are exactly same (id distance) to the closest one.
+            if first_score != current_closest.score {
+                for &selected_point in &result_list {
+                    let similarity_to_already_selected =
+                        score_internal(current_closest.idx, selected_point);
+                    // If next candidate is more similar to already selected point, rather than to current point,
+                    // We exclude it from the result list
+                    if similarity_to_already_selected > current_closest.score {
+                        is_good = false;
+                        break;
+                    }
                 }
             }
             if is_good {
