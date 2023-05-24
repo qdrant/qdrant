@@ -18,6 +18,7 @@ use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::ScoredPointOffset;
 
+#[derive(Default)]
 pub struct LinkContainer {
     links: Vec<PointOffsetType>,
     checked_heuristic: bool,
@@ -26,13 +27,6 @@ pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 
 impl LinkContainer {
-    pub fn new() -> Self {
-        Self {
-            checked_heuristic: false,
-            links: vec![],
-        }
-    }
-
     pub fn pass_heuristic(&self, m: usize) -> bool {
         self.checked_heuristic && self.links.len() == m
     }
@@ -102,7 +96,7 @@ impl GraphLayersBuilder {
             .into_iter()
             .map(|l| {
                 l.into_iter()
-                    .map(|l| l.into_inner().links.iter().copied().collect())
+                    .map(|l| l.into_inner().links.to_vec())
                     .collect()
             })
             .collect();
@@ -135,7 +129,7 @@ impl GraphLayersBuilder {
         let mut links_layers: Vec<LockedLayersContainer> = vec![];
 
         for _i in 0..num_vectors {
-            let mut links = LinkContainer::new();
+            let mut links = LinkContainer::default();
             if reserve {
                 links.links.reserve(m0);
             }
@@ -239,7 +233,7 @@ impl GraphLayersBuilder {
         }
         let point_layers = &mut self.links_layers[point_id as usize];
         while point_layers.len() <= level {
-            let mut links = LinkContainer::new();
+            let mut links = LinkContainer::default();
             links.links.reserve(self.m);
             point_layers.push(RwLock::new(links));
         }
@@ -287,7 +281,7 @@ impl GraphLayersBuilder {
     {
         // find index of new_point
         let index = candidates
-            .binary_search_by(|a| new_point.cmp(&a))
+            .binary_search_by(|a| new_point.cmp(a))
             .unwrap_or_else(|e| e);
         if index == candidates.len() {
             return None;
@@ -439,63 +433,60 @@ impl GraphLayersBuilder {
                                 // If linked point is lack of neighbours
                                 other_point_links.links.push(point_id);
                                 other_point_links.checked_heuristic = false;
-                            } else {
-                                if other_point_links_read.pass_heuristic(level_m) {
-                                    let mut candidates = Vec::with_capacity(level_m);
-                                    for other_point_link in
-                                        other_point_links_read.links.iter().take(level_m).copied()
-                                    {
-                                        candidates.push(ScoredPointOffset {
-                                            idx: other_point_link,
-                                            score: scorer(other_point_link, other_point),
-                                        });
-                                    }
-
-                                    let selected_candidates =
-                                        Self::select_one_candidate_with_heuristic_from_sorted(
-                                            &candidates,
-                                            ScoredPointOffset {
-                                                idx: point_id,
-                                                score: scorer(point_id, other_point),
-                                            },
-                                            scorer,
-                                        );
-
-                                    if let Some(selected_candidates) = selected_candidates {
-                                        drop(other_point_links_read);
-                                        let mut other_point_links = self.links_layers
-                                            [other_point as usize][curr_level]
-                                            .write();
-                                        other_point_links.checked_heuristic = true;
-                                        other_point_links.links = selected_candidates;
-                                    }
-                                } else {
-                                    let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                            } else if other_point_links_read.pass_heuristic(level_m) {
+                                let mut candidates = Vec::with_capacity(level_m);
+                                for other_point_link in
+                                    other_point_links_read.links.iter().take(level_m).copied()
+                                {
                                     candidates.push(ScoredPointOffset {
-                                        idx: point_id,
-                                        score: scorer(point_id, other_point),
+                                        idx: other_point_link,
+                                        score: scorer(other_point_link, other_point),
                                     });
-                                    for other_point_link in
-                                        other_point_links_read.links.iter().take(level_m).copied()
-                                    {
-                                        candidates.push(ScoredPointOffset {
-                                            idx: other_point_link,
-                                            score: scorer(other_point_link, other_point),
-                                        });
-                                    }
-                                    let selected_candidates =
-                                        Self::select_candidate_with_heuristic_from_sorted(
-                                            candidates.into_sorted_vec().into_iter().rev(),
-                                            level_m,
-                                            scorer,
-                                        );
+                                }
 
+                                let selected_candidates =
+                                    Self::select_one_candidate_with_heuristic_from_sorted(
+                                        &candidates,
+                                        ScoredPointOffset {
+                                            idx: point_id,
+                                            score: scorer(point_id, other_point),
+                                        },
+                                        scorer,
+                                    );
+
+                                if let Some(selected_candidates) = selected_candidates {
                                     drop(other_point_links_read);
                                     let mut other_point_links =
                                         self.links_layers[other_point as usize][curr_level].write();
-                                    other_point_links.links = selected_candidates;
                                     other_point_links.checked_heuristic = true;
+                                    other_point_links.links = selected_candidates;
                                 }
+                            } else {
+                                let mut candidates = BinaryHeap::with_capacity(level_m + 1);
+                                candidates.push(ScoredPointOffset {
+                                    idx: point_id,
+                                    score: scorer(point_id, other_point),
+                                });
+                                for other_point_link in
+                                    other_point_links_read.links.iter().take(level_m).copied()
+                                {
+                                    candidates.push(ScoredPointOffset {
+                                        idx: other_point_link,
+                                        score: scorer(other_point_link, other_point),
+                                    });
+                                }
+                                let selected_candidates =
+                                    Self::select_candidate_with_heuristic_from_sorted(
+                                        candidates.into_sorted_vec().into_iter().rev(),
+                                        level_m,
+                                        scorer,
+                                    );
+
+                                drop(other_point_links_read);
+                                let mut other_point_links =
+                                    self.links_layers[other_point as usize][curr_level].write();
+                                other_point_links.links = selected_candidates;
+                                other_point_links.checked_heuristic = true;
                             }
                         }
                     } else {
