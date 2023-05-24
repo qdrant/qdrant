@@ -287,26 +287,44 @@ impl GraphLayersBuilder {
     }
 
     fn select_one_candidate_with_heuristic_from_sorted<F>(
-        candidates: &mut Vec<ScoredPointOffset>,
-        current_closest: ScoredPointOffset,
+        candidates: &[ScoredPointOffset],
+        new_point: ScoredPointOffset,
         mut score_internal: F,
-    ) where
+    ) -> Vec<ScoredPointOffset>
+    where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
+        // find index of new_point
         let index = candidates
-            .binary_search_by(|a| current_closest.cmp(&a))
+            .binary_search_by(|a| new_point.cmp(&a))
             .unwrap_or_else(|e| e);
         if index == candidates.len() {
-            return;
+            return candidates.to_vec();
         }
+
+        // check that new_point passes heuristic
         for &selected_point in &candidates[0..index] {
-            let dist_to_already_selected = score_internal(current_closest.idx, selected_point.idx);
-            if dist_to_already_selected > current_closest.score {
-                return;
+            let dist_to_already_selected = score_internal(new_point.idx, selected_point.idx);
+            if dist_to_already_selected > new_point.score {
+                return candidates.to_vec();
             }
         }
-        candidates.pop();
-        candidates.insert(index, current_closest);
+
+        let mut result_list: Vec<ScoredPointOffset> = Vec::with_capacity(candidates.len());
+        result_list.extend_from_slice(&candidates[0..index]);
+        result_list.push(new_point);
+
+        for current_closest in &candidates[index..] {
+            if result_list.len() == candidates.len() {
+                break;
+            }
+            let dist_to_already_selected = score_internal(current_closest.idx, new_point.idx);
+            if dist_to_already_selected <= current_closest.score {
+                result_list.push(*current_closest);
+            }
+        }
+
+        result_list
     }
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
@@ -430,15 +448,15 @@ impl GraphLayersBuilder {
                                 other_point_links.pass_heuristic = false;
                             } else {
                                 if other_point_links.pass_heuristic(level_m) {
-                                    let l = &mut other_point_links.links;
-                                    Self::select_one_candidate_with_heuristic_from_sorted(
-                                        l,
-                                        ScoredPointOffset {
-                                            idx: point_id,
-                                            score: scorer(point_id, other_point.idx),
-                                        },
-                                        scorer,
-                                    );
+                                    other_point_links.links =
+                                        Self::select_one_candidate_with_heuristic_from_sorted(
+                                            &other_point_links.links,
+                                            ScoredPointOffset {
+                                                idx: point_id,
+                                                score: scorer(point_id, other_point.idx),
+                                            },
+                                            scorer,
+                                        );
                                 } else {
                                     let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                     candidates.push(ScoredPointOffset {
