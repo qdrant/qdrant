@@ -124,7 +124,6 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         current_runtime.clone(),
-        None,
     )
     .await
     .unwrap();
@@ -155,7 +154,6 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         current_runtime.clone(),
-        None,
     )
     .await
     .unwrap();
@@ -176,7 +174,6 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config)),
         Arc::new(Default::default()),
         current_runtime,
-        None,
     )
     .await
     .unwrap();

@@ -14,7 +14,6 @@ use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use schemars::JsonSchema;
-use segment::common::mmap_ops;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
     WithVector,
@@ -172,7 +171,6 @@ pub struct ShardReplicaSet {
     update_runtime: Handle,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
-    preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
 }
 
 impl ShardReplicaSet {
@@ -265,7 +263,6 @@ impl ShardReplicaSet {
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         update_runtime: Handle,
-        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) -> CollectionResult<Self> {
         let shard_path = create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
@@ -276,7 +273,6 @@ impl ShardReplicaSet {
                 collection_config.clone(),
                 shared_storage_config.clone(),
                 update_runtime.clone(),
-                preheat_disk_cache_worker.clone(),
             )
             .await?;
             Some(Local(shard))
@@ -324,7 +320,6 @@ impl ShardReplicaSet {
             shared_storage_config,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
-            preheat_disk_cache_worker,
         })
     }
 
@@ -425,7 +420,6 @@ impl ShardReplicaSet {
                         self.collection_config.clone(),
                         self.shared_storage_config.clone(),
                         self.update_runtime.clone(),
-                        self.preheat_disk_cache_worker.clone(),
                     )
                     .await?,
                 ))
@@ -459,7 +453,6 @@ impl ShardReplicaSet {
         on_peer_failure: ChangePeerState,
         this_peer_id: PeerId,
         update_runtime: Handle,
-        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -498,7 +491,6 @@ impl ShardReplicaSet {
                     collection_config.clone(),
                     shared_storage_config.clone(),
                     update_runtime.clone(),
-                    preheat_disk_cache_worker.clone(),
                 )
                 .await;
 
@@ -543,7 +535,6 @@ impl ShardReplicaSet {
             shared_storage_config,
             update_runtime,
             write_ordering_lock: Mutex::new(()),
-            preheat_disk_cache_worker,
         }
     }
 
@@ -618,7 +609,6 @@ impl ShardReplicaSet {
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
-                    self.preheat_disk_cache_worker.clone(),
                 )
                 .await?;
                 match state {
@@ -1007,7 +997,6 @@ impl ShardReplicaSet {
                 self.collection_config.clone(),
                 self.shared_storage_config.clone(),
                 self.update_runtime.clone(),
-                self.preheat_disk_cache_worker.clone(),
             )
             .await?;
 
@@ -1649,7 +1638,6 @@ mod tests {
             Default::default(),
             Default::default(),
             update_runtime,
-            None,
         )
         .await
         .unwrap()

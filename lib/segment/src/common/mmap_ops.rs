@@ -1,12 +1,12 @@
 use std::fs::OpenOptions;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc};
-use std::{mem, ops, thread, time};
+use std::sync::Arc;
+use std::{mem, ops, time};
 
 use memmap2::{Mmap, MmapMut};
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::entry::entry_point::OperationResult;
 use crate::madvise;
 use crate::madvise::Madviseable;
 
@@ -46,49 +46,6 @@ pub fn open_write_mmap(path: &Path) -> OperationResult<MmapMut> {
     madvise::madvise(&mmap, madvise::get_global())?;
 
     Ok(mmap)
-}
-
-#[derive(Debug)]
-pub struct PreheatDiskCacheWorker {
-    receiver: mpsc::Receiver<PreheatDiskCache>,
-}
-
-impl PreheatDiskCacheWorker {
-    pub fn spawn() -> PreheatDiskCacheHandle {
-        let (sender, receiver) = mpsc::sync_channel(32);
-
-        let handle = PreheatDiskCacheHandle { sender };
-
-        let worker = Self { receiver };
-        let _ = thread::spawn(move || worker.exec());
-
-        handle
-    }
-
-    fn exec(self) {
-        while let Ok(task) = self.receiver.recv() {
-            task.exec();
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct PreheatDiskCacheHandle {
-    sender: mpsc::SyncSender<PreheatDiskCache>,
-}
-
-impl PreheatDiskCacheHandle {
-    pub fn schedule(&self, task: PreheatDiskCache) -> OperationResult<()> {
-        self.sender.send(task).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to send preheat mmap disk-cache task{} to the worker: {err}",
-                err.0
-                    .path
-                    .as_ref()
-                    .map_or(String::new(), |path| format!(" ({path:?})")),
-            ))
-        })
-    }
 }
 
 #[derive(Clone, Debug)]

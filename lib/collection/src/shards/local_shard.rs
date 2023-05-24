@@ -9,7 +9,6 @@ use arc_swap::ArcSwap;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
-use segment::common::mmap_ops;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
@@ -96,7 +95,6 @@ impl LocalShard {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
@@ -105,7 +103,6 @@ impl LocalShard {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         shard_path: &Path,
         update_runtime: Handle,
-        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
@@ -119,7 +116,6 @@ impl LocalShard {
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
-            preheat_disk_cache_worker,
         );
 
         let (update_sender, update_receiver) =
@@ -153,7 +149,6 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
-        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) -> CollectionResult<LocalShard> {
         let collection_config_read = collection_config.read().await;
 
@@ -236,7 +231,6 @@ impl LocalShard {
             optimizers,
             shard_path,
             update_runtime,
-            preheat_disk_cache_worker,
         )
         .await;
 
@@ -266,7 +260,6 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
-        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_replica_set();
@@ -277,7 +270,6 @@ impl LocalShard {
             collection_config,
             shared_storage_config,
             update_runtime,
-            preheat_disk_cache_worker,
         )
         .await?;
         local_shard_config.save(shard_path)?;
@@ -292,7 +284,6 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
-        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
@@ -375,7 +366,6 @@ impl LocalShard {
             optimizers,
             shard_path,
             update_runtime,
-            preheat_disk_cache_worker,
         )
         .await;
 
@@ -755,7 +745,7 @@ impl LocalShard {
         self.update_handler
             .lock()
             .await
-            .schedule_preheat_disk_cache_tasks();
+            .preheat_disk_cache_of_all_segments();
     }
 }
 

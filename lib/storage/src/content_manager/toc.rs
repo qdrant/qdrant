@@ -34,7 +34,6 @@ use collection::shards::transfer::shard_transfer::{
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
 use segment::common::cpu::get_num_cpus;
-use segment::common::mmap_ops;
 use segment::types::ScoredPoint;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard, Semaphore};
@@ -87,12 +86,10 @@ pub struct TableOfContent {
     ///
     /// If not defined - no rate limiting is applied.
     update_rate_limiter: Option<Semaphore>,
-    preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
 }
 
 impl TableOfContent {
     /// PeerId does not change during execution so it is ok to copy it here.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
@@ -101,7 +98,6 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
-        preheat_disk_cache_worker: Option<mmap_ops::PreheatDiskCacheHandle>,
     ) -> Self {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
@@ -154,7 +150,6 @@ impl TableOfContent {
                 ),
                 Some(search_runtime.handle().clone()),
                 Some(update_runtime.handle().clone()),
-                preheat_disk_cache_worker.clone(),
             ));
 
             collections.insert(collection_name, collection);
@@ -194,7 +189,6 @@ impl TableOfContent {
             is_write_locked: AtomicBool::new(false),
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
-            preheat_disk_cache_worker,
         }
     }
 
@@ -398,7 +392,6 @@ impl TableOfContent {
             ),
             Some(self.search_runtime.handle().clone()),
             Some(self.update_runtime.handle().clone()),
-            self.preheat_disk_cache_worker.clone(),
         )
         .await?;
 
@@ -1368,7 +1361,6 @@ impl TableOfContent {
                         ),
                         Some(self.search_runtime.handle().clone()),
                         Some(self.update_runtime.handle().clone()),
-                        self.preheat_disk_cache_worker.clone(),
                     )
                     .await?;
                     collections.validate_collection_not_exists(id).await?;
