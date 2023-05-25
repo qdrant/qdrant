@@ -311,15 +311,14 @@ mod tests {
 
     #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
     fn test_runtime_development_config() {
+        env::set_var("RUN_MODE", "development");
+
         // `sealed_test` copies files into the same directory as the test runs in.
         // We need them in a subdirectory.
         std::fs::create_dir("config").expect("failed to create `config` subdirectory.");
         std::fs::copy("config.yaml", "config/config.yaml").expect("failed to copy `config.yaml`.");
         std::fs::copy("development.yaml", "config/development.yaml")
             .expect("failed to copy `development.yaml`.");
-
-        let key = "RUN_MODE";
-        env::set_var(key, "development");
 
         // Read config
         let config = Settings::new(None).expect("failed to load development config at runtime");
@@ -334,7 +333,6 @@ mod tests {
     #[sealed_test]
     fn test_no_config_files() {
         let non_existing_config_path = "config/non_existing_config".to_string();
-        env::remove_var("RUN_MODE");
 
         // Read config
         let config = Settings::new(Some(non_existing_config_path))
