@@ -211,7 +211,6 @@ impl Settings {
             }
         }
 
-        let config_path = config_path.unwrap_or_else(|| "config/config".into());
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
         let config_path_env = format!("config/{env}");
 
@@ -221,20 +220,27 @@ impl Settings {
             .any(|path| File::with_name(path).collect().is_ok());
 
         // Configure and load configuration structure
-        let config = Config::builder()
+        let mut builder = Config::builder()
             // Start with the default configuration file contents at compile time
             .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
             // Then merge in the default configuration file contents at run time
-            .add_source(File::with_name(&config_path).required(false))
+            .add_source(File::with_name("config/config").required(false))
             // Add in the current environment file
             // Default to 'development' env
             // Note that this file is _optional_
             .add_source(File::with_name(&config_path_env).required(false))
             // Add in a local configuration file
             // This file shouldn't be checked in to git
-            .add_source(File::with_name("config/local").required(false))
-            // Add in settings from the environment (with a prefix of APP)
-            // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
+            .add_source(File::with_name("config/local").required(false));
+
+        // Then merge in the custom at run time
+        if let Some(path) = config_path {
+            builder = builder.add_source(File::with_name(&path).required(false));
+        }
+
+        // Add in settings from the environment (with a prefix of APP)
+        // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
+        let config = builder
             .add_source(Environment::with_prefix("QDRANT").separator("__"))
             .set_override("found_config_files", found_config_files)?
             .build()?;
@@ -314,5 +320,29 @@ mod tests {
             .validate()
             .expect("failed to validate with non-existing runtime config");
         assert!(!config.found_config_files)
+    }
+
+    #[sealed_test]
+    fn test_custom_config() {
+        let path = "config/custom.yaml";
+
+        // Create custom config file
+        {
+            std::fs::create_dir("config").unwrap();
+            let mut custom = std::fs::File::options()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .unwrap();
+            write!(&mut custom, "service:\n    http_port: 9999").unwrap();
+            custom.flush().unwrap();
+        }
+
+        // Load settings with custom config
+        let config = Settings::new(Some(path.into())).unwrap();
+
+        // Ensure our custom config is the most important
+        assert_eq!(config.service.http_port, 9999);
     }
 }
