@@ -99,7 +99,7 @@ pub fn default_write_consistency_factor() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
 
-fn default_on_disk_payload() -> bool {
+const fn default_on_disk_payload() -> bool {
     false
 }
 

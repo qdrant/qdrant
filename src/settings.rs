@@ -165,15 +165,15 @@ impl Settings {
     }
 }
 
-fn default_telemetry_disabled() -> bool {
+const fn default_telemetry_disabled() -> bool {
     false
 }
 
-fn default_cors() -> bool {
+const fn default_cors() -> bool {
     true
 }
 
-fn default_debug() -> bool {
+const fn default_debug() -> bool {
     false
 }
 
@@ -181,32 +181,32 @@ fn default_log_level() -> String {
     "INFO".to_string()
 }
 
-fn default_timeout_ms() -> u64 {
+const fn default_timeout_ms() -> u64 {
     DEFAULT_GRPC_TIMEOUT.as_millis() as u64
 }
 
-fn default_connection_timeout_ms() -> u64 {
+const fn default_connection_timeout_ms() -> u64 {
     DEFAULT_CONNECT_TIMEOUT.as_millis() as u64
 }
 
-fn default_tick_period_ms() -> u64 {
+const fn default_tick_period_ms() -> u64 {
     100
 }
 
 // Should not be less than `DEFAULT_META_OP_WAIT` as bootstrapping perform sync. consensus meta operations.
-fn default_bootstrap_timeout_sec() -> u64 {
+const fn default_bootstrap_timeout_sec() -> u64 {
     15
 }
 
-fn default_max_message_queue_size() -> usize {
+const fn default_max_message_queue_size() -> usize {
     100
 }
 
-fn default_connection_pool_size() -> usize {
+const fn default_connection_pool_size() -> usize {
     DEFAULT_POOL_SIZE
 }
 
-fn default_message_timeout_tics() -> u64 {
+const fn default_message_timeout_tics() -> u64 {
     10
 }
 
