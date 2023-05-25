@@ -4,7 +4,7 @@ use api::grpc::transport_channel_pool::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::operations::validation;
-use config::{Config, ConfigError, Environment, File, FileFormat};
+use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
@@ -204,45 +204,34 @@ impl Settings {
     pub fn new(config_path: Option<String>) -> Result<Self, ConfigError> {
         let config_path = config_path.unwrap_or_else(|| "config/config".into());
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
+        let config_path_env = format!("config/{env}");
 
-        if env::var("RUN_MODE").is_ok()
-            && Config::builder()
-                .add_source(File::with_name(&config_path))
-                .add_source(File::with_name(&format!("config/{env}")))
-                .build()
-                .is_err()
-        {
-            return Err(ConfigError::Message("`RUN_MODE` environment variable is set, but couldn't find matching configuration files".to_string()));
-        }
+        // Check if main, env or local configuration file is found
+        let found_config_files = [&config_path, &config_path_env, "config/local"]
+            .into_iter()
+            .any(|path| File::with_name(path).collect().is_ok());
 
-        let mut s = Config::builder()
+        // Configure and load configuration structure
+        let config = Config::builder()
             // Start with the default configuration file contents at compile time
-            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml));
-
-        let found_config_files = Config::builder()
-            .add_source(File::with_name(&config_path))
-            .build()
-            .is_ok();
-
-        s = s
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
             // Then merge in the default configuration file contents at run time
             .add_source(File::with_name(&config_path).required(false))
             // Add in the current environment file
             // Default to 'development' env
             // Note that this file is _optional_
-            .add_source(File::with_name(&format!("config/{env}")).required(false))
+            .add_source(File::with_name(&config_path_env).required(false))
             // Add in a local configuration file
             // This file shouldn't be checked in to git
             .add_source(File::with_name("config/local").required(false))
             // Add in settings from the environment (with a prefix of APP)
             // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
             .add_source(Environment::with_prefix("QDRANT").separator("__"))
-            .set_override("found_config_files", found_config_files)?;
-
-        let s = s.build()?;
+            .set_override("found_config_files", found_config_files)?
+            .build()?;
 
         // You can deserialize (and thus freeze) the entire configuration as
-        s.try_deserialize()
+        config.try_deserialize()
     }
 }
 
