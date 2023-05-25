@@ -287,6 +287,7 @@ pub fn max_web_workers(settings: &Settings) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::io::Write;
 
     use sealed_test::prelude::*;
@@ -348,13 +349,8 @@ mod tests {
 
         // Create custom config file
         {
-            std::fs::create_dir("config").unwrap();
-            let mut custom = std::fs::File::options()
-                .read(true)
-                .write(true)
-                .create_new(true)
-                .open(path)
-                .unwrap();
+            fs::create_dir("config").unwrap();
+            let mut custom = fs::File::create(path).unwrap();
             write!(&mut custom, "service:\n    http_port: 9999").unwrap();
             custom.flush().unwrap();
         }
