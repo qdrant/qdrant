@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Script to run qdrant in docker container and handle contingencies, like OOM.
 # The functioning logic is as follows:
 # - If recovery mode is allowed, we check if qdrant was killed during initialization or not.
