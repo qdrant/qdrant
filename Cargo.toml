@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.2.1"
+version = "1.2.2"
 authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
 edition = "2021"
 default-run = "qdrant"
