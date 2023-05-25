@@ -219,10 +219,11 @@ impl Settings {
     #[allow(dead_code)]
     pub fn new(custom_config_path: Option<String>) -> Result<Self, ConfigError> {
         let mut load_errors = vec![];
+        let config_exists = |path| File::with_name(path).collect().is_ok();
 
         // Check if custom config file exists, report error if not
         if let Some(ref path) = custom_config_path {
-            if File::with_name(path).collect().is_err() {
+            if !config_exists(path) {
                 load_errors.push(LogMsg::Error(format!(
                     "Config file via --config-path is not found: {path}"
                 )));
@@ -237,39 +238,35 @@ impl Settings {
         load_errors.extend(
             ["config/config", &config_path_env]
                 .into_iter()
-                .filter(|path| File::with_name(path).collect().is_err())
+                .filter(|path| !config_exists(path))
                 .map(|path| LogMsg::Warn(format!("Config file not found: {path}"))),
         );
 
-        // Configure and load configuration structure
-        let mut builder = Config::builder()
-            // Start with the default configuration file contents at compile time
+        // Configuration builder: define different levels of configuration files
+        let mut config = Config::builder()
+            // Start with compile-time base config
             .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
-            // Then merge in the default configuration file contents at run time
+            // Merge main config: config/config
             .add_source(File::with_name("config/config").required(false))
-            // Add in the current environment file
-            // Default to 'development' env
-            // Note that this file is _optional_
+            // Merge env config: config/{env}
+            // Uses RUN_MODE, defaults to 'development'
             .add_source(File::with_name(&config_path_env).required(false))
-            // Add in a local configuration file
-            // This file shouldn't be checked in to git
+            // Merge local config, not tracked in git: config/local
             .add_source(File::with_name("config/local").required(false));
 
-        // Then merge in the custom at run time
+        // Merge user provided config with --config-path
         if let Some(path) = custom_config_path {
-            builder = builder.add_source(File::with_name(&path).required(false));
+            config = config.add_source(File::with_name(&path).required(false));
         }
 
-        // Add in settings from the environment (with a prefix of APP)
-        // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
-        let config = builder
-            .add_source(Environment::with_prefix("QDRANT").separator("__"))
-            .build()?;
+        // Merge environment settings
+        // E.g.: `QDRANT_DEBUG=1 ./target/app` would set `debug=true`
+        config = config.add_source(Environment::with_prefix("QDRANT").separator("__"));
 
-        // Deserialize and freeze configuration, attach load errors
-        let mut config: Settings = config.try_deserialize()?;
-        config.load_errors.extend(load_errors);
-        Ok(config)
+        // Build and merge config and deserialize into Settings, attach any load errors we had
+        let mut settings: Settings = config.build()?.try_deserialize()?;
+        settings.load_errors.extend(load_errors);
+        Ok(settings)
     }
 }
 
