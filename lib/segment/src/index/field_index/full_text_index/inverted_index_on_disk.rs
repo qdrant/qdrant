@@ -82,6 +82,7 @@ impl InvertedIndexOnDisk {
             point_to_docs_flusher()
         })
     }
+
     pub fn payload_blocks<'a>(
         &'a self,
         threshold: usize,

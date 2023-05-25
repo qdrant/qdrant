@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::ptr::{addr_of, addr_of_mut, NonNull};
 use std::sync::Arc;
 
+use ouroboros::self_referencing;
 use parking_lot::{RwLock, RwLockReadGuard};
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, DBRawIteratorWithThreadMode, LogLevel, Options, WriteOptions, DB};
@@ -232,7 +233,7 @@ impl DatabaseColumnWrapper {
         })
     }
 
-    pub fn iter<'a>(&'a self) -> OperationResult<Pin<Box<LockedDatabaseColumnIterator<'a>>>> {
+    pub fn iter<'a>(&'a self) -> OperationResult<LockedDatabaseColumnIterator<'a>> {
         LockedDatabaseColumnIterator::from_guard_and_column(self.database.read(), &self.column_name)
     }
 }
@@ -268,9 +269,13 @@ impl<'a> DatabaseColumnIterator<'a> {
     }
 }
 
+#[self_referencing]
 struct LockedDatabaseColumnIterator<'a> {
     guard: RwLockReadGuard<'a, DB>,
-    iter: *mut DBRawIteratorWithThreadMode<'a, DB>,
+    #[borrows(guard)]
+    cf_handle: &'this ColumnFamily,
+    #[borrows(guard)]
+    iter: &'this DBRawIteratorWithThreadMode<'a, DB>,
     just_seeked: bool,
     _marker: PhantomPinned,
 }
@@ -279,56 +284,47 @@ impl<'a> LockedDatabaseColumnIterator<'a> {
     pub fn from_guard_and_column(
         guard: RwLockReadGuard<'a, DB>,
         column_name: &str,
-    ) -> OperationResult<Pin<Box<LockedDatabaseColumnIterator<'a>>>> {
-        let db_iter = Self {
-            guard: guard,
-            iter: std::ptr::null_mut(),
+    ) -> OperationResult<LockedDatabaseColumnIterator<'a>> {
+        LockedDatabaseColumnIteratorTryBuilder {
+            guard,
+            iter_builder: |guard| {
+                let handle = guard.cf_handle(column_name).ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "RocksDB cf_handle error: Cannot find column family {column_name}"
+                    ))
+                })?;
+                let mut iter = guard.raw_iterator_cf(handle);
+                iter.seek_to_first();
+                Ok(&iter)
+            },
             just_seeked: true,
-            _marker: Default::default(),
-        };
-        let mut boxed = Box::pin(db_iter);
-        let handle = boxed.guard.cf_handle(column_name).ok_or_else(|| {
-            OperationError::service_error(format!(
-                "RocksDB cf_handle error: Cannot find column family {column_name}"
-            ))
-        })?;
-        let mut it = boxed.guard.raw_iterator_cf(handle);
-        let iter: *mut _ = addr_of_mut!(it);
-        // This is safe because modifying a field doesn't move the whole struct
-        // https://doc.rust-lang.org/std/pin/index.html#example-self-referential-struct
-        unsafe {
-            let mut_ref: Pin<&mut Self> = Pin::as_mut(&mut boxed);
-            Pin::get_unchecked_mut(mut_ref).iter = iter;
+            _marker: PhantomPinned,
         }
-        unsafe {
-            (*boxed.iter).seek_to_first();
-        }
-        Ok(boxed)
+        .try_build()
     }
 }
 
-impl<'a> Iterator for Pin<Box<LockedDatabaseColumnIterator<'a>>> {
+impl<'a> Iterator for LockedDatabaseColumnIterator<'a> {
     type Item = (Box<[u8]>, Box<[u8]>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut iter = unsafe { *self.iter };
-        if !iter.valid() {
+        if !self.borrow_iter().valid() {
             return None;
         }
 
         // Initial call to next() after seeking should not move the iterator
         // or the first item will not be returned
-        if self.just_seeked {
-            self.just_seeked = false;
+        if *self.borrow_just_seeked() {
+            self.with_just_seeked_mut(|v| *v = false);
         } else {
-            iter.next();
+            self.with_iter_mut(|iter| iter.next());
         }
 
-        if iter.valid() {
+        if self.borrow_iter().valid() {
             // .key() and .value() only ever return None if valid == false, which we've just checked
             Some((
-                Box::from(iter.key().unwrap()),
-                Box::from(iter.value().unwrap()),
+                Box::from(self.borrow_iter().key().unwrap()),
+                Box::from(self.borrow_iter().value().unwrap()),
             ))
         } else {
             None
