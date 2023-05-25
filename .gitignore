@@ -5,5 +5,6 @@
 /storage
 /snapshots
 /consensus_test_logs
+/config/local
 *.log
 .qdrant-initialized
