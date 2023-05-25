@@ -118,9 +118,26 @@ pub struct Settings {
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
     pub tls: Option<TlsConfig>,
-    // Can't use `#[serde(skip)]` here. It prevents overriding the value later.
-    #[serde(default)]
-    pub found_config_files: bool,
+    /// A list of messages for errors that happened during loading the configuration. We collect
+    /// them and store them here while loading because then our logger is not configured yet.
+    /// We therefore need to log these messages later, after the logger is ready.
+    #[serde(default, skip)]
+    pub load_errors: Vec<LogMsg>,
+}
+
+#[derive(Clone, Debug)]
+pub enum LogMsg {
+    Warn(String),
+    Error(String),
+}
+
+impl LogMsg {
+    fn log(&self) {
+        match self {
+            Self::Warn(msg) => log::warn!("{msg}"),
+            Self::Error(msg) => log::error!("{msg}"),
+        }
+    }
 }
 
 impl Settings {
@@ -139,9 +156,8 @@ impl Settings {
 
     #[allow(dead_code)]
     pub fn validate_and_warn(&self) {
-        if !self.found_config_files {
-            log::warn!("Configuration files not found. Using default configuration.");
-        }
+        // Print any load error messages we had
+        self.load_errors.iter().for_each(LogMsg::log);
 
         if let Err(ref errs) = self.validate() {
             validation::warn_validation_errors("Settings configuration file", errs);
@@ -201,23 +217,29 @@ const fn default_tls_cert_ttl() -> u64 {
 
 impl Settings {
     #[allow(dead_code)]
-    pub fn new(config_path: Option<String>) -> Result<Self, ConfigError> {
-        // If config path is explicitly set, make sure it exists
-        if let Some(ref config_path) = config_path {
-            if let Err(err) = File::with_name(config_path).collect() {
-                log::error!(
-                    "Configuration specified with --config-path could not be loaded: {err}"
-                );
+    pub fn new(custom_config_path: Option<String>) -> Result<Self, ConfigError> {
+        let mut load_errors = vec![];
+
+        // Check if custom config file exists, report error if not
+        if let Some(ref path) = custom_config_path {
+            if File::with_name(path).collect().is_err() {
+                load_errors.push(LogMsg::Error(format!(
+                    "Config file via --config-path is not found: {path}"
+                )));
             }
         }
 
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
         let config_path_env = format!("config/{env}");
 
-        // Check if main, env or local configuration file is found
-        let found_config_files = [&config_path, &config_path_env, "config/local"]
-            .into_iter()
-            .any(|path| File::with_name(path).collect().is_ok());
+        // Report error if main or env config files exist, report warning if not
+        // Check if main and env configuration file
+        load_errors.extend(
+            ["config/config", &config_path_env]
+                .into_iter()
+                .filter(|path| File::with_name(path).collect().is_err())
+                .map(|path| LogMsg::Warn(format!("Config file not found: {path}"))),
+        );
 
         // Configure and load configuration structure
         let mut builder = Config::builder()
@@ -234,7 +256,7 @@ impl Settings {
             .add_source(File::with_name("config/local").required(false));
 
         // Then merge in the custom at run time
-        if let Some(path) = config_path {
+        if let Some(path) = custom_config_path {
             builder = builder.add_source(File::with_name(&path).required(false));
         }
 
@@ -242,11 +264,12 @@ impl Settings {
         // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
         let config = builder
             .add_source(Environment::with_prefix("QDRANT").separator("__"))
-            .set_override("found_config_files", found_config_files)?
             .build()?;
 
-        // You can deserialize (and thus freeze) the entire configuration as
-        config.try_deserialize()
+        // Deserialize and freeze configuration, attach load errors
+        let mut config: Settings = config.try_deserialize()?;
+        config.load_errors.extend(load_errors);
+        Ok(config)
     }
 }
 
@@ -267,6 +290,8 @@ pub fn max_web_workers(settings: &Settings) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use sealed_test::prelude::*;
 
     use super::*;
@@ -303,7 +328,7 @@ mod tests {
         config
             .validate()
             .expect("failed to validate development config at runtime");
-        assert!(config.found_config_files)
+        assert!(config.load_errors.is_empty(), "must not have load errors")
     }
 
     #[sealed_test]
@@ -319,7 +344,7 @@ mod tests {
         config
             .validate()
             .expect("failed to validate with non-existing runtime config");
-        assert!(!config.found_config_files)
+        assert!(!config.load_errors.is_empty(), "must have load errors")
     }
 
     #[sealed_test]
