@@ -202,6 +202,15 @@ const fn default_tls_cert_ttl() -> u64 {
 impl Settings {
     #[allow(dead_code)]
     pub fn new(config_path: Option<String>) -> Result<Self, ConfigError> {
+        // If config path is explicitly set, make sure it exists
+        if let Some(ref config_path) = config_path {
+            if let Err(err) = File::with_name(config_path).collect() {
+                log::error!(
+                    "Configuration specified with --config-path could not be loaded: {err}"
+                );
+            }
+        }
+
         let config_path = config_path.unwrap_or_else(|| "config/config".into());
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
         let config_path_env = format!("config/{env}");
