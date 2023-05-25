@@ -6,7 +6,23 @@
 #   - If it was killed after initialization, do nothing and restart container
 # - If recovery mode is not allowed, we just restart container
 
-./qdrant $@
+_term () {
+  kill -TERM "$QDRANT_PID" 2>/dev/null
+}
+
+trap _term SIGTERM
+
+_interrupt () {
+  kill -INT "$QDRANT_PID" 2>/dev/null
+}
+
+trap _interrupt SIGINT
+
+./qdrant $@ &
+
+# Get PID for the traps
+QDRANT_PID=$!
+wait $QDRANT_PID
 
 EXIT_CODE=$?
 
@@ -33,7 +49,10 @@ Please check memory consumption, increase memory limit or remove some collection
 if [ ! -f "$IS_INITIALIZED_FILE" ]; then
     # Run qdrant in recovery mode.
     # No collection operations are allowed in recovery mode except for removing collections
-    QDRANT__STORAGE__RECOVERY_MODE="$RECOVERY_MESSAGE" ./qdrant $@
+    QDRANT__STORAGE__RECOVERY_MODE="$RECOVERY_MESSAGE" ./qdrant $@ &
+    # Get PID for the traps
+    QDRANT_PID=$!
+    wait $QDRANT_PID
     exit $?
 fi
 
