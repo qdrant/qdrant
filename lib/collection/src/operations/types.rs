@@ -425,7 +425,7 @@ pub struct CountRequest {
     pub exact: bool,
 }
 
-pub fn default_exact_count() -> bool {
+pub const fn default_exact_count() -> bool {
     true
 }
 
