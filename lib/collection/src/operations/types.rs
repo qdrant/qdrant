@@ -1,5 +1,8 @@
 use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashMap};
+use std::error::Error as _;
+use std::fmt::Write as _;
+use std::iter;
 use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
@@ -674,7 +677,13 @@ impl From<RequestError<tonic::Status>> for CollectionError {
     fn from(err: RequestError<tonic::Status>) -> Self {
         match err {
             RequestError::FromClosure(status) => status.into(),
-            RequestError::Tonic(err) => CollectionError::service_error(format!("{err}")),
+            RequestError::Tonic(err) => {
+                let mut msg = err.to_string();
+                for src in iter::successors(err.source(), |&src| src.source()) {
+                    write!(&mut msg, ": {src}").unwrap();
+                }
+                CollectionError::service_error(msg)
+            }
         }
     }
 }
