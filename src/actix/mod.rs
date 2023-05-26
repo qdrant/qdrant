@@ -105,9 +105,21 @@ pub fn init(
 
         // With TLS enabled, bind with certificate helper and Rustls, or bind regularly
         server = if settings.service.enable_tls {
+            log::info!(
+                "TLS enabled for REST API (TTL: {})",
+                settings
+                    .tls
+                    .as_ref()
+                    .and_then(|tls| tls.cert_ttl)
+                    .map(|ttl| ttl.to_string())
+                    .unwrap_or_else(|| "none".into()),
+            );
+
             let config = certificate_helpers::actix_tls_server_config(&settings)?;
             server.bind_rustls(bind_addr, config)?
         } else {
+            log::info!("TLS disabled for REST API");
+
             server.bind(bind_addr)?
         };
 
