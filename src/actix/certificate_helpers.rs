@@ -40,21 +40,18 @@ impl RotatingCertificateResolver {
     /// If refreshing fails, an error is logged and the old key is persisted.
     fn get_key_or_refresh(&self) -> Arc<CertifiedKey> {
         // Get read-only lock to the key. If TTL is not configured or is not expired, return key.
-        let ttl = {
-            let key = self.key.read();
-
-            match self.ttl {
-                Some(ttl) if key.is_expired(ttl) => ttl,
-                _ => return key.key.clone(),
-            }
+        let key = self.key.read();
+        let ttl = match self.ttl {
+            Some(ttl) if key.is_expired(ttl) => ttl,
+            _ => return key.key.clone(),
         };
+        drop(key);
 
         // If TTL is expired:
         // - get read-write lock to the key
         // - *re-check that TTL is expired* (to avoid refreshing the key multiple times from concurrent threads)
         // - refresh and return the key
         let mut key = self.key.write();
-
         if key.is_expired(ttl) {
             if let Err(err) = key.refresh(&self.tls_config) {
                 log::error!("Failed to refresh TLS certificate, keeping current: {err}");
