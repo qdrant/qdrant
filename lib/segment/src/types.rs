@@ -19,7 +19,7 @@ use validator::{Validate, ValidationErrors};
 
 use crate::common::utils;
 use crate::common::utils::MultiValue;
-use crate::data_types::groups::GroupId;
+use crate::data_types::groups::PseudoId;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
@@ -203,8 +203,29 @@ impl PartialEq for ScoredPoint {
 pub struct PointGroup {
     /// Scored points that have the same value of the group_by key
     pub hits: Vec<ScoredPoint>,
-    /// Value of the group_by key shared by all the hits
-    pub id: GroupId,
+    #[schemars(with = "GroupId")]
+    pub id: PseudoId,
+}
+
+/// Only used for schema generation, hack to keep the `GroupId` type name in the openapi schema
+pub struct GroupId;
+
+impl JsonSchema for GroupId {
+    fn schema_name() -> String {
+        "GroupId".to_string()
+    }
+
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut schema = PseudoId::json_schema(gen).into_object();
+
+        if let Some(mut meta) = schema.metadata.as_deref_mut() {
+            meta.description = Some(
+                "Value of the group_by field shared across all the hits in the group".to_string(),
+            );
+        }
+
+        schema.into()
+    }
 }
 
 /// Type of segment

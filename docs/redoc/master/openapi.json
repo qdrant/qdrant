@@ -7827,6 +7827,7 @@
         }
       },
       "GroupId": {
+        "description": "Value of the group_by field shared across all the hits in the group",
         "anyOf": [
           {
             "type": "string"
