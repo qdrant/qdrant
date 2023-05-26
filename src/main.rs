@@ -10,6 +10,7 @@ mod settings;
 mod snapshots;
 mod startup;
 mod tonic;
+mod tracing;
 
 use std::io::Error;
 use std::sync::Arc;
@@ -106,6 +107,8 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    tracing::setup()?;
+
     remove_started_file_indicator();
 
     let args = Args::parse();
