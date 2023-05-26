@@ -38,40 +38,36 @@ impl RotatingCertificateResolver {
     ///
     /// The key is automatically refreshed when the TTL is reached.
     /// If refreshing fails, an error is logged and the old key is persisted.
-    fn get_key_or_refresh(&self) -> Option<Arc<CertifiedKey>> {
-        // Return current key if TTL has not elapsed
-        let mut key = self.key.read().key.clone();
-        match self.ttl {
-            None => return Some(key),
-            Some(ttl) if !self.key.read().is_expired(ttl) => return Some(key),
-            Some(_) => {}
+    fn get_key_or_refresh(&self) -> Arc<CertifiedKey> {
+        // Get read-only lock to the key. If TTL is not configured or is not expired, return key.
+        let ttl = {
+            let key = self.key.read();
+
+             match self.ttl {
+                Some(ttl) if key.is_expired(ttl) => ttl,
+                _ => return key.key.clone(),
+            }
+        };
+
+        // If TTL is expired:
+        // - get read-write lock to the key
+        // - *re-check that TTL is expired* (to avoid refreshing the key multiple times from concurrent threads)
+        // - refresh and return the key
+        let mut key = self.key.write();
+
+        if key.is_expired(ttl) {
+            if let Err(err) = key.refresh(&self.tls_config) {
+                log::error!("Failed to refresh TLS certificate, keeping current: {err}");
+            }
         }
 
-        // Refresh key
-        match self.refresh() {
-            Ok(certified_key) => key = certified_key,
-            Err(err) => log::error!("Failed to refresh TLS certificate, keeping current: {err}"),
-        }
-        Some(key)
-    }
-
-    /// Refresh certificate key, update and return
-    fn refresh(&self) -> io::Result<Arc<CertifiedKey>> {
-        log::info!(
-            "Refreshing TLS certificates for actix (TTL: {})",
-            self.ttl.map(|ttl| ttl.as_secs()).unwrap_or(0),
-        );
-
-        let mut lock = self.key.write();
-        let key = load_certified_key(&self.tls_config)?;
-        lock.replace(key.clone());
-        Ok(key)
+        key.key.clone()
     }
 }
 
 impl ResolvesServerCert for RotatingCertificateResolver {
     fn resolve(&self, _client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
-        self.get_key_or_refresh()
+        Some(self.get_key_or_refresh())
     }
 }
 
@@ -91,8 +87,9 @@ impl CertifiedKeyWithAge {
         }
     }
 
-    pub fn replace(&mut self, certified_key: Arc<CertifiedKey>) {
-        *self = Self::from(certified_key);
+    pub fn refresh(&mut self, tls_config: &TlsConfig) -> io::Result<()> {
+        *self = Self::from(load_certified_key(tls_config)?);
+        Ok(())
     }
 
     pub fn age(&self) -> Duration {
