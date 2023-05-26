@@ -87,7 +87,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
           build-args: |
-            RUST_BUILD_PROFILE=ci
+            PROFILE=ci
       - name: Run integration tests - multiple peers - compose
         run: ./test_restart.sh
         working-directory: ./tests/consensus_tests
@@ -111,7 +111,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
           build-args: |
-            RUST_BUILD_PROFILE=ci
+            PROFILE=ci
       - name: Run integration tests
         run: ./test_tls.sh
         working-directory: ./tests/tls
@@ -141,7 +141,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref }}-schema2openapi
           load: true
           build-args: |
-            RUST_BUILD_PROFILE=ci
+            PROFILE=ci
       - name: Install Protoc
         uses: arduino/setup-protoc@v1
         with:
@@ -180,7 +180,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
           build-args: |
-            RUST_BUILD_PROFILE=ci
+            PROFILE=ci
       - name: Run low RAM test
         working-directory: ./tests/low-ram
         shell: bash

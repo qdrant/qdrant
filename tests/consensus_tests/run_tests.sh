@@ -11,7 +11,7 @@ function clear_after_tests()
 }
 
 # Prevent double building in docker-compose
-docker buildx build --build-arg='RUST_BUILD_PROFILE=ci' --load ../../ --tag=qdrant_consensus
+docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=qdrant_consensus
 docker-compose up -d --force-recreate
 trap clear_after_tests EXIT
 
