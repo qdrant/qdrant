@@ -1397,6 +1397,12 @@ pub enum WithPayloadInterface {
     Selector(PayloadSelector),
 }
 
+impl From<bool> for WithPayloadInterface {
+    fn from(b: bool) -> Self {
+        WithPayloadInterface::Bool(b)
+    }
+}
+
 /// Options for specifying which vector to include
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
