@@ -4,8 +4,8 @@ use std::future::Future;
 use itertools::Itertools;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match, PointGroup, ScoredPoint,
-    WithPayloadInterface, WithVector,
+    AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
+    WithVector,
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
@@ -14,8 +14,8 @@ use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
-    BaseGroupRequest, CollectionError, CollectionResult, RecommendGroupsRequest, RecommendRequest,
-    SearchGroupsRequest, SearchRequest, UsingVector,
+    BaseGroupRequest, CollectionError, CollectionResult, PointGroup, RecommendGroupsRequest,
+    RecommendRequest, SearchGroupsRequest, SearchRequest, UsingVector,
 };
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;

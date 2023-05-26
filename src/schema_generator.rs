@@ -6,14 +6,14 @@ use collection::operations::point_ops::{PointInsertOperations, PointsSelector, W
 use collection::operations::snapshot_ops::{SnapshotDescription, SnapshotRecover};
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
-    CountRequest, CountResult, GroupsResult, PointRequest, RecommendGroupsRequest,
+    CountRequest, CountResult, GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest,
     RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult,
     SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
-use segment::types::{PointGroup, ScoredPoint};
+use segment::types::ScoredPoint;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,

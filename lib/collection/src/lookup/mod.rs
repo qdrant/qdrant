@@ -15,7 +15,7 @@ use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{CollectionError, CollectionResult, PointRequest, Record};
 use crate::shards::shard::ShardId;
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 #[serde(untagged)]
 pub enum Lookup {
     None,
