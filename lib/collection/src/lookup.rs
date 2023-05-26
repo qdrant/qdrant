@@ -14,13 +14,13 @@ use crate::shards::shard::ShardId;
 #[derive(Debug, Clone)]
 pub struct LookupRequest {
     pub collection_name: String,
-    pub values: Vec<PseudoId>,
     pub with_payload: WithPayloadInterface,
     pub with_vectors: WithVector,
 }
 
 pub async fn lookup_ids<'a, F, Fut>(
     request: LookupRequest,
+    values: Vec<PseudoId>,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
@@ -35,15 +35,12 @@ where
             what: format!("Collection {}", request.collection_name),
         })?;
 
-    let ids = request
-        .values
+    let ids = values
         .into_iter()
         .filter_map(|v| PointIdType::try_from(v).ok())
         .collect_vec();
 
-    let ids_len = ids.len();
-
-    if ids_len == 0 {
+    if ids.is_empty() {
         return Ok(HashMap::new());
     }
 

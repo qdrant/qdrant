@@ -30,7 +30,6 @@ struct Resources {
 async fn setup() -> Resources {
     let request = LookupRequest {
         collection_name: "test".to_string(),
-        values: vec![],
         with_payload: false.into(),
         with_vectors: false.into(),
     };
@@ -103,12 +102,13 @@ async fn happy_lookup_ids() {
         .map(|_| Uuid::from_u128(rng.gen()).to_string())
         .map_into();
 
-    request.values.extend(ints.chain(uuids));
+    let values = ints.chain(uuids).collect_vec();
     request.with_payload = true.into();
     request.with_vectors = true.into();
 
     let result = lookup_ids(
         request.clone(),
+        values.clone(),
         collection_by_name,
         read_consistency,
         shard_selection,
@@ -130,7 +130,7 @@ async fn happy_lookup_ids() {
         .map(|(_, v)| v)
         .map(VectorStruct::from);
 
-    for (id_value, vector) in request.values.into_iter().zip(expected_vectors) {
+    for (id_value, vector) in values.into_iter().zip(expected_vectors) {
         assert_eq!(
             result.get(&id_value).unwrap().id,
             PointIdType::try_from(id_value.clone()).unwrap()
@@ -184,12 +184,13 @@ async fn inexisting_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) {
 
     let collection_by_name = |_: String| async { Some(collection) };
 
-    request.values = vec![value];
+    let values = vec![value];
     request.with_payload = true.into();
     request.with_vectors = true.into();
 
     let result = lookup_ids(
-        request.clone(),
+        request,
+        values,
         collection_by_name,
         read_consistency,
         shard_selection,
@@ -207,15 +208,16 @@ async fn inexisting_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) {
 async fn err_when_collection_by_name_returns_none() {
     let Resources {
         request,
-        collection: _,
         read_consistency,
         shard_selection,
+        ..
     } = setup().await;
 
     let collection_by_name = |_: String| async { None };
 
     let result = lookup_ids(
-        request.clone(),
+        request,
+        vec![],
         collection_by_name,
         read_consistency,
         shard_selection,
