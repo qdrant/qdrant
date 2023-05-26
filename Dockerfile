@@ -4,7 +4,7 @@
 # https://github.com/tonistiigi/xx
 FROM --platform=${BUILDPLATFORM:-linux/amd64} tonistiigi/xx AS xx
 
-# Utilizing Docker layer caching with `cargo-chef.
+# Utilizing Docker layer caching with `cargo-chef`.
 #
 # https://www.lpalmieri.com/posts/fast-rust-docker-builds/
 FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.68.1 AS chef
