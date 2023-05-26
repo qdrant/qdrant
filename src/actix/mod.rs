@@ -6,8 +6,7 @@ mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io;
 use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
@@ -114,16 +113,6 @@ pub fn init(
 
         server.run().await
     })
-}
-
-fn with_buf_read<T>(
-    path: &str,
-    f: impl FnOnce(&mut dyn BufRead) -> io::Result<T>,
-) -> io::Result<T> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let dyn_reader: &mut dyn BufRead = &mut reader;
-    f(dyn_reader)
 }
 
 fn validation_error_handler(

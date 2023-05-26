@@ -1,4 +1,5 @@
-use std::io;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -8,7 +9,6 @@ use rustls::sign::CertifiedKey;
 use rustls::{Certificate, RootCertStore, ServerConfig};
 use rustls_pemfile::Item;
 
-use super::with_buf_read;
 use crate::settings::{Settings, TlsConfig};
 
 /// A TTL based rotating server certificate resolver
@@ -43,7 +43,7 @@ impl RotatingCertificateResolver {
         let ttl = {
             let key = self.key.read();
 
-             match self.ttl {
+            match self.ttl {
                 Some(ttl) if key.is_expired(ttl) => ttl,
                 _ => return key.key.clone(),
             }
@@ -162,4 +162,14 @@ pub fn actix_tls_server_config(settings: &Settings) -> io::Result<ServerConfig> 
     let config = config.with_cert_resolver(Arc::new(cert_resolver));
 
     Ok(config)
+}
+
+fn with_buf_read<T>(
+    path: &str,
+    f: impl FnOnce(&mut dyn BufRead) -> io::Result<T>,
+) -> io::Result<T> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let dyn_reader: &mut dyn BufRead = &mut reader;
+    f(dyn_reader)
 }
