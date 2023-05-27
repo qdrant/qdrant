@@ -3806,6 +3806,7 @@ dependencies = [
  "rocksdb",
  "schemars",
  "seahash",
+ "self_cell",
  "semver",
  "serde",
  "serde-value",
@@ -3820,6 +3821,12 @@ dependencies = [
  "validator",
  "walkdir",
 ]
+
+[[package]]
+name = "self_cell"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ef965a420fe14fdac7dd018862966a4c14094f900e1650bbc71ddd7d580c8af"
 
 [[package]]
 name = "semver"
