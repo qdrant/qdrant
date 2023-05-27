@@ -264,7 +264,7 @@ impl InvertedIndex for InvertedIndexInMemory {
             })
         };
     }
-    
+
     fn payload_blocks(
         &self,
         threshold: usize,

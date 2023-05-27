@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use segment::entry::entry_point::OperationResult;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector, PointIdType,
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -84,18 +84,15 @@ impl ShardOperation for LocalShard {
                     .read_filtered(offset, Some(limit), filter)
             })
             .flatten_ok()
-            .sorted_by(|res1, res2| {
-                match (res1, res2) {
-                        (Ok(val1), Ok(val2)) => Ord::cmp(val1, val2),
-                        (Ok(_), Err(_)) => std::cmp::Ordering::Greater,
-                        (Err(_), Ok(_)) => std::cmp::Ordering::Less,
-                        (Err(_), Err(_)) => std::cmp::Ordering::Equal,
-                }
+            .sorted_by(|res1, res2| match (res1, res2) {
+                (Ok(val1), Ok(val2)) => Ord::cmp(val1, val2),
+                (Ok(_), Err(_)) => std::cmp::Ordering::Greater,
+                (Err(_), Ok(_)) => std::cmp::Ordering::Less,
+                (Err(_), Err(_)) => std::cmp::Ordering::Equal,
             })
             .collect::<OperationResult<Vec<ExtendedPointId>>>()?;
         point_ids.dedup();
-        point_ids = point_ids.into_iter()
-            .take(limit).collect_vec();
+        point_ids = point_ids.into_iter().take(limit).collect_vec();
 
         let with_payload = WithPayload::from(with_payload_interface);
         let mut points =

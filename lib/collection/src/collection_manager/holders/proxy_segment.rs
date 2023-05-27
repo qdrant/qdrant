@@ -522,7 +522,10 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().deleted_point_count()
     }
 
-    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> OperationResult<CardinalityEstimation> {
+    fn estimate_point_count<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> OperationResult<CardinalityEstimation> {
         let deleted_point_count = self.deleted_points.read().len();
 
         let (wrapped_segment_est, total_wrapped_size) = {
@@ -534,7 +537,11 @@ impl SegmentEntry for ProxySegment {
             )
         };
 
-        let write_segment_est = self.write_segment.get().read().estimate_point_count(filter)?;
+        let write_segment_est = self
+            .write_segment
+            .get()
+            .read()
+            .estimate_point_count(filter)?;
 
         let expected_deleted_count = if total_wrapped_size > 0 {
             (wrapped_segment_est.exp as f64
@@ -551,13 +558,13 @@ impl SegmentEntry for ProxySegment {
             };
 
         Ok(CardinalityEstimation {
-                    primary_clauses,
-                    min: wrapped_segment_est.min.saturating_sub(deleted_point_count)
-                        + write_segment_est.min,
-                    exp: (wrapped_segment_est.exp + write_segment_est.exp)
-                        .saturating_sub(expected_deleted_count),
-                    max: wrapped_segment_est.max + write_segment_est.max,
-                })
+            primary_clauses,
+            min: wrapped_segment_est.min.saturating_sub(deleted_point_count)
+                + write_segment_est.min,
+            exp: (wrapped_segment_est.exp + write_segment_est.exp)
+                .saturating_sub(expected_deleted_count),
+            max: wrapped_segment_est.max + write_segment_est.max,
+        })
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -1038,20 +1045,23 @@ mod tests {
         let original_points = original_segment
             .get()
             .read()
-            .read_filtered(None, Some(100), None).unwrap();
+            .read_filtered(None, Some(100), None)
+            .unwrap();
 
-        let original_points_filtered =
-            original_segment
-                .get()
-                .read()
-                .read_filtered(None, Some(100), Some(&filter)).unwrap();
+        let original_points_filtered = original_segment
+            .get()
+            .read()
+            .read_filtered(None, Some(100), Some(&filter))
+            .unwrap();
 
         let mut proxy_segment = wrap_proxy(&dir, original_segment);
 
         proxy_segment.delete_point(100, 2.into()).unwrap();
 
         let proxy_res = proxy_segment.read_filtered(None, Some(100), None).unwrap();
-        let proxy_res_filtered = proxy_segment.read_filtered(None, Some(100), Some(&filter)).unwrap();
+        let proxy_res_filtered = proxy_segment
+            .read_filtered(None, Some(100), Some(&filter))
+            .unwrap();
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
         assert_eq!(original_points.len() - 1, proxy_res.len());

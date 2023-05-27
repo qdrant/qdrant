@@ -604,11 +604,11 @@ impl LocalShard {
             let x = segment.get().read().estimate_point_count(filter)?;
 
             cardinality = CardinalityEstimation {
-                    primary_clauses: vec![],
-                    min: cardinality.min + x.min,
-                    exp: cardinality.exp + x.exp,
-                    max: cardinality.max + x.max,
-                }
+                primary_clauses: vec![],
+                min: cardinality.min + x.min,
+                exp: cardinality.exp + x.exp,
+                max: cardinality.max + x.max,
+            }
         }
         Ok(cardinality)
     }
@@ -625,8 +625,8 @@ impl LocalShard {
         }
         let mut all_points = BTreeSet::new();
         for (_id, segment) in segments.iter() {
-           let vals = segment.get().read().read_filtered(None, None, filter)?;
-           all_points.extend(vals); 
+            let vals = segment.get().read().read_filtered(None, None, filter)?;
+            all_points.extend(vals);
         }
         Ok(all_points)
     }

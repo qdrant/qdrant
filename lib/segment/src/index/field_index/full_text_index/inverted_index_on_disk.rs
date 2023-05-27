@@ -90,7 +90,7 @@ pub struct PayloadBlocksIterator<'a> {
     threshold: usize,
     key: PayloadKeyType,
     last_key: Option<Box<[u8]>>,
-    _marker: PhantomData<&'a ()>  // Iterator must not outlive the index
+    _marker: PhantomData<&'a ()>, // Iterator must not outlive the index
 }
 impl<'a> PayloadBlocksIterator<'a> {
     fn new(
@@ -105,7 +105,7 @@ impl<'a> PayloadBlocksIterator<'a> {
             threshold,
             key,
             last_key: None,
-            _marker: Default::default()
+            _marker: Default::default(),
         }
     }
 }
@@ -124,7 +124,7 @@ impl<'a> Iterator for PayloadBlocksIterator<'a> {
         // Sidenote: There might be some wiggle-room here, we could implement Iterator for RWLock*Guard<MyIterator> and map the RWLock*Guard<DB> to RWLock*Guard<MyIterator>, but the iterator_cf() call constraints the iterator lifetime to the lifetime of ColumnFamily handle, which would be the local scope.
         //           Maybe I missed a piece there and with some unsafe code this could be made usable.
         // As an alternative solution we could require the top level caller of payload_blocks to acquire the lock.
-        //       This would require dependents of InvertedIndex to be aware of its implementation, but it might prove to be a good trade-off for performance.    
+        //       This would require dependents of InvertedIndex to be aware of its implementation, but it might prove to be a good trade-off for performance.
         let mut iter = lock.iterator_cf(
             cf_handle,
             if let Some(k) = &self.last_key {
@@ -135,12 +135,16 @@ impl<'a> Iterator for PayloadBlocksIterator<'a> {
         );
 
         if let Some(Ok((_token_idx, posting_idx))) = iter.next() {
-
             let lock = self.db.read();
             let cf_handle = lock.cf_handle(&self.column_name)?;
-            match self.db.read().get_pinned_cf(cf_handle, &posting_idx).map_err(|err| {
-                OperationError::service_error(format!("RocksDB get_pinned_cf error: {err}"))
-            }).map(|value| value.map(|raw| db_decode_tokens(&raw)))
+            match self
+                .db
+                .read()
+                .get_pinned_cf(cf_handle, &posting_idx)
+                .map_err(|err| {
+                    OperationError::service_error(format!("RocksDB get_pinned_cf error: {err}"))
+                })
+                .map(|value| value.map(|raw| db_decode_tokens(&raw)))
             {
                 Ok(Some(val)) if !val.is_empty() && val.len() >= self.threshold => {
                     self.last_key = Some(_token_idx.clone());
@@ -360,14 +364,12 @@ impl InvertedIndex for InvertedIndexOnDisk {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + 'a> {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
-        Box::new(
-            PayloadBlocksIterator::new(
-                self.vocab.database.clone(),
-                self.vocab.column_name.clone(),
-                threshold,
-                key,
-            )
-        )
+        Box::new(PayloadBlocksIterator::new(
+            self.vocab.database.clone(),
+            self.vocab.column_name.clone(),
+            threshold,
+            key,
+        ))
     }
 }
 
