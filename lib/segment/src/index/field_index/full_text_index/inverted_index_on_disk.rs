@@ -1,23 +1,14 @@
-use std::borrow::BorrowMut;
 use std::collections::BTreeSet;
 
-use std::marker::PhantomPinned;
-use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
 use std::sync::Arc;
 
-use ouroboros::self_referencing;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use rocksdb::{
-    ColumnFamily, DBIteratorWithThreadMode, DBRawIteratorWithThreadMode, IteratorMode, DB,
-};
+use parking_lot::RwLock;
+use rocksdb::{IteratorMode, DB};
 
 use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId};
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator_owned;
-use crate::common::rocksdb_wrapper::{
-    DatabaseColumnWrapper, LockedDatabaseColumnIterator, LockedDatabaseColumnWrapper,
-};
+use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
@@ -200,10 +191,9 @@ impl InvertedIndex for InvertedIndexOnDisk {
         for token in tokens {
             // check if in vocab
             let vocab_idx = match self.vocab.get_pinned(token.as_bytes(), db_decode_tokens)? {
-                Some(cbor_result) => cbor_result
+                Some(cbor_result) => *cbor_result
                     .first()
-                    .ok_or(OperationError::service_error("No tokens to decode"))?
-                    .clone(),
+                    .ok_or(OperationError::service_error("No tokens to decode"))?,
                 None => {
                     let next_token_id = self.vocab.lock_db().iter()?.count() as TokenId;
                     self.vocab
@@ -296,15 +286,9 @@ impl InvertedIndex for InvertedIndexOnDisk {
 
     fn get_doc(&self, idx: PointOffsetType) -> Option<Self::Document<'_>> {
         let db_idx = Self::store_key(&idx);
-        if let Some(doc) = self
-            .point_to_docs
+        self.point_to_docs
             .get_pinned(&db_idx, |raw| Document::new(db_decode_tokens(raw)))
             .unwrap()
-        {
-            Some(doc)
-        } else {
-            None
-        }
     }
 
     fn get_token_id(&self, token: &str) -> OperationResult<Option<u32>> {
@@ -405,12 +389,12 @@ mod tests {
         text: &str,
     ) -> ParsedQuery {
         let mut tokens = HashSet::new();
-        Tokenizer::tokenize_query(text, &config, |token| {
+        Tokenizer::tokenize_query(text, config, |token| {
             tokens.insert(
                 index
                     .vocab
                     .get_pinned(token.as_bytes(), |raw| {
-                        db_decode_tokens(raw).first().unwrap().clone()
+                        *db_decode_tokens(raw).first().unwrap()
                     })
                     .unwrap(),
             );
@@ -458,7 +442,7 @@ mod tests {
             for (idx, payload) in payloads.iter().enumerate() {
                 let mut tokens: BTreeSet<String> = BTreeSet::new();
 
-                Tokenizer::tokenize_doc(&payload, &config, |token| {
+                Tokenizer::tokenize_doc(payload, &config, |token| {
                     tokens.insert(token.to_owned());
                 });
                 let document = index.document_from_tokens(&tokens).unwrap();

@@ -218,7 +218,7 @@ impl PayloadFieldIndex for FullTextIndex {
             return self
                 .inverted_index
                 .estimate_cardinality(&parsed_query, condition)
-                .map(|r| Some(r));
+                .map(Some);
         }
         Ok(None)
     }

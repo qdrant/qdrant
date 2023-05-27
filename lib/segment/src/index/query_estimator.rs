@@ -5,8 +5,6 @@
 
 use std::cmp::{max, min};
 
-use itertools::Itertools;
-
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::types::{Condition, Filter};

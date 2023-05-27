@@ -1,18 +1,11 @@
-use std::borrow::BorrowMut;
-use std::marker::{PhantomData, PhantomPinned};
 use std::ops::Deref;
 use std::path::Path;
-use std::pin::Pin;
-use std::ptr::{addr_of, addr_of_mut, NonNull};
+
 use std::sync::Arc;
 
-use ouroboros::self_referencing;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
-use rocksdb::{
-    ColumnFamily, DBIteratorWithThreadMode, DBRawIteratorWithThreadMode, LogLevel, Options,
-    WriteOptions, DB,
-};
+use rocksdb::{ColumnFamily, LogLevel, Options, WriteOptions, DB};
 
 use crate::common::Flusher;
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
@@ -161,7 +154,7 @@ impl DatabaseColumnWrapper {
         Ok(())
     }
 
-    pub fn lock_db<'a>(&'a self) -> LockedDatabaseColumnWrapper<'a> {
+    pub fn lock_db(&self) -> LockedDatabaseColumnWrapper<'_> {
         LockedDatabaseColumnWrapper {
             guard: self.database.read(),
             column_name: &self.column_name,

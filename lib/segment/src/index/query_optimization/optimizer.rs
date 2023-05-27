@@ -90,7 +90,7 @@ where
                     conditions,
                     id_tracker,
                     field_indexes,
-                    payload_provider.clone(),
+                    payload_provider,
                     estimator,
                     total,
                 )?;
