@@ -599,17 +599,17 @@ impl LocalShard {
         if some_segment.is_none() {
             return Ok(CardinalityEstimation::exact(0));
         }
-        let cardinality = segments
-            .iter()
-            .map(|(_id, segment)| segment.get().read().estimate_point_count(filter))
-            .fold(CardinalityEstimation::exact(0), |acc, x| {
-                CardinalityEstimation {
+        let mut cardinality = CardinalityEstimation::exact(0);
+        for (_id, segment) in segments.iter() {
+            let x = segment.get().read().estimate_point_count(filter)?;
+
+            cardinality = CardinalityEstimation {
                     primary_clauses: vec![],
-                    min: acc.min + x.min,
-                    exp: acc.exp + x.exp,
-                    max: acc.max + x.max,
+                    min: cardinality.min + x.min,
+                    exp: cardinality.exp + x.exp,
+                    max: cardinality.max + x.max,
                 }
-            });
+        }
         Ok(cardinality)
     }
 
@@ -623,10 +623,11 @@ impl LocalShard {
         if some_segment.is_none() {
             return Ok(Default::default());
         }
-        let all_points: BTreeSet<_> = segments
-            .iter()
-            .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, None, filter))
-            .collect();
+        let mut all_points = BTreeSet::new();
+        for (_id, segment) in segments.iter() {
+           let vals = segment.get().read().read_filtered(None, None, filter)?;
+           all_points.extend(vals); 
+        }
         Ok(all_points)
     }
 

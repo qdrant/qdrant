@@ -228,9 +228,6 @@ impl DatabaseColumnWrapper {
             ))
         })
     }
-    // pub fn iter<'a: 'b, 'b>(&'a self) -> OperationResult<LockedDatabaseColumnIterator<'a, 'b>> {
-    //     LockedDatabaseColumnIterator::from_guard_and_column(self.database, &self.column_name)
-    // }
 }
 
 impl<'a> LockedDatabaseColumnWrapper<'a> {
@@ -254,58 +251,6 @@ impl<'a> DatabaseColumnIterator<'a> {
         })
     }
 }
-
-pub struct LockedDatabaseColumnIterator<T: Deref<Target = DB>> {
-    db: T,
-}
-
-// impl<'a: 'b, 'b> LockedDatabaseColumnIterator<'a, 'b> {
-//     pub fn from_guard_and_column(
-//         db: Arc<RwLock<DB>>,
-//         column_name: &str,
-//     ) -> OperationResult<LockedDatabaseColumnIterator<'a, 'b>> {
-//         let handle = db.read().cf_handle(column_name).ok_or_else(|| {
-//             OperationError::service_error(format!(
-//                 "RocksDB cf_handle error: Cannot find column family {column_name}"
-//             ))
-//         })?;
-//         let mut iter = db.read().iterator_cf(handle);
-//         iter.seek_to_first();
-//         Ok(Self {
-//                     iter,
-//                     just_seeked: true,
-//                     _marker: &Default::default(),
-//                 })
-//     }
-// }
-
-// impl<'a: 'b, 'b> Iterator for LockedDatabaseColumnIterator<'a, 'b> {
-//     type Item = (Box<[u8]>, Box<[u8]>);
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if !self.iter.valid() {
-//             return None;
-//         }
-
-//         // Initial call to next() after seeking should not move the iterator
-//         // or the first item will not be returned
-//         if self.just_seeked {
-//             self.just_seeked = false;
-//         } else {
-//             self.iter.next();
-//         }
-
-//         if self.iter.valid() {
-//             // .key() and .value() only ever return None if valid == false, which we've just checked
-//             Some((
-//                 Box::from(self.iter.key().unwrap()),
-//                 Box::from(self.iter.value().unwrap()),
-//             ))
-//         } else {
-//             None
-//         }
-//     }
-// }
 
 impl<'a> Iterator for DatabaseColumnIterator<'a> {
     type Item = (Box<[u8]>, Box<[u8]>);
