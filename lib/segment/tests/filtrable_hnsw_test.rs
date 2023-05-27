@@ -115,7 +115,7 @@ mod tests {
         let px = payload_index_ptr.borrow();
         for block in &blocks {
             let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-            let points = px.query_points(&filter);
+            let points = px.query_points(&filter).unwrap();
             for point in points {
                 coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
             }
@@ -159,20 +159,23 @@ mod tests {
             let filter_query = Some(&filter);
             // let filter_query = None;
 
-            let index_result = hnsw_index.search_with_graph(
-                &query,
-                filter_query,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    ..Default::default()
-                }),
-            );
+            let index_result = hnsw_index
+                .search_with_graph(
+                    &query,
+                    filter_query,
+                    top,
+                    Some(&SearchParams {
+                        hnsw_ef: Some(ef),
+                        ..Default::default()
+                    }),
+                )
+                .unwrap();
 
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(&[&query], filter_query, top, None);
+                .search(&[&query], filter_query, top, None)
+                .unwrap();
 
             if plain_result.get(0).unwrap() == &index_result {
                 hits += 1;

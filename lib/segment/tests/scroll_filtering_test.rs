@@ -23,10 +23,12 @@ mod tests {
 
             let random_offset = rng.gen_range(0..10);
 
-            let read_by_index_res =
-                segment.filtered_read_by_index(Some(random_offset.into()), Some(10), &filter);
-            let read_by_stream_res =
-                segment.filtered_read_by_id_stream(Some(random_offset.into()), Some(10), &filter);
+            let read_by_index_res = segment
+                .filtered_read_by_index(Some(random_offset.into()), Some(10), &filter)
+                .unwrap();
+            let read_by_stream_res = segment
+                .filtered_read_by_id_stream(Some(random_offset.into()), Some(10), &filter)
+                .unwrap();
 
             assert_eq!(read_by_index_res, read_by_stream_res, "filter: {filter:#?}");
         }

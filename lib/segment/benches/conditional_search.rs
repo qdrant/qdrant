@@ -31,7 +31,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     group.bench_function("conditional-search-query-points", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            result_size += plain_index.query_points(&filter).count();
+            result_size += plain_index.query_points(&filter).unwrap().count();
             query_count += 1;
         })
     });
@@ -47,7 +47,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     group.bench_function("conditional-search-query-points-large", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 1);
-            result_size += plain_index.query_points(&filter).count();
+            result_size += plain_index.query_points(&filter).unwrap().count();
             query_count += 1;
         })
     });
@@ -65,7 +65,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             let sample = (0..CHECK_SAMPLE_SIZE)
                 .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
-            let context = plain_index.filter_context(&filter);
+            let context = plain_index.filter_context(&filter).unwrap();
 
             let filtered_sample = sample
                 .into_iter()
@@ -107,7 +107,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     group.bench_function("struct-conditional-search-query-points", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            result_size += struct_index.query_points(&filter).count();
+            result_size += struct_index.query_points(&filter).unwrap().count();
             query_count += 1;
         })
     });
@@ -125,7 +125,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
             let sample = (0..CHECK_SAMPLE_SIZE)
                 .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
-            let context = struct_index.filter_context(&filter);
+            let context = struct_index.filter_context(&filter).unwrap();
 
             let filtered_sample = sample
                 .into_iter()

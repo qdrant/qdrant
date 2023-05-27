@@ -104,19 +104,22 @@ mod tests {
         for _i in 0..attempts {
             let query = random_vector(&mut rnd, dim);
 
-            let index_result = hnsw_index.search(
-                &[&query],
-                None,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    ..Default::default()
-                }),
-            );
+            let index_result = hnsw_index
+                .search(
+                    &[&query],
+                    None,
+                    top,
+                    Some(&SearchParams {
+                        hnsw_ef: Some(ef),
+                        ..Default::default()
+                    }),
+                )
+                .unwrap();
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(&[&query], None, top, None);
+                .search(&[&query], None, top, None)
+                .unwrap();
             sames += sames_count(&index_result, &plain_result);
         }
         let acc = 100.0 * sames as f64 / (attempts * top) as f64;

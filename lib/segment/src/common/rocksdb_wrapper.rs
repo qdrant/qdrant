@@ -1,5 +1,6 @@
 use std::borrow::BorrowMut;
-use std::marker::PhantomPinned;
+use std::marker::{PhantomData, PhantomPinned};
+use std::ops::Deref;
 use std::path::Path;
 use std::pin::Pin;
 use std::ptr::{addr_of, addr_of_mut, NonNull};
@@ -8,7 +9,10 @@ use std::sync::Arc;
 use ouroboros::self_referencing;
 use parking_lot::{RwLock, RwLockReadGuard};
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
-use rocksdb::{ColumnFamily, DBRawIteratorWithThreadMode, LogLevel, Options, WriteOptions, DB};
+use rocksdb::{
+    ColumnFamily, DBIteratorWithThreadMode, DBRawIteratorWithThreadMode, LogLevel, Options,
+    WriteOptions, DB,
+};
 
 use crate::common::Flusher;
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
@@ -221,7 +225,7 @@ impl DatabaseColumnWrapper {
         write_options
     }
 
-    fn get_column_family<'a>(
+    pub fn get_column_family<'a>(
         &self,
         db: &'a parking_lot::RwLockReadGuard<'_, DB>,
     ) -> OperationResult<&'a ColumnFamily> {
@@ -232,10 +236,9 @@ impl DatabaseColumnWrapper {
             ))
         })
     }
-
-    pub fn iter<'a>(&'a self) -> OperationResult<LockedDatabaseColumnIterator<'a>> {
-        LockedDatabaseColumnIterator::from_guard_and_column(self.database.read(), &self.column_name)
-    }
+    // pub fn iter<'a: 'b, 'b>(&'a self) -> OperationResult<LockedDatabaseColumnIterator<'a, 'b>> {
+    //     LockedDatabaseColumnIterator::from_guard_and_column(self.database, &self.column_name)
+    // }
 }
 
 impl<'a> LockedDatabaseColumnWrapper<'a> {
@@ -258,79 +261,59 @@ impl<'a> DatabaseColumnIterator<'a> {
             just_seeked: true,
         })
     }
-
-    pub fn from_db_and_cf(db: &'a DB, column_family: &ColumnFamily) -> Self {
-        let mut iter = db.raw_iterator_cf(column_family);
-        iter.seek_to_first();
-        DatabaseColumnIterator {
-            iter,
-            just_seeked: true,
-        }
-    }
 }
 
-#[self_referencing]
-struct LockedDatabaseColumnIterator<'a> {
-    guard: RwLockReadGuard<'a, DB>,
-    #[borrows(guard)]
-    cf_handle: &'this ColumnFamily,
-    #[borrows(guard)]
-    iter: &'this DBRawIteratorWithThreadMode<'a, DB>,
-    just_seeked: bool,
-    _marker: PhantomPinned,
+pub struct LockedDatabaseColumnIterator<T: Deref<Target = DB>> {
+    db: T,
 }
 
-impl<'a> LockedDatabaseColumnIterator<'a> {
-    pub fn from_guard_and_column(
-        guard: RwLockReadGuard<'a, DB>,
-        column_name: &str,
-    ) -> OperationResult<LockedDatabaseColumnIterator<'a>> {
-        LockedDatabaseColumnIteratorTryBuilder {
-            guard,
-            iter_builder: |guard| {
-                let handle = guard.cf_handle(column_name).ok_or_else(|| {
-                    OperationError::service_error(format!(
-                        "RocksDB cf_handle error: Cannot find column family {column_name}"
-                    ))
-                })?;
-                let mut iter = guard.raw_iterator_cf(handle);
-                iter.seek_to_first();
-                Ok(&iter)
-            },
-            just_seeked: true,
-            _marker: PhantomPinned,
-        }
-        .try_build()
-    }
-}
+// impl<'a: 'b, 'b> LockedDatabaseColumnIterator<'a, 'b> {
+//     pub fn from_guard_and_column(
+//         db: Arc<RwLock<DB>>,
+//         column_name: &str,
+//     ) -> OperationResult<LockedDatabaseColumnIterator<'a, 'b>> {
+//         let handle = db.read().cf_handle(column_name).ok_or_else(|| {
+//             OperationError::service_error(format!(
+//                 "RocksDB cf_handle error: Cannot find column family {column_name}"
+//             ))
+//         })?;
+//         let mut iter = db.read().iterator_cf(handle);
+//         iter.seek_to_first();
+//         Ok(Self {
+//                     iter,
+//                     just_seeked: true,
+//                     _marker: &Default::default(),
+//                 })
+//     }
+// }
 
-impl<'a> Iterator for LockedDatabaseColumnIterator<'a> {
-    type Item = (Box<[u8]>, Box<[u8]>);
+// impl<'a: 'b, 'b> Iterator for LockedDatabaseColumnIterator<'a, 'b> {
+//     type Item = (Box<[u8]>, Box<[u8]>);
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if !self.borrow_iter().valid() {
-            return None;
-        }
+//     fn next(&mut self) -> Option<Self::Item> {
+//         if !self.iter.valid() {
+//             return None;
+//         }
 
-        // Initial call to next() after seeking should not move the iterator
-        // or the first item will not be returned
-        if *self.borrow_just_seeked() {
-            self.with_just_seeked_mut(|v| *v = false);
-        } else {
-            self.with_iter_mut(|iter| iter.next());
-        }
+//         // Initial call to next() after seeking should not move the iterator
+//         // or the first item will not be returned
+//         if self.just_seeked {
+//             self.just_seeked = false;
+//         } else {
+//             self.iter.next();
+//         }
 
-        if self.borrow_iter().valid() {
-            // .key() and .value() only ever return None if valid == false, which we've just checked
-            Some((
-                Box::from(self.borrow_iter().key().unwrap()),
-                Box::from(self.borrow_iter().value().unwrap()),
-            ))
-        } else {
-            None
-        }
-    }
-}
+//         if self.iter.valid() {
+//             // .key() and .value() only ever return None if valid == false, which we've just checked
+//             Some((
+//                 Box::from(self.iter.key().unwrap()),
+//                 Box::from(self.iter.value().unwrap()),
+//             ))
+//         } else {
+//             None
+//         }
+//     }
+// }
 
 impl<'a> Iterator for DatabaseColumnIterator<'a> {
     type Item = (Box<[u8]>, Box<[u8]>);

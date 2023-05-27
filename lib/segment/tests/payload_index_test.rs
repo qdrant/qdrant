@@ -271,17 +271,20 @@ mod tests {
         let estimation_struct = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter);
+            .estimate_cardinality(&filter)
+            .unwrap();
 
         let estimation_plain = plain_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter);
+            .estimate_cardinality(&filter)
+            .unwrap();
 
         let real_number = plain_segment
             .payload_index
             .borrow()
             .query_points(&filter)
+            .unwrap()
             .count();
 
         eprintln!("estimation_plain = {estimation_plain:#?}");
@@ -320,10 +323,11 @@ mod tests {
         let estimation = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter);
+            .estimate_cardinality(&filter)
+            .unwrap();
 
         let payload_index = struct_segment.payload_index.borrow();
-        let filter_context = payload_index.filter_context(&filter);
+        let filter_context = payload_index.filter_context(&filter).unwrap();
         let exact = struct_segment
             .id_tracker
             .borrow()
@@ -358,7 +362,8 @@ mod tests {
         let estimation = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter);
+            .estimate_cardinality(&filter)
+            .unwrap();
 
         // not empty primary clauses
         assert_eq!(estimation.primary_clauses.len(), 1);
@@ -378,7 +383,7 @@ mod tests {
         }
 
         let payload_index = struct_segment.payload_index.borrow();
-        let filter_context = payload_index.filter_context(&filter);
+        let filter_context = payload_index.filter_context(&filter).unwrap();
         let exact = struct_segment
             .id_tracker
             .borrow()
@@ -416,7 +421,8 @@ mod tests {
         let estimation = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&filter);
+            .estimate_cardinality(&filter)
+            .unwrap();
 
         // not empty primary clauses
         assert_eq!(estimation.primary_clauses.len(), 1);
@@ -436,7 +442,7 @@ mod tests {
         }
 
         let payload_index = struct_segment.payload_index.borrow();
-        let filter_context = payload_index.filter_context(&filter);
+        let filter_context = payload_index.filter_context(&filter).unwrap();
         let exact = struct_segment
             .id_tracker
             .borrow()
@@ -495,7 +501,8 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter);
+                .estimate_cardinality(&query_filter)
+                .unwrap();
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -574,7 +581,8 @@ mod tests {
             let estimation = plain_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter);
+                .estimate_cardinality(&query_filter)
+                .unwrap();
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -598,7 +606,8 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter);
+                .estimate_cardinality(&query_filter)
+                .unwrap();
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -666,7 +675,8 @@ mod tests {
             let estimation = struct_segment
                 .payload_index
                 .borrow()
-                .estimate_cardinality(&query_filter);
+                .estimate_cardinality(&query_filter)
+                .unwrap();
 
             assert!(estimation.min <= estimation.exp, "{estimation:#?}");
             assert!(estimation.exp <= estimation.max, "{estimation:#?}");

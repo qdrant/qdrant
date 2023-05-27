@@ -1,14 +1,23 @@
+use std::borrow::BorrowMut;
 use std::collections::BTreeSet;
 
+use std::marker::PhantomPinned;
+use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 use std::sync::Arc;
 
-use parking_lot::RwLock;
-use rocksdb::DB;
+use ouroboros::self_referencing;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use rocksdb::{
+    ColumnFamily, DBIteratorWithThreadMode, DBRawIteratorWithThreadMode, IteratorMode, DB,
+};
 
 use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId};
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator_owned;
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::rocksdb_wrapper::{
+    DatabaseColumnWrapper, LockedDatabaseColumnIterator, LockedDatabaseColumnWrapper,
+};
 use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
@@ -90,14 +99,70 @@ impl InvertedIndexOnDisk {
     ) -> OperationResult<Box<dyn Iterator<Item = PayloadBlockCondition> + 'a>> {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
+        Ok(Box::new(
+            PayloadBlocksIterator::new(
+                self.vocab.database.clone(),
+                self.vocab.column_name.clone(),
+                threshold,
+                key,
+            )
+            .filter_map(|_| todo!()),
+        ))
+    }
+}
 
-        Ok(Box::new(self.vocab.iter()?.filter_map(
-            move |(_token_idx, posting_idx)| match self.vocab.get_pinned(&posting_idx, db_decode_tokens)
+pub struct PayloadBlocksIterator<'a> {
+    db: Arc<RwLock<DB>>,
+    column_name: String,
+    threshold: usize,
+    key: PayloadKeyType,
+    last_key: Option<&'a [u8]>,
+}
+impl<'a> PayloadBlocksIterator<'a> {
+    fn new(
+        db: Arc<RwLock<DB>>,
+        column_name: String,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Self {
+        Self {
+            db,
+            column_name,
+            threshold,
+            key,
+            last_key: None,
+        }
+    }
+}
+
+impl<'a> Iterator for PayloadBlocksIterator<'a> {
+    type Item = PayloadBlockCondition;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let lock = self.db.read();
+        let cf_handle = lock.cf_handle(&self.column_name)?;
+        let mut iter = lock.iterator_cf(
+            cf_handle,
+            if let Some(k) = self.last_key {
+                rocksdb::IteratorMode::From(k, rocksdb::Direction::Forward)
+            } else {
+                IteratorMode::Start
+            },
+        );
+
+        if let Some(Ok((_token_idx, posting_idx))) = iter.next() {
+            // .key() and .value() only ever return None if valid == false, which we've just checked
+
+            let lock = self.db.read();
+            let cf_handle = lock.cf_handle(&self.column_name)?;
+            match self.db.read().get_pinned_cf(cf_handle, &posting_idx).map_err(|err| {
+                OperationError::service_error(format!("RocksDB get_pinned_cf error: {err}"))
+            }).map(|value| value.map(|raw| db_decode_tokens(&raw)))
             {
-                Ok(Some(val)) if !val.is_empty() && val.len() >= threshold => {
+                Ok(Some(val)) if !val.is_empty() && val.len() >= self.threshold => {
                     Some(PayloadBlockCondition {
                         condition: FieldCondition {
-                            key: key.clone(),
+                            key: self.key.clone(),
                             r#match: Some(Match::Text(MatchText {
                                 text: String::from_utf8(_token_idx.into()).expect("Token slice read from rocksDB is not valid utf8. This should never happen."),
                             })),
@@ -110,10 +175,20 @@ impl InvertedIndexOnDisk {
                     })
                 }
                 Ok(Some(_) | None) | Err(_) => None,
-            },
-        )))
+            }
+        } else {
+            None
+        }
     }
 }
+
+// impl<T: Deref<Target=DB>> Iterator for PayloadBlocksIterator<T> {
+//     type Item = PayloadBlockCondition;
+
+//     fn next(&mut self) -> Option<Self::Item> {
+//         todo!()
+//     }
+// }
 
 impl InvertedIndex for InvertedIndexOnDisk {
     type Document<'a> = Document;
@@ -149,7 +224,7 @@ impl InvertedIndex for InvertedIndexOnDisk {
             let mut posting = self
                 .postings
                 .get_pinned(&Self::store_key(token_idx), db_decode_tokens)?
-                .expect("posting must exist even if it's empty");
+                .unwrap_or(vec![]);
             posting.push(idx);
             self.postings
                 .put(Self::store_key(token_idx), db_encode_tokens(&posting))?;

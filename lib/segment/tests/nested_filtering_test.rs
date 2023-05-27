@@ -117,9 +117,9 @@ mod tests {
             );
 
             let nested_filter_0 = Filter::new_must(nested_condition_0);
-            let res0: Vec<_> = index.query_points(&nested_filter_0).collect();
+            let res0: Vec<_> = index.query_points(&nested_filter_0).unwrap().collect();
 
-            let filter_context = index.filter_context(&nested_filter_0);
+            let filter_context = index.filter_context(&nested_filter_0).unwrap();
 
             let check_res0: Vec<_> = (0..NUM_POINTS as PointOffsetType)
                 .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
@@ -154,9 +154,9 @@ mod tests {
 
             let nested_filter_1 = Filter::new_must(nested_condition_1);
 
-            let res1: Vec<_> = index.query_points(&nested_filter_1).collect();
+            let res1: Vec<_> = index.query_points(&nested_filter_1).unwrap().collect();
 
-            let filter_context = index.filter_context(&nested_filter_1);
+            let filter_context = index.filter_context(&nested_filter_1).unwrap();
 
             let check_res1: Vec<_> = (0..NUM_POINTS as PointOffsetType)
                 .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
@@ -188,9 +188,9 @@ mod tests {
 
             let nested_filter_2 = Filter::new_must(nested_condition_2);
 
-            let res2: Vec<_> = index.query_points(&nested_filter_2).collect();
+            let res2: Vec<_> = index.query_points(&nested_filter_2).unwrap().collect();
 
-            let filter_context = index.filter_context(&nested_filter_2);
+            let filter_context = index.filter_context(&nested_filter_2).unwrap();
 
             let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
                 .filter(|point_id| filter_context.check(*point_id as PointOffsetType))
@@ -239,9 +239,9 @@ mod tests {
                 must_not: None,
             };
 
-            let res3: Vec<_> = index.query_points(&nested_filter_3).collect();
+            let res3: Vec<_> = index.query_points(&nested_filter_3).unwrap().collect();
 
-            let filter_context = index.filter_context(&nested_filter_3);
+            let filter_context = index.filter_context(&nested_filter_3).unwrap();
 
             let check_res3: Vec<_> = (0..NUM_POINTS as PointOffsetType)
                 .filter(|point_id| filter_context.check(*point_id as PointOffsetType))

@@ -115,7 +115,7 @@ mod tests {
         for block in &blocks {
             let px = payload_index_ptr.borrow();
             let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-            let points = px.query_points(&filter);
+            let points = px.query_points(&filter).unwrap();
             for point in points {
                 coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
             }
@@ -141,20 +141,23 @@ mod tests {
         for _i in 0..attempts {
             let query = random_vector(&mut rnd, dim);
 
-            let index_result = hnsw_index.search(
-                &[&query],
-                None,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    exact: true,
-                    ..Default::default()
-                }),
-            );
+            let index_result = hnsw_index
+                .search(
+                    &[&query],
+                    None,
+                    top,
+                    Some(&SearchParams {
+                        hnsw_ef: Some(ef),
+                        exact: true,
+                        ..Default::default()
+                    }),
+                )
+                .unwrap();
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(&[&query], None, top, None);
+                .search(&[&query], None, top, None)
+                .unwrap();
 
             assert_eq!(
                 index_result, plain_result,
@@ -176,20 +179,23 @@ mod tests {
             )));
 
             let filter_query = Some(&filter);
-            let index_result = hnsw_index.search(
-                &[&query],
-                filter_query,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    exact: true,
-                    ..Default::default()
-                }),
-            );
+            let index_result = hnsw_index
+                .search(
+                    &[&query],
+                    filter_query,
+                    top,
+                    Some(&SearchParams {
+                        hnsw_ef: Some(ef),
+                        exact: true,
+                        ..Default::default()
+                    }),
+                )
+                .unwrap();
             let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(&[&query], filter_query, top, None);
+                .search(&[&query], filter_query, top, None)
+                .unwrap();
 
             assert_eq!(
                 index_result, plain_result,
