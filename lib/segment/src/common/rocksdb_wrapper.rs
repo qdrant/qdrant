@@ -1,6 +1,5 @@
 use std::ops::Deref;
 use std::path::Path;
-
 use std::sync::Arc;
 
 use parking_lot::RwLock;
