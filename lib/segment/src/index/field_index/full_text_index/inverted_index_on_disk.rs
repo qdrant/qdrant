@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -81,24 +82,6 @@ impl InvertedIndexOnDisk {
             point_to_docs_flusher()
         })
     }
-
-    pub fn payload_blocks<'a>(
-        &'a self,
-        threshold: usize,
-        key: PayloadKeyType,
-    ) -> OperationResult<Box<dyn Iterator<Item = PayloadBlockCondition> + 'a>> {
-        // It might be very hard to predict possible combinations of conditions,
-        // so we only build it for individual tokens
-        Ok(Box::new(
-            PayloadBlocksIterator::new(
-                self.vocab.database.clone(),
-                self.vocab.column_name.clone(),
-                threshold,
-                key,
-            )
-            .filter_map(|_| todo!()),
-        ))
-    }
 }
 
 pub struct PayloadBlocksIterator<'a> {
@@ -106,7 +89,8 @@ pub struct PayloadBlocksIterator<'a> {
     column_name: String,
     threshold: usize,
     key: PayloadKeyType,
-    last_key: Option<&'a [u8]>,
+    last_key: Option<Box<[u8]>>,
+    _marker: PhantomData<&'a ()>  // Iterator must not outlive the index
 }
 impl<'a> PayloadBlocksIterator<'a> {
     fn new(
@@ -121,6 +105,7 @@ impl<'a> PayloadBlocksIterator<'a> {
             threshold,
             key,
             last_key: None,
+            _marker: Default::default()
         }
     }
 }
@@ -131,9 +116,18 @@ impl<'a> Iterator for PayloadBlocksIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let lock = self.db.read();
         let cf_handle = lock.cf_handle(&self.column_name)?;
+
+        // TODO: Constructing the iterator at every iteration leads to O(n^2) performance and should be revisited in the future.
+        //       It is implemented in this way because the lifetime of rocksDB iterators is bounded by the lifetime of the RWLock*Guards.
+        //       This means that we cannot acquire the lockguard, then create the iterator and return the iterator from the same function.
+        //       RWLock*Guards will always get dropped at the end of the scope they were created in, causing the DBIterator<'a> to be invalidated.
+        // Sidenote: There might be some wiggle-room here, we could implement Iterator for RWLock*Guard<MyIterator> and map the RWLock*Guard<DB> to RWLock*Guard<MyIterator>, but the iterator_cf() call constraints the iterator lifetime to the lifetime of ColumnFamily handle, which would be the local scope.
+        //           Maybe I missed a piece there and with some unsafe code this could be made usable.
+        // As an alternative solution we could require the top level caller of payload_blocks to acquire the lock.
+        //       This would require dependents of InvertedIndex to be aware of its implementation, but it might prove to be a good trade-off for performance.    
         let mut iter = lock.iterator_cf(
             cf_handle,
-            if let Some(k) = self.last_key {
+            if let Some(k) = &self.last_key {
                 rocksdb::IteratorMode::From(k, rocksdb::Direction::Forward)
             } else {
                 IteratorMode::Start
@@ -141,7 +135,6 @@ impl<'a> Iterator for PayloadBlocksIterator<'a> {
         );
 
         if let Some(Ok((_token_idx, posting_idx))) = iter.next() {
-            // .key() and .value() only ever return None if valid == false, which we've just checked
 
             let lock = self.db.read();
             let cf_handle = lock.cf_handle(&self.column_name)?;
@@ -150,6 +143,7 @@ impl<'a> Iterator for PayloadBlocksIterator<'a> {
             }).map(|value| value.map(|raw| db_decode_tokens(&raw)))
             {
                 Ok(Some(val)) if !val.is_empty() && val.len() >= self.threshold => {
+                    self.last_key = Some(_token_idx.clone());
                     Some(PayloadBlockCondition {
                         condition: FieldCondition {
                             key: self.key.clone(),
@@ -171,14 +165,6 @@ impl<'a> Iterator for PayloadBlocksIterator<'a> {
         }
     }
 }
-
-// impl<T: Deref<Target=DB>> Iterator for PayloadBlocksIterator<T> {
-//     type Item = PayloadBlockCondition;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         todo!()
-//     }
-// }
 
 impl InvertedIndex for InvertedIndexOnDisk {
     type Document<'a> = Document;
@@ -365,6 +351,23 @@ impl InvertedIndex for InvertedIndexOnDisk {
                 max: smallest_posting,
             }
         })
+    }
+
+    fn payload_blocks<'a>(
+        &'a self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + 'a> {
+        // It might be very hard to predict possible combinations of conditions,
+        // so we only build it for individual tokens
+        Box::new(
+            PayloadBlocksIterator::new(
+                self.vocab.database.clone(),
+                self.vocab.column_name.clone(),
+                threshold,
+                key,
+            )
+        )
     }
 }
 

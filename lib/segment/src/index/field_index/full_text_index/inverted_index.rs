@@ -76,6 +76,11 @@ pub(crate) trait InvertedIndex {
         query: &ParsedQuery,
         condition: &FieldCondition,
     ) -> OperationResult<CardinalityEstimation>;
+    fn payload_blocks<'a>(
+        &'a self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + 'a>;
 }
 
 #[derive(Default)]
@@ -89,43 +94,6 @@ pub struct InvertedIndexInMemory {
 impl InvertedIndexInMemory {
     pub fn new() -> InvertedIndexInMemory {
         Default::default()
-    }
-    pub fn payload_blocks(
-        &self,
-        threshold: usize,
-        key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        // It might be very hard to predict possible combinations of conditions,
-        // so we only build it for individual tokens
-        Box::new(
-            self.vocab
-                .iter()
-                .filter(|(_token, &posting_idx)| self.postings[posting_idx as usize].is_some())
-                .filter(move |(_token, &posting_idx)| {
-                    // unwrap crash safety: all tokens that passes the first filter should have postings
-                    self.postings[posting_idx as usize].as_ref().unwrap().len() >= threshold
-                })
-                .map(|(token, &posting_idx)| {
-                    (
-                        token,
-                        // same as the above case
-                        self.postings[posting_idx as usize].as_ref().unwrap(),
-                    )
-                })
-                .map(move |(token, posting)| PayloadBlockCondition {
-                    condition: FieldCondition {
-                        key: key.clone(),
-                        r#match: Some(Match::Text(MatchText {
-                            text: token.clone(),
-                        })),
-                        range: None,
-                        geo_bounding_box: None,
-                        geo_radius: None,
-                        values_count: None,
-                    },
-                    cardinality: posting.len(),
-                }),
-        )
     }
 }
 
@@ -295,5 +263,43 @@ impl InvertedIndex for InvertedIndexInMemory {
                 max: smallest_posting,
             })
         };
+    }
+    
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+        // It might be very hard to predict possible combinations of conditions,
+        // so we only build it for individual tokens
+        Box::new(
+            self.vocab
+                .iter()
+                .filter(|(_token, &posting_idx)| self.postings[posting_idx as usize].is_some())
+                .filter(move |(_token, &posting_idx)| {
+                    // unwrap crash safety: all tokens that passes the first filter should have postings
+                    self.postings[posting_idx as usize].as_ref().unwrap().len() >= threshold
+                })
+                .map(|(token, &posting_idx)| {
+                    (
+                        token,
+                        // same as the above case
+                        self.postings[posting_idx as usize].as_ref().unwrap(),
+                    )
+                })
+                .map(move |(token, posting)| PayloadBlockCondition {
+                    condition: FieldCondition {
+                        key: key.clone(),
+                        r#match: Some(Match::Text(MatchText {
+                            text: token.clone(),
+                        })),
+                        range: None,
+                        geo_bounding_box: None,
+                        geo_radius: None,
+                        values_count: None,
+                    },
+                    cardinality: posting.len(),
+                }),
+        )
     }
 }
