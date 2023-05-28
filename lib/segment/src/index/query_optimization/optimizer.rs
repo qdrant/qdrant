@@ -142,7 +142,7 @@ where
                     field_indexes,
                     payload_provider.clone(),
                     id_tracker,
-                );
+                )?;
                 Ok((OptimizedCondition::Checker(condition_checker), estimation?))
             }
         })

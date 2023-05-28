@@ -138,27 +138,27 @@ impl FieldIndex {
         &self,
         condition: &FieldCondition,
         payload_value: &Value,
-    ) -> Option<bool> {
-        match self {
-            FieldIndex::IntIndex(_) => None,
-            FieldIndex::IntMapIndex(_) => None,
-            FieldIndex::KeywordIndex(_) => None,
-            FieldIndex::FloatIndex(_) => None,
-            FieldIndex::GeoIndex(_) => None,
-            FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
-                Some(Match::Text(MatchText { text })) => {
-                    let query = full_text_index.parse_query(text);
-                    for value in full_text_index.get_values(payload_value) {
-                        let document = full_text_index.parse_document(&value);
-                        if query.check_match(&document) {
-                            return Some(true);
+    ) -> OperationResult<Option<bool>> {
+        Ok(match self {
+                    FieldIndex::IntIndex(_) => None,
+                    FieldIndex::IntMapIndex(_) => None,
+                    FieldIndex::KeywordIndex(_) => None,
+                    FieldIndex::FloatIndex(_) => None,
+                    FieldIndex::GeoIndex(_) => None,
+                    FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
+                        Some(Match::Text(MatchText { text })) => {
+                            let query = full_text_index.parse_query(text)?;
+                            for value in full_text_index.get_values(payload_value) {
+                                let document = full_text_index.parse_document(&value);
+                                if query.check_match(&document) {
+                                    return Ok(Some(true));
+                                }
+                            }
+                            Some(false)
                         }
-                    }
-                    Some(false)
-                }
-                _ => None,
-            },
-        }
+                        _ => None,
+                    },
+                })
     }
 
     fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {

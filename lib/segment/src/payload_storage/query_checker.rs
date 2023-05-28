@@ -6,6 +6,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 
 use crate::common::utils::IndexesMap;
+use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
@@ -16,9 +17,14 @@ use crate::types::{
     PayloadContainer, PayloadKeyType, PointOffsetType,
 };
 
-fn check_condition<F>(checker: &F, condition: &Condition) -> bool
+pub trait CheckerFn: Fn(&Condition) -> OperationResult<bool> {}
+
+impl<F> CheckerFn for F
+where F: Fn(&Condition) -> OperationResult<bool> {}
+
+fn check_condition<F>(checker: &F, condition: &Condition) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: CheckerFn,
 {
     match condition {
         Condition::Filter(filter) => check_filter(checker, filter),
@@ -26,46 +32,67 @@ where
     }
 }
 
-pub fn check_filter<F>(checker: &F, filter: &Filter) -> bool
+pub fn check_filter<F>(checker: &F, filter: &Filter) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: CheckerFn,
 {
-    check_should(checker, &filter.should)
-        && check_must(checker, &filter.must)
-        && check_must_not(checker, &filter.must_not)
+    Ok(check_should(checker, &filter.should)?
+        && check_must(checker, &filter.must)?
+        && check_must_not(checker, &filter.must_not)?)
 }
 
-fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> bool
+fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: CheckerFn,
 {
     let check = |x| check_condition(checker, x);
-    match should {
-        None => true,
-        Some(conditions) => conditions.iter().any(check),
-    }
+    Ok(match should {
+            None => true,
+            Some(conditions) => {
+                for condition in conditions.iter() {
+                    if check(condition)? {
+                        return Ok(true);
+                    }
+                }
+                false
+            },
+        })
 }
 
-fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
+fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: CheckerFn,
 {
     let check = |x| check_condition(checker, x);
-    match must {
-        None => true,
-        Some(conditions) => conditions.iter().all(check),
-    }
+    Ok(match must {
+            None => true,
+            Some(conditions) => {
+                    for condition in conditions.iter() {
+                        if !check(condition)? {
+                            return Ok(false);
+                        }
+                    }
+                    true 
+                },
+        })
 }
 
-fn check_must_not<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
+fn check_must_not<F>(checker: &F, must: &Option<Vec<Condition>>) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: CheckerFn,
 {
-    let check = |x| !check_condition(checker, x);
-    match must {
-        None => true,
-        Some(conditions) => conditions.iter().all(check),
-    }
+    let check = |x| check_condition(checker, x).map(|val| !val);
+    Ok(match must {
+            None => true,
+            Some(conditions) => {
+                        for condition in conditions.iter() {
+                            if !check(condition)? {
+                                return Ok(false);
+                            }
+                        }
+                        true 
+                    },
+        })
 }
 
 pub fn select_nested_indexes<'a, R>(
@@ -92,36 +119,38 @@ pub fn check_payload<'a, R>(
     query: &Filter,
     point_id: PointOffsetType,
     field_indexes: &HashMap<PayloadKeyType, R>,
-) -> bool
+) -> OperationResult<bool>
 where
     R: AsRef<Vec<FieldIndex>>,
 {
     let checker = |condition: &Condition| match condition {
-        Condition::Field(field_condition) => {
-            check_field_condition(field_condition, get_payload().deref(), field_indexes)
-        }
-        Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
-        Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
-        Condition::HasId(has_id) => id_tracker
-            .and_then(|id_tracker| id_tracker.external_id(point_id))
-            .map_or(false, |id| has_id.has_id.contains(&id)),
+        Condition::Field(field_condition) => 
+            check_field_condition(field_condition, get_payload().deref(), field_indexes),
+        Condition::IsEmpty(is_empty) => Ok(check_is_empty_condition(is_empty, get_payload().deref())),
+        Condition::IsNull(is_null) => Ok(check_is_null_condition(is_null, get_payload().deref())),
+        Condition::HasId(has_id) => Ok(id_tracker
+                    .and_then(|id_tracker| id_tracker.external_id(point_id))
+                    .map_or(false, |id| has_id.has_id.contains(&id))),
         Condition::Nested(nested) => {
             let nested_path = nested.array_key();
             let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
-            get_payload()
+            for object in get_payload()
                 .get_value(&nested_path)
                 .values()
                 .iter()
-                .filter_map(|value| value.as_object())
-                .any(|object| {
-                    check_payload(
+                .filter_map(|value| value.as_object()) {
+                    let is_valid = check_payload(
                         Box::new(|| OwnedPayloadRef::from(object)),
                         None,
                         &nested.nested.filter,
                         point_id,
                         &nested_indexes,
-                    )
-                })
+                    )?;
+                    if is_valid {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
         }
         Condition::Filter(_) => unreachable!(),
     };
@@ -144,7 +173,7 @@ pub fn check_field_condition<R>(
     field_condition: &FieldCondition,
     payload: &impl PayloadContainer,
     field_indexes: &HashMap<PayloadKeyType, R>,
-) -> bool
+) -> OperationResult<bool>
 where
     R: AsRef<Vec<FieldIndex>>,
 {
@@ -156,10 +185,10 @@ where
         for p in field_values {
             let mut index_checked = false;
             for index in field_indexes.as_ref() {
-                if let Some(index_check_res) = index.check_condition(field_condition, p) {
+                if let Some(index_check_res) = index.check_condition(field_condition, p)? {
                     if index_check_res {
                         // If at least one object matches the condition, we can return true
-                        return true;
+                        return Ok(true);
                     }
                     index_checked = true;
                     // If index check of the condition returned something, we don't need to check
@@ -171,14 +200,14 @@ where
                 // If none of the indexes returned anything, we need to check the condition
                 // against the payload
                 if field_condition.check(p) {
-                    return true;
+                    return Ok(true);
                 }
             }
         }
-        false
+        Ok(false)
     } else {
         // Fallback to regular condition check if there are no indexes for the field
-        field_values.into_iter().any(|p| field_condition.check(p))
+        Ok(field_values.into_iter().any(|p| field_condition.check(p)))
     }
 }
 
@@ -203,7 +232,7 @@ impl SimpleConditionChecker {
 }
 
 impl ConditionChecker for SimpleConditionChecker {
-    fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
+    fn check(&self, point_id: PointOffsetType, query: &Filter) -> OperationResult<bool> {
         let payload_storage_guard = self.payload_storage.borrow();
 
         let payload_ref_cell: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
@@ -311,63 +340,63 @@ mod tests {
                 key: "price".to_string(),
             },
         }));
-        assert!(!payload_checker.check(0, &is_empty_condition));
+        assert!(!payload_checker.check(0, &is_empty_condition).unwrap());
 
         let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
                 key: "something_new".to_string(),
             },
         }));
-        assert!(payload_checker.check(0, &is_empty_condition));
+        assert!(payload_checker.check(0, &is_empty_condition).unwrap());
 
         let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
                 key: "parts".to_string(),
             },
         }));
-        assert!(payload_checker.check(0, &is_empty_condition));
+        assert!(payload_checker.check(0, &is_empty_condition).unwrap());
 
         let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
                 key: "not_null".to_string(),
             },
         }));
-        assert!(!payload_checker.check(0, &is_empty_condition));
+        assert!(!payload_checker.check(0, &is_empty_condition).unwrap());
 
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "amount".to_string(),
             },
         }));
-        assert!(!payload_checker.check(0, &is_null_condition));
+        assert!(!payload_checker.check(0, &is_null_condition).unwrap());
 
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "parts".to_string(),
             },
         }));
-        assert!(!payload_checker.check(0, &is_null_condition));
+        assert!(!payload_checker.check(0, &is_null_condition).unwrap());
 
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "something_else".to_string(),
             },
         }));
-        assert!(!payload_checker.check(0, &is_null_condition));
+        assert!(!payload_checker.check(0, &is_null_condition).unwrap());
 
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "packaging".to_string(),
             },
         }));
-        assert!(payload_checker.check(0, &is_null_condition));
+        assert!(payload_checker.check(0, &is_null_condition).unwrap());
 
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
                 key: "not_null".to_string(),
             },
         }));
-        assert!(!payload_checker.check(0, &is_null_condition));
+        assert!(!payload_checker.check(0, &is_null_condition).unwrap());
 
         let match_red = Condition::Field(FieldCondition::new_match(
             "color".to_string(),
@@ -392,7 +421,7 @@ mod tests {
                     lte: None,
                 },
             )));
-        assert!(!payload_checker.check(0, &many_value_count_condition));
+        assert!(!payload_checker.check(0, &many_value_count_condition).unwrap());
 
         let few_value_count_condition =
             Filter::new_must(Condition::Field(FieldCondition::new_values_count(
@@ -404,7 +433,7 @@ mod tests {
                     lte: None,
                 },
             )));
-        assert!(payload_checker.check(0, &few_value_count_condition));
+        assert!(payload_checker.check(0, &few_value_count_condition).unwrap());
 
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
             "location".to_string(),
@@ -449,42 +478,42 @@ mod tests {
             must: Some(vec![match_red.clone()]),
             must_not: None,
         };
-        assert!(payload_checker.check(0, &query));
+        assert!(payload_checker.check(0, &query).unwrap());
 
         let query = Filter {
             should: None,
             must: Some(vec![match_blue.clone()]),
             must_not: None,
         };
-        assert!(!payload_checker.check(0, &query));
+        assert!(!payload_checker.check(0, &query).unwrap());
 
         let query = Filter {
             should: None,
             must: None,
             must_not: Some(vec![match_blue.clone()]),
         };
-        assert!(payload_checker.check(0, &query));
+        assert!(payload_checker.check(0, &query).unwrap());
 
         let query = Filter {
             should: None,
             must: None,
             must_not: Some(vec![match_red.clone()]),
         };
-        assert!(!payload_checker.check(0, &query));
+        assert!(!payload_checker.check(0, &query).unwrap());
 
         let query = Filter {
             should: Some(vec![match_red.clone(), match_blue.clone()]),
             must: Some(vec![with_delivery.clone(), in_berlin.clone()]),
             must_not: None,
         };
-        assert!(payload_checker.check(0, &query));
+        assert!(payload_checker.check(0, &query).unwrap());
 
         let query = Filter {
             should: Some(vec![match_red.clone(), match_blue.clone()]),
             must: Some(vec![with_delivery, in_moscow.clone()]),
             must_not: None,
         };
-        assert!(!payload_checker.check(0, &query));
+        assert!(!payload_checker.check(0, &query).unwrap());
 
         let query = Filter {
             should: Some(vec![
@@ -502,7 +531,7 @@ mod tests {
             must: None,
             must_not: None,
         };
-        assert!(!payload_checker.check(0, &query));
+        assert!(!payload_checker.check(0, &query).unwrap());
 
         let query = Filter {
             should: Some(vec![
@@ -520,14 +549,14 @@ mod tests {
             must: None,
             must_not: None,
         };
-        assert!(payload_checker.check(0, &query));
+        assert!(payload_checker.check(0, &query).unwrap());
 
         let query = Filter {
             should: None,
             must: None,
             must_not: Some(vec![with_bad_rating]),
         };
-        assert!(!payload_checker.check(0, &query));
+        assert!(!payload_checker.check(0, &query).unwrap());
 
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
@@ -536,7 +565,7 @@ mod tests {
             must: None,
             must_not: Some(vec![Condition::HasId(ids.into())]),
         };
-        assert!(!payload_checker.check(2, &query));
+        assert!(!payload_checker.check(2, &query).unwrap());
 
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
@@ -545,7 +574,7 @@ mod tests {
             must: None,
             must_not: Some(vec![Condition::HasId(ids.into())]),
         };
-        assert!(payload_checker.check(10, &query));
+        assert!(payload_checker.check(10, &query).unwrap());
 
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
@@ -554,6 +583,6 @@ mod tests {
             must: Some(vec![Condition::HasId(ids.into())]),
             must_not: None,
         };
-        assert!(payload_checker.check(2, &query));
+        assert!(payload_checker.check(2, &query).unwrap());
     }
 }

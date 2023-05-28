@@ -175,7 +175,7 @@ impl InvertedIndex for InvertedIndexOnDisk {
     fn document_from_tokens(
         &mut self,
         tokens: &BTreeSet<String>,
-    ) -> Result<Document, OperationError> {
+    ) -> OperationResult<Document> {
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab

@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
@@ -174,22 +176,22 @@ fn test_prefix_search() {
 
     let res: Vec<_> = index.query("ROBO").unwrap().collect();
 
-    let query = index.parse_query("ROBO");
+    let query = index.parse_query("ROBO").unwrap();
 
     for idx in res.iter() {
         let doc = index.get_doc(*idx).unwrap();
-        assert!(query.check_match(doc));
+        assert!(query.check_match(doc.borrow()));
     }
 
     assert_eq!(res.len(), 3);
 
     let res: Vec<_> = index.query("q231").unwrap().collect();
 
-    let query = index.parse_query("q231");
+    let query = index.parse_query("q231").unwrap();
 
     for idx in [1, 2, 3] {
         let doc = index.get_doc(idx).unwrap();
-        assert!(!query.check_match(doc));
+        assert!(!query.check_match(doc.borrow()));
     }
 
     assert_eq!(res.len(), 0);

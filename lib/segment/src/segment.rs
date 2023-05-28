@@ -601,14 +601,17 @@ impl Segment {
     ) -> OperationResult<Vec<PointIdType>> {
         let payload_index = self.payload_index.borrow();
         let filter_context = payload_index.filter_context(condition)?;
-        Ok(self
-            .id_tracker
-            .borrow()
-            .iter_from(offset)
-            .filter(move |(_, internal_id)| filter_context.check(*internal_id))
-            .map(|(external_id, _)| external_id)
-            .take(limit.unwrap_or(usize::MAX))
-            .collect())
+        
+        // Take first 'limit' external_ids for which filter_context check holds
+        let mut points = Vec::with_capacity(limit.unwrap_or(0));
+        for (external_id, internal_id) in self.id_tracker.borrow().iter_from(offset) {
+            if points.len() == limit.unwrap_or(usize::MAX) {
+                return Ok(points);
+            } else if filter_context.check(internal_id)? {
+                points.push(external_id);
+            }
+        }
+        Ok(points)
     }
 
     /// Check consistency of the segment's data and repair it if possible.

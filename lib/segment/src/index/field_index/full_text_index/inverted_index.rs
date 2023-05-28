@@ -3,6 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+use super::inverted_index_on_disk::InvertedIndexOnDisk;
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
 use crate::entry::entry_point::OperationResult;
@@ -81,6 +82,11 @@ pub(crate) trait InvertedIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + 'a>;
+}
+
+pub enum InvertedIndexType {
+    InMemory(InvertedIndexInMemory),
+    OnDisk(InvertedIndexOnDisk),
 }
 
 #[derive(Default)]

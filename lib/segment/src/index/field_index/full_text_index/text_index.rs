@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
@@ -74,7 +75,7 @@ impl FullTextIndex {
         }
     }
 
-    pub fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
+    pub fn get_doc(&self, idx: PointOffsetType) -> Option<impl Borrow<Document> + '_> {
         self.inverted_index.get_doc(idx)
     }
 
@@ -91,13 +92,21 @@ impl FullTextIndex {
         self.db_wrapper.recreate_column_family()
     }
 
-    pub fn parse_query(&self, text: &str) -> ParsedQuery {
+    pub fn parse_query(&self, text: &str) -> OperationResult<ParsedQuery> {
         let mut tokens = HashSet::new();
+        let mut error = None;
         Tokenizer::tokenize_query(text, &self.config, |token| {
-            tokens.insert(self.inverted_index.get_token_id(token).unwrap());
+            match self.inverted_index.get_token_id(token) {
+                Ok(token_id) => { tokens.insert(token_id); },
+                Err(err) => if error.is_none() { error = Some(Err(err)) },
+            };
         });
-        ParsedQuery {
-            tokens: tokens.into_iter().collect(),
+        if let Some(err) = error {
+            err
+        } else {
+        Ok(ParsedQuery {
+                    tokens: tokens.into_iter().collect(),
+                })
         }
     }
 
@@ -116,13 +125,13 @@ impl FullTextIndex {
         &self,
         query: &str,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let parsed_query = self.parse_query(query);
+        let parsed_query = self.parse_query(query)?;
         self.inverted_index.filter(&parsed_query)
     }
 
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         // Maybe we want number of documents in the future?
-        self.get_doc(point_id).map(|x| x.len()).unwrap_or(0)
+        self.get_doc(point_id).map(|x| x.borrow().len()).unwrap_or(0)
     }
 }
 
@@ -203,7 +212,7 @@ impl PayloadFieldIndex for FullTextIndex {
         condition: &FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + '_>>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text);
+            let parsed_query = self.parse_query(&text_match.text)?;
             return Ok(Some(self.inverted_index.filter(&parsed_query)?));
         }
         Ok(None)
@@ -214,7 +223,7 @@ impl PayloadFieldIndex for FullTextIndex {
         condition: &FieldCondition,
     ) -> OperationResult<Option<CardinalityEstimation>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text);
+            let parsed_query = self.parse_query(&text_match.text)?;
             return self
                 .inverted_index
                 .estimate_cardinality(&parsed_query, condition)

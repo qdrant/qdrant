@@ -312,7 +312,7 @@ pub struct PlainFilterContext<'a> {
 }
 
 impl<'a> FilterContext for PlainFilterContext<'a> {
-    fn check(&self, point_id: PointOffsetType) -> bool {
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         self.condition_checker.check(point_id, self.filter)
     }
 }

@@ -23,8 +23,8 @@ pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<Vecto
 pub struct FakeFilterContext {}
 
 impl FilterContext for FakeFilterContext {
-    fn check(&self, _point_id: PointOffsetType) -> bool {
-        true
+    fn check(&self, _point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(true)
     }
 }
 
