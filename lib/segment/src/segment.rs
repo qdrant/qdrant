@@ -601,7 +601,7 @@ impl Segment {
     ) -> OperationResult<Vec<PointIdType>> {
         let payload_index = self.payload_index.borrow();
         let filter_context = payload_index.filter_context(condition)?;
-        
+
         // Take first 'limit' external_ids for which filter_context check holds
         let mut points = Vec::with_capacity(limit.unwrap_or(0));
         for (external_id, internal_id) in self.id_tracker.borrow().iter_from(offset) {

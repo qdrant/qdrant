@@ -19,8 +19,7 @@ use crate::types::{
 
 pub trait CheckerFn: Fn(&Condition) -> OperationResult<bool> {}
 
-impl<F> CheckerFn for F
-where F: Fn(&Condition) -> OperationResult<bool> {}
+impl<F> CheckerFn for F where F: Fn(&Condition) -> OperationResult<bool> {}
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> OperationResult<bool>
 where
@@ -47,16 +46,16 @@ where
 {
     let check = |x| check_condition(checker, x);
     Ok(match should {
-            None => true,
-            Some(conditions) => {
-                for condition in conditions.iter() {
-                    if check(condition)? {
-                        return Ok(true);
-                    }
+        None => true,
+        Some(conditions) => {
+            for condition in conditions.iter() {
+                if check(condition)? {
+                    return Ok(true);
                 }
-                false
-            },
-        })
+            }
+            false
+        }
+    })
 }
 
 fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> OperationResult<bool>
@@ -65,16 +64,16 @@ where
 {
     let check = |x| check_condition(checker, x);
     Ok(match must {
-            None => true,
-            Some(conditions) => {
-                    for condition in conditions.iter() {
-                        if !check(condition)? {
-                            return Ok(false);
-                        }
-                    }
-                    true 
-                },
-        })
+        None => true,
+        Some(conditions) => {
+            for condition in conditions.iter() {
+                if !check(condition)? {
+                    return Ok(false);
+                }
+            }
+            true
+        }
+    })
 }
 
 fn check_must_not<F>(checker: &F, must: &Option<Vec<Condition>>) -> OperationResult<bool>
@@ -83,16 +82,16 @@ where
 {
     let check = |x| check_condition(checker, x).map(|val| !val);
     Ok(match must {
-            None => true,
-            Some(conditions) => {
-                        for condition in conditions.iter() {
-                            if !check(condition)? {
-                                return Ok(false);
-                            }
-                        }
-                        true 
-                    },
-        })
+        None => true,
+        Some(conditions) => {
+            for condition in conditions.iter() {
+                if !check(condition)? {
+                    return Ok(false);
+                }
+            }
+            true
+        }
+    })
 }
 
 pub fn select_nested_indexes<'a, R>(
@@ -124,13 +123,16 @@ where
     R: AsRef<Vec<FieldIndex>>,
 {
     let checker = |condition: &Condition| match condition {
-        Condition::Field(field_condition) => 
-            check_field_condition(field_condition, get_payload().deref(), field_indexes),
-        Condition::IsEmpty(is_empty) => Ok(check_is_empty_condition(is_empty, get_payload().deref())),
+        Condition::Field(field_condition) => {
+            check_field_condition(field_condition, get_payload().deref(), field_indexes)
+        }
+        Condition::IsEmpty(is_empty) => {
+            Ok(check_is_empty_condition(is_empty, get_payload().deref()))
+        }
         Condition::IsNull(is_null) => Ok(check_is_null_condition(is_null, get_payload().deref())),
         Condition::HasId(has_id) => Ok(id_tracker
-                    .and_then(|id_tracker| id_tracker.external_id(point_id))
-                    .map_or(false, |id| has_id.has_id.contains(&id))),
+            .and_then(|id_tracker| id_tracker.external_id(point_id))
+            .map_or(false, |id| has_id.has_id.contains(&id))),
         Condition::Nested(nested) => {
             let nested_path = nested.array_key();
             let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
@@ -138,19 +140,20 @@ where
                 .get_value(&nested_path)
                 .values()
                 .iter()
-                .filter_map(|value| value.as_object()) {
-                    let is_valid = check_payload(
-                        Box::new(|| OwnedPayloadRef::from(object)),
-                        None,
-                        &nested.nested.filter,
-                        point_id,
-                        &nested_indexes,
-                    )?;
-                    if is_valid {
-                        return Ok(true);
-                    }
+                .filter_map(|value| value.as_object())
+            {
+                let is_valid = check_payload(
+                    Box::new(|| OwnedPayloadRef::from(object)),
+                    None,
+                    &nested.nested.filter,
+                    point_id,
+                    &nested_indexes,
+                )?;
+                if is_valid {
+                    return Ok(true);
                 }
-                Ok(false)
+            }
+            Ok(false)
         }
         Condition::Filter(_) => unreachable!(),
     };
@@ -421,7 +424,9 @@ mod tests {
                     lte: None,
                 },
             )));
-        assert!(!payload_checker.check(0, &many_value_count_condition).unwrap());
+        assert!(!payload_checker
+            .check(0, &many_value_count_condition)
+            .unwrap());
 
         let few_value_count_condition =
             Filter::new_must(Condition::Field(FieldCondition::new_values_count(
@@ -433,7 +438,9 @@ mod tests {
                     lte: None,
                 },
             )));
-        assert!(payload_checker.check(0, &few_value_count_condition).unwrap());
+        assert!(payload_checker
+            .check(0, &few_value_count_condition)
+            .unwrap());
 
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
             "location".to_string(),

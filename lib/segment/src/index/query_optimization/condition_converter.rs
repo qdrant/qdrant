@@ -26,95 +26,94 @@ pub fn condition_converter<'a>(
     id_tracker: &IdTrackerSS,
 ) -> OperationResult<ConditionCheckerFn<'a>> {
     Ok(match condition {
-                Condition::Field(field_condition) => {
-                    let maybe_indexes = field_indexes
-                    .get(&field_condition.key);
-                    if let Some(indexes) = maybe_indexes {
-                        for index in indexes.iter() {
-                            if let Some(val) = field_condition_index(index, field_condition)? {
-                                return Ok(val);
+        Condition::Field(field_condition) => {
+            let maybe_indexes = field_indexes.get(&field_condition.key);
+            if let Some(indexes) = maybe_indexes {
+                for index in indexes.iter() {
+                    if let Some(val) = field_condition_index(index, field_condition)? {
+                        return Ok(val);
+                    }
+                }
+            }
+
+            Box::new(move |point_id| {
+                payload_provider.with_payload(point_id, |payload| {
+                    check_field_condition(field_condition, &payload, field_indexes)
+                })
+            })
+        }
+        // ToDo: It might be possible to make this condition faster by using index to check
+        //       if there is any value. But if value if not found,
+        //       it does not mean that there are no values in payload
+        Condition::IsEmpty(is_empty) => Box::new(move |point_id| {
+            payload_provider.with_payload(point_id, |payload| {
+                check_is_empty_condition(is_empty, &payload)
+            })
+        }),
+        Condition::IsNull(is_null) => Box::new(move |point_id| {
+            payload_provider.with_payload(point_id, |payload| {
+                check_is_null_condition(is_null, &payload)
+            })
+        }),
+        // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
+        Condition::HasId(has_id) => {
+            let segment_ids: HashSet<_> = has_id
+                .has_id
+                .iter()
+                .filter_map(|external_id| id_tracker.internal_id(*external_id))
+                .collect();
+            Box::new(move |point_id| segment_ids.contains(&point_id))
+        }
+        Condition::Nested(nested) => {
+            // Select indexes for nested fields. Trim nested part from key, so
+            // that nested condition can address fields without nested part.
+
+            // Example:
+            // Index for field `nested.field` will be stored under key `nested.field`
+            // And we have a query:
+            // {
+            //   "nested": {
+            //     "path": "nested",
+            //     "filter": {
+            //         ...
+            //         "match": {"key": "field", "value": "value"}
+            //     }
+            //   }
+
+            // In this case we want to use `nested.field`, but we only have `field` in query.
+            // Therefore we need to trim `nested` part from key. So that query executor
+            // can address proper index for nested field.
+            let nested_path = nested.array_key();
+
+            let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
+
+            Box::new(move |point_id| {
+                payload_provider.with_payload(point_id, |payload| {
+                    let field_values = payload.get_value(&nested_path).values();
+
+                    for value in field_values {
+                        if let Value::Object(object) = value {
+                            let get_payload = || OwnedPayloadRef::from(object);
+                            if check_payload(
+                                Box::new(get_payload),
+                                // None because has_id in nested is not supported. So retrieving
+                                // IDs throug the tracker would always return None.
+                                None,
+                                &nested.nested.filter,
+                                point_id,
+                                &nested_indexes,
+                            ) {
+                                // If at least one nested object matches, return true
+                                return true;
                             }
                         }
                     }
-    
-                    Box::new(move |point_id| {
-                        payload_provider.with_payload(point_id, |payload| {
-                            check_field_condition(field_condition, &payload, field_indexes)
-                        })
-                    })
-                },
-                // ToDo: It might be possible to make this condition faster by using index to check
-                //       if there is any value. But if value if not found,
-                //       it does not mean that there are no values in payload
-                Condition::IsEmpty(is_empty) => Box::new(move |point_id| {
-                    payload_provider.with_payload(point_id, |payload| {
-                        check_is_empty_condition(is_empty, &payload)
-                    })
-                }),
-                Condition::IsNull(is_null) => Box::new(move |point_id| {
-                    payload_provider.with_payload(point_id, |payload| {
-                        check_is_null_condition(is_null, &payload)
-                    })
-                }),
-                // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
-                Condition::HasId(has_id) => {
-                    let segment_ids: HashSet<_> = has_id
-                        .has_id
-                        .iter()
-                        .filter_map(|external_id| id_tracker.internal_id(*external_id))
-                        .collect();
-                    Box::new(move |point_id| segment_ids.contains(&point_id))
-                }
-                Condition::Nested(nested) => {
-                    // Select indexes for nested fields. Trim nested part from key, so
-                    // that nested condition can address fields without nested part.
-        
-                    // Example:
-                    // Index for field `nested.field` will be stored under key `nested.field`
-                    // And we have a query:
-                    // {
-                    //   "nested": {
-                    //     "path": "nested",
-                    //     "filter": {
-                    //         ...
-                    //         "match": {"key": "field", "value": "value"}
-                    //     }
-                    //   }
-        
-                    // In this case we want to use `nested.field`, but we only have `field` in query.
-                    // Therefore we need to trim `nested` part from key. So that query executor
-                    // can address proper index for nested field.
-                    let nested_path = nested.array_key();
-        
-                    let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
-        
-                    Box::new(move |point_id| {
-                        payload_provider.with_payload(point_id, |payload| {
-                            let field_values = payload.get_value(&nested_path).values();
-        
-                            for value in field_values {
-                                if let Value::Object(object) = value {
-                                    let get_payload = || OwnedPayloadRef::from(object);
-                                    if check_payload(
-                                        Box::new(get_payload),
-                                        // None because has_id in nested is not supported. So retrieving
-                                        // IDs throug the tracker would always return None.
-                                        None,
-                                        &nested.nested.filter,
-                                        point_id,
-                                        &nested_indexes,
-                                    ) {
-                                        // If at least one nested object matches, return true
-                                        return true;
-                                    }
-                                }
-                            }
-                            false
-                        })
-                    })
-                }
-                Condition::Filter(_) => unreachable!(),
+                    false
+                })
             })
+        }
+        Condition::Filter(_) => unreachable!(),
+    })
 }
 
 pub fn field_condition_index<'a>(
@@ -208,74 +207,77 @@ pub fn get_range_checkers(index: &FieldIndex, range: Range) -> Option<ConditionC
     }
 }
 
-pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> OperationResult<Option<ConditionCheckerFn>> {
+pub fn get_match_checkers(
+    index: &FieldIndex,
+    cond_match: Match,
+) -> OperationResult<Option<ConditionCheckerFn>> {
     Ok(match cond_match {
-            Match::Value(MatchValue {
-                value: value_variant,
-            }) => match (value_variant, index) {
-                (ValueVariants::Keyword(keyword), FieldIndex::KeywordIndex(index)) => {
-                    Some(Box::new(move |point_id: PointOffsetType| {
-                        index
-                            .get_values(point_id)
-                            .map_or(false, |values| values.iter().any(|k| k == &keyword))
-                    }))
-                }
-                (ValueVariants::Integer(value), FieldIndex::IntMapIndex(index)) => {
-                    Some(Box::new(move |point_id: PointOffsetType| {
-                        index
-                            .get_values(point_id)
-                            .map_or(false, |values| values.iter().any(|i| i == &value))
-                    }))
-                }
-                _ => None,
-            },
-            Match::Text(MatchText { text }) => match index {
-                FieldIndex::FullTextIndex(full_text_index) => {
-                    let parsed_query = full_text_index.parse_query(&text)?;
-                    Some(Box::new(move |point_id: PointOffsetType| {
-                        full_text_index
-                            .get_doc(point_id)
-                            .map_or(false, |doc| parsed_query.check_match(doc.borrow()))
-                    }))
-                }
-                _ => None,
-            },
-            Match::Any(MatchAny { any }) => match (any, index) {
-                (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
-                    Some(Box::new(move |point_id: PointOffsetType| {
-                        index
-                            .get_values(point_id)
-                            .map_or(false, |values| values.iter().any(|k| list.contains(k)))
-                    }))
-                }
-                (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
-                    Some(Box::new(move |point_id: PointOffsetType| {
-                        index
-                            .get_values(point_id)
-                            .map_or(false, |values| values.iter().any(|i| list.contains(i)))
-                    }))
-                }
-                _ => None,
-            },
-            Match::Except(MatchExcept { except }) => match (except, index) {
-                (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
-                    Some(Box::new(move |point_id: PointOffsetType| {
-                        index
-                            .get_values(point_id)
-                            .map_or(false, |values| values.iter().any(|k| !list.contains(k)))
-                    }))
-                }
-                (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
-                    Some(Box::new(move |point_id: PointOffsetType| {
-                        index
-                            .get_values(point_id)
-                            .map_or(false, |values| values.iter().any(|i| !list.contains(i)))
-                    }))
-                }
-                (_, index) => Some(Box::new(|point_id: PointOffsetType| {
-                    // If there is any other value of any other index, then it's a match
-                    index.values_count(point_id) > 0
-                })),
-            },
-        })
+        Match::Value(MatchValue {
+            value: value_variant,
+        }) => match (value_variant, index) {
+            (ValueVariants::Keyword(keyword), FieldIndex::KeywordIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    index
+                        .get_values(point_id)
+                        .map_or(false, |values| values.iter().any(|k| k == &keyword))
+                }))
+            }
+            (ValueVariants::Integer(value), FieldIndex::IntMapIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    index
+                        .get_values(point_id)
+                        .map_or(false, |values| values.iter().any(|i| i == &value))
+                }))
+            }
+            _ => None,
+        },
+        Match::Text(MatchText { text }) => match index {
+            FieldIndex::FullTextIndex(full_text_index) => {
+                let parsed_query = full_text_index.parse_query(&text)?;
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    full_text_index
+                        .get_doc(point_id)
+                        .map_or(false, |doc| parsed_query.check_match(doc.borrow()))
+                }))
+            }
+            _ => None,
+        },
+        Match::Any(MatchAny { any }) => match (any, index) {
+            (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    index
+                        .get_values(point_id)
+                        .map_or(false, |values| values.iter().any(|k| list.contains(k)))
+                }))
+            }
+            (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    index
+                        .get_values(point_id)
+                        .map_or(false, |values| values.iter().any(|i| list.contains(i)))
+                }))
+            }
+            _ => None,
+        },
+        Match::Except(MatchExcept { except }) => match (except, index) {
+            (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    index
+                        .get_values(point_id)
+                        .map_or(false, |values| values.iter().any(|k| !list.contains(k)))
+                }))
+            }
+            (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
+                Some(Box::new(move |point_id: PointOffsetType| {
+                    index
+                        .get_values(point_id)
+                        .map_or(false, |values| values.iter().any(|i| !list.contains(i)))
+                }))
+            }
+            (_, index) => Some(Box::new(|point_id: PointOffsetType| {
+                // If there is any other value of any other index, then it's a match
+                index.values_count(point_id) > 0
+            })),
+        },
+    })
 }

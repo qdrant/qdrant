@@ -172,10 +172,7 @@ impl<'a> Iterator for PayloadBlocksIterator<'a> {
 
 impl InvertedIndex for InvertedIndexOnDisk {
     type Document<'a> = Document;
-    fn document_from_tokens(
-        &mut self,
-        tokens: &BTreeSet<String>,
-    ) -> OperationResult<Document> {
+    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> OperationResult<Document> {
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab

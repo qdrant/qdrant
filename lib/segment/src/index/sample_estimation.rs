@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 
-use crate::{types::PointOffsetType, entry::entry_point::OperationResult};
+use crate::{entry::entry_point::OperationResult, types::PointOffsetType};
 
 const MAX_ESTIMATED_POINTS: usize = 1000;
 
@@ -98,7 +98,8 @@ mod tests {
             |idx| Ok(idx % 2 == 0),
             10_000,
             100_000,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(res)
     }

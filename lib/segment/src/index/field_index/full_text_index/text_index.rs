@@ -97,16 +97,22 @@ impl FullTextIndex {
         let mut error = None;
         Tokenizer::tokenize_query(text, &self.config, |token| {
             match self.inverted_index.get_token_id(token) {
-                Ok(token_id) => { tokens.insert(token_id); },
-                Err(err) => if error.is_none() { error = Some(Err(err)) },
+                Ok(token_id) => {
+                    tokens.insert(token_id);
+                }
+                Err(err) => {
+                    if error.is_none() {
+                        error = Some(Err(err))
+                    }
+                }
             };
         });
         if let Some(err) = error {
             err
         } else {
-        Ok(ParsedQuery {
-                    tokens: tokens.into_iter().collect(),
-                })
+            Ok(ParsedQuery {
+                tokens: tokens.into_iter().collect(),
+            })
         }
     }
 
@@ -131,7 +137,9 @@ impl FullTextIndex {
 
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         // Maybe we want number of documents in the future?
-        self.get_doc(point_id).map(|x| x.borrow().len()).unwrap_or(0)
+        self.get_doc(point_id)
+            .map(|x| x.borrow().len())
+            .unwrap_or(0)
     }
 }
 
