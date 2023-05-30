@@ -8,7 +8,7 @@ use crate::content_manager::errors::StorageError;
 
 pub type Collections = HashMap<CollectionId, Collection>;
 
-const INVALID_CHARS: [char; 2] = ['/', '\0'];
+const INVALID_CHARS: [char; 11] = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0', '\u{1F}'];
 
 #[async_trait]
 pub trait Checker {
