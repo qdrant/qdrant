@@ -529,6 +529,8 @@ pub trait SegmentOptimizer {
                 )?;
             }
 
+            optimized_segment.prefault_mmap_pages();
+
             let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
 
             let has_appendable_segments =
