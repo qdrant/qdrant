@@ -429,6 +429,7 @@ impl LocalShard {
                     log::error!("{err}");
                     return Err(err.clone());
                 }
+                Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
             }

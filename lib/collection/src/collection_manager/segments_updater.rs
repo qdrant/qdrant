@@ -23,11 +23,10 @@ pub(crate) fn check_unprocessed_points(
 ) -> CollectionResult<usize> {
     let first_missed_point = points.iter().copied().find(|p| !processed.contains(p));
 
-    if let Some(missed_point_id) = first_missed_point {
-        log::warn!("{}", CollectionError::PointNotFound { missed_point_id });
+    match first_missed_point {
+        None => Ok(processed.len()),
+        Some(missed_point_id) => Err(CollectionError::PointNotFound { missed_point_id }),
     }
-
-    Ok(processed.len())
 }
 
 /// Tries to delete points from all segments, returns number of actually deleted points
