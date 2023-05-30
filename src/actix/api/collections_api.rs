@@ -14,6 +14,7 @@ use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 use super::CollectionPath;
+use crate::actix::api::StrictCollectionPath;
 use crate::actix::helpers::process_response;
 use crate::common::collections::*;
 
@@ -66,7 +67,7 @@ async fn get_collection_aliases(
 #[put("/collections/{name}")]
 async fn create_collection(
     dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
+    collection: Path<StrictCollectionPath>,
     operation: Json<CreateCollection>,
     Query(query): Query<WaitTimeout>,
 ) -> impl Responder {
