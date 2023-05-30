@@ -54,7 +54,7 @@ config = "~0.13.3"
 
 tokio = { version = "~1.28", features = ["full"] }
 
-actix-web = { version = "4.3.1", optional = true, features = ["openssl"] }
+actix-web = { version = "4.3.1", optional = true, features = ["rustls", "actix-tls"] }
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
 tonic = { version = "0.9.2", features = ["gzip", "tls"] }
@@ -62,8 +62,9 @@ tower = "0.4.13"
 tower-layer = "0.3.2"
 num-traits = "0.2.15"
 tar = "0.4.38"
-reqwest = { version = "0.11", features = ["stream", "rustls-tls", "blocking"] }
-openssl = { version = "0.10", features = ["vendored"] }
+reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
+rustls = "0.20.7"
+rustls-pemfile = "1.0.2"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"

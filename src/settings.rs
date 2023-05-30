@@ -93,13 +93,14 @@ impl Default for ConsensusConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Validate)]
 pub struct TlsConfig {
     pub cert: String,
     pub key: String,
     pub ca_cert: String,
     #[serde(default = "default_tls_cert_ttl")]
-    pub cert_ttl: u64,
+    #[validate(range(min = 1))]
+    pub cert_ttl: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
@@ -117,6 +118,7 @@ pub struct Settings {
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
+    #[validate]
     pub tls: Option<TlsConfig>,
     /// A list of messages for errors that happened during loading the configuration. We collect
     /// them and store them here while loading because then our logger is not configured yet.
@@ -210,9 +212,9 @@ const fn default_message_timeout_tics() -> u64 {
     10
 }
 
-const fn default_tls_cert_ttl() -> u64 {
+const fn default_tls_cert_ttl() -> Option<u64> {
     // Default one hour
-    3600
+    Some(3600)
 }
 
 impl Settings {
