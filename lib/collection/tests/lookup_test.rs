@@ -1,5 +1,5 @@
 use collection::collection::Collection;
-use collection::lookup::{lookup_ids, LookupRequest};
+use collection::lookup::{lookup_ids, Lookup, LookupRequest};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::{Batch, WriteOrdering};
 use collection::shards::shard::ShardId;
@@ -131,15 +131,15 @@ async fn happy_lookup_ids() {
         .map(VectorStruct::from);
 
     for (id_value, vector) in values.into_iter().zip(expected_vectors) {
+        let Lookup::Single(record) = result.get(&id_value).unwrap() else {
+            panic!("Expected to find record for id {}", id_value);
+        };
+        assert_eq!(record.id, PointIdType::try_from(id_value.clone()).unwrap());
         assert_eq!(
-            result.get(&id_value).unwrap().id,
-            PointIdType::try_from(id_value.clone()).unwrap()
-        );
-        assert_eq!(
-            result.get(&id_value).unwrap().payload,
+            record.payload,
             Some(Payload::from(json!({ "foo": format!("bar {}", id_value) })))
         );
-        assert_eq!(result.get(&id_value).unwrap().vector, Some(vector));
+        assert_eq!(record.vector, Some(vector));
     }
 }
 
