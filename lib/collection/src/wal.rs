@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::path::Path;
-use std::result;
 use std::thread::JoinHandle;
+use std::{fs, result};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -54,16 +54,37 @@ pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,
     options: WalOptions,
+    first_index: Option<u64>,
 }
+
+const FIRST_INDEX_FILE: &str = "first-index";
 
 impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn new(dir: &str, wal_options: WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, &wal_options)
             .map_err(|err| WalError::InitWalError(format!("{err:?}")))?;
+
+        let first_index_path = Path::new(dir).join(FIRST_INDEX_FILE);
+
+        let first_index = if first_index_path.exists() {
+            let first_index = fs::read_to_string(&first_index_path).map_err(|err| {
+                WalError::InitWalError(format!("failed to read first-index file: {err}"))
+            })?;
+
+            let first_index: u64 = first_index.parse().map_err(|err| {
+                WalError::InitWalError(format!("failed to parse first-index value: {err}"))
+            })?;
+
+            Some(first_index.clamp(wal.first_index(), wal.last_index()))
+        } else {
+            None
+        };
+
         Ok(SerdeWal {
             record: PhantomData,
             wal,
             options: wal_options,
+            first_index,
         })
     }
 
@@ -77,7 +98,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     pub fn read_all(&'s self) -> impl Iterator<Item = (u64, R)> + 's {
-        self.read(self.wal.first_index())
+        self.read(self.first_index())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -85,14 +106,20 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     pub fn len(&self) -> u64 {
-        self.wal.num_entries()
+        self.wal
+            .num_entries()
+            .saturating_sub(self.truncated_prefix_entries_num())
+    }
+
+    fn truncated_prefix_entries_num(&self) -> u64 {
+        self.first_index().saturating_sub(self.wal.num_entries())
     }
 
     pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
-        let first_index = self.wal.first_index();
-        let num_entries = self.wal.num_entries();
+        let first_index = self.first_index();
+        let len = self.len();
 
-        (start_from..(first_index + num_entries)).map(move |idx| {
+        (start_from..(first_index + len)).map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
             let record: R = serde_cbor::from_slice(&record_bin)
                 .or_else(|_err| rmp_serde::from_slice(&record_bin))
@@ -111,7 +138,30 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
         self.wal
             .prefix_truncate(until_index)
-            .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))
+            .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))?;
+
+        self.first_index = self
+            .first_index
+            .unwrap_or(until_index.clamp(self.wal.first_index(), self.wal.last_index()))
+            .into();
+
+        // TODO: Should we log this error and continue instead of failing?
+        self.flush_first_index()?;
+
+        Ok(())
+    }
+
+    fn flush_first_index(&self) -> Result<()> {
+        let Some(first_index) = self.first_index else {
+            return Ok(());
+        };
+
+        // TODO: Should we log this error and continue instead of failing?
+        fs::write(self.path().join(FIRST_INDEX_FILE), first_index.to_string()).map_err(|err| {
+            WalError::TruncateWalError(format!("failed to write first-index file: {err}"))
+        })?;
+
+        Ok(())
     }
 
     pub fn flush(&mut self) -> Result<()> {
@@ -126,6 +176,10 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
     pub fn path(&self) -> &Path {
         self.wal.path()
+    }
+
+    pub fn first_index(&self) -> u64 {
+        self.first_index.unwrap_or_else(|| self.wal.first_index())
     }
 
     pub fn last_index(&self) -> u64 {
