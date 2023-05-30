@@ -4421,7 +4421,7 @@ dependencies = [
 [[package]]
 name = "tonic"
 version = "0.9.2"
-source = "git+https://github.com/timvisee/tonic?branch=http2-max-pending-reset-streams#c496843b032193fb83b3b12b0be413e1361d5b1d"
+source = "git+https://github.com/qdrant/tonic?branch=v0.9.2-patched#060ab88c87955adc59d46a44b4e3b72cb4cc1522"
 dependencies = [
  "async-stream",
  "async-trait",
