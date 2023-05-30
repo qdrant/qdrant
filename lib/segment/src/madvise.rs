@@ -48,9 +48,6 @@ pub enum Advice {
 
     /// See [`memmap2::Advice::Sequential`].
     Sequential,
-
-    /// See [`memmap2::Advice::WillNeed`].
-    WillNeed,
 }
 
 #[cfg(unix)]
@@ -60,7 +57,6 @@ impl From<Advice> for memmap2::Advice {
             Advice::Normal => memmap2::Advice::Normal,
             Advice::Random => memmap2::Advice::Random,
             Advice::Sequential => memmap2::Advice::Sequential,
-            Advice::WillNeed => memmap2::Advice::WillNeed,
         }
     }
 }
