@@ -16,10 +16,7 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
@@ -35,10 +32,7 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
@@ -122,10 +116,7 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - name: Set up Docker Buildx
@@ -161,10 +152,7 @@ jobs:
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable 
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v3
       - name: Set up Docker Buildx

@@ -16,17 +16,13 @@ jobs:
 
     steps:
     - name: Install miniml nightly (only for fmt)
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@nightly
       with:
         profile: minimal
-        toolchain: nightly
         components: rustfmt
     - name: Install minimal stable
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
-        profile: minimal
-        toolchain: stable
-        override: true
         components: rustfmt, clippy
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
