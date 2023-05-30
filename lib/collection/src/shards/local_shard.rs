@@ -404,7 +404,7 @@ impl LocalShard {
         //
         // Note, that it's not guaranted that some operation won't be re-applied to the storage.
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
-        // index *occasionally*), but the storage can handle operations being re-applied.
+        // index *occasionally*), but the storage can handle it.
 
         for (op_num, update) in wal.read_all() {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
