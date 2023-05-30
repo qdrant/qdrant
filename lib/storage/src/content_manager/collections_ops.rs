@@ -15,9 +15,7 @@ pub trait Checker {
     fn is_collection_exists(&self, collection_name: &str) -> bool;
 
     fn is_valid_collection_name(&self, collection_name: &str) -> bool {
-        !INVALID_CHARS
-            .iter()
-            .any(|&invalid_char| collection_name.contains(invalid_char))
+        !collection_name.contains(|c| INVALID_CHARS.contains(&c))
     }
 
     async fn validate_collection_not_exists(
