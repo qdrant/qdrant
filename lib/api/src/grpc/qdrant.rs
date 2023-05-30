@@ -256,7 +256,10 @@ pub mod quantization_config {
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom = "crate::grpc::validate::validate_collection_name"
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Configuration of vector index
     #[prost(message, optional, tag = "4")]
