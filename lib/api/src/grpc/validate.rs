@@ -208,13 +208,35 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
 mod tests {
     use validator::Validate;
 
-    use crate::grpc::qdrant::{CreateCollection, CreateFieldIndexCollection, SearchPoints};
+    use crate::grpc::qdrant::{
+        CreateCollection, CreateFieldIndexCollection, SearchPoints, UpdateCollection,
+    };
 
     #[test]
     fn test_good_request() {
         let bad_request = CreateCollection {
             collection_name: "test_collection".into(),
             timeout: Some(10),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_ok(),
+            "good collection request should not error on validation"
+        );
+
+        // Collection name validation must not be strict on non-creation
+        let bad_request = UpdateCollection {
+            collection_name: "no/path".into(),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_ok(),
+            "good collection request should not error on validation"
+        );
+
+        // Collection name validation must not be strict on non-creation
+        let bad_request = UpdateCollection {
+            collection_name: "no*path".into(),
             ..Default::default()
         };
         assert!(
@@ -228,6 +250,26 @@ mod tests {
         let bad_request = CreateCollection {
             collection_name: "".into(),
             timeout: Some(0),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_err(),
+            "bad collection request should error on validation"
+        );
+
+        // Collection name validation must be strict on creation
+        let bad_request = CreateCollection {
+            collection_name: "no/path".into(),
+            ..Default::default()
+        };
+        assert!(
+            bad_request.validate().is_err(),
+            "bad collection request should error on validation"
+        );
+
+        // Collection name validation must be strict on creation
+        let bad_request = CreateCollection {
+            collection_name: "no*path".into(),
             ..Default::default()
         };
         assert!(
