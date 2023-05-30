@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
@@ -18,52 +19,24 @@ use crate::operations::vector_ops::{PointVectors, VectorOperations};
 use crate::operations::FieldIndexOperations;
 
 pub(crate) fn check_unprocessed_points(
-    segments: &SegmentHolder,
-    op_num: SeqNumberType,
     points: &[PointIdType],
     processed: &HashSet<PointIdType>,
 ) -> CollectionResult<usize> {
-    let mut max_segment_version = 0;
-    let mut versions = HashMap::new();
+    let unprocessed_points = points
+        .iter()
+        .cloned()
+        .filter(|p| !processed.contains(p))
+        .collect_vec();
+    let missed_point = unprocessed_points.iter().cloned().next();
 
-    for (_, segment) in segments.iter() {
-        let segment = segment.get();
-        let segment = segment.read();
+    // ToDo: check pre-existing points
 
-        max_segment_version = max_segment_version.max(segment.version());
-
-        for &point_id in points {
-            let point_version = match segment.point_version(point_id) {
-                Some(point_version) => point_version,
-                None => continue,
-            };
-
-            match versions.get_mut(&point_id) {
-                Some(version) => {
-                    *version = point_version.max(*version);
-                }
-
-                None => {
-                    versions.insert(point_id, point_version);
-                }
-            }
-        }
+    match missed_point {
+        None => Ok(processed.len()),
+        Some(missed_point) => Err(CollectionError::PointNotFound {
+            missed_point_id: missed_point,
+        }),
     }
-
-    for &point_id in points.iter().filter(|&point| !processed.contains(point)) {
-        let point_version_or_max_segment_version = versions
-            .get(&point_id)
-            .copied()
-            .unwrap_or(max_segment_version);
-
-        if op_num >= point_version_or_max_segment_version {
-            return Err(CollectionError::PointNotFound {
-                missed_point_id: point_id,
-            });
-        }
-    }
-
-    Ok(points.len())
 }
 
 /// Tries to delete points from all segments, returns number of actually deleted points
@@ -94,7 +67,7 @@ pub(crate) fn update_vectors(
             let vectors = points_map[&id].vector.clone().into_all_vectors();
             write_segment.update_vectors(op_num, id, vectors)
         })?;
-    check_unprocessed_points(segments, op_num, &ids, &updated_points)?;
+    check_unprocessed_points(&ids, &updated_points)?;
     Ok(updated_points.len())
 }
 
@@ -139,7 +112,7 @@ pub(crate) fn overwrite_payload(
             Ok(true)
         })?;
 
-    check_unprocessed_points(segments, op_num, points, &updated_points)?;
+    check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
 }
 
@@ -165,7 +138,7 @@ pub(crate) fn set_payload(
             Ok(true)
         })?;
 
-    check_unprocessed_points(segments, op_num, points, &updated_points)?;
+    check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
 }
 
@@ -207,7 +180,7 @@ pub(crate) fn delete_payload(
             Ok(res)
         })?;
 
-    check_unprocessed_points(segments, op_num, points, &updated_points)?;
+    check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
 }
 
@@ -231,7 +204,7 @@ pub(crate) fn clear_payload(
             write_segment.clear_payload(op_num, id)
         })?;
 
-    check_unprocessed_points(segments, op_num, points, &updated_points)?;
+    check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
 }
 
