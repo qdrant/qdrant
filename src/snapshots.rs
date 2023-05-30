@@ -12,7 +12,7 @@ use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
 ///
 /// # Arguments
 ///
-/// * `mapping` - [ "<path>:<collection_name>" ]
+/// * `mapping` - `[ <path>:<collection_name> ]`
 /// * `force` - if true, allow to overwrite collections from snapshots
 ///
 /// # Returns

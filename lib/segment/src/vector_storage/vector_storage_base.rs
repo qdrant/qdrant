@@ -50,11 +50,11 @@ pub trait VectorStorage {
 
     /// Get the number of available vectors, considering deleted points and vectors
     ///
-    /// This uses [`total_vector_count`] and [`deleted_vector_count`] internally.
+    /// This uses [`VectorStorage::total_vector_count`] and [`VectorStorage::deleted_vector_count`] internally.
     ///
     /// # Warning
     ///
-    /// This number may not always be accurate. See warning in [`deleted_vector_count`] documentation.
+    /// This number may not always be accurate. See warning in [`VectorStorage::deleted_vector_count`] documentation.
     fn available_vector_count(&self) -> usize {
         self.total_vector_count()
             .saturating_sub(self.deleted_vector_count())

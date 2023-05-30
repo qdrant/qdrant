@@ -101,7 +101,7 @@ struct Args {
 
     /// Disable telemetry sending to developers
     /// If provided - telemetry collection will be disabled.
-    /// Read more: https://qdrant.tech/documentation/guides/telemetry
+    /// Read more: <https://qdrant.tech/documentation/guides/telemetry>
     #[arg(long, action, default_value_t = false)]
     disable_telemetry: bool,
 }
