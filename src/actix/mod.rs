@@ -6,6 +6,7 @@ mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
+use std::io;
 use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
@@ -17,7 +18,6 @@ use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Res
 use collection::operations::validation;
 use storage::dispatcher::Dispatcher;
 
-use self::certificate_helpers::build_ssl_acceptor;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
@@ -41,7 +41,7 @@ pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     settings: Settings,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::from(dispatcher.toc().clone());
         let dispatcher_data = web::Data::from(dispatcher);
@@ -103,9 +103,23 @@ pub fn init(
 
         let bind_addr = format!("{}:{}", settings.service.host, settings.service.http_port);
 
+        // With TLS enabled, bind with certificate helper and Rustls, or bind regularly
         server = if settings.service.enable_tls {
-            server.bind_openssl(bind_addr, build_ssl_acceptor(&settings)?)?
+            log::info!(
+                "TLS enabled for REST API (TTL: {})",
+                settings
+                    .tls
+                    .as_ref()
+                    .and_then(|tls| tls.cert_ttl)
+                    .map(|ttl| ttl.to_string())
+                    .unwrap_or_else(|| "none".into()),
+            );
+
+            let config = certificate_helpers::actix_tls_server_config(&settings)?;
+            server.bind_rustls(bind_addr, config)?
         } else {
+            log::info!("TLS disabled for REST API");
+
             server.bind(bind_addr)?
         };
 

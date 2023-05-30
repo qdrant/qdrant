@@ -67,12 +67,16 @@ pub fn init(
         let mut server = Server::builder();
 
         if settings.service.enable_tls {
+            log::info!("TLS enabled for gRPC API (TTL not supported)");
+
             let tls_server_config = helpers::load_tls_external_server_config(settings.tls()?)?;
 
             server = server
                 .tls_config(tls_server_config)
                 .map_err(helpers::tonic_error_to_io_error)?;
-        };
+        } else {
+            log::info!("TLS disabled for gRPC API");
+        }
 
         // The stack of middleware that our service will be wrapped in
         let middleware_layer = tower::ServiceBuilder::new()
@@ -154,7 +158,11 @@ pub fn init_internal(
             let mut server = Server::builder();
 
             if let Some(config) = tls_config {
+                log::info!("TLS enabled for internal gRPC API (TTL not supported)");
+
                 server = server.tls_config(config)?;
+            } else {
+                log::info!("TLS disabled for internal gRPC API");
             };
 
             // The stack of middleware that our service will be wrapped in
