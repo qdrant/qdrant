@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
-use segment::common::mmap_ops;
 use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
@@ -14,9 +13,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Duration;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentId,
-};
+use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -222,18 +219,11 @@ impl UpdateHandler {
                     }
                     let callback_cloned = callback.clone();
 
-                    let segments = segments.clone();
-
                     handles.push(spawn_stoppable(move |stopped| {
                         match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
-                            Ok(optimized_segment_id) => {
-                                preheat_disk_cache_of_single_segment(
-                                    &segments,
-                                    optimized_segment_id,
-                                );
-
-                                callback_cloned(optimized_segment_id.is_some()); // Perform some actions when optimization if finished
-                                optimized_segment_id.is_some()
+                            Ok(result) => {
+                                callback_cloned(result); // Perform some actions when optimization if finished
+                                result
                             }
                             Err(error) => match error {
                                 CollectionError::Cancelled { description } => {
@@ -455,58 +445,4 @@ impl UpdateHandler {
             Some(failed_operation) => min(failed_operation, flushed_version),
         })
     }
-
-    pub fn preheat_disk_cache_of_all_segments(&self) {
-        let segments = self.segments.read();
-
-        let mut tasks = Vec::new();
-
-        for (_, segment) in segments.iter() {
-            let segment = match segment {
-                LockedSegment::Original(segment) => segment,
-                _ => continue,
-            };
-
-            tasks.extend(segment.read().preheat_disk_cache());
-        }
-
-        schedule_preheat_disk_cache_tasks(tasks);
-    }
 }
-
-fn preheat_disk_cache_of_single_segment(
-    segments: &LockedSegmentHolder,
-    segment_id: Option<SegmentId>,
-) {
-    let segment_id = match segment_id {
-        Some(id) => id,
-        None => return,
-    };
-
-    let segment = {
-        let segments = segments.read();
-
-        match segments.get(segment_id) {
-            Some(LockedSegment::Original(segment)) => segment.clone(),
-            _ => return,
-        }
-    };
-
-    let tasks = segment.read().preheat_disk_cache().collect();
-
-    schedule_preheat_disk_cache_tasks(tasks);
-}
-
-fn schedule_preheat_disk_cache_tasks(tasks: Vec<mmap_ops::PreheatDiskCache>) {
-    let fut = tokio::task::spawn_blocking(move || {
-        let _lock = PREHEAT_DISK_CACHE_MUTEX.lock();
-
-        for task in tasks {
-            task.exec();
-        }
-    });
-
-    drop(fut); // Explicitly dropping the future to make clippy happy
-}
-
-static PREHEAT_DISK_CACHE_MUTEX: parking_lot::Mutex<()> = parking_lot::const_mutex(());

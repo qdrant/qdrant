@@ -379,7 +379,7 @@ pub trait SegmentOptimizer {
         segments: LockedSegmentHolder,
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
-    ) -> CollectionResult<Option<SegmentId>> {
+    ) -> CollectionResult<bool> {
         check_process_stopped(stopped)?;
 
         let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());
@@ -408,7 +408,7 @@ pub trait SegmentOptimizer {
 
         if !all_segments_ok {
             // Cancel the optimization
-            return Ok(None);
+            return Ok(false);
         }
 
         check_process_stopped(stopped)?;
@@ -505,7 +505,7 @@ pub trait SegmentOptimizer {
             error
         })?;
 
-        let optimized_segment_id = {
+        {
             // This block locks all operations with collection. It should be fast
             let mut write_segments_guard = segments.write();
             let deleted_points = proxy_deleted_points.read();
@@ -529,15 +529,7 @@ pub trait SegmentOptimizer {
                 )?;
             }
 
-            let (optimized_segment_id, proxies) =
-                write_segments_guard.swap(optimized_segment, &proxy_ids);
-
-            // If optimized segment is backed by memmapped storage, mmap disk-cache preheat
-            // could be scheduled starting from here... but that's not very convenient given current
-            // code structure.
-            //
-            // Seems like the best way would be to schedule mmap disk-cache preheat up the call
-            // stack somewhere, after `optimize` return.
+            let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
 
             let has_appendable_segments =
                 write_segments_guard.random_appendable_segment().is_some();
@@ -568,11 +560,8 @@ pub trait SegmentOptimizer {
                 }
                 tmp_segment.drop_data()?;
             }
-
-            optimized_segment_id
-        };
-
+        }
         timer.set_success(true);
-        Ok(Some(optimized_segment_id))
+        Ok(true)
     }
 }
