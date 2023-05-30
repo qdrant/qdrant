@@ -288,8 +288,9 @@ impl TableOfContent {
             quantization_config,
         } = operation;
 
-        let _collections = self.collections.read().await;
-        _collections
+        self.collections
+            .read()
+            .await
             .validate_collection_not_exists(collection_name)
             .await?;
 
