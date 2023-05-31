@@ -2,7 +2,7 @@
 name = "qdrant"
 version = "0.11.1"
 authors = [
-    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
 ]
 readme = "README.md"
