@@ -48,15 +48,15 @@ impl From<GroupId> for serde_json::Value {
 impl TryFrom<&serde_json::Value> for GroupId {
     type Error = ();
 
-    /// Only allows Strings and Numbers to be converted into Scalar
+    /// Only allows Strings and Numbers to be converted into GroupId
     fn try_from(value: &serde_json::Value) -> Result<Self, Self::Error> {
         match value {
             serde_json::Value::String(s) => Ok(Self::String(s.to_string())),
             serde_json::Value::Number(n) => {
-                if let Some(n_i64) = n.as_i64() {
-                    Ok(Self::NumberI64(n_i64))
-                } else if let Some(n_u64) = n.as_u64() {
+                if let Some(n_u64) = n.as_u64() {
                     Ok(Self::NumberU64(n_u64))
+                } else if let Some(n_i64) = n.as_i64() {
+                    Ok(Self::NumberI64(n_i64))
                 } else {
                     Err(())
                 }

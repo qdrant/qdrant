@@ -13,7 +13,11 @@ use crate::operations::types::{CollectionResult, PointGroup};
 use crate::shards::shard::ShardId;
 
 /// Builds on top of the group_by function to add lookup and possibly other features
-pub struct GroupBy<'a, F> {
+pub struct GroupBy<'a, F, Fut>
+where
+    F: Fn(String) -> Fut + Clone,
+    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+{
     group_by: GroupRequest,
     collection: &'a Collection,
     /// `Fn` to get a collection having its name. Obligatory for recommend and lookup
@@ -23,7 +27,7 @@ pub struct GroupBy<'a, F> {
     lookup: Option<LookupRequest>,
 }
 
-impl<'a, F, Fut> GroupBy<'a, F>
+impl<'a, F, Fut> GroupBy<'a, F, Fut>
 where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
@@ -67,7 +71,7 @@ where
 
         if let Some(lookup) = self.lookup {
             let mut lookups = {
-                let group_ids = groups
+                let pseudo_ids = groups
                     .iter()
                     .cloned()
                     .map(|group| group.id)
@@ -76,7 +80,7 @@ where
 
                 lookup_ids(
                     lookup,
-                    group_ids,
+                    pseudo_ids,
                     self.collection_by_name,
                     self.read_consistency,
                     self.shard_selection,
