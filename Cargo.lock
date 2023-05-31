@@ -2365,9 +2365,9 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0aa1b505aeecb0adb017db2b6a79a17a38e64f882a201f05e9de8a982cd6096"
+checksum = "6d28bba84adfe6646737845bc5ebbfa2c08424eb1c37e94a1fd2a82adb56a872"
 dependencies = [
  "libc",
 ]
@@ -3701,7 +3701,7 @@ dependencies = [
  "geohash",
  "itertools",
  "log",
- "memmap2 0.6.1",
+ "memmap2 0.6.2",
  "num-derive",
  "num-traits",
  "num_cpus",
@@ -4709,7 +4709,7 @@ dependencies = [
  "env_logger",
  "fs4",
  "log",
- "memmap2 0.6.1",
+ "memmap2 0.6.2",
  "rand 0.8.5",
  "rand_distr",
  "rustix 0.37.4",
