@@ -5,6 +5,7 @@ pub mod common;
 pub mod config;
 pub mod grouping;
 pub mod hash_ring;
+pub mod lookup;
 pub mod operations;
 pub mod optimizers_builder;
 pub mod recommendations;

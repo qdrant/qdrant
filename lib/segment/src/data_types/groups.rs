@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+/// Value of the group_by key, shared across all the hits in the group
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Eq, PartialEq, Clone, Hash)]
 #[serde(untagged)]
 pub enum GroupId {
@@ -47,7 +48,7 @@ impl From<GroupId> for serde_json::Value {
 impl TryFrom<&serde_json::Value> for GroupId {
     type Error = ();
 
-    /// Only allows Strings and Numbers to be converted into GroupId
+    /// Only allows Strings and Numbers to be converted into Scalar
     fn try_from(value: &serde_json::Value) -> Result<Self, Self::Error> {
         match value {
             serde_json::Value::String(s) => Ok(Self::String(s.to_string())),

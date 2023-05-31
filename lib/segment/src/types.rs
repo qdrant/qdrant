@@ -203,7 +203,7 @@ impl PartialEq for ScoredPoint {
 pub struct PointGroup {
     /// Scored points that have the same value of the group_by key
     pub hits: Vec<ScoredPoint>,
-    /// Value of the group_by key shared by all the hits
+    /// Value of the group_by key, shared across all the hits in the group
     pub id: GroupId,
 }
 
@@ -1395,6 +1395,12 @@ pub enum WithPayloadInterface {
     Fields(Vec<String>),
     /// Specify included or excluded fields
     Selector(PayloadSelector),
+}
+
+impl From<bool> for WithPayloadInterface {
+    fn from(b: bool) -> Self {
+        WithPayloadInterface::Bool(b)
+    }
 }
 
 /// Options for specifying which vector to include
