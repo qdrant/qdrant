@@ -482,6 +482,7 @@ mod group_by {
     }
 }
 
+/// Tests out the different features working together. The individual features are already tested in other places.
 mod group_by_builder {
 
     use collection::grouping::GroupBy;
@@ -606,9 +607,9 @@ mod group_by_builder {
 
         let collection_by_name = |_: String| async { unreachable!() };
 
-        let group_by = GroupBy::new(group_by_request.clone(), &collection, collection_by_name);
-
-        let result = group_by.execute().await;
+        let result = GroupBy::new(group_by_request.clone(), &collection, collection_by_name)
+            .execute()
+            .await;
 
         assert!(result.is_ok());
 
@@ -618,6 +619,7 @@ mod group_by_builder {
         assert_eq!(result.len(), group_by_request.limit);
         for group in result {
             assert_eq!(group.hits.len(), group_by_request.group_size);
+            assert!(group.lookup.is_none());
         }
     }
 
