@@ -1,10 +1,13 @@
 [package]
 name = "storage"
 version = "0.2.0"
-authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
 tempfile = "3.5.0"
 proptest = "1.2.0"
