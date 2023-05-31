@@ -7823,6 +7823,17 @@
           },
           "id": {
             "$ref": "#/components/schemas/GroupId"
+          },
+          "lookup": {
+            "description": "Record that has been looked up using the group id",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Lookup"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7840,6 +7851,16 @@
           {
             "type": "integer",
             "format": "int64"
+          }
+        ]
+      },
+      "Lookup": {
+        "anyOf": [
+          {
+            "nullable": true
+          },
+          {
+            "$ref": "#/components/schemas/Record"
           }
         ]
       },
