@@ -277,6 +277,9 @@ pub struct SearchGroupsRequest {
     #[serde(flatten)]
     #[validate]
     pub group_request: BaseGroupRequest,
+
+    /// Look for points in another collection using the group ids
+    pub lookup: Option<LookupRequest>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
