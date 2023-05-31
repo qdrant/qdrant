@@ -4,7 +4,7 @@ use api::grpc::transport_channel_pool::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::operations::validation;
-use config::{Config, ConfigError, Environment, File, FileFormat};
+use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use segment::common::cpu::get_num_cpus;
 use serde::Deserialize;
 use storage::types::StorageConfig;
@@ -93,13 +93,14 @@ impl Default for ConsensusConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Validate)]
 pub struct TlsConfig {
     pub cert: String,
     pub key: String,
     pub ca_cert: String,
     #[serde(default = "default_tls_cert_ttl")]
-    pub cert_ttl: u64,
+    #[validate(range(min = 1))]
+    pub cert_ttl: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
@@ -117,10 +118,28 @@ pub struct Settings {
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
+    #[validate]
     pub tls: Option<TlsConfig>,
-    // Can't use `#[serde(skip)]` here. It prevents overriding the value later.
-    #[serde(default)]
-    pub found_config_files: bool,
+    /// A list of messages for errors that happened during loading the configuration. We collect
+    /// them and store them here while loading because then our logger is not configured yet.
+    /// We therefore need to log these messages later, after the logger is ready.
+    #[serde(default, skip)]
+    pub load_errors: Vec<LogMsg>,
+}
+
+#[derive(Clone, Debug)]
+pub enum LogMsg {
+    Warn(String),
+    Error(String),
+}
+
+impl LogMsg {
+    fn log(&self) {
+        match self {
+            Self::Warn(msg) => log::warn!("{msg}"),
+            Self::Error(msg) => log::error!("{msg}"),
+        }
+    }
 }
 
 impl Settings {
@@ -139,9 +158,8 @@ impl Settings {
 
     #[allow(dead_code)]
     pub fn validate_and_warn(&self) {
-        if !self.found_config_files {
-            log::warn!("Configuration files not found. Using default configuration.");
-        }
+        // Print any load error messages we had
+        self.load_errors.iter().for_each(LogMsg::log);
 
         if let Err(ref errs) = self.validate() {
             validation::warn_validation_errors("Settings configuration file", errs);
@@ -149,15 +167,15 @@ impl Settings {
     }
 }
 
-fn default_telemetry_disabled() -> bool {
+const fn default_telemetry_disabled() -> bool {
     false
 }
 
-fn default_cors() -> bool {
+const fn default_cors() -> bool {
     true
 }
 
-fn default_debug() -> bool {
+const fn default_debug() -> bool {
     false
 }
 
@@ -165,84 +183,92 @@ fn default_log_level() -> String {
     "INFO".to_string()
 }
 
-fn default_timeout_ms() -> u64 {
+const fn default_timeout_ms() -> u64 {
     DEFAULT_GRPC_TIMEOUT.as_millis() as u64
 }
 
-fn default_connection_timeout_ms() -> u64 {
+const fn default_connection_timeout_ms() -> u64 {
     DEFAULT_CONNECT_TIMEOUT.as_millis() as u64
 }
 
-fn default_tick_period_ms() -> u64 {
+const fn default_tick_period_ms() -> u64 {
     100
 }
 
 // Should not be less than `DEFAULT_META_OP_WAIT` as bootstrapping perform sync. consensus meta operations.
-fn default_bootstrap_timeout_sec() -> u64 {
+const fn default_bootstrap_timeout_sec() -> u64 {
     15
 }
 
-fn default_max_message_queue_size() -> usize {
+const fn default_max_message_queue_size() -> usize {
     100
 }
 
-fn default_connection_pool_size() -> usize {
+const fn default_connection_pool_size() -> usize {
     DEFAULT_POOL_SIZE
 }
 
-fn default_message_timeout_tics() -> u64 {
+const fn default_message_timeout_tics() -> u64 {
     10
 }
 
-const fn default_tls_cert_ttl() -> u64 {
+const fn default_tls_cert_ttl() -> Option<u64> {
     // Default one hour
-    3600
+    Some(3600)
 }
 
 impl Settings {
     #[allow(dead_code)]
-    pub fn new(config_path: Option<String>) -> Result<Self, ConfigError> {
-        let config_path = config_path.unwrap_or_else(|| "config/config".into());
-        let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
+    pub fn new(custom_config_path: Option<String>) -> Result<Self, ConfigError> {
+        let mut load_errors = vec![];
+        let config_exists = |path| File::with_name(path).collect().is_ok();
 
-        if env::var("RUN_MODE").is_ok()
-            && Config::builder()
-                .add_source(File::with_name(&config_path))
-                .add_source(File::with_name(&format!("config/{env}")))
-                .build()
-                .is_err()
-        {
-            return Err(ConfigError::Message("`RUN_MODE` environment variable is set, but couldn't find matching configuration files".to_string()));
+        // Check if custom config file exists, report error if not
+        if let Some(ref path) = custom_config_path {
+            if !config_exists(path) {
+                load_errors.push(LogMsg::Error(format!(
+                    "Config file via --config-path is not found: {path}"
+                )));
+            }
         }
 
-        let mut s = Config::builder()
-            // Start with the default configuration file contents at compile time
-            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml));
+        let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
+        let config_path_env = format!("config/{env}");
 
-        let found_config_files = Config::builder()
-            .add_source(File::with_name(&config_path))
-            .build()
-            .is_ok();
+        // Report error if main or env config files exist, report warning if not
+        // Check if main and env configuration file
+        load_errors.extend(
+            ["config/config", &config_path_env]
+                .into_iter()
+                .filter(|path| !config_exists(path))
+                .map(|path| LogMsg::Warn(format!("Config file not found: {path}"))),
+        );
 
-        s = s
-            // Then merge in the default configuration file contents at run time
-            .add_source(File::with_name(&config_path).required(false))
-            // Add in the current environment file
-            // Default to 'development' env
-            // Note that this file is _optional_
-            .add_source(File::with_name(&format!("config/{env}")).required(false))
-            // Add in a local configuration file
-            // This file shouldn't be checked in to git
-            .add_source(File::with_name("config/local").required(false))
-            // Add in settings from the environment (with a prefix of APP)
-            // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
-            .add_source(Environment::with_prefix("QDRANT").separator("__"))
-            .set_override("found_config_files", found_config_files)?;
+        // Configuration builder: define different levels of configuration files
+        let mut config = Config::builder()
+            // Start with compile-time base config
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
+            // Merge main config: config/config
+            .add_source(File::with_name("config/config").required(false))
+            // Merge env config: config/{env}
+            // Uses RUN_MODE, defaults to 'development'
+            .add_source(File::with_name(&config_path_env).required(false))
+            // Merge local config, not tracked in git: config/local
+            .add_source(File::with_name("config/local").required(false));
 
-        let s = s.build()?;
+        // Merge user provided config with --config-path
+        if let Some(path) = custom_config_path {
+            config = config.add_source(File::with_name(&path).required(false));
+        }
 
-        // You can deserialize (and thus freeze) the entire configuration as
-        s.try_deserialize()
+        // Merge environment settings
+        // E.g.: `QDRANT_DEBUG=1 ./target/app` would set `debug=true`
+        config = config.add_source(Environment::with_prefix("QDRANT").separator("__"));
+
+        // Build and merge config and deserialize into Settings, attach any load errors we had
+        let mut settings: Settings = config.build()?.try_deserialize()?;
+        settings.load_errors.extend(load_errors);
+        Ok(settings)
     }
 }
 
@@ -263,6 +289,9 @@ pub fn max_web_workers(settings: &Settings) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::io::Write;
+
     use sealed_test::prelude::*;
 
     use super::*;
@@ -282,15 +311,14 @@ mod tests {
 
     #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
     fn test_runtime_development_config() {
+        env::set_var("RUN_MODE", "development");
+
         // `sealed_test` copies files into the same directory as the test runs in.
         // We need them in a subdirectory.
         std::fs::create_dir("config").expect("failed to create `config` subdirectory.");
         std::fs::copy("config.yaml", "config/config.yaml").expect("failed to copy `config.yaml`.");
         std::fs::copy("development.yaml", "config/development.yaml")
             .expect("failed to copy `development.yaml`.");
-
-        let key = "RUN_MODE";
-        env::set_var(key, "development");
 
         // Read config
         let config = Settings::new(None).expect("failed to load development config at runtime");
@@ -299,13 +327,12 @@ mod tests {
         config
             .validate()
             .expect("failed to validate development config at runtime");
-        assert!(config.found_config_files)
+        assert!(config.load_errors.is_empty(), "must not have load errors")
     }
 
     #[sealed_test]
     fn test_no_config_files() {
         let non_existing_config_path = "config/non_existing_config".to_string();
-        env::remove_var("RUN_MODE");
 
         // Read config
         let config = Settings::new(Some(non_existing_config_path))
@@ -315,6 +342,25 @@ mod tests {
         config
             .validate()
             .expect("failed to validate with non-existing runtime config");
-        assert!(!config.found_config_files)
+        assert!(!config.load_errors.is_empty(), "must have load errors")
+    }
+
+    #[sealed_test]
+    fn test_custom_config() {
+        let path = "config/custom.yaml";
+
+        // Create custom config file
+        {
+            fs::create_dir("config").unwrap();
+            let mut custom = fs::File::create(path).unwrap();
+            write!(&mut custom, "service:\n    http_port: 9999").unwrap();
+            custom.flush().unwrap();
+        }
+
+        // Load settings with custom config
+        let config = Settings::new(Some(path.into())).unwrap();
+
+        // Ensure our custom config is the most important
+        assert_eq!(config.service.http_port, 9999);
     }
 }

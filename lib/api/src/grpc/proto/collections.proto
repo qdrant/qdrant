@@ -204,7 +204,7 @@ message CreateCollection {
   optional HnswConfigDiff hnsw_config = 4; // Configuration of vector index
   optional WalConfigDiff wal_config = 5; // Configuration of the Write-Ahead-Log
   optional OptimizersConfigDiff optimizers_config = 6; // Configuration of the optimizers
-  optional uint32 shard_number = 7; // Number of shards in the collection, default = 1
+  optional uint32 shard_number = 7; // Number of shards in the collection, default is 1 for standalone, otherwise equal to the number of nodes. Minimum is 1
   optional bool on_disk_payload = 8; // If true - point's payload will not be stored in memory
   optional uint64 timeout = 9; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
   optional VectorsConfig vectors_config = 10; // Configuration for vectors

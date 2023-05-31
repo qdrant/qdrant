@@ -29,8 +29,8 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 ## Milestones
 
 * :atom_symbol: Quantization support
-  * [ ] Scalar quantization f32 -> u8 (4x compression)
-  * [ ] Advanced quantization (8x and 16x compression)
+  * [x] Scalar quantization f32 -> u8 (4x compression)
+  * [x] Product quantization (4x, 8x, 16x, 32x, and 64x compression)
   * [ ] Support for binary vectors
 
 ---

@@ -16,10 +16,7 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
@@ -35,10 +32,7 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
@@ -87,7 +81,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
           build-args: |
-            RUST_BUILD_PROFILE=ci
+            PROFILE=ci
       - name: Run integration tests - multiple peers - compose
         run: ./test_restart.sh
         working-directory: ./tests/consensus_tests
@@ -111,7 +105,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
           build-args: |
-            RUST_BUILD_PROFILE=ci
+            PROFILE=ci
       - name: Run integration tests
         run: ./test_tls.sh
         working-directory: ./tests/tls
@@ -122,10 +116,7 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - name: Set up Docker Buildx
@@ -141,7 +132,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref }}-schema2openapi
           load: true
           build-args: |
-            RUST_BUILD_PROFILE=ci
+            PROFILE=ci
       - name: Install Protoc
         uses: arduino/setup-protoc@v1
         with:
@@ -161,10 +152,7 @@ jobs:
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable 
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v3
       - name: Set up Docker Buildx
@@ -180,7 +168,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref }}
           load: true
           build-args: |
-            RUST_BUILD_PROFILE=ci
+            PROFILE=ci
       - name: Run low RAM test
         working-directory: ./tests/low-ram
         shell: bash
