@@ -158,10 +158,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))?;
 
         // Update current `first_index`
-        self.first_index = self
-            .first_index
-            .unwrap_or(until_index.clamp(self.wal.first_index(), self.wal.last_index()))
-            .into();
+        self.first_index = Some(until_index.clamp(self.wal.first_index(), self.wal.last_index()));
 
         // Persist current `first_index` value on disk
         // TODO: Should we log this error and continue instead of failing?
