@@ -23,8 +23,6 @@
 //! behavior. Problems caused by this are very hard to debug.
 
 use std::ops::{Deref, DerefMut};
-#[cfg(windows)]
-use std::ptr::NonNull;
 use std::sync::Arc;
 use std::{mem, slice};
 
@@ -380,13 +378,6 @@ where
         return Err(Error::SizeExact(size_t, mmap.len()));
     }
 
-    // Empty mmap is not supported on Windows, return zero-sized T at dangling pointer instead
-    #[cfg(windows)]
-    if mmap.is_empty() {
-        debug_assert_eq!(size_t, 0);
-        return Ok(NonNull::dangling().as_mut());
-    }
-
     // Obtain unbounded bytes slice into mmap
     let bytes: &'unbnd mut [u8] = {
         let slice = mmap.deref_mut();
@@ -407,8 +398,6 @@ where
 /// Get a second mutable reference for a slice of type `T` from the given mmap
 ///
 /// A (non-zero) header size in bytes may be provided to omit from the BitSlice data.
-///
-/// On Windows, if an empty mmap is provided. An empty slice at dangling pointer is returned.
 ///
 /// # Warning
 ///
@@ -447,13 +436,6 @@ where
         if mmap.len() % size_t != 0 {
             return Err(Error::SizeMultiple(size_t, mmap.len()));
         }
-    }
-
-    // Empty mmap is not supported on Windows, return empty slice at dangling pointer instead
-    #[cfg(windows)]
-    if mmap.is_empty() {
-        let dangling = NonNull::dangling();
-        return Ok(slice::from_raw_parts_mut(dangling.as_ptr(), 0));
     }
 
     // Obtain unbounded bytes slice into mmap
