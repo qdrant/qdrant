@@ -17,8 +17,8 @@ use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot;
-use tokio::sync::oneshot::Receiver;
+use tokio::sync::broadcast;
+use tokio::sync::broadcast::Receiver;
 use tokio::time::error::Elapsed;
 use tonic::transport::Uri;
 
@@ -36,6 +36,7 @@ use crate::types::{
 };
 
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
+pub const MAX_OPERATION_ACK_COALESCE: usize = 32;
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
@@ -81,7 +82,7 @@ pub struct ConsensusManager<C: CollectionContainer> {
     /// Signal is changed on change proposal and triggered if the change was applied by consensus on this peer.
     /// Also sends the result of the operation.
     on_consensus_op_apply:
-        Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
+        Mutex<HashMap<ConsensusOperations, broadcast::Sender<Result<bool, StorageError>>>>,
     /// Propose operation to the consensus.
     /// Sends messages to the consensus thread, which is defined externally, outside of the state.
     /// (e.g. in the `src/consensus.rs`)
@@ -524,20 +525,24 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     async fn await_receiver(
-        receiver: Receiver<Result<bool, StorageError>>,
+        mut receiver: Receiver<Result<bool, StorageError>>,
         wait_timeout: Duration,
     ) -> Result<bool, StorageError> {
-        tokio::time::timeout(wait_timeout, receiver)
+        let timeout_res = tokio::time::timeout(wait_timeout, receiver.recv())
             .await
-            .map_err(
-                |_: Elapsed| {
-                    StorageError::service_error(format!(
-                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                        wait_timeout.as_secs_f64()
-                    ))
-                },
-                // ??? - forwards 2 possible errors: sender dropped, operation failed
-            )??
+            .map_err(|_: Elapsed| {
+                StorageError::service_error(format!(
+                    "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
+                    wait_timeout.as_secs_f64()
+                ))
+            })?;
+        // 2 possible errors to forward: channel sender dropped OR operation failed
+        timeout_res.map_err(|err| {
+            StorageError::service_error(format!(
+                "Error occurred while waiting for consensus operation. Channel sender dropped ({})",
+                err
+            ))
+        })?
     }
 
     pub fn await_for_multiple_operations(
@@ -547,13 +552,24 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> impl Future<Output = Result<Result<(), StorageError>, Elapsed>> {
         let mut receivers = vec![];
         for operation in operations {
-            let (sender, receiver) = oneshot::channel();
-            self.on_consensus_op_apply.lock().insert(operation, sender);
+            let (sender, mut receiver) = broadcast::channel(MAX_OPERATION_ACK_COALESCE);
+            let mut on_apply_lock = self.on_consensus_op_apply.lock();
+            // check that the exact same operation is not already in-flight
+            match on_apply_lock.get(&operation) {
+                Some(existing_sender) => {
+                    // subscribe to existing sender for faster feedback
+                    receiver = existing_sender.subscribe()
+                }
+                None => {
+                    // insert new sender
+                    on_apply_lock.insert(operation, sender);
+                }
+            };
             receivers.push(receiver);
         }
 
         async move {
-            let await_for_all = join_all(receivers);
+            let await_for_all = join_all(receivers.iter_mut().map(|receiver| receiver.recv()));
             let results =
                 tokio::time::timeout(wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT), await_for_all)
                     .await?;
@@ -604,12 +620,25 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             )));
         }
 
-        let (sender, receiver) = oneshot::channel();
+        let (sender, mut receiver) = broadcast::channel(MAX_OPERATION_ACK_COALESCE);
         {
+            // acquire lock to insert new operation to apply
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
-            self.propose_sender.send(operation.clone())?;
-            on_apply_lock.insert(operation, sender);
+            // check that the exact same operation is not already in-flight
+            match on_apply_lock.get(&operation) {
+                Some(existing_sender) => {
+                    // subscribe to existing sender for faster feedback
+                    receiver = existing_sender.subscribe()
+                }
+                None => {
+                    // propose operation to consensus thread
+                    self.propose_sender.send(operation.clone())?;
+                    // insert new sender
+                    on_apply_lock.insert(operation, sender);
+                }
+            };
         }
+
         let res = Self::await_receiver(receiver, wait_timeout).await?;
         Ok(res)
     }
