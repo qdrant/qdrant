@@ -111,8 +111,24 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             .saturating_sub(self.truncated_prefix_entries_num())
     }
 
+    // WAL operates in *segments*, so when `Wal::prefix_truncate` is called (during `SerdeWal::ack`),
+    // WAL is not truncated precisely up to the `until_index`, but up to the nearest segment with
+    // `last_index` that is less-or-equal than `until_index`.
+    //
+    // Consider the pseudo-graphic illustration of the WAL that was truncated up to index 35:
+    //
+    // | -------- | -------- | ===='++++ | ++++++++ | ++++++++ | ++++++++ |
+    // 10         20         30    35    40         50         60         70
+    //
+    // - ' marks the index 35 that has been truncated-to
+    // - --- marks segments 10-30 that has been physically deleted
+    // - +++ marks segments 35-70 that are still valid
+    // - and === marks part of segment 30-35, that is still physically present on disk,
+    //   but that is "logically" deleted
+    //
+    // `truncated_prefix_entries_num` returns the length of the "logically deleted" part of the WAL.
     fn truncated_prefix_entries_num(&self) -> u64 {
-        self.first_index().saturating_sub(self.wal.num_entries())
+        self.first_index().saturating_sub(self.wal.first_index())
     }
 
     pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
@@ -136,15 +152,18 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     /// * `until_index` - the newest no longer required record sequence number
     ///
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
+        // Truncate WAL
         self.wal
             .prefix_truncate(until_index)
             .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))?;
 
+        // Update current `first_index`
         self.first_index = self
             .first_index
             .unwrap_or(until_index.clamp(self.wal.first_index(), self.wal.last_index()))
             .into();
 
+        // Persist current `first_index` value on disk
         // TODO: Should we log this error and continue instead of failing?
         self.flush_first_index()?;
 
