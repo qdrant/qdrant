@@ -174,12 +174,12 @@ pub enum Error {
     OpenFile(#[source] io::Error, String),
     #[error("TLS file could not be read: {1}")]
     ReadFile(#[source] io::Error, String),
-    #[error("TLS IO error")]
+    #[error("general TLS IO error")]
     Io(#[source] io::Error),
     #[error("no server certificate found")]
     NoServerCert,
     #[error("no private key found")]
     NoPrivateKey,
-    #[error("TLS IO error")]
+    #[error("TLS signing error")]
     Sign(#[source] rustls::sign::SignError),
 }

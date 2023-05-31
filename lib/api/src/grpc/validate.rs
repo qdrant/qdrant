@@ -191,9 +191,7 @@ pub fn validate_named_vectors_not_empty(
 mod tests {
     use validator::Validate;
 
-    use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, SearchPoints, UpdateCollection,
-    };
+    use crate::grpc::qdrant::{CreateCollection, CreateFieldIndexCollection, SearchPoints};
 
     #[test]
     fn test_good_request() {
