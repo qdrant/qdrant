@@ -485,8 +485,8 @@ mod group_by {
 mod group_by_builder {
 
     use collection::grouping::GroupBy;
+    use collection::lookup::types::PseudoId;
     use collection::lookup::{Lookup, LookupRequest};
-    use segment::data_types::groups::PseudoId;
     use tokio::sync::RwLock;
 
     use super::*;

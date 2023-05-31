@@ -2,11 +2,11 @@
 
 use futures::Future;
 use itertools::Itertools;
-use segment::data_types::groups::PseudoId;
 use tokio::sync::RwLockReadGuard;
 
 use super::group_by::{group_by, GroupRequest};
 use crate::collection::Collection;
+use crate::lookup::types::PseudoId;
 use crate::lookup::{lookup_ids, Lookup, LookupRequest};
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{CollectionResult, PointGroup};
