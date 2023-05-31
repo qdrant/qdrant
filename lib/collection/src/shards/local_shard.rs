@@ -392,7 +392,20 @@ impl LocalShard {
 
         bar.set_message(format!("Recovering collection {collection_id}"));
         let segments = self.segments();
-        // ToDo: Start from minimal applied version
+
+        // When `Segment`s are flushed, WAL is truncated up to the index of the last operation
+        // that has been applied and flushed.
+        //
+        // `SerdeWal` wrapper persists/keeps track of this index (in addition to any handling
+        // in the `wal` crate itself).
+        //
+        // `SerdeWal::read_all` starts reading WAL from the first "un-truncated" index,
+        // so no additional handling required to "skip" any potentially applied entries.
+        //
+        // Note, that it's not guaranted that some operation won't be re-applied to the storage.
+        // (`SerdeWal::read_all` may even start reading WAL from some already truncated
+        // index *occasionally*), but the storage can handle it.
+
         for (op_num, update) in wal.read_all() {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update) {
@@ -416,6 +429,7 @@ impl LocalShard {
                     log::error!("{err}");
                     return Err(err.clone());
                 }
+                Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
             }

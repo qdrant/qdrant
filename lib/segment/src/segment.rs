@@ -285,7 +285,8 @@ impl Segment {
     {
         match op_point_offset {
             None => {
-                // Not a point operation, use global version to check if already applied
+                // Not a point operation *or* point does not exist.
+                // Use global version to check if operation has been already applied.
                 if self.version.unwrap_or(0) > op_num {
                     return Ok(false); // Skip without execution
                 }
@@ -303,17 +304,17 @@ impl Segment {
             }
         }
 
-        let res = operation(self);
+        let (applied, point_id) = operation(self)?;
 
-        if res.is_ok() {
-            self.version = Some(max(op_num, self.version.unwrap_or(0)));
-            if let Ok((_, Some(point_id))) = res {
-                self.id_tracker
-                    .borrow_mut()
-                    .set_internal_version(point_id, op_num)?;
-            }
+        self.version = Some(max(op_num, self.version.unwrap_or(0)));
+
+        if let Some(point_id) = point_id {
+            self.id_tracker
+                .borrow_mut()
+                .set_internal_version(point_id, op_num)?;
         }
-        res.map(|(res, _)| res)
+
+        Ok(applied)
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
