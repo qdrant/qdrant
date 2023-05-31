@@ -80,18 +80,8 @@ where
 
     let mut dst = [0; 8096];
 
-    for iter in 0..(mmap.len() / dst.len()) {
-        let start = dst.len() * iter;
-        let end = start + dst.len();
-
-        dst.copy_from_slice(&mmap[start..end]);
-    }
-
-    let rem = mmap.len() % dst.len();
-    let start = mmap.len() - rem;
-
-    if rem > 0 {
-        dst[..rem].copy_from_slice(&mmap[start..]);
+    for chunk in mmap.chunks(dst.len()) {
+        dst[..chunk.len()].copy_from_slice(chunk);
     }
 
     log::debug!(
