@@ -1,4 +1,5 @@
 use collection::collection::Collection;
+use collection::lookup::types::PseudoId;
 use collection::lookup::{lookup_ids, Lookup, LookupRequest};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::{Batch, WriteOrdering};
@@ -8,7 +9,6 @@ use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, Rng, SeedableRng};
 use rstest::*;
-use segment::data_types::groups::PseudoId;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{Payload, PointIdType};
 use serde_json::json;

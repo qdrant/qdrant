@@ -1,12 +1,14 @@
+pub mod types;
+
 use std::collections::HashMap;
 
 use futures::Future;
 use itertools::Itertools;
 use schemars::JsonSchema;
-use segment::data_types::groups::PseudoId;
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLockReadGuard;
+use types::PseudoId;
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
@@ -18,6 +20,7 @@ use crate::shards::shard::ShardId;
 pub enum Lookup {
     None,
     Single(Record),
+    // We may want to implement multi-record lookup in the future
 }
 
 impl From<Record> for Lookup {
@@ -28,6 +31,7 @@ impl From<Record> for Lookup {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LookupRequest {
+    #[serde(rename = "collection")]
     pub collection_name: String,
     pub with_payload: WithPayloadInterface,
     pub with_vectors: WithVector,
