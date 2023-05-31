@@ -124,7 +124,9 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(recovery_warning) = &settings.storage.recovery_mode {
         log::warn!("Qdrant is loaded in recovery mode: {}", recovery_warning);
-        log::warn!("Read more: https://qdrant.tech/documentation/guides/administration/#recovery-mode");
+        log::warn!(
+            "Read more: https://qdrant.tech/documentation/guides/administration/#recovery-mode"
+        );
     }
 
     // Validate as soon as possible, but we must initialize logging first
