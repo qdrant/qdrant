@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::path::Path;
+use std::result;
 use std::thread::JoinHandle;
-use std::{fs, result};
 
+use segment::common::file_operations::{atomic_save_json, read_json};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -44,6 +45,17 @@ enum TestRecord {
 
 type Result<T> = result::Result<T, WalError>;
 
+#[derive(Debug, Deserialize, Serialize)]
+struct WalState {
+    pub ack_index: u64,
+}
+
+impl WalState {
+    pub fn new(ack_index: u64) -> Self {
+        Self { ack_index }
+    }
+}
+
 /// Write-Ahead-Log wrapper with built-in type parsing.
 /// Stores sequences of records of type `R` in binary files.
 ///
@@ -67,15 +79,14 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         let first_index_path = Path::new(dir).join(FIRST_INDEX_FILE);
 
         let first_index = if first_index_path.exists() {
-            let first_index = fs::read_to_string(&first_index_path).map_err(|err| {
+            let wal_state: WalState = read_json(&first_index_path).map_err(|err| {
                 WalError::InitWalError(format!("failed to read first-index file: {err}"))
             })?;
 
-            let first_index: u64 = first_index.parse().map_err(|err| {
-                WalError::InitWalError(format!("failed to parse first-index value: {err}"))
-            })?;
-
-            Some(first_index.clamp(wal.first_index(), wal.last_index()))
+            let first_index = wal_state
+                .ack_index
+                .clamp(wal.first_index(), wal.last_index());
+            Some(first_index)
         } else {
             None
         };
@@ -157,12 +168,16 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             .prefix_truncate(until_index)
             .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))?;
 
+        // Acknowledge index should not decrease
+        let minimal_first_index = self.first_index.unwrap_or(self.wal.first_index());
+        let new_first_index = Some(until_index.clamp(minimal_first_index, self.wal.last_index()));
         // Update current `first_index`
-        self.first_index = Some(until_index.clamp(self.wal.first_index(), self.wal.last_index()));
-
-        // Persist current `first_index` value on disk
-        // TODO: Should we log this error and continue instead of failing?
-        self.flush_first_index()?;
+        if self.first_index != new_first_index {
+            self.first_index = new_first_index;
+            // Persist current `first_index` value on disk
+            // TODO: Should we log this error and continue instead of failing?
+            self.flush_first_index()?;
+        }
 
         Ok(())
     }
@@ -172,9 +187,12 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             return Ok(());
         };
 
-        // TODO: Should we log this error and continue instead of failing?
-        fs::write(self.path().join(FIRST_INDEX_FILE), first_index.to_string()).map_err(|err| {
-            WalError::TruncateWalError(format!("failed to write first-index file: {err}"))
+        atomic_save_json(
+            &self.path().join(FIRST_INDEX_FILE),
+            &WalState::new(first_index),
+        )
+        .map_err(|err| {
+            WalError::TruncateWalError(format!("failed to write first-index file: {err:?}"))
         })?;
 
         Ok(())
