@@ -56,10 +56,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install minimal stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - name: Install Protoc
