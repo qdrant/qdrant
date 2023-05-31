@@ -44,9 +44,9 @@ def create_collection(peer_url, collection="test_collection", shard_number=1, re
 
 def drop_collection(peer_url, collection="test_collection", timeout=10):
     # Delete collection in peer_url
-    r_batch = requests.delete(
+    r_delete = requests.delete(
         f"{peer_url}/collections/{collection}?timeout={timeout}")
-    assert_http_ok(r_batch)
+    assert_http_ok(r_delete)
 
 
 def search(peer_url, vector, city, collection="test_collection"):
