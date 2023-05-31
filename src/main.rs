@@ -101,7 +101,7 @@ struct Args {
 
     /// Disable telemetry sending to developers
     /// If provided - telemetry collection will be disabled.
-    /// Read more: https://qdrant.tech/documentation/telemetry
+    /// Read more: https://qdrant.tech/documentation/guides/telemetry
     #[arg(long, action, default_value_t = false)]
     disable_telemetry: bool,
 }
@@ -127,7 +127,9 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(recovery_warning) = &settings.storage.recovery_mode {
         log::warn!("Qdrant is loaded in recovery mode: {}", recovery_warning);
-        log::warn!("Read more: https://qdrant.tech/documentation/administration/#recovery-mode");
+        log::warn!(
+            "Read more: https://qdrant.tech/documentation/guides/administration/#recovery-mode"
+        );
     }
 
     // Validate as soon as possible, but we must initialize logging first
