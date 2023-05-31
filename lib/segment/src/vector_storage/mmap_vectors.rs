@@ -175,8 +175,8 @@ impl MmapVectors {
         &self.deleted
     }
 
-    pub fn preheat_disk_cache(&self, path: &Path) -> mmap_ops::PreheatDiskCache {
-        mmap_ops::PreheatDiskCache::new(self.mmap.clone(), Some(path))
+    pub fn prefault_mmap_pages(&self, path: &Path) -> mmap_ops::PrefaultMmapPages {
+        mmap_ops::PrefaultMmapPages::new(self.mmap.clone(), Some(path))
     }
 }
 

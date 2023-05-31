@@ -55,11 +55,11 @@ pub fn open_memmap_vector_storage(
 }
 
 impl MemmapVectorStorage {
-    pub fn preheat_disk_cache(&self) -> Option<mmap_ops::PreheatDiskCache> {
+    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
         Some(
             self.mmap_store
                 .as_ref()?
-                .preheat_disk_cache(&self.vectors_path),
+                .prefault_mmap_pages(&self.vectors_path),
         )
     }
 }

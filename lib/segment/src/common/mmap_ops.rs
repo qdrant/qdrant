@@ -49,12 +49,12 @@ pub fn open_write_mmap(path: &Path) -> OperationResult<MmapMut> {
 }
 
 #[derive(Clone, Debug)]
-pub struct PreheatDiskCache {
+pub struct PrefaultMmapPages {
     mmap: Arc<Mmap>,
     path: Option<PathBuf>,
 }
 
-impl PreheatDiskCache {
+impl PrefaultMmapPages {
     pub fn new(mmap: Arc<Mmap>, path: Option<impl Into<PathBuf>>) -> Self {
         Self {
             mmap,
@@ -63,11 +63,11 @@ impl PreheatDiskCache {
     }
 
     pub fn exec(&self) {
-        preheat_disk_cache(self.mmap.as_ref(), self.path.as_deref());
+        prefault_mmap_pages(self.mmap.as_ref(), self.path.as_deref());
     }
 }
 
-fn preheat_disk_cache<T>(mmap: &T, path: Option<&Path>)
+fn prefault_mmap_pages<T>(mmap: &T, path: Option<&Path>)
 where
     T: Madviseable + ops::Deref<Target = [u8]>,
 {
