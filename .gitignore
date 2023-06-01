@@ -7,5 +7,6 @@
 /consensus_test_logs
 /config/local
 /tls
+/static
 *.log
 .qdrant-initialized

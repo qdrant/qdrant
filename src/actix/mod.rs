@@ -31,6 +31,9 @@ use crate::actix::api_key::ApiKey;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
+const DEFAULT_STATIC_DIR: &str = "./static";
+const WEB_UI_PATH: &str = "/dashboard";
+
 #[get("/")]
 pub async fn index() -> impl Responder {
     HttpResponse::Ok().json(VersionInfo::default())
@@ -98,6 +101,7 @@ pub fn init(
                 .service(get_points)
                 .service(scroll_points)
                 .service(count_points)
+                .service(actix_files::Files::new(WEB_UI_PATH, DEFAULT_STATIC_DIR).index_file("index.html"))
         })
         .workers(max_web_workers(&settings));
 

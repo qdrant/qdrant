@@ -31,7 +31,7 @@ COPY --from=xx / /
 # so, please, don't reorder them without prior consideration. 🥲
 
 RUN apt-get update \
-    && apt-get install -y clang lld cmake protobuf-compiler \
+    && apt-get install -y clang lld cmake protobuf-compiler jq \
     && rustup component add rustfmt
 
 # `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.
@@ -89,6 +89,9 @@ RUN PATH="$PATH:/opt/mold/bin" \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
 
+# Download and extract web UI
+RUN mkdir /static ; STATIC_DIR='/static' ./sync-web-ui.sh
+
 FROM debian:11-slim AS qdrant
 
 RUN apt-get update \
@@ -102,6 +105,7 @@ RUN mkdir -p ${APP}
 COPY --from=builder /qdrant/qdrant ${APP}/qdrant
 COPY --from=builder /qdrant/config ${APP}/config
 COPY --from=builder /qdrant/tools/entrypoint.sh ${APP}/entrypoint.sh
+COPY --from=builder /static ${APP}/static
 
 WORKDIR ${APP}
 
