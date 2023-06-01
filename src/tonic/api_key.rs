@@ -40,16 +40,16 @@ where
         &mut self,
         request: tonic::codegen::http::Request<tonic::transport::Body>,
     ) -> Self::Future {
-        if let Some(key) = request.headers().get("api-key") {
-            if let Ok(key) = key.to_str() {
-                if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
-                    let future = self.service.call(request);
+        let key = request.headers().get("api-key").map(|key| key.as_bytes());
 
-                    return Box::pin(async move {
-                        let response = future.await?;
-                        Ok(response)
-                    });
-                }
+        if let Some(key) = key {
+            if constant_time_eq(self.api_key.as_bytes(), key) {
+                let future = self.service.call(request);
+
+                return Box::pin(async move {
+                    let response = future.await?;
+                    Ok(response)
+                });
             }
         }
 
