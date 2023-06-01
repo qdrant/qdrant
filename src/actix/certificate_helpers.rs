@@ -118,7 +118,7 @@ fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
     let private_key_item =
         with_buf_read(&tls_config.key, rustls_pemfile::read_one)?.ok_or(Error::NoPrivateKey)?;
     let (Item::RSAKey(pkey) | Item::PKCS8Key(pkey) | Item::ECKey(pkey)) = private_key_item else {
-        return Err(Error::NoPrivateKey);
+        return Err(Error::InvalidPrivateKey);
     };
     let private_key = rustls::PrivateKey(pkey);
     let signing_key = rustls::sign::any_supported_type(&private_key).map_err(Error::Sign)?;
@@ -180,6 +180,8 @@ pub enum Error {
     NoServerCert,
     #[error("no private key found")]
     NoPrivateKey,
+    #[error("invalid private key")]
+    InvalidPrivateKey,
     #[error("TLS signing error")]
     Sign(#[source] rustls::sign::SignError),
 }
