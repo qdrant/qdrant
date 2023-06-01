@@ -74,7 +74,7 @@ where
     let separator = path.map_or("", |_| " "); // space if `path` is `Some` or nothing
     let path = path.unwrap_or(Path::new("")); // path if `path` is `Some` or nothing
 
-    log::debug!("Reading mmap{separator}{path:?} to populate cache...");
+    log::trace!("Reading mmap{separator}{path:?} to populate cache...");
 
     let instant = time::Instant::now();
 
@@ -84,7 +84,7 @@ where
         dst[..chunk.len()].copy_from_slice(chunk);
     }
 
-    log::debug!(
+    log::trace!(
         "Reading mmap{separator}{path:?} to populate cache took {:?}",
         instant.elapsed()
     );
