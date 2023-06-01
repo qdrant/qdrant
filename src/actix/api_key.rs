@@ -56,11 +56,11 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        if let Some(key) = req.headers().get("api-key") {
-            if let Ok(key) = key.to_str() {
-                if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
-                    return Box::pin(self.service.call(req));
-                }
+        let key: Option<&[u8]> = req.headers().get("api-key").map(|key| key.as_bytes());
+
+        if let Some(key) = key {
+            if constant_time_eq(self.api_key.as_bytes(), key) {
+                return Box::pin(self.service.call(req));
             }
         }
 
