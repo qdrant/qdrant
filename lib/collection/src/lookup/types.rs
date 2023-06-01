@@ -20,8 +20,8 @@ impl From<WithLookupInterface> for WithLookup {
         match with_lookup {
             WithLookupInterface::Collection(collection_name) => Self {
                 collection_name,
-                with_payload: None,
-                with_vectors: None,
+                with_payload: Some(true.into()),
+                with_vectors: Some(true.into()),
             },
             WithLookupInterface::WithLookup(with_lookup) => with_lookup,
         }
