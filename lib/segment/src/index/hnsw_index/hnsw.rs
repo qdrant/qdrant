@@ -11,7 +11,8 @@ use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
-use super::graph_links::GraphLinks;
+use super::graph_links::{GraphLinks, GraphLinksMmap};
+use crate::common::mmap_ops;
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -352,6 +353,12 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 })
                 .collect()
         }
+    }
+}
+
+impl HNSWIndex<GraphLinksMmap> {
+    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
+        self.graph.as_ref()?.prefault_mmap_pages(&self.path)
     }
 }
 
