@@ -62,12 +62,11 @@ where
         )
         .await?;
 
-        if let Some(lookup) = self.group_by.lookup {
+        if let Some(lookup) = self.group_by.with_lookup {
             let mut lookups = {
                 let pseudo_ids = groups
                     .iter()
-                    .cloned()
-                    .map(|group| group.id)
+                    .map(|group| group.id.clone())
                     .map_into()
                     .collect();
 
@@ -82,15 +81,16 @@ where
             };
 
             // Put the lookups in their respective groups
-            for group in &mut groups {
-                if let Some(lookup) = lookups.remove(&PseudoId::from(group.id.clone())) {
-                    group.lookup = Some(lookup);
-                } else {
-                    // We want to explicitly say that there is no lookup for this group id,
-                    // this is to differentiate between not finding a lookup and not requesting a lookup
-                    group.lookup = Some(RetrievedLookup::None);
-                }
-            }
+            groups.iter_mut().for_each(|group| {
+                group.lookup.replace(
+                    lookups
+                        .remove(&PseudoId::from(group.id.clone()))
+                        // If there is no lookup for this group id, we want to explicitly say that it is
+                        // (`Lookup::None`). This is to differentiate between not finding a lookup and not
+                        // requesting a lookup.
+                        .unwrap_or(RetrievedLookup::None),
+                );
+            });
         }
 
         Ok(groups)

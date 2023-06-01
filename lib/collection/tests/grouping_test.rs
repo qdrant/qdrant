@@ -623,7 +623,7 @@ mod group_by_builder {
             ..
         } = setup(16, 8).await;
 
-        request.lookup = Some(WithLookup {
+        request.with_lookup = Some(WithLookup {
             collection_name: "test".to_string(),
             with_payload: Some(true.into()),
             with_vectors: Some(true.into()),

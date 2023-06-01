@@ -85,7 +85,7 @@ pub struct GroupRequest {
     pub limit: usize,
 
     /// Options for specifying how to use the group id to lookup points in another collection
-    pub lookup: Option<WithLookup>,
+    pub with_lookup: Option<WithLookup>,
 }
 
 impl GroupRequest {
@@ -103,7 +103,7 @@ impl GroupRequest {
             group_by,
             group_size,
             limit,
-            lookup: None,
+            with_lookup: None,
         }
     }
 
@@ -205,7 +205,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
             group_by,
             group_size: group_size as usize,
             limit: limit as usize,
-            lookup: None, // TODO: update when ui is updated
+            with_lookup: None, // TODO: update when ui is updated
         }
     }
 }
@@ -249,7 +249,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
             group_by,
             group_size: group_size as usize,
             limit: limit as usize,
-            lookup: None, // TODO: update when ui is updated
+            with_lookup: None, // TODO: update when ui is updated
         }
     }
 }

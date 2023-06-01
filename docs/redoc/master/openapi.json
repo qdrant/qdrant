@@ -7828,7 +7828,7 @@
             "description": "Record that has been looked up using the group id",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Lookup"
+                "$ref": "#/components/schemas/RetrievedLookup"
               },
               {
                 "nullable": true
@@ -7854,7 +7854,7 @@
           }
         ]
       },
-      "Lookup": {
+      "RetrievedLookup": {
         "anyOf": [
           {
             "nullable": true

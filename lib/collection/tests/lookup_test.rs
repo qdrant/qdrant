@@ -30,8 +30,8 @@ struct Resources {
 async fn setup() -> Resources {
     let request = WithLookup {
         collection_name: "test".to_string(),
-        with_payload: false.into(),
-        with_vectors: false.into(),
+        with_payload: Some(false.into()),
+        with_vectors: Some(false.into()),
     };
 
     let collection_dir = Builder::new().prefix("storage").tempdir().unwrap();
@@ -103,8 +103,8 @@ async fn happy_lookup_ids() {
         .map_into();
 
     let values = ints.chain(uuids).collect_vec();
-    request.with_payload = true.into();
-    request.with_vectors = true.into();
+    request.with_payload = Some(true.into());
+    request.with_vectors = Some(true.into());
 
     let result = lookup_ids(
         request.clone(),
@@ -185,8 +185,8 @@ async fn inexisting_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) {
     let collection_by_name = |_: String| async { Some(collection) };
 
     let values = vec![value];
-    request.with_payload = true.into();
-    request.with_vectors = true.into();
+    request.with_payload = Some(true.into());
+    request.with_vectors = Some(true.into());
 
     let result = lookup_ids(
         request,
