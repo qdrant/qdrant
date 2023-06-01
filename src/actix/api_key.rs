@@ -65,7 +65,8 @@ where
                 .split('&')
                 .filter_map(|option| option.split_once('='))
                 .find(|(key, _)| key.eq_ignore_ascii_case("api-key"))
-                .map(|(_, value)| value.as_bytes()));
+                .map(|(_, value)| value.as_bytes())
+            );
 
         // If we have an API key, compare in constant time
         if let Some(key) = key {

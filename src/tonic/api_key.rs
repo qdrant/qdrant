@@ -40,8 +40,19 @@ where
         &mut self,
         request: tonic::codegen::http::Request<tonic::transport::Body>,
     ) -> Self::Future {
-        let key = request.headers().get("api-key").map(|key| key.as_bytes());
+        // Grab API key from request
+        let key =
+            // Request header
+            request.headers().get("api-key").map(|key| key.as_bytes())
+            // Fall back to query parameter
+            .or_else(|| request.uri().query().and_then(|query| query
+                .split('&')
+                .filter_map(|option| option.split_once('='))
+                .find(|(key, _)| key.eq_ignore_ascii_case("api-key"))
+                .map(|(_, value)| value.as_bytes())
+            ));
 
+        // If we have an API key, compare in constant time
         if let Some(key) = key {
             if constant_time_eq(self.api_key.as_bytes(), key) {
                 let future = self.service.call(request);
