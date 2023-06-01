@@ -101,7 +101,10 @@ pub fn init(
                 .service(get_points)
                 .service(scroll_points)
                 .service(count_points)
-                .service(actix_files::Files::new(WEB_UI_PATH, DEFAULT_STATIC_DIR).index_file("index.html"))
+                .service(
+                    actix_files::Files::new(WEB_UI_PATH, DEFAULT_STATIC_DIR)
+                        .index_file("index.html"),
+                )
         })
         .workers(max_web_workers(&settings));
 
