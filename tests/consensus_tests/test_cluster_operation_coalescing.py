@@ -1,7 +1,7 @@
 import multiprocessing
 import pathlib
 
-from .fixtures import upsert_random_points, create_collection, drop_collection
+from .fixtures import create_collection, drop_collection
 from .utils import *
 
 N_PEERS = 3
@@ -11,7 +11,7 @@ N_REPLICA = 3
 
 def delete_collection_in_loop(peer_url, collection_name):
     while True:
-        # fails if the the response is NOT successful
+        # fails if the response is NOT successful
         drop_collection(peer_url, collection_name)
 
 
