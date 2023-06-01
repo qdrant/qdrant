@@ -338,7 +338,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Helper to better log start errors
-    let log_err = |server_name, result| match result {
+    let log_err_if_any = |server_name, result| match result {
         Err(err) => {
             log::error!("Error while starting {} server: {}", server_name, err);
             Err(err)
@@ -357,7 +357,7 @@ fn main() -> anyhow::Result<()> {
         let handle = thread::Builder::new()
             .name("web".to_string())
             .spawn(move || {
-                log_err(
+                log_err_if_any(
                     "REST",
                     actix::init(dispatcher_arc.clone(), telemetry_collector, settings),
                 )
@@ -375,7 +375,7 @@ fn main() -> anyhow::Result<()> {
         let handle = thread::Builder::new()
             .name("grpc".to_string())
             .spawn(move || {
-                log_err(
+                log_err_if_any(
                     "gRPC",
                     tonic::init(
                         dispatcher_arc,
