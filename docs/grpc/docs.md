@@ -144,6 +144,7 @@
     - [Vectors](#qdrant-Vectors)
     - [VectorsSelector](#qdrant-VectorsSelector)
     - [WithLookup](#qdrant-WithLookup)
+    - [WithLookupInterface](#qdrant-WithLookupInterface)
     - [WithPayloadSelector](#qdrant-WithPayloadSelector)
     - [WithVectorsSelector](#qdrant-WithVectorsSelector)
     - [WriteOrdering](#qdrant-WriteOrdering)
@@ -1994,7 +1995,7 @@ The JSON representation for `Value` is a JSON value.
 | group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
 | group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
-| with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
+| with_lookup | [WithLookupInterface](#qdrant-WithLookupInterface) | optional | Options for specifying how to use the group id to lookup points in another collection |
 
 
 
@@ -2281,7 +2282,7 @@ The JSON representation for `Value` is a JSON value.
 | group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
 | group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
-| with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
+| with_lookup | [WithLookupInterface](#qdrant-WithLookupInterface) | optional | Options for specifying how to use the group id to lookup points in another collection |
 
 
 
@@ -2491,6 +2492,23 @@ The JSON representation for `Value` is a JSON value.
 | collection | [string](#string) |  | Name of the collection to use for points lookup |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include (or not) |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) |  | Options for specifying which vectors to include (or not) |
+
+
+
+
+
+
+<a name="qdrant-WithLookupInterface"></a>
+
+### WithLookupInterface
+Interface for specifying lookup collection, intended for groups API only.
+This allows specifying the collection name only, or the collection name and payload/vectors options.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| with_lookup | [WithLookup](#qdrant-WithLookup) |  |  |
+| collection | [string](#string) |  |  |
 
 
 
