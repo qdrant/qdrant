@@ -36,7 +36,6 @@ use crate::types::{
 };
 
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
-pub const MAX_OPERATION_ACK_COALESCE: usize = 32;
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
@@ -552,7 +551,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> impl Future<Output = Result<Result<(), StorageError>, Elapsed>> {
         let mut receivers = vec![];
         for operation in operations {
-            let (sender, mut receiver) = broadcast::channel(MAX_OPERATION_ACK_COALESCE);
+            // one-shot broadcast channel
+            let (sender, mut receiver) = broadcast::channel(1);
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
             // check that the exact same operation is not already in-flight
             match on_apply_lock.get(&operation) {
@@ -620,7 +620,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             )));
         }
 
-        let (sender, mut receiver) = broadcast::channel(MAX_OPERATION_ACK_COALESCE);
+        // one-shot broadcast channel
+        let (sender, mut receiver) = broadcast::channel(1);
         {
             // acquire lock to insert new operation to apply
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
