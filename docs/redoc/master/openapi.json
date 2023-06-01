@@ -7969,6 +7969,7 @@
           },
           "with_payload": {
             "description": "Options for specifying which payload to include (or not)",
+            "default": true,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -7980,6 +7981,7 @@
           },
           "with_vectors": {
             "description": "Options for specifying which vectors to include (or not)",
+            "default": true,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"

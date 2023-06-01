@@ -22,10 +22,21 @@ pub struct WithLookup {
     pub collection_name: String,
 
     /// Options for specifying which payload to include (or not)
+    #[serde(default = "default_with_payload")]
     pub with_payload: Option<WithPayloadInterface>,
 
     /// Options for specifying which vectors to include (or not)
+    #[serde(alias = "with_vector")]
+    #[serde(default = "default_with_vectors")]
     pub with_vectors: Option<WithVector>,
+}
+
+const fn default_with_vectors() -> Option<WithVector> {
+    Some(WithVector::Bool(true))
+}
+
+const fn default_with_payload() -> Option<WithPayloadInterface> {
+    Some(WithPayloadInterface::Bool(true))
 }
 
 pub async fn lookup_ids<'a, F, Fut>(
