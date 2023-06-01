@@ -90,7 +90,7 @@ RUN PATH="$PATH:/opt/mold/bin" \
 
 
 # Download and extract web UI
-RUN mkdir /static ; STATIC_DIR='/static' ./sync-web-ui.sh
+RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
 
 FROM debian:11-slim AS qdrant
 

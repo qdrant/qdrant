@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 STATIC_DIR=${STATIC_DIR:-"./static"}
 OPENAPI_FILE=${OPENAPI_DIR:-"./docs/redoc/master/openapi.json"}
 
