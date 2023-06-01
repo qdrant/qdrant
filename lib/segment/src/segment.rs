@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::thread::JoinHandle;
+use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
 use parking_lot::{Mutex, RwLock};
@@ -12,6 +12,7 @@ use tar::Builder;
 use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
+use crate::common::mmap_ops::PrefaultMmapPages;
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_vector_name, check_vectors_set};
 use crate::data_types::named_vectors::NamedVectors;
@@ -658,6 +659,19 @@ impl Segment {
 
     pub fn total_point_count(&self) -> usize {
         self.id_tracker.borrow().total_point_count()
+    }
+
+    pub fn prefault_mmap_pages(&self) {
+        let tasks: Vec<_> = self
+            .vector_data
+            .values()
+            .filter_map(|storage| match &*storage.vector_storage.borrow() {
+                VectorStorageEnum::Memmap(storage) => storage.prefault_mmap_pages(),
+                _ => None,
+            })
+            .collect();
+
+        let _ = thread::spawn(move || tasks.iter().for_each(PrefaultMmapPages::exec));
     }
 }
 
