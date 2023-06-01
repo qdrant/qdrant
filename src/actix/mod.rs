@@ -115,7 +115,8 @@ pub fn init(
                     .unwrap_or_else(|| "none".into()),
             );
 
-            let config = certificate_helpers::actix_tls_server_config(&settings)?;
+            let config = certificate_helpers::actix_tls_server_config(&settings)
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
             server.bind_rustls(bind_addr, config)?
         } else {
             log::info!("TLS disabled for REST API");

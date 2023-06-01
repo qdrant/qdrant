@@ -11,6 +11,8 @@ use rustls_pemfile::Item;
 
 use crate::settings::{Settings, TlsConfig};
 
+type Result<T> = std::result::Result<T, Error>;
+
 /// A TTL based rotating server certificate resolver
 struct RotatingCertificateResolver {
     /// TLS configuration used for loading/refreshing certified key
@@ -24,7 +26,7 @@ struct RotatingCertificateResolver {
 }
 
 impl RotatingCertificateResolver {
-    pub fn new(tls_config: TlsConfig, ttl: Option<Duration>) -> io::Result<Self> {
+    pub fn new(tls_config: TlsConfig, ttl: Option<Duration>) -> Result<Self> {
         let certified_key = load_certified_key(&tls_config)?;
 
         Ok(Self {
@@ -84,7 +86,7 @@ impl CertifiedKeyWithAge {
         }
     }
 
-    pub fn refresh(&mut self, tls_config: &TlsConfig) -> io::Result<()> {
+    pub fn refresh(&mut self, tls_config: &TlsConfig) -> Result<()> {
         *self = Self::from(load_certified_key(tls_config)?);
         Ok(())
     }
@@ -99,7 +101,7 @@ impl CertifiedKeyWithAge {
 }
 
 /// Load TLS configuration and construct certified key.
-fn load_certified_key(tls_config: &TlsConfig) -> io::Result<Arc<CertifiedKey>> {
+fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
     // Load certificates
     let certs: Vec<Certificate> = with_buf_read(&tls_config.cert, rustls_pemfile::read_all)?
         .into_iter()
@@ -109,21 +111,17 @@ fn load_certified_key(tls_config: &TlsConfig) -> io::Result<Arc<CertifiedKey>> {
         })
         .collect();
     if certs.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "No server certificate found",
-        ));
+        return Err(Error::NoServerCert);
     }
 
     // Load private key
-    let private_key_item = with_buf_read(&tls_config.key, rustls_pemfile::read_one)?
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No private key found"))?;
+    let private_key_item =
+        with_buf_read(&tls_config.key, rustls_pemfile::read_one)?.ok_or(Error::NoPrivateKey)?;
     let (Item::RSAKey(pkey) | Item::PKCS8Key(pkey) | Item::ECKey(pkey)) = private_key_item else {
-        return Err(io::Error::new(io::ErrorKind::Other, "No private key found"))
+        return Err(Error::InvalidPrivateKey);
     };
     let private_key = rustls::PrivateKey(pkey);
-    let signing_key = rustls::sign::any_supported_type(&private_key)
-        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+    let signing_key = rustls::sign::any_supported_type(&private_key).map_err(Error::Sign)?;
 
     // Construct certified key
     let certified_key = CertifiedKey::new(certs, signing_key);
@@ -133,12 +131,13 @@ fn load_certified_key(tls_config: &TlsConfig) -> io::Result<Arc<CertifiedKey>> {
 /// Generate an actix server configuration with TLS
 ///
 /// Uses TLS settings as configured in configuration by user.
-pub fn actix_tls_server_config(settings: &Settings) -> io::Result<ServerConfig> {
+pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
     let config = ServerConfig::builder().with_safe_defaults();
     let tls_config = settings
         .tls
         .clone()
-        .ok_or_else(Settings::tls_config_is_undefined_error)?;
+        .ok_or_else(Settings::tls_config_is_undefined_error)
+        .map_err(Error::Io)?;
 
     // Verify client CA or not
     let config = if settings.service.verify_https_client_certificate {
@@ -161,12 +160,28 @@ pub fn actix_tls_server_config(settings: &Settings) -> io::Result<ServerConfig> 
     Ok(config)
 }
 
-fn with_buf_read<T>(
-    path: &str,
-    f: impl FnOnce(&mut dyn BufRead) -> io::Result<T>,
-) -> io::Result<T> {
-    let file = File::open(path)?;
+fn with_buf_read<T>(path: &str, f: impl FnOnce(&mut dyn BufRead) -> io::Result<T>) -> Result<T> {
+    let file = File::open(path).map_err(|err| Error::OpenFile(err, path.into()))?;
     let mut reader = BufReader::new(file);
     let dyn_reader: &mut dyn BufRead = &mut reader;
-    f(dyn_reader)
+    f(dyn_reader).map_err(|err| Error::ReadFile(err, path.into()))
+}
+
+/// Actix TLS errors.
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("TLS file could not be opened: {1}")]
+    OpenFile(#[source] io::Error, String),
+    #[error("TLS file could not be read: {1}")]
+    ReadFile(#[source] io::Error, String),
+    #[error("general TLS IO error")]
+    Io(#[source] io::Error),
+    #[error("no server certificate found")]
+    NoServerCert,
+    #[error("no private key found")]
+    NoPrivateKey,
+    #[error("invalid private key")]
+    InvalidPrivateKey,
+    #[error("TLS signing error")]
+    Sign(#[source] rustls::sign::SignError),
 }
