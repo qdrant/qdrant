@@ -19,6 +19,7 @@ use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams, WalConfig,
 };
+use crate::lookup::types::WithLookupInterface;
 use crate::lookup::{RetrievedLookup, WithLookup};
 use crate::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShard, MoveShardOperation,
@@ -703,6 +704,24 @@ impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookup {
             with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
             with_vectors: value.with_vectors.map(|wv| wv.into()),
         })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::WithLookupInterface> for WithLookupInterface {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::WithLookupInterface) -> Result<Self, Self::Error> {
+        match value.with_lookup_interface {
+            Some(api::grpc::qdrant::with_lookup_interface::WithLookupInterface::Collection(
+                name,
+            )) => Ok(Self::Collection(name)),
+            Some(api::grpc::qdrant::with_lookup_interface::WithLookupInterface::WithLookup(
+                with_lookup,
+            )) => Ok(Self::WithLookup(with_lookup.try_into()?)),
+            None => Err(Status::invalid_argument(
+                "Malformed WithLookupInterface type",
+            )),
+        }
     }
 }
 

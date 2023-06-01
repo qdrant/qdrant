@@ -7938,7 +7938,7 @@
             "description": "Look for points in another collection using the group ids",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/WithLookup"
+                "$ref": "#/components/schemas/WithLookupInterface"
               },
               {
                 "nullable": true
@@ -7946,6 +7946,16 @@
             ]
           }
         }
+      },
+      "WithLookupInterface": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/WithLookup"
+          }
+        ]
       },
       "WithLookup": {
         "type": "object",
@@ -8101,7 +8111,7 @@
             "description": "Look for points in another collection using the group ids",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/WithLookup"
+                "$ref": "#/components/schemas/WithLookupInterface"
               },
               {
                 "nullable": true
