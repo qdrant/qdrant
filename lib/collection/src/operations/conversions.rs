@@ -19,6 +19,7 @@ use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams, WalConfig,
 };
+use crate::lookup::{RetrievedLookup, WithLookup};
 use crate::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShard, MoveShardOperation,
     Replica, ReplicateShardOperation,
@@ -693,6 +694,18 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     }
 }
 
+impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookup {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::WithLookup) -> Result<Self, Self::Error> {
+        Ok(Self {
+            collection_name: value.collection,
+            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vectors: value.with_vectors.map(|wv| wv.into()),
+        })
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
     type Error = Status;
 
@@ -762,8 +775,22 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
                 group_by: value.group_by,
                 limit: value.limit,
                 group_size: value.group_size,
+                with_lookup: value.with_lookup.map(|l| l.try_into()).transpose()?,
             },
         })
+    }
+}
+
+impl From<RetrievedLookup> for api::grpc::qdrant::RetrievedLookup {
+    fn from(value: RetrievedLookup) -> Self {
+        match value {
+            RetrievedLookup::Single(record) => Self {
+                kind: Some(api::grpc::qdrant::retrieved_lookup::Kind::SinglePoint(
+                    record.into(),
+                )),
+            },
+            RetrievedLookup::None => Self { kind: None },
+        }
     }
 }
 
@@ -772,6 +799,7 @@ impl From<PointGroup> for api::grpc::qdrant::PointGroup {
         Self {
             hits: group.hits.into_iter().map_into().collect(),
             id: Some(group.id.into()),
+            lookup: group.lookup.map(Into::into),
         }
     }
 }
@@ -866,6 +894,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
                 group_by: value.group_by,
                 limit: value.limit,
                 group_size: value.group_size,
+                with_lookup: value.with_lookup.map(|l| l.try_into()).transpose()?,
             },
         })
     }

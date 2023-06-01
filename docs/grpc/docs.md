@@ -89,7 +89,6 @@
     - [GeoRadius](#qdrant-GeoRadius)
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
-    - [GroupId](#qdrant-GroupId)
     - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
@@ -102,6 +101,7 @@
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
     - [PointGroup](#qdrant-PointGroup)
+    - [PointGroup.GroupId](#qdrant-PointGroup-GroupId)
     - [PointId](#qdrant-PointId)
     - [PointStruct](#qdrant-PointStruct)
     - [PointStruct.PayloadEntry](#qdrant-PointStruct-PayloadEntry)
@@ -120,6 +120,7 @@
     - [RecommendResponse](#qdrant-RecommendResponse)
     - [RepeatedIntegers](#qdrant-RepeatedIntegers)
     - [RepeatedStrings](#qdrant-RepeatedStrings)
+    - [RetrievedLookup](#qdrant-RetrievedLookup)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
     - [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry)
     - [ScoredPoint](#qdrant-ScoredPoint)
@@ -142,6 +143,7 @@
     - [Vector](#qdrant-Vector)
     - [Vectors](#qdrant-Vectors)
     - [VectorsSelector](#qdrant-VectorsSelector)
+    - [WithLookup](#qdrant-WithLookup)
     - [WithPayloadSelector](#qdrant-WithPayloadSelector)
     - [WithVectorsSelector](#qdrant-WithVectorsSelector)
     - [WriteOrdering](#qdrant-WriteOrdering)
@@ -1550,23 +1552,6 @@ The JSON representation for `Value` is a JSON value.
 
 
 
-<a name="qdrant-GroupId"></a>
-
-### GroupId
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| unsigned_value | [uint64](#uint64) |  | Represents a double value. |
-| integer_value | [int64](#int64) |  | Represents an integer value |
-| string_value | [string](#string) |  | Represents a string value. |
-
-
-
-
-
-
 <a name="qdrant-GroupsResult"></a>
 
 ### GroupsResult
@@ -1750,8 +1735,26 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| id | [GroupId](#qdrant-GroupId) |  | Group id |
+| id | [PointGroup.GroupId](#qdrant-PointGroup-GroupId) |  | Group id |
 | hits | [ScoredPoint](#qdrant-ScoredPoint) | repeated | Points in the group |
+| lookup | [RetrievedLookup](#qdrant-RetrievedLookup) | optional | Point from the lookup collection that matches the group id |
+
+
+
+
+
+
+<a name="qdrant-PointGroup-GroupId"></a>
+
+### PointGroup.GroupId
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| unsigned_value | [uint64](#uint64) |  | Represents a double value. |
+| integer_value | [int64](#int64) |  | Represents an integer value |
+| string_value | [string](#string) |  | Represents a string value. |
 
 
 
@@ -1991,6 +1994,7 @@ The JSON representation for `Value` is a JSON value.
 | group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
 | group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
 
 
 
@@ -2064,6 +2068,21 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | strings | [string](#string) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-RetrievedLookup"></a>
+
+### RetrievedLookup
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| single_point | [RetrievedPoint](#qdrant-RetrievedPoint) |  | Point from the lookup collection that matches the group id |
 
 
 
@@ -2262,6 +2281,7 @@ The JSON representation for `Value` is a JSON value.
 | group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
 | group_size | [uint32](#uint32) |  | Maximum amount of points to return per group |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
 
 
 
@@ -2454,6 +2474,23 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | names | [string](#string) | repeated | List of vectors to include into result |
+
+
+
+
+
+
+<a name="qdrant-WithLookup"></a>
+
+### WithLookup
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection | [string](#string) |  | Name of the collection to use for points lookup |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include (or not) |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) |  | Options for specifying which vectors to include (or not) |
 
 
 

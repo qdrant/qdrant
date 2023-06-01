@@ -2874,6 +2874,19 @@ pub struct SearchBatchPoints {
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WithLookup {
+    /// Name of the collection to use for points lookup
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    /// Options for specifying which payload to include (or not)
+    #[prost(message, optional, tag = "2")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Options for specifying which vectors to include (or not)
+    #[prost(message, optional, tag = "3")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+}
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2919,6 +2932,9 @@ pub struct SearchPointGroups {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Options for specifying how to use the group id to lookup points in another collection
+    #[prost(message, optional, tag = "13")]
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3066,6 +3082,9 @@ pub struct RecommendPointGroups {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Options for specifying how to use the group id to lookup points in another collection
+    #[prost(message, optional, tag = "15")]
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3122,24 +3141,18 @@ pub struct ScoredPoint {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GroupId {
-    #[prost(oneof = "group_id::Kind", tags = "1, 2, 3")]
-    pub kind: ::core::option::Option<group_id::Kind>,
+pub struct RetrievedLookup {
+    #[prost(oneof = "retrieved_lookup::Kind", tags = "1")]
+    pub kind: ::core::option::Option<retrieved_lookup::Kind>,
 }
-/// Nested message and enum types in `GroupId`.
-pub mod group_id {
+/// Nested message and enum types in `RetrievedLookup`.
+pub mod retrieved_lookup {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
-        /// Represents a double value.
-        #[prost(uint64, tag = "1")]
-        UnsignedValue(u64),
-        /// Represents an integer value
-        #[prost(int64, tag = "2")]
-        IntegerValue(i64),
-        /// Represents a string value.
-        #[prost(string, tag = "3")]
-        StringValue(::prost::alloc::string::String),
+        /// Point from the lookup collection that matches the group id
+        #[prost(message, tag = "1")]
+        SinglePoint(super::RetrievedPoint),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3147,10 +3160,38 @@ pub mod group_id {
 pub struct PointGroup {
     /// Group id
     #[prost(message, optional, tag = "1")]
-    pub id: ::core::option::Option<GroupId>,
+    pub id: ::core::option::Option<point_group::GroupId>,
     /// Points in the group
     #[prost(message, repeated, tag = "2")]
     pub hits: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Point from the lookup collection that matches the group id
+    #[prost(message, optional, tag = "3")]
+    pub lookup: ::core::option::Option<RetrievedLookup>,
+}
+/// Nested message and enum types in `PointGroup`.
+pub mod point_group {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GroupId {
+        #[prost(oneof = "group_id::Kind", tags = "1, 2, 3")]
+        pub kind: ::core::option::Option<group_id::Kind>,
+    }
+    /// Nested message and enum types in `GroupId`.
+    pub mod group_id {
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Kind {
+            /// Represents a double value.
+            #[prost(uint64, tag = "1")]
+            UnsignedValue(u64),
+            /// Represents an integer value
+            #[prost(int64, tag = "2")]
+            IntegerValue(i64),
+            /// Represents a string value.
+            #[prost(string, tag = "3")]
+            StringValue(::prost::alloc::string::String),
+        }
+    }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

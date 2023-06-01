@@ -7933,6 +7933,51 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 1
+          },
+          "with_lookup": {
+            "description": "Look for points in another collection using the group ids",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithLookup"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "WithLookup": {
+        "type": "object",
+        "required": [
+          "collection"
+        ],
+        "properties": {
+          "collection": {
+            "description": "Name of the collection to use for points lookup",
+            "type": "string"
+          },
+          "with_payload": {
+            "description": "Options for specifying which payload to include (or not)",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_vectors": {
+            "description": "Options for specifying which vectors to include (or not)",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -8051,6 +8096,17 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 1
+          },
+          "with_lookup": {
+            "description": "Look for points in another collection using the group ids",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithLookup"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
