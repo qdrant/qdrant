@@ -110,7 +110,7 @@ struct FakeMetric {}
 
 impl Metric for FakeMetric {
     fn distance() -> Distance {
-        return Distance::Dot;
+        Distance::Dot
     }
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
