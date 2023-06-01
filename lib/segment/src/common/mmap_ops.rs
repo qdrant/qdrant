@@ -1,12 +1,14 @@
 use std::fs::OpenOptions;
-use std::mem;
 use std::mem::size_of;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::{mem, ops, time};
 
-use memmap2::{Mmap, MmapMut, MmapOptions};
+use memmap2::{Mmap, MmapMut};
 
 use crate::entry::entry_point::OperationResult;
 use crate::madvise;
+use crate::madvise::Madviseable;
 
 pub fn create_and_ensure_length(path: &Path, length: usize) -> OperationResult<()> {
     let file = OpenOptions::new()
@@ -27,8 +29,9 @@ pub fn open_read_mmap(path: &Path) -> OperationResult<Mmap> {
         .create(true)
         .open(path)?;
 
-    let mmap = unsafe { MmapOptions::new().map(&file)? };
+    let mmap = unsafe { Mmap::map(&file)? };
     madvise::madvise(&mmap, madvise::get_global())?;
+
     Ok(mmap)
 }
 
@@ -41,7 +44,50 @@ pub fn open_write_mmap(path: &Path) -> OperationResult<MmapMut> {
 
     let mmap = unsafe { MmapMut::map_mut(&file)? };
     madvise::madvise(&mmap, madvise::get_global())?;
+
     Ok(mmap)
+}
+
+#[derive(Clone, Debug)]
+pub struct PrefaultMmapPages {
+    mmap: Arc<Mmap>,
+    path: Option<PathBuf>,
+}
+
+impl PrefaultMmapPages {
+    pub fn new(mmap: Arc<Mmap>, path: Option<impl Into<PathBuf>>) -> Self {
+        Self {
+            mmap,
+            path: path.map(Into::into),
+        }
+    }
+
+    pub fn exec(&self) {
+        prefault_mmap_pages(self.mmap.as_ref(), self.path.as_deref());
+    }
+}
+
+fn prefault_mmap_pages<T>(mmap: &T, path: Option<&Path>)
+where
+    T: Madviseable + ops::Deref<Target = [u8]>,
+{
+    let separator = path.map_or("", |_| " "); // space if `path` is `Some` or nothing
+    let path = path.unwrap_or(Path::new("")); // path if `path` is `Some` or nothing
+
+    log::trace!("Reading mmap{separator}{path:?} to populate cache...");
+
+    let instant = time::Instant::now();
+
+    let mut dst = [0; 8096];
+
+    for chunk in mmap.chunks(dst.len()) {
+        dst[..chunk.len()].copy_from_slice(chunk);
+    }
+
+    log::trace!(
+        "Reading mmap{separator}{path:?} to populate cache took {:?}",
+        instant.elapsed()
+    );
 }
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
