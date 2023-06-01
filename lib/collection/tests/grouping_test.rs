@@ -487,7 +487,7 @@ mod group_by_builder {
 
     use collection::grouping::GroupBy;
     use collection::lookup::types::PseudoId;
-    use collection::lookup::{Lookup, LookupRequest};
+    use collection::lookup::{RetrievedLookup, WithLookup};
     use tokio::sync::RwLock;
 
     use super::*;
@@ -495,8 +495,7 @@ mod group_by_builder {
     const BODY_TEXT: &str = "lorem ipsum dolor sit amet";
 
     struct Resources {
-        group_by_request: GroupRequest,
-        lookup_request: LookupRequest,
+        request: GroupRequest,
         lookup_collection: RwLock<Collection>,
         collection: Collection,
     }
@@ -516,14 +515,7 @@ mod group_by_builder {
             score_threshold: None,
         });
 
-        let group_by_request =
-            GroupRequest::with_limit_from_request(source_request, "docId".to_string(), 3);
-
-        let lookup_request = LookupRequest {
-            collection_name: "test".to_string(),
-            with_payload: true.into(),
-            with_vectors: true.into(),
-        };
+        let request = GroupRequest::with_limit_from_request(source_request, "docId".to_string(), 3);
 
         let collection_dir = tempfile::Builder::new().prefix("chunks").tempdir().unwrap();
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;
@@ -590,9 +582,8 @@ mod group_by_builder {
         let lookup_collection = RwLock::new(lookup_collection);
 
         Resources {
-            group_by_request,
+            request,
             collection,
-            lookup_request,
             lookup_collection,
         }
     }
@@ -600,14 +591,14 @@ mod group_by_builder {
     #[tokio::test]
     async fn only_group_by() {
         let Resources {
-            group_by_request,
+            request,
             collection,
             ..
         } = setup(16, 8).await;
 
         let collection_by_name = |_: String| async { unreachable!() };
 
-        let result = GroupBy::new(group_by_request.clone(), &collection, collection_by_name)
+        let result = GroupBy::new(request.clone(), &collection, collection_by_name)
             .execute()
             .await;
 
@@ -616,9 +607,9 @@ mod group_by_builder {
         let result = result.unwrap();
 
         // minimal assertion
-        assert_eq!(result.len(), group_by_request.limit);
+        assert_eq!(result.len(), request.limit);
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.group_size);
+            assert_eq!(group.hits.len(), request.group_size);
             assert!(group.lookup.is_none());
         }
     }
@@ -626,17 +617,21 @@ mod group_by_builder {
     #[tokio::test]
     async fn group_by_with_lookup() {
         let Resources {
-            group_by_request,
-            lookup_request,
+            mut request,
             collection,
             lookup_collection,
             ..
         } = setup(16, 8).await;
 
+        request.lookup = Some(WithLookup {
+            collection_name: "test".to_string(),
+            with_payload: Some(true.into()),
+            with_vectors: Some(true.into()),
+        });
+
         let collection_by_name = |_: String| async { Some(lookup_collection.read().await) };
 
-        let result = GroupBy::new(group_by_request.clone(), &collection, collection_by_name)
-            .with_lookup(lookup_request)
+        let result = GroupBy::new(request.clone(), &collection, collection_by_name)
             .execute()
             .await;
 
@@ -644,12 +639,12 @@ mod group_by_builder {
 
         let result = result.unwrap();
 
-        assert_eq!(result.len(), group_by_request.limit);
+        assert_eq!(result.len(), request.limit);
 
         for group in result {
-            assert_eq!(group.hits.len(), group_by_request.group_size);
+            assert_eq!(group.hits.len(), request.group_size);
 
-            let Lookup::Single(lookup) = group.lookup.unwrap() else {
+            let RetrievedLookup::Single(lookup) = group.lookup.unwrap() else {
                 panic!("lookup is not `Single` variant")
             };
 

@@ -7,7 +7,7 @@ use tokio::sync::RwLockReadGuard;
 use super::group_by::{group_by, GroupRequest};
 use crate::collection::Collection;
 use crate::lookup::types::PseudoId;
-use crate::lookup::{lookup_ids, Lookup, LookupRequest};
+use crate::lookup::{lookup_ids, RetrievedLookup};
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{CollectionResult, PointGroup};
 use crate::shards::shard::ShardId;
@@ -24,7 +24,6 @@ where
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
-    lookup: Option<LookupRequest>,
 }
 
 impl<'a, F, Fut> GroupBy<'a, F, Fut>
@@ -38,15 +37,9 @@ where
             group_by,
             collection,
             collection_by_name,
-            lookup: None,
             read_consistency: None,
             shard_selection: None,
         }
-    }
-
-    pub fn with_lookup(mut self, lookup: LookupRequest) -> Self {
-        self.lookup = Some(lookup);
-        self
     }
 
     pub fn with_read_consistency(mut self, read_consistency: ReadConsistency) -> Self {
@@ -61,7 +54,7 @@ where
 
     pub async fn execute(self) -> CollectionResult<Vec<PointGroup>> {
         let mut groups = group_by(
-            self.group_by,
+            self.group_by.clone(),
             self.collection,
             self.collection_by_name.clone(),
             self.read_consistency,
@@ -69,7 +62,7 @@ where
         )
         .await?;
 
-        if let Some(lookup) = self.lookup {
+        if let Some(lookup) = self.group_by.lookup {
             let mut lookups = {
                 let pseudo_ids = groups
                     .iter()
@@ -95,7 +88,7 @@ where
                 } else {
                     // We want to explicitly say that there is no lookup for this group id,
                     // this is to differentiate between not finding a lookup and not requesting a lookup
-                    group.lookup = Some(Lookup::None);
+                    group.lookup = Some(RetrievedLookup::None);
                 }
             }
         }

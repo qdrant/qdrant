@@ -31,7 +31,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
-use crate::lookup::Lookup;
+use crate::lookup::RetrievedLookup;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
@@ -419,7 +419,7 @@ pub struct PointGroup {
     pub id: GroupId,
     /// Record that has been looked up using the group id
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lookup: Option<Lookup>,
+    pub lookup: Option<RetrievedLookup>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
