@@ -57,14 +57,14 @@ where
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         // Grab API key from request
-        let key: Option<&[u8]> =
+        let key =
             // Request header
             req.headers().get("api-key").map(|key| key.as_bytes())
             // Fall back to query parameter
             .or_else(|| req.query_string()
                 .split('&')
                 .filter_map(|option| option.split_once('='))
-                .find(|(key, _)| key == &"api-key")
+                .find(|(key, _)| key.eq_ignore_ascii_case("api-key"))
                 .map(|(_, value)| value.as_bytes()));
 
         // If we have an API key, compare in constant time
