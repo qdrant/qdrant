@@ -339,6 +339,15 @@ fn main() -> anyhow::Result<()> {
         log::info!("Telemetry reporting disabled");
     }
 
+    // Helper to better log start errors
+    let log_err_if_any = |server_name, result| match result {
+        Err(err) => {
+            log::error!("Error while starting {} server: {}", server_name, err);
+            Err(err)
+        }
+        ok => ok,
+    };
+
     //
     // REST API server
     //
@@ -349,7 +358,12 @@ fn main() -> anyhow::Result<()> {
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
-            .spawn(move || actix::init(dispatcher_arc.clone(), telemetry_collector, settings))
+            .spawn(move || {
+                log_err_if_any(
+                    "REST",
+                    actix::init(dispatcher_arc.clone(), telemetry_collector, settings),
+                )
+            })
             .unwrap();
         handles.push(handle);
     }
@@ -363,12 +377,15 @@ fn main() -> anyhow::Result<()> {
         let handle = thread::Builder::new()
             .name("grpc".to_string())
             .spawn(move || {
-                tonic::init(
-                    dispatcher_arc,
-                    tonic_telemetry_collector,
-                    settings,
-                    grpc_port,
-                    runtime_handle,
+                log_err_if_any(
+                    "gRPC",
+                    tonic::init(
+                        dispatcher_arc,
+                        tonic_telemetry_collector,
+                        settings,
+                        grpc_port,
+                        runtime_handle,
+                    ),
                 )
             })
             .unwrap();
