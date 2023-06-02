@@ -48,15 +48,41 @@ pub enum Advice {
 
     /// See [`memmap2::Advice::Sequential`].
     Sequential,
+
+    /// See [`memmap2::Advice::PopulateRead`].
+    PopulateRead,
 }
 
+// `memmap2::Advice` is only supported on Unix platforms.
+//
+// It's enabled/disabled with `#[cfg(unix)]` conditional compilation directive in `memmap2` crate,
+// so, unfortunately, a bit of conditional compilation is also required in our code.
+//
+// The most ergonomic way to "integrate" conditionally compiled parts is to abstract them
+// into a no-op and/or runtime error, so:
+//
+// - the `Advice` enum defined in this module is *not* conditionally compiled, and always present
+//   on any platform
+// - but the `Madviseable::madvise` implementation is a no-op on non-Unix platforms
+// - and trying to use `Advice::PopulateRead` is a runtime error on non-Linux platforms
 #[cfg(unix)]
-impl From<Advice> for memmap2::Advice {
-    fn from(advice: Advice) -> Self {
+impl TryFrom<Advice> for memmap2::Advice {
+    type Error = io::Error;
+
+    fn try_from(advice: Advice) -> io::Result<Self> {
         match advice {
-            Advice::Normal => memmap2::Advice::Normal,
-            Advice::Random => memmap2::Advice::Random,
-            Advice::Sequential => memmap2::Advice::Sequential,
+            Advice::Normal => Ok(memmap2::Advice::Normal),
+            Advice::Random => Ok(memmap2::Advice::Random),
+            Advice::Sequential => Ok(memmap2::Advice::Sequential),
+
+            #[cfg(target_os = "linux")]
+            Advice::PopulateRead => Ok(memmap2::Advice::PopulateRead),
+
+            #[cfg(not(target_os = "linux"))]
+            Advice::PopulateRead => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "MADV_POPULATE_READ is only supported on Linux",
+            )),
         }
     }
 }
@@ -76,9 +102,7 @@ pub trait Madviseable {
 impl Madviseable for memmap2::Mmap {
     fn madvise(&self, advice: Advice) -> io::Result<()> {
         #[cfg(unix)]
-        self.advise(advice.into())?;
-        #[cfg(not(unix))]
-        log::debug!("Ignore {advice:?} on this platform");
+        self.advise(advice.try_into()?)?;
         Ok(())
     }
 }
@@ -86,9 +110,7 @@ impl Madviseable for memmap2::Mmap {
 impl Madviseable for memmap2::MmapMut {
     fn madvise(&self, advice: Advice) -> io::Result<()> {
         #[cfg(unix)]
-        self.advise(advice.into())?;
-        #[cfg(not(unix))]
-        log::debug!("Ignore {advice:?} on this platform");
+        self.advise(advice.try_into()?)?;
         Ok(())
     }
 }
