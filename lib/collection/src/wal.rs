@@ -170,7 +170,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
         // Acknowledge index should not decrease
         let minimal_first_index = self.first_index.unwrap_or(self.wal.first_index());
-        let new_first_index = Some(until_index.clamp(minimal_first_index, self.wal.last_index()));
+        let new_first_index = Some(until_index.max(minimal_first_index).min(self.wal.last_index()));
         // Update current `first_index`
         if self.first_index != new_first_index {
             self.first_index = new_first_index;
