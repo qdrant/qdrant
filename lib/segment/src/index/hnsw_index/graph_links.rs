@@ -514,7 +514,7 @@ impl GraphLinksMmap {
     }
 
     pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
-        mmap_ops::PrefaultMmapPages::new(self.mmap.clone()?, Some(path)).into()
+        mmap_ops::PrefaultMmapPages::from_mmap(self.mmap.clone()?, Some(path)).into()
     }
 }
 

@@ -189,7 +189,7 @@ impl MmapVectors {
     }
 
     pub fn prefault_mmap_pages(&self, path: &Path) -> mmap_ops::PrefaultMmapPages {
-        mmap_ops::PrefaultMmapPages::new(self.mmap.clone(), Some(path))
+        mmap_ops::PrefaultMmapPages::from_mmap(self.mmap.clone(), Some(path))
     }
 
     #[cfg(target_os = "linux")]

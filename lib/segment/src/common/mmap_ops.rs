@@ -3,7 +3,7 @@ use std::hint::black_box;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{mem, ops, time};
+use std::{io, mem, time};
 
 use memmap2::{Mmap, MmapMut};
 
@@ -51,47 +51,139 @@ pub fn open_write_mmap(path: &Path) -> OperationResult<MmapMut> {
 
 #[derive(Clone, Debug)]
 pub struct PrefaultMmapPages {
-    mmap: Arc<Mmap>,
+    mmap: PrefaultableMmap,
     path: Option<PathBuf>,
 }
 
 impl PrefaultMmapPages {
-    pub fn new(mmap: Arc<Mmap>, path: Option<impl Into<PathBuf>>) -> Self {
+    pub fn from_mmap(mmap: Arc<Mmap>, path: Option<impl Into<PathBuf>>) -> Self {
         Self {
-            mmap,
+            mmap: mmap.into(),
             path: path.map(Into::into),
         }
     }
 
+    pub fn from_mmap_mut(mmap: Arc<MmapMut>, path: Option<impl Into<PathBuf>>) -> Option<Self> {
+        let task = Self {
+            mmap: mmap.try_into().ok()?,
+            path: path.map(Into::into),
+        };
+
+        Some(task)
+    }
+
     pub fn exec(&self) {
-        prefault_mmap_pages(self.mmap.as_ref(), self.path.as_deref());
+        self.mmap.prefault(self.path.as_deref())
     }
 }
 
-fn prefault_mmap_pages<T>(mmap: &T, path: Option<&Path>)
-where
-    T: Madviseable + ops::Deref<Target = [u8]>,
-{
-    let separator = path.map_or("", |_| " "); // space if `path` is `Some` or nothing
-    let path = path.unwrap_or(Path::new("")); // path if `path` is `Some` or nothing
+#[derive(Clone, Debug)]
+pub enum PrefaultableMmap {
+    Mmap(Arc<Mmap>),
+    MmapMut(Arc<MmapMut>),
+}
 
-    log::trace!("Reading mmap{separator}{path:?} to populate cache...");
+impl PrefaultableMmap {
+    pub fn prefault(&self, path: Option<&Path>) {
+        let sep = path.map_or("", |_| " "); // space if `path` is `Some` or nothing
+        let path = path.unwrap_or(Path::new("")); // path if `path` is `Some` or nothing
 
-    let instant = time::Instant::now();
+        let instant = time::Instant::now();
 
-    let mut dst = [0; 8096];
-
-    for chunk in mmap.chunks(dst.len()) {
-        dst[..chunk.len()].copy_from_slice(chunk);
+        if self.prefault_with_madv_populate_read(sep, path) {
+            log::trace!(
+                "Prefaulted mmap{sep}{path:?} with MADV_POPULATE_READ in {:?}",
+                instant.elapsed(),
+            );
+        } else if self.prefault_with_explicit_read(sep, path) {
+            log::trace!(
+                "Prefaulted mmap{sep}{path:?} with explicit read in {:?}",
+                instant.elapsed(),
+            );
+        } else {
+            log::warn!("Failed to prefault mmap{sep}{path:?}!");
+        }
     }
 
-    black_box(dst);
+    fn prefault_with_madv_populate_read(&self, sep: &str, path: &Path) -> bool {
+        // Prefaulting memmapped pages with `MADV_POPULATE_READ` is only supported on Linux
+        //
+        // The `cfg!(...)` runtime check could have been expressed as `#[cfg(...)]` conditional
+        // compilation directive, but ergonomics of `cfg!(...)` check is better. 🤷‍♀️
 
-    log::trace!(
-        "Reading mmap{separator}{path:?} to populate cache took {:?}",
-        instant.elapsed()
-    );
+        if cfg!(target_os = "linux") {
+            return false;
+        }
+
+        log::trace!("Prefaulting mmap {sep}{path:?} with MADV_POPULATE_READ...");
+
+        let res = self.madvise(madvise::Advice::PopulateRead);
+
+        if let Err(err) = &res {
+            log::error!("Failed to prefault memmap{sep}{path:?} with MADV_POPULATE_READ: {err}");
+        }
+
+        res.is_ok()
+    }
+
+    fn prefault_with_explicit_read(&self, sep: &str, path: &Path) -> bool {
+        // Prefaulting memmapped pages with explicit read is only supported for `Mmap`, but not `MmapMut`
+
+        let Self::Mmap(mmap) = self else {
+            return false;
+        };
+
+        log::trace!("Prefaulting mmap{sep}{path:?} with explicit read...");
+
+        let mut dst = [0; 8096];
+
+        for chunk in mmap.chunks(dst.len()) {
+            dst[..chunk.len()].copy_from_slice(chunk);
+        }
+
+        black_box(dst);
+
+        true
+    }
 }
+
+impl Madviseable for PrefaultableMmap {
+    fn madvise(&self, advice: madvise::Advice) -> io::Result<()> {
+        match self {
+            Self::Mmap(mmap) => mmap.madvise(advice),
+            Self::MmapMut(mmap) => mmap.madvise(advice),
+        }
+    }
+}
+
+impl From<Arc<Mmap>> for PrefaultableMmap {
+    fn from(mmap: Arc<Mmap>) -> Self {
+        Self::Mmap(mmap)
+    }
+}
+
+impl TryFrom<Arc<MmapMut>> for PrefaultableMmap {
+    type Error = Unsupported;
+
+    fn try_from(mmap: Arc<MmapMut>) -> Result<Self, Self::Error> {
+        // Prefaulting `MmapMut` pages is only supported on Linux:
+        // - because prefaulting with `MADV_POPULATE_READ` is only supported on Linux
+        // - and prefaulting with explicit read is not supported for `MmapMut`
+        //
+        // The `cfg!(...)` runtime check could have been expressed as `#[cfg(...)]` conditional
+        // compilation directive, but ergonomics of `cfg!(...)` check is better. 🤷‍♀️
+
+        if cfg!(target_os = "linux") {
+            Ok(Self::MmapMut(mmap))
+        } else {
+            Err(Unsupported)
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, thiserror::Error)]
+#[error("prefaulting MmapMut pages is only supported on Linux")]
+pub struct Unsupported;
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v as *const T as *const u8, mem::size_of_val(v)) }
