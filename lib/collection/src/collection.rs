@@ -935,7 +935,6 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-
         // short-circuit if not needed
         if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
             (&with_payload, &with_vector)
