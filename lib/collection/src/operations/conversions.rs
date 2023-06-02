@@ -12,7 +12,9 @@ use segment::types::{
 };
 use tonic::Status;
 
-use super::types::{BaseGroupRequest, GroupsResult, RecommendGroupsRequest, SearchGroupsRequest};
+use super::types::{
+    BaseGroupRequest, GroupsResult, PointGroup, RecommendGroupsRequest, SearchGroupsRequest,
+};
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams, WalConfig,
@@ -762,6 +764,15 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
                 group_size: value.group_size,
             },
         })
+    }
+}
+
+impl From<PointGroup> for api::grpc::qdrant::PointGroup {
+    fn from(group: PointGroup) -> Self {
+        Self {
+            hits: group.hits.into_iter().map_into().collect(),
+            id: Some(group.id.into()),
+        }
     }
 }
 

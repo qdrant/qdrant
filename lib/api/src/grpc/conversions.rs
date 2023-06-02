@@ -22,11 +22,10 @@ use crate::grpc::qdrant::{
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, GroupId, HasIdCondition,
     HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
     ListValue, Match, NamedVectors, NestedCondition, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointGroup,
-    PointId, QuantizationConfig, QuantizationSearchParams, Range, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams,
-    TokenizerType, Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector,
-    WithVectorsSelector,
+    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
+    QuantizationConfig, QuantizationSearchParams, Range, RepeatedIntegers, RepeatedStrings,
+    ScalarQuantization, ScoredPoint, SearchParams, Struct, TextIndexParams, TokenizerType, Value,
+    ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -420,15 +419,6 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score: point.score,
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
-        }
-    }
-}
-
-impl From<segment::types::PointGroup> for PointGroup {
-    fn from(group: segment::types::PointGroup) -> Self {
-        Self {
-            hits: group.hits.into_iter().map(ScoredPoint::from).collect(),
-            id: Some(group.id.into()),
         }
     }
 }

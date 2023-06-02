@@ -15,35 +15,26 @@ use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{CollectionError, CollectionResult, PointRequest, Record};
 use crate::shards::shard::ShardId;
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum Lookup {
-    None,
-    Single(Record),
-    // We may want to implement multi-record lookup in the future
-}
-
-impl From<Record> for Lookup {
-    fn from(record: Record) -> Self {
-        Lookup::Single(record)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct LookupRequest {
+pub struct WithLookup {
+    /// Name of the collection to use for points lookup
     #[serde(rename = "collection")]
     pub collection_name: String,
-    pub with_payload: WithPayloadInterface,
-    pub with_vectors: WithVector,
+
+    /// Options for specifying which payload to include (or not)
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Options for specifying which vectors to include (or not)
+    pub with_vectors: Option<WithVector>,
 }
 
 pub async fn lookup_ids<'a, F, Fut>(
-    request: LookupRequest,
+    request: WithLookup,
     values: Vec<PseudoId>,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
-) -> CollectionResult<HashMap<PseudoId, Lookup>>
+) -> CollectionResult<HashMap<PseudoId, Record>>
 where
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
@@ -65,15 +56,15 @@ where
 
     let point_request = PointRequest {
         ids,
-        with_payload: Some(request.with_payload),
-        with_vector: request.with_vectors,
+        with_payload: request.with_payload,
+        with_vector: request.with_vectors.unwrap_or_default(),
     };
 
     let result = collection
         .retrieve(point_request, read_consistency, shard_selection)
         .await?
         .into_iter()
-        .map(|point| (PseudoId::from(point.id), Lookup::from(point)))
+        .map(|point| (PseudoId::from(point.id), point))
         .collect();
 
     Ok(result)
