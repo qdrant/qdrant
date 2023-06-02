@@ -7,7 +7,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
 
-use crate::common::Flusher;
+use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{check_process_stopped, OperationResult};
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
@@ -82,6 +82,10 @@ impl AppendableMmapVectorStorage {
             self.deleted_count -= 1;
         }
         Ok(previous)
+    }
+
+    pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> + '_ {
+        self.vectors.prefault_mmap_pages()
     }
 }
 

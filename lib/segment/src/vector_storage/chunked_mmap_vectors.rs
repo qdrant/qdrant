@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
-use crate::common::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use crate::common::mmap_ops::{self, create_and_ensure_length, open_write_mmap};
 use crate::common::mmap_type::MmapType;
 use crate::common::Flusher;
 use crate::data_types::vectors::VectorElementType;
@@ -203,6 +203,20 @@ impl ChunkedMmapVectors {
                 Ok(())
             }
         })
+    }
+
+    pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> + '_ {
+        let status_task = self
+            .status
+            .prefault_mmap_pages(self.directory.join(STATUS_FILE_NAME));
+
+        let chunks_tasks = self
+            .chunks
+            .iter()
+            .enumerate()
+            .flat_map(|(id, chunk)| chunk.prefault_mmap_pages(chunk_name(&self.directory, id)));
+
+        status_task.into_iter().chain(chunks_tasks)
     }
 
     pub fn files(&self) -> Vec<PathBuf> {

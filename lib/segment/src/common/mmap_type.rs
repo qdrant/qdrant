@@ -23,12 +23,14 @@
 //! behavior. Problems caused by this are very hard to debug.
 
 use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::{mem, slice};
 
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
 
+use super::mmap_ops;
 use crate::common::Flusher;
 
 /// Result for mmap errors.
@@ -180,6 +182,13 @@ where
             }
         })
     }
+
+    pub fn prefault_mmap_pages(
+        &self,
+        path: impl Into<PathBuf>,
+    ) -> Option<mmap_ops::PrefaultMmapPages> {
+        mmap_ops::PrefaultMmapPages::from_mmap_mut(self.mmap.clone(), Some(path))
+    }
 }
 
 impl<T> Deref for MmapType<T>
@@ -261,6 +270,13 @@ impl<T> MmapSlice<T> {
     /// Get flusher to explicitly flush mmap at a later time
     pub fn flusher(&self) -> Flusher {
         self.mmap.flusher()
+    }
+
+    pub fn prefault_mmap_pages(
+        &self,
+        path: impl Into<PathBuf>,
+    ) -> Option<mmap_ops::PrefaultMmapPages> {
+        self.mmap.prefault_mmap_pages(path)
     }
 }
 

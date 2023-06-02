@@ -94,18 +94,22 @@ impl VectorData {
         self.vector_index.borrow().is_appendable() && self.vector_storage.borrow().is_appendable()
     }
 
-    pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> {
-        let index_task = match &*self.vector_index.borrow() {
-            VectorIndexEnum::HnswMmap(index) => index.prefault_mmap_pages(),
-            _ => None,
-        };
+    pub fn prefault_mmap_pages(&self) -> Vec<mmap_ops::PrefaultMmapPages> {
+        let mut tasks = Vec::new();
 
-        let storage_task = match &*self.vector_storage.borrow() {
-            VectorStorageEnum::Memmap(storage) => storage.prefault_mmap_pages(),
-            _ => None,
-        };
+        if let VectorIndexEnum::HnswMmap(index) = &*self.vector_index.borrow() {
+            tasks.extend(index.prefault_mmap_pages());
+        }
 
-        index_task.into_iter().chain(storage_task)
+        match &*self.vector_storage.borrow() {
+            VectorStorageEnum::Memmap(storage) => tasks.extend(storage.prefault_mmap_pages()),
+            VectorStorageEnum::AppendableMemmap(storage) => {
+                tasks.extend(storage.prefault_mmap_pages())
+            }
+            _ => (),
+        }
+
+        tasks
     }
 }
 
@@ -679,7 +683,7 @@ impl Segment {
         let tasks: Vec<_> = self
             .vector_data
             .values()
-            .flat_map(|data| data.prefault_mmap_pages())
+            .map(|data| data.prefault_mmap_pages())
             .collect();
 
         let _ = thread::Builder::new()
@@ -687,7 +691,12 @@ impl Segment {
                 "segment-{:?}-prefault-mmap-pages",
                 self.current_path,
             ))
-            .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
+            .spawn(move || {
+                tasks
+                    .iter()
+                    .flatten()
+                    .for_each(mmap_ops::PrefaultMmapPages::exec)
+            });
     }
 }
 
