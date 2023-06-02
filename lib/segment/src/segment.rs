@@ -681,7 +681,12 @@ impl Segment {
             .flat_map(|data| data.prefault_mmap_pages())
             .collect();
 
-        let _ = thread::spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
+        let _ = thread::Builder::new()
+            .name(format!(
+                "segment-{:?}-prefault-mmap-pages",
+                self.current_path,
+            ))
+            .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
     }
 }
 
