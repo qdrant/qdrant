@@ -19,7 +19,6 @@ use validator::{Validate, ValidationErrors};
 
 use crate::common::utils;
 use crate::common::utils::MultiValue;
-use crate::data_types::groups::GroupId;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::spaces::metric::Metric;
@@ -197,14 +196,6 @@ impl PartialEq for ScoredPoint {
     fn eq(&self, other: &Self) -> bool {
         (self.id, &self.score) == (other.id, &other.score)
     }
-}
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-pub struct PointGroup {
-    /// Scored points that have the same value of the group_by key
-    pub hits: Vec<ScoredPoint>,
-    /// Value of the group_by key, shared across all the hits in the group
-    pub id: GroupId,
 }
 
 /// Type of segment

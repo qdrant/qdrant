@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use segment::data_types::groups::GroupId;
-use segment::types::{PointGroup, PointIdType, ScoredPoint};
+use segment::types::{PointIdType, ScoredPoint};
+
+use crate::operations::types::PointGroup;
 
 #[derive(PartialEq, Debug)]
 pub(super) enum AggregatorError {
@@ -30,6 +32,7 @@ impl From<Group> for PointGroup {
         Self {
             hits: group.hits,
             id: group.key,
+            lookup: None,
         }
     }
 }

@@ -4,18 +4,19 @@ use std::future::Future;
 use itertools::Itertools;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match, PointGroup, ScoredPoint,
-    WithPayloadInterface, WithVector,
+    AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
+    WithVector,
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
 
 use super::aggregator::GroupsAggregator;
 use crate::collection::Collection;
+use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{
-    BaseGroupRequest, CollectionError, CollectionResult, RecommendGroupsRequest, RecommendRequest,
-    SearchGroupsRequest, SearchRequest, UsingVector,
+    BaseGroupRequest, CollectionError, CollectionResult, PointGroup, RecommendGroupsRequest,
+    RecommendRequest, SearchGroupsRequest, SearchRequest, UsingVector,
 };
 use crate::recommendations::recommend_by;
 use crate::shards::shard::ShardId;
@@ -82,6 +83,9 @@ pub struct GroupRequest {
 
     /// Limit of groups to return
     pub limit: usize,
+
+    /// Options for specifying how to use the group id to lookup points in another collection
+    pub with_lookup: Option<WithLookup>,
 }
 
 impl GroupRequest {
@@ -99,6 +103,7 @@ impl GroupRequest {
             group_by,
             group_size,
             limit,
+            with_lookup: None,
         }
     }
 
@@ -200,6 +205,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
             group_by,
             group_size: group_size as usize,
             limit: limit as usize,
+            with_lookup: None, // TODO: update when ui is updated
         }
     }
 }
@@ -243,6 +249,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
             group_by,
             group_size: group_size as usize,
             limit: limit as usize,
+            with_lookup: None, // TODO: update when ui is updated
         }
     }
 }

@@ -7823,6 +7823,17 @@
           },
           "id": {
             "$ref": "#/components/schemas/GroupId"
+          },
+          "lookup": {
+            "description": "Record that has been looked up using the group id",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Record"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

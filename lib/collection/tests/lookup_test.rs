@@ -1,6 +1,6 @@
 use collection::collection::Collection;
 use collection::lookup::types::PseudoId;
-use collection::lookup::{lookup_ids, Lookup, LookupRequest};
+use collection::lookup::{lookup_ids, WithLookup};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::{Batch, WriteOrdering};
 use collection::shards::shard::ShardId;
@@ -21,17 +21,17 @@ mod common;
 const SEED: u64 = 42;
 
 struct Resources {
-    request: LookupRequest,
+    request: WithLookup,
     collection: RwLock<Collection>,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 }
 
 async fn setup() -> Resources {
-    let request = LookupRequest {
+    let request = WithLookup {
         collection_name: "test".to_string(),
-        with_payload: false.into(),
-        with_vectors: false.into(),
+        with_payload: Some(false.into()),
+        with_vectors: Some(false.into()),
     };
 
     let collection_dir = Builder::new().prefix("storage").tempdir().unwrap();
@@ -103,8 +103,8 @@ async fn happy_lookup_ids() {
         .map_into();
 
     let values = ints.chain(uuids).collect_vec();
-    request.with_payload = true.into();
-    request.with_vectors = true.into();
+    request.with_payload = Some(true.into());
+    request.with_vectors = Some(true.into());
 
     let result = lookup_ids(
         request.clone(),
@@ -131,9 +131,10 @@ async fn happy_lookup_ids() {
         .map(VectorStruct::from);
 
     for (id_value, vector) in values.into_iter().zip(expected_vectors) {
-        let Lookup::Single(record) = result.get(&id_value).unwrap() else {
-            panic!("Expected to find record for id {}", id_value);
-        };
+        let record = result
+            .get(&id_value)
+            .unwrap_or_else(|| panic!("Expected to find record for id {}", id_value));
+
         assert_eq!(record.id, PointIdType::try_from(id_value.clone()).unwrap());
         assert_eq!(
             record.payload,
@@ -185,8 +186,8 @@ async fn inexisting_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) {
     let collection_by_name = |_: String| async { Some(collection) };
 
     let values = vec![value];
-    request.with_payload = true.into();
-    request.with_vectors = true.into();
+    request.with_payload = Some(true.into());
+    request.with_vectors = Some(true.into());
 
     let result = lookup_ids(
         request,

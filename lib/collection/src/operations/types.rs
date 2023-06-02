@@ -11,13 +11,14 @@ use futures::io;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::file_operations::FileStorageError;
+use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
     NamedVectorStruct, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointGroup, PointIdType,
-    QuantizationConfig, ScoreType, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
+    ScoreType, ScoredPoint, SearchParams, SeqNumberType, WithPayloadInterface, WithVector,
 };
 use serde;
 use serde::{Deserialize, Serialize};
@@ -407,6 +408,17 @@ pub struct RecommendGroupsRequest {
 
     #[serde(flatten)]
     pub group_request: BaseGroupRequest,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+pub struct PointGroup {
+    /// Scored points that have the same value of the group_by key
+    pub hits: Vec<ScoredPoint>,
+    /// Value of the group_by key, shared across all the hits in the group
+    pub id: GroupId,
+    /// Record that has been looked up using the group id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lookup: Option<Record>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
