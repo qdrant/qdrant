@@ -352,13 +352,6 @@ message ScoredPoint {
   optional Vectors vectors = 6; // Vectors to search
 }
 
-message RetrievedLookup {
-  oneof kind {
-    RetrievedPoint single_point = 1; // Point from the lookup collection that matches the group id
-    // we might want to return multiple points in the future
-  }
-}
-
 message PointGroup {
   message GroupId {
     oneof kind {
@@ -373,7 +366,7 @@ message PointGroup {
 
   GroupId id = 1; // Group id
   repeated ScoredPoint hits = 2; // Points in the group 
-  optional RetrievedLookup lookup = 3; // Point from the lookup collection that matches the group id
+  repeated RetrievedPoint lookups = 3; // Point(s) from the lookup collection that matches the group id
 }
 
 message GroupsResult {

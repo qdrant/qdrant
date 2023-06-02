@@ -3162,22 +3162,6 @@ pub struct ScoredPoint {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RetrievedLookup {
-    #[prost(oneof = "retrieved_lookup::Kind", tags = "1")]
-    pub kind: ::core::option::Option<retrieved_lookup::Kind>,
-}
-/// Nested message and enum types in `RetrievedLookup`.
-pub mod retrieved_lookup {
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Kind {
-        /// Point from the lookup collection that matches the group id
-        #[prost(message, tag = "1")]
-        SinglePoint(super::RetrievedPoint),
-    }
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointGroup {
     /// Group id
     #[prost(message, optional, tag = "1")]
@@ -3185,9 +3169,9 @@ pub struct PointGroup {
     /// Points in the group
     #[prost(message, repeated, tag = "2")]
     pub hits: ::prost::alloc::vec::Vec<ScoredPoint>,
-    /// Point from the lookup collection that matches the group id
-    #[prost(message, optional, tag = "3")]
-    pub lookup: ::core::option::Option<RetrievedLookup>,
+    /// Point(s) from the lookup collection that matches the group id
+    #[prost(message, repeated, tag = "3")]
+    pub lookups: ::prost::alloc::vec::Vec<RetrievedPoint>,
 }
 /// Nested message and enum types in `PointGroup`.
 pub mod point_group {

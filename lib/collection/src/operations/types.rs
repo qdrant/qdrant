@@ -32,7 +32,6 @@ use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
 use crate::lookup::types::WithLookupInterface;
-use crate::lookup::WithLookup;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;

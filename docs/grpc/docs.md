@@ -120,7 +120,6 @@
     - [RecommendResponse](#qdrant-RecommendResponse)
     - [RepeatedIntegers](#qdrant-RepeatedIntegers)
     - [RepeatedStrings](#qdrant-RepeatedStrings)
-    - [RetrievedLookup](#qdrant-RetrievedLookup)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
     - [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry)
     - [ScoredPoint](#qdrant-ScoredPoint)
@@ -1738,7 +1737,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | id | [PointGroup.GroupId](#qdrant-PointGroup-GroupId) |  | Group id |
 | hits | [ScoredPoint](#qdrant-ScoredPoint) | repeated | Points in the group |
-| lookup | [RetrievedLookup](#qdrant-RetrievedLookup) | optional | Point from the lookup collection that matches the group id |
+| lookups | [RetrievedPoint](#qdrant-RetrievedPoint) | repeated | Point(s) from the lookup collection that matches the group id |
 
 
 
@@ -2069,21 +2068,6 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | strings | [string](#string) | repeated |  |
-
-
-
-
-
-
-<a name="qdrant-RetrievedLookup"></a>
-
-### RetrievedLookup
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| single_point | [RetrievedPoint](#qdrant-RetrievedPoint) |  | Point from the lookup collection that matches the group id |
 
 
 

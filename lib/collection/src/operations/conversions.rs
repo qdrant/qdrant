@@ -20,7 +20,7 @@ use crate::config::{
     CollectionParams, WalConfig,
 };
 use crate::lookup::types::WithLookupInterface;
-use crate::lookup::{RetrievedLookup, WithLookup};
+use crate::lookup::WithLookup;
 use crate::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShard, MoveShardOperation,
     Replica, ReplicateShardOperation,
@@ -800,25 +800,12 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequest {
     }
 }
 
-impl From<RetrievedLookup> for api::grpc::qdrant::RetrievedLookup {
-    fn from(value: RetrievedLookup) -> Self {
-        match value {
-            RetrievedLookup::Single(record) => Self {
-                kind: Some(api::grpc::qdrant::retrieved_lookup::Kind::SinglePoint(
-                    record.into(),
-                )),
-            },
-            RetrievedLookup::None => Self { kind: None },
-        }
-    }
-}
-
 impl From<PointGroup> for api::grpc::qdrant::PointGroup {
     fn from(group: PointGroup) -> Self {
         Self {
             hits: group.hits.into_iter().map_into().collect(),
             id: Some(group.id.into()),
-            lookup: group.lookup.map(Into::into),
+            lookups: group.lookup.into_iter().map_into().collect(),
         }
     }
 }
