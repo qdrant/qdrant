@@ -15,20 +15,6 @@ use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{CollectionError, CollectionResult, PointRequest, Record};
 use crate::shards::shard::ShardId;
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
-#[serde(untagged)]
-pub enum RetrievedLookup {
-    None,
-    Single(Record),
-    // We may want to implement multi-record lookup in the future
-}
-
-impl From<Record> for RetrievedLookup {
-    fn from(record: Record) -> Self {
-        RetrievedLookup::Single(record)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WithLookup {
     /// Name of the collection to use for points lookup
@@ -48,7 +34,7 @@ pub async fn lookup_ids<'a, F, Fut>(
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
-) -> CollectionResult<HashMap<PseudoId, RetrievedLookup>>
+) -> CollectionResult<HashMap<PseudoId, Record>>
 where
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
@@ -78,7 +64,7 @@ where
         .retrieve(point_request, read_consistency, shard_selection)
         .await?
         .into_iter()
-        .map(|point| (PseudoId::from(point.id), RetrievedLookup::from(point)))
+        .map(|point| (PseudoId::from(point.id), point))
         .collect();
 
     Ok(result)

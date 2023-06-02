@@ -6,8 +6,8 @@ use tokio::sync::RwLockReadGuard;
 
 use super::group_by::{group_by, GroupRequest};
 use crate::collection::Collection;
+use crate::lookup::lookup_ids;
 use crate::lookup::types::PseudoId;
-use crate::lookup::{lookup_ids, RetrievedLookup};
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::{CollectionResult, PointGroup};
 use crate::shards::shard::ShardId;
@@ -82,14 +82,7 @@ where
 
             // Put the lookups in their respective groups
             groups.iter_mut().for_each(|group| {
-                group.lookup.replace(
-                    lookups
-                        .remove(&PseudoId::from(group.id.clone()))
-                        // If there is no lookup for this group id, we want to explicitly say that it is
-                        // (`Lookup::None`). This is to differentiate between not finding a lookup and not
-                        // requesting a lookup.
-                        .unwrap_or(RetrievedLookup::None),
-                );
+                group.lookup = lookups.remove(&PseudoId::from(group.id.clone()));
             });
         }
 

@@ -487,7 +487,7 @@ mod group_by_builder {
 
     use collection::grouping::GroupBy;
     use collection::lookup::types::PseudoId;
-    use collection::lookup::{RetrievedLookup, WithLookup};
+    use collection::lookup::WithLookup;
     use tokio::sync::RwLock;
 
     use super::*;
@@ -644,9 +644,7 @@ mod group_by_builder {
         for group in result {
             assert_eq!(group.hits.len(), request.group_size);
 
-            let RetrievedLookup::Single(lookup) = group.lookup.unwrap() else {
-                panic!("lookup is not `Single` variant")
-            };
+            let lookup = group.lookup.expect("lookup not found");
 
             assert_eq!(PseudoId::from(group.id), PseudoId::from(lookup.id));
 
