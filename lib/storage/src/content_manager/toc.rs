@@ -104,9 +104,8 @@ impl TableOfContent {
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
-        if storage_config.storage_path != storage_config.tmp_path {
-            let tmp_path = Path::new(&storage_config.tmp_path.clone()).to_owned();
-            create_dir_all(tmp_path).expect("Can't create temporary files directory");
+        if let Some(path) = storage_config.tmp_path {
+            create_dir_all(path).expect("Can't create temporary files directory");
         }
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
