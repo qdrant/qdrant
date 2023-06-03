@@ -91,7 +91,7 @@ async fn _do_recover_from_snapshot(
 
     log::debug!("Snapshot downloaded to {}", snapshot_path.display());
 
-    let tmp_collection_dir = Path::new(toc.tmp_path().unwrap_or_else(|| toc.storage_path())
+    let tmp_collection_dir = Path::new(toc.tmp_path().unwrap_or_else(|| toc.storage_path()))
         .join("tmp_collections")
         .join(collection_name);
 
