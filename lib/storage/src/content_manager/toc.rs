@@ -1464,7 +1464,7 @@ impl TableOfContent {
         let collection = self.get_collection(collection_name).await?;
         // We want to use tmp dir inside the tmp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow
-        let tmp_dir = Path::new(self.tmp_path().unwrap_or_else(|| &self.storage_path()))
+        let tmp_dir = Path::new(self.tmp_path().unwrap_or_else(|| self.storage_path()))
             .join(SNAPSHOTS_TMP_DIR);
         tokio::fs::create_dir_all(&tmp_dir).await?;
         Ok(collection
