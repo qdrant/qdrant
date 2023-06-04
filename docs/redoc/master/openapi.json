@@ -606,8 +606,8 @@
               }
             }
           },
-          "200": {
-            "description": "successful operation",
+          "201": {
+            "description": "operation created an entity",
             "content": {
               "application/json": {
                 "schema": {

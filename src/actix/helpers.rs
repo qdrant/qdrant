@@ -30,6 +30,14 @@ pub fn accepted_response(timing: Instant) -> HttpResponse {
     })
 }
 
+pub fn created_response(response: bool, timing: Instant) -> HttpResponse {
+    HttpResponse::Created().json(ApiResponse {
+        result: Some(response),
+        status: ApiStatus::Ok,
+        time: timing.elapsed().as_secs_f64(),
+    })
+}
+
 pub fn process_response<D>(response: Result<D, StorageError>, timing: Instant) -> HttpResponse
 where
     D: Serialize + Debug,

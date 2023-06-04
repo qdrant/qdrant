@@ -30,7 +30,7 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
             "on_disk_payload": on_disk_payload
         }
     )
-    assert response.ok
+    assert response.status_code == 201
 
     response = request_with_validation(
         api='/collections/{collection_name}',

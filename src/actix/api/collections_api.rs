@@ -15,7 +15,7 @@ use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::api::StrictCollectionPath;
-use crate::actix::helpers::process_response;
+use crate::actix::helpers::{created_response, process_response};
 use crate::common::collections::*;
 
 #[derive(Debug, Deserialize, Validate)]
@@ -81,7 +81,11 @@ async fn create_collection(
             query.timeout(),
         )
         .await;
-    process_response(response, timing)
+
+    match response {
+        Ok(res) => created_response(res, timing),
+        Err(_) => process_response(response, timing),
+    }
 }
 
 #[patch("/collections/{name}")]

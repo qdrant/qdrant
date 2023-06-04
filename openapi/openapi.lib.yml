@@ -28,6 +28,36 @@ default:
           result: #@ model
 #@ end
 
+#@ def response_with_created(model):
+default:
+  description: error
+  content:
+    application/json:
+      schema:
+        $ref: "#/components/schemas/ErrorResponse"
+4XX:
+  description: error
+  content:
+    application/json:
+      schema:
+        $ref: "#/components/schemas/ErrorResponse"
+"201":
+  description: operation created an entity
+  content:
+    application/json:
+      schema:
+        type: object
+        properties:
+          time:
+            type: number
+            format: float
+            description: Time spent to process this request
+          status:
+            type: string
+            enum: [ "ok" ]
+          result: #@ model
+#@ end
+
 #@ def response_with_accepted(model):
 default:
   description: error

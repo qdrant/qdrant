@@ -1,4 +1,4 @@
-#@ load("openapi.lib.yml", "response", "reference", "type", "array")
+#@ load("openapi.lib.yml", "response", "response_with_created", "reference", "type", "array")
 
 paths:
   /collections:
@@ -53,7 +53,7 @@ paths:
             If timeout is reached - request will return with service error.
           schema:
             type: integer
-      responses: #@ response(type("boolean"))
+      responses: #@ response_with_created(type("boolean"))
 
     patch:
       tags:
