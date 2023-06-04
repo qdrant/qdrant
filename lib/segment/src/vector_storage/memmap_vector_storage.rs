@@ -62,6 +62,14 @@ impl MemmapVectorStorage {
                 .prefault_mmap_pages(&self.vectors_path),
         )
     }
+
+    pub fn vector_path(&self) -> &Path {
+        &self.vectors_path
+    }
+
+    pub fn get_mmap_vectors(&self) -> &MmapVectors {
+        self.mmap_store.as_ref().unwrap()
+    }
 }
 
 impl VectorStorage for MemmapVectorStorage {
