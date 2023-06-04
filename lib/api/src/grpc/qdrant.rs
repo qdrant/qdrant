@@ -866,6 +866,7 @@ pub enum TokenizerType {
     Prefix = 1,
     Whitespace = 2,
     Word = 3,
+    Charabia = 4,
 }
 impl TokenizerType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -878,6 +879,7 @@ impl TokenizerType {
             TokenizerType::Prefix => "Prefix",
             TokenizerType::Whitespace => "Whitespace",
             TokenizerType::Word => "Word",
+            TokenizerType::Charabia => "Charabia",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.

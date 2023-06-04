@@ -1,3 +1,5 @@
+use charabia::Tokenize;
+
 use crate::data_types::text_index::{TextIndexParams, TokenizerType};
 
 struct WhiteSpaceTokenizer;
@@ -60,6 +62,16 @@ impl PrefixTokenizer {
     }
 }
 
+struct CharabiaTokenizer;
+
+impl CharabiaTokenizer {
+    fn tokenize<C: FnMut(&str)>(text: &str, mut callback: C) {
+        text.tokenize().for_each(|token| {
+            callback(token.lemma());
+        });
+    }
+}
+
 pub struct Tokenizer;
 
 impl Tokenizer {
@@ -95,6 +107,7 @@ impl Tokenizer {
         match config.tokenizer {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, token_filter),
             TokenizerType::Word => WordTokenizer::tokenize(text, token_filter),
+            TokenizerType::Charabia => CharabiaTokenizer::tokenize(text, token_filter),
             TokenizerType::Prefix => PrefixTokenizer::tokenize(
                 text,
                 config.min_token_len.unwrap_or(1),
@@ -109,6 +122,7 @@ impl Tokenizer {
         match config.tokenizer {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, token_filter),
             TokenizerType::Word => WordTokenizer::tokenize(text, token_filter),
+            TokenizerType::Charabia => CharabiaTokenizer::tokenize(text, token_filter),
             TokenizerType::Prefix => PrefixTokenizer::tokenize_query(
                 text,
                 config.max_token_len.unwrap_or(usize::MAX),
@@ -170,6 +184,19 @@ mod tests {
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens.get(0), Some(&"hell".to_owned()));
         assert_eq!(tokens.get(1), Some(&"мир".to_owned()));
+    }
+
+    #[test]
+    fn test_charabia_tokenizer() {
+        let text = "本日の日付は";
+        let mut tokens = Vec::new();
+        CharabiaTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens.get(0), Some(&"本日".to_owned()));
+        assert_eq!(tokens.get(1), Some(&"の".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"日付".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"は".to_owned()));
     }
 
     #[test]
