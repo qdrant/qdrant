@@ -138,6 +138,7 @@ impl From<segment::data_types::text_index::TokenizerType> for TokenizerType {
         match tokenizer_type {
             segment::data_types::text_index::TokenizerType::Prefix => TokenizerType::Prefix,
             segment::data_types::text_index::TokenizerType::Whitespace => TokenizerType::Whitespace,
+            segment::data_types::text_index::TokenizerType::Charabia => TokenizerType::Charabia,
             segment::data_types::text_index::TokenizerType::Word => TokenizerType::Word,
         }
     }
@@ -184,6 +185,7 @@ impl TryFrom<TokenizerType> for segment::data_types::text_index::TokenizerType {
         match tokenizer_type {
             TokenizerType::Unknown => Err(Status::invalid_argument("unknown tokenizer type")),
             TokenizerType::Prefix => Ok(segment::data_types::text_index::TokenizerType::Prefix),
+            TokenizerType::Charabia => Ok(segment::data_types::text_index::TokenizerType::Charabia),
             TokenizerType::Whitespace => {
                 Ok(segment::data_types::text_index::TokenizerType::Whitespace)
             }

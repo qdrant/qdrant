@@ -4594,7 +4594,8 @@
         "enum": [
           "prefix",
           "whitespace",
-          "word"
+          "word",
+          "charabia"
         ]
       },
       "PointRequest": {

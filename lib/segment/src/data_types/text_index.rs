@@ -14,6 +14,7 @@ pub enum TokenizerType {
     Whitespace,
     #[default]
     Word,
+    Charabia,
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
