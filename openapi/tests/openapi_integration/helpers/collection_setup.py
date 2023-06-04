@@ -30,6 +30,8 @@ def basic_collection_setup(collection_name='test_collection', on_disk_payload=Fa
             "on_disk_payload": on_disk_payload
         }
     )
+    # sinse we tests collection create here, in fixture,
+    # we don't need to have a dedicated test for basic collection creation
     assert response.status_code == 201
 
     response = request_with_validation(
