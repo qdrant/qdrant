@@ -145,7 +145,7 @@ impl MmapVectors {
         &arr[0..self.dim]
     }
 
-    /// Creates returns owned vector (copy of internal vector)
+    /// Returns reference to vector data by key
     pub fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
         let offset = self.data_offset(key).unwrap();
         self.raw_vector_offset(offset)
