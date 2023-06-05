@@ -2,7 +2,7 @@ import argparse
 import requests
 import time
 
-from assertions import assert_http_ok
+from assertions import assert_http_ok, assert_http_created
 
 parser = argparse.ArgumentParser("Create test collection")
 parser.add_argument("collection_name")
@@ -18,7 +18,7 @@ r = requests.put(
         },
         "shard_number": 6
     })
-assert_http_ok(r)
+assert_http_created(r)
 
 # Wait
 time.sleep(5)
