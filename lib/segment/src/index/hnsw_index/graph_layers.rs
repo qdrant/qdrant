@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use super::graph_links::GraphLinks;
+use super::graph_links::{GraphLinks, GraphLinksMmap};
 use crate::common::file_operations::{atomic_save_bin, read_bin, FileStorageError};
+use crate::common::mmap_ops;
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
@@ -279,6 +280,12 @@ where
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
         Ok(atomic_save_bin(path, self)?)
+    }
+}
+
+impl GraphLayers<GraphLinksMmap> {
+    pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
+        self.links.prefault_mmap_pages(path)
     }
 }
 
