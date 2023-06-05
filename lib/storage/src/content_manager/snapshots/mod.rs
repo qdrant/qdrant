@@ -19,7 +19,7 @@ use crate::{StorageError, TableOfContent};
 pub struct SnapshotConfig {
     /// Map collection name to snapshot file name
     pub collections_mapping: HashMap<String, String>,
-    /// Aliases for collections <alias>:<collection_name>
+    /// Aliases for collections `<alias>:<collection_name>`
     #[serde(default)]
     pub collections_aliases: HashMap<String, String>,
 }
