@@ -89,6 +89,7 @@
     - [GeoRadius](#qdrant-GeoRadius)
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
+    - [GroupId](#qdrant-GroupId)
     - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
@@ -101,7 +102,6 @@
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
     - [PointGroup](#qdrant-PointGroup)
-    - [PointGroup.GroupId](#qdrant-PointGroup-GroupId)
     - [PointId](#qdrant-PointId)
     - [PointStruct](#qdrant-PointStruct)
     - [PointStruct.PayloadEntry](#qdrant-PointStruct-PayloadEntry)
@@ -1552,6 +1552,23 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-GroupId"></a>
+
+### GroupId
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| unsigned_value | [uint64](#uint64) |  | Represents a double value. |
+| integer_value | [int64](#int64) |  | Represents an integer value |
+| string_value | [string](#string) |  | Represents a string value. |
+
+
+
+
+
+
 <a name="qdrant-GroupsResult"></a>
 
 ### GroupsResult
@@ -1735,26 +1752,9 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| id | [PointGroup.GroupId](#qdrant-PointGroup-GroupId) |  | Group id |
+| id | [GroupId](#qdrant-GroupId) |  | Group id |
 | hits | [ScoredPoint](#qdrant-ScoredPoint) | repeated | Points in the group |
 | lookups | [RetrievedPoint](#qdrant-RetrievedPoint) | repeated | Point(s) from the lookup collection that matches the group id |
-
-
-
-
-
-
-<a name="qdrant-PointGroup-GroupId"></a>
-
-### PointGroup.GroupId
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| unsigned_value | [uint64](#uint64) |  | Represents a double value. |
-| integer_value | [int64](#int64) |  | Represents an integer value |
-| string_value | [string](#string) |  | Represents a string value. |
 
 
 
