@@ -886,6 +886,7 @@ impl TokenizerType {
             "Prefix" => Some(Self::Prefix),
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
+            "Charabia" => Some(Self::Charabia),
             _ => None,
         }
     }
