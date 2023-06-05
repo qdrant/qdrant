@@ -39,6 +39,20 @@ where
         size
     }
 
+    fn score_points_unfiltered(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+    ) -> Vec<ScoredPointOffset> {
+        let mut scores = vec![];
+        for point in points {
+            scores.push(ScoredPointOffset {
+                idx: point,
+                score: self.quantized_data.score_point(&self.query, point),
+            });
+        }
+        scores
+    }
+
     fn check_vector(&self, point: PointOffsetType) -> bool {
         // Deleted points propagate to vectors; check vector deletion for possible early return
         !self
@@ -46,6 +60,7 @@ where
             .get(point as usize)
             .as_deref()
             .copied()
+            // Default to not deleted if our deleted flags failed grow
             .unwrap_or(false)
         // Additionally check point deletion for integrity if delete propagation to vector failed
         && !self
@@ -53,7 +68,8 @@ where
             .get(point as usize)
             .as_deref()
             .copied()
-            .unwrap_or(false)
+            // Default to deleted if the point mapping was removed from the ID tracker
+            .unwrap_or(true)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {

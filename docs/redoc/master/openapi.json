@@ -5348,6 +5348,13 @@
             "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. Default is false.",
             "default": false,
             "type": "boolean"
+          },
+          "oversampling": {
+            "description": "Oversampling factor for quantization. Default is 1.0.\n\nDefines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.\n\nFor example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring.",
+            "default": null,
+            "type": "number",
+            "format": "double",
+            "nullable": true
           }
         }
       },
@@ -6712,6 +6719,7 @@
         "type": "object",
         "required": [
           "debug",
+          "recovery_mode",
           "service_debug_feature",
           "web_feature"
         ],
@@ -6723,6 +6731,9 @@
             "type": "boolean"
           },
           "service_debug_feature": {
+            "type": "boolean"
+          },
+          "recovery_mode": {
             "type": "boolean"
           }
         }

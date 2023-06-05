@@ -62,6 +62,10 @@ impl MemmapVectorStorage {
                 .prefault_mmap_pages(&self.vectors_path),
         )
     }
+
+    pub fn get_mmap_vectors(&self) -> &MmapVectors {
+        self.mmap_store.as_ref().unwrap()
+    }
 }
 
 impl VectorStorage for MemmapVectorStorage {
@@ -173,7 +177,7 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![self.vectors_path.clone()];
+        let mut files = vec![self.vectors_path.clone(), self.deleted_path.clone()];
         if let Some(Some(quantized_vectors)) =
             &self.mmap_store.as_ref().map(|x| &x.quantized_vectors)
         {
@@ -243,6 +247,15 @@ mod tests {
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let mut borrowed_id_tracker = id_tracker.borrow_mut();
         let mut borrowed_storage = storage.borrow_mut();
+
+        // Assert this storage lists both the vector and deleted file
+        let files = borrowed_storage.files();
+        for file_name in [VECTORS_PATH, DELETED_PATH] {
+            files
+                .iter()
+                .find(|p| p.file_name().unwrap() == file_name)
+                .expect("storage is missing required file");
+        }
 
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();

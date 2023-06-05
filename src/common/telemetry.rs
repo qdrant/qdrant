@@ -74,7 +74,7 @@ impl TelemetryCollector {
         TelemetryData {
             id: self.process_id.to_string(),
             collections: CollectionsTelemetry::collect(level, self.dispatcher.toc()).await,
-            app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector),
+            app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector, &self.settings),
             cluster: ClusterTelemetry::collect(level, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
                 &self.actix_telemetry_collector.lock(),

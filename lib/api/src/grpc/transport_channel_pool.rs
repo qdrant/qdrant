@@ -17,7 +17,11 @@ pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 pub const DEFAULT_POOL_SIZE: usize = 2;
 
-const MAX_CONNECTIONS_PER_CHANNEL: usize = usize::MAX; // Unlimited
+/// Allow a large number of connections per channel, that is close to the limit of
+/// `http2_max_pending_accept_reset_streams` that we configure to minimize the chance of
+/// GOAWAY/ENHANCE_YOUR_CALM errors from occurring.
+/// More info: <https://github.com/qdrant/qdrant/issues/1907>
+const MAX_CONNECTIONS_PER_CHANNEL: usize = 1024;
 const DEFAULT_RETRIES: usize = 2;
 const DEFAULT_BACKOFF: Duration = Duration::from_millis(100);
 

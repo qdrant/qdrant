@@ -216,11 +216,18 @@ impl TableOfContent {
         snapshots_path.join(collection_name)
     }
 
-    async fn create_snapshots_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
-        let snapshots_path = Self::collection_snapshots_path(
+    pub fn snapshots_path_for_collection(&self, collection_name: &str) -> PathBuf {
+        Self::collection_snapshots_path(
             Path::new(&self.storage_config.snapshots_path),
             collection_name,
-        );
+        )
+    }
+
+    pub async fn create_snapshots_path(
+        &self,
+        collection_name: &str,
+    ) -> Result<PathBuf, StorageError> {
+        let snapshots_path = self.snapshots_path_for_collection(collection_name);
         tokio::fs::create_dir_all(&snapshots_path)
             .await
             .map_err(|err| {
@@ -427,11 +434,7 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         let collection = self.get_collection(source_collection).await?;
         let collection_vectors_schema = collection.state().await.config.params.vectors;
-        if &collection_vectors_schema != vectors {
-            return Err(StorageError::BadInput {
-                description: format!("Cannot take data from collection with vectors schema {collection_vectors_schema:?} to collection with vectors schema {vectors:?}")
-            });
-        }
+        collection_vectors_schema.check_compatible(vectors)?;
         Ok(())
     }
 

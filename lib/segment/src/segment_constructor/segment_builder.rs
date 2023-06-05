@@ -96,13 +96,11 @@ impl SegmentBuilder {
         let mut new_internal_range = None;
         for (vector_name, vector_storage) in &mut vector_storages {
             check_process_stopped(stopped)?;
-            let other_vector_storage = other_vector_storages.get(vector_name);
-            if other_vector_storage.is_none() {
-                return Err(OperationError::service_error(format!(
+            let other_vector_storage = other_vector_storages.get(vector_name).ok_or_else(|| {
+                OperationError::service_error(format!(
                     "Cannot update from other segment because if missing vector name {vector_name}"
-                )));
-            }
-            let other_vector_storage = other_vector_storage.unwrap();
+                ))
+            })?;
             let internal_range = vector_storage.update_from(
                 other_vector_storage,
                 &mut other_id_tracker.iter_ids(),
@@ -185,10 +183,9 @@ impl SegmentBuilder {
 
     pub fn build(mut self, stopped: &AtomicBool) -> Result<Segment, OperationError> {
         {
-            let mut segment = self.segment.ok_or_else(|| {
-                OperationError::service_error("Segment building error: created segment not found")
-            })?;
-            self.segment = None;
+            let mut segment = self.segment.take().ok_or(OperationError::service_error(
+                "Segment building error: created segment not found",
+            ))?;
 
             for (field, payload_schema) in &self.indexed_fields {
                 segment.create_field_index(segment.version(), field, Some(payload_schema))?;
@@ -202,7 +199,8 @@ impl SegmentBuilder {
             }
 
             segment.flush(true)?;
-            // Now segment is going to be evicted from RAM
+            drop(segment);
+            // Now segment is evicted from RAM
         }
 
         // Move fully constructed segment into collection directory and load back to RAM

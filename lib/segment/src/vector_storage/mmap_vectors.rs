@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::Mmap;
+use parking_lot::Mutex;
 
 use super::div_ceil;
 use crate::common::error_logging::LogError;
@@ -15,6 +16,10 @@ use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+#[cfg(target_os = "linux")]
+use crate::vector_storage::async_io::UringReader;
+#[cfg(not(target_os = "linux"))]
+use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
@@ -29,6 +34,9 @@ pub struct MmapVectors {
     ///
     /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Arc<Mmap>,
+    /// Context for io_uring-base async IO
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    uring_reader: Mutex<UringReader>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -61,10 +69,16 @@ impl MmapVectors {
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
+        // Keep file handle open for async IO
+        let vectors_file = File::open(vectors_path)?;
+        let raw_size = dim * size_of::<VectorElementType>();
+        let uring_reader = UringReader::new(vectors_file, raw_size, HEADER_SIZE)?;
+
         Ok(MmapVectors {
             dim,
             num_vectors,
             mmap: mmap.into(),
+            uring_reader: Mutex::new(uring_reader),
             deleted,
             deleted_count,
             quantized_vectors: None,
@@ -145,7 +159,7 @@ impl MmapVectors {
         &arr[0..self.dim]
     }
 
-    /// Creates returns owned vector (copy of internal vector)
+    /// Returns reference to vector data by key
     pub fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
         let offset = self.data_offset(key).unwrap();
         self.raw_vector_offset(offset)
@@ -177,6 +191,47 @@ impl MmapVectors {
 
     pub fn prefault_mmap_pages(&self, path: &Path) -> mmap_ops::PrefaultMmapPages {
         mmap_ops::PrefaultMmapPages::new(self.mmap.clone(), Some(path))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn process_points_uring(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+    ) -> OperationResult<()> {
+        self.uring_reader.lock().read_stream(points, callback)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn process_points_simple(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+    ) -> OperationResult<()> {
+        for (idx, point) in points.enumerate() {
+            let vector = self.get_vector(point);
+            callback(idx, point, vector);
+        }
+        Ok(())
+    }
+
+    /// Reads vectors for the given ids and calls the callback for each vector.
+    /// Tries to utilize asyncronous IO if possible.
+    /// In particular, uses io_uring on Linux and simple synchronous IO otherwise.
+    pub fn read_vectors_async(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+    ) -> OperationResult<()> {
+        #[cfg(target_os = "linux")]
+        {
+            self.process_points_uring(points, callback)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.process_points_simple(points, callback)
+        }
     }
 }
 

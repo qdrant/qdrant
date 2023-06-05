@@ -343,6 +343,7 @@ impl From<QuantizationSearchParams> for segment::types::QuantizationSearchParams
             rescore: params
                 .rescore
                 .unwrap_or(default_quantization_rescore_value()),
+            oversampling: params.oversampling,
         }
     }
 }
@@ -352,6 +353,7 @@ impl From<segment::types::QuantizationSearchParams> for QuantizationSearchParams
         Self {
             ignore: Some(params.ignore),
             rescore: Some(params.rescore),
+            oversampling: params.oversampling,
         }
     }
 }

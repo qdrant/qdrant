@@ -1,4 +1,6 @@
 #[cfg(test)]
+pub mod batch_search_test;
+#[cfg(test)]
 pub mod disbalanced_vectors_test;
 #[cfg(test)]
 pub mod exact_search_test;
