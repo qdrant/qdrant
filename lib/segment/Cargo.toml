@@ -55,7 +55,7 @@ validator = { version = "0.16", features = ["derive"] }
 chrono = { version = "0.4.26", features = ["serde"] }
 
 sysinfo = "0.29"
-charabia = "0.7.2"
+charabia = { version = "0.7.2", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
@@ -92,4 +92,3 @@ harness = false
 [[bench]]
 name = "map_benchmark"
 harness = false
-
