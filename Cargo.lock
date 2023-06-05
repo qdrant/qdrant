@@ -341,9 +341,9 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "0.7.20"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc936419f96fa211c1b9166887b38e5e40b19958e5b895be7c1f93adec7071ac"
+checksum = "43f6cb1bf222025340178f382c426f13757b2960e89779dfcb319c32542a5a41"
 dependencies = [
  "memchr",
 ]
@@ -809,6 +809,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cedarwood"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d910bedd62c24733263d0bed247460853c9d22e8956bd4cd964302095e04e90"
+dependencies = [
+ "smallvec",
+]
+
+[[package]]
 name = "cexpr"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -834,6 +843,29 @@ dependencies = [
  "nix 0.25.1",
  "regex",
  "thiserror",
+]
+
+[[package]]
+name = "charabia"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413155d93157bff9130895c3bd83970ac7f35659ca57226a96aa35cf1e8e102c"
+dependencies = [
+ "cow-utils",
+ "csv",
+ "deunicode",
+ "finl_unicode",
+ "fst",
+ "irg-kvariants",
+ "jieba-rs",
+ "lindera",
+ "once_cell",
+ "pinyin",
+ "serde",
+ "slice-group-by",
+ "unicode-normalization",
+ "unicode-segmentation",
+ "whatlang",
 ]
 
 [[package]]
@@ -1118,6 +1150,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 
 [[package]]
+name = "cow-utils"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79bb3adfaf5f75d24b01aee375f7555907840fa2800e5ec8fa3b9e2031830173"
+
+[[package]]
 name = "cpp_demangle"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1255,6 +1293,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "csv"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "626ae34994d3d8d668f4269922248239db4ae42d538b14c398b74a52208e8086"
+dependencies = [
+ "csv-core",
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
+name = "csv-core"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2466559f260f48ad25fe6317b3c8dac77b5bdb5763ac7d9d6103530663bc90"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "cxx"
 version = "1.0.85"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1356,6 +1415,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "deunicode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c1bba4f227a4a53d12b653f50ca7bf10c9119ae2aba56aff9e0338b5c98f36a"
+
+[[package]]
 name = "digest"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1412,12 +1477,85 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
+name = "encoding"
+version = "0.2.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b0d943856b990d12d3b55b359144ff341533e516d94098b1d3fc1ac666d36ec"
+dependencies = [
+ "encoding-index-japanese",
+ "encoding-index-korean",
+ "encoding-index-simpchinese",
+ "encoding-index-singlebyte",
+ "encoding-index-tradchinese",
+]
+
+[[package]]
+name = "encoding-index-japanese"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04e8b2ff42e9a05335dbf8b5c6f7567e5591d0d916ccef4e0b1710d32a0d0c91"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding-index-korean"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dc33fb8e6bcba213fe2f14275f0963fd16f0a02c878e3095ecfdf5bee529d81"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding-index-simpchinese"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d87a7194909b9118fc707194baa434a4e3b0fb6a5a757c73c3adb07aa25031f7"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding-index-singlebyte"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3351d5acffb224af9ca265f435b859c7c01537c0849754d3db3fdf2bfe2ae84a"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding-index-tradchinese"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd0e20d5688ce3cab59eb3ef3a2083a5c77bf496cb798dc6fcdb75f323890c18"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding_index_tests"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a246d82be1c9d791c5dfde9a2bd045fc3cbba3fa2b11ad558f27d01712f00569"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9852635589dc9f9ea1b6fe9f05b50ef208c85c834a562f0c6abb1c475736ec2b"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "encoding_rs_io"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cc3c5651fb62ab8aa3103998dade57efdd028544bd300516baa31840c252a83"
+dependencies = [
+ "encoding_rs",
 ]
 
 [[package]]
@@ -1509,6 +1647,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "finl_unicode"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fcfdc7a0362c9f4444381a9e697c79d435fe65b52a37466fc2c1184cee9edc6"
+
+[[package]]
 name = "fixedbitset"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1567,6 +1711,12 @@ name = "fsio"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1fd087255f739f4f1aeea69f11b72f8080e9c2e7645cd06955dad4a178a49e3"
+
+[[package]]
+name = "fst"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ab85b9b05e3978cc9a9cf8fea7f01b494e1a09ed3037e16ba39edc7a29eb61a"
 
 [[package]]
 name = "funty"
@@ -1799,9 +1949,9 @@ checksum = "dec7af912d60cdbd3677c1af9352ebae6fb8394d165568a2234df0fa00f87793"
 
 [[package]]
 name = "glob"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b919933a397b79c37e33b77bb2aa3dc8eb6e165ad809e58ff75bc7db2e34574"
+checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "h2"
@@ -2134,6 +2284,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11b0d96e660696543b251e58030cf9787df56da39dab19ad60eae7353040917e"
 
 [[package]]
+name = "irg-kvariants"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c73214298363629cf9dbfc93b426808865ee3c121029778cb31b1284104fdf78"
+dependencies = [
+ "csv",
+ "once_cell",
+ "serde",
+]
+
+[[package]]
 name = "is-terminal"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2170,6 +2331,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fad582f4b9e86b6caa621cabeb0963332d92eea04729ab12892c2533951e6440"
 
 [[package]]
+name = "jieba-rs"
+version = "0.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37228e06c75842d1097432d94d02f37fe3ebfca9791c2e8fef6e9db17ed128c1"
+dependencies = [
+ "cedarwood",
+ "fxhash",
+ "hashbrown",
+ "lazy_static",
+ "phf",
+ "phf_codegen",
+ "regex",
+]
+
+[[package]]
 name = "jobserver"
 version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2196,6 +2372,15 @@ dependencies = [
  "pest",
  "pest_derive",
  "serde",
+]
+
+[[package]]
+name = "kanaria"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0f9d9652540055ac4fded998a73aca97d965899077ab1212587437da44196ff"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]
@@ -2261,6 +2446,223 @@ dependencies = [
  "cc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "lindera"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72be283281bec2768687b1784be03a678609b51f2f90f6f9d9b4f07953e6dd25"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "encoding",
+ "kanaria",
+ "lindera-cc-cedict-builder",
+ "lindera-core",
+ "lindera-dictionary",
+ "lindera-filter",
+ "lindera-ipadic-builder",
+ "lindera-ko-dic-builder",
+ "lindera-unidic-builder",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "unicode-blocks",
+ "unicode-normalization",
+ "yada",
+]
+
+[[package]]
+name = "lindera-cc-cedict-builder"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10fbafd37adab44ccc2668a40fba2dbc4e665cb3c36018c15dfe2e2b830e28ce"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding",
+ "env_logger",
+ "glob",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "yada",
+]
+
+[[package]]
+name = "lindera-compress"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed9196bf5995503f6878a090dfee6114ba86430c72f67ef3624246b564869937"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "lindera-decompress",
+]
+
+[[package]]
+name = "lindera-core"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5f0baa9932f682e9c5b388897330f155d3c40de80016e60125897fde5e0e246"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "encoding_rs",
+ "log",
+ "once_cell",
+ "serde",
+ "thiserror",
+ "yada",
+]
+
+[[package]]
+name = "lindera-decompress"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6e63fa6ef0bc3ce2c26d372aa6185b7a316194494a84f81678f5da2893bf4a2"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "serde",
+]
+
+[[package]]
+name = "lindera-dictionary"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd765c36166016de87a1f447ea971573e4c63e334836c46ad0020f0408c88bfc"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "lindera-core",
+ "lindera-ipadic",
+ "lindera-ko-dic",
+ "serde",
+]
+
+[[package]]
+name = "lindera-filter"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5345e37fb9521ab3cee19283bed135d46b3521dc1fd13a49fa0992379056203"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "kanaria",
+ "lindera-core",
+ "lindera-dictionary",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "unicode-blocks",
+ "unicode-normalization",
+ "unicode-segmentation",
+ "yada",
+]
+
+[[package]]
+name = "lindera-ipadic"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60eeb356295f784e7db4cfd2c6772f2bd059e565a7744e246642a07bc333a88a"
+dependencies = [
+ "bincode",
+ "byteorder",
+ "encoding",
+ "flate2",
+ "lindera-core",
+ "lindera-decompress",
+ "lindera-ipadic-builder",
+ "once_cell",
+ "tar",
+]
+
+[[package]]
+name = "lindera-ipadic-builder"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a16a2a88db9d956f5086bc976deb9951ca2dbbfef41a002df0a7bfb2c845aab"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding_rs",
+ "encoding_rs_io",
+ "env_logger",
+ "glob",
+ "lindera-compress",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "serde",
+ "yada",
+]
+
+[[package]]
+name = "lindera-ko-dic"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abb479b170a841b8cfbe602d772e30849ffe0562b219190a378368968b8c8f66"
+dependencies = [
+ "bincode",
+ "byteorder",
+ "encoding",
+ "flate2",
+ "lindera-core",
+ "lindera-decompress",
+ "lindera-ko-dic-builder",
+ "once_cell",
+ "tar",
+]
+
+[[package]]
+name = "lindera-ko-dic-builder"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b9b58213552560717c48e7833444a20d2d7fe26a6e565f7ce0cbbf85784c7cf"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding",
+ "env_logger",
+ "glob",
+ "lindera-compress",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "yada",
+]
+
+[[package]]
+name = "lindera-unidic-builder"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6858147cdaf4a7b564c08a247449d3aca38e9b4812499651af08afbf85324596"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding",
+ "env_logger",
+ "glob",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "yada",
 ]
 
 [[package]]
@@ -2586,9 +2988,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.16.0"
+version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f0b0d4bf799edbc74508c1e8bf170ff5f41238e5f8225603ca7caaae2b7860"
+checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
 name = "oorandom"
@@ -2751,6 +3153,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "phf"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "928c6535de93548188ef63bb7c4036bd415cd8f36ad25af44b9789b2ee72a48c"
+dependencies = [
+ "phf_shared",
+]
+
+[[package]]
+name = "phf_codegen"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a56ac890c5e3ca598bbdeaa99964edb5b0258a583a9eb6ef4e89fc85d9224770"
+dependencies = [
+ "phf_generator",
+ "phf_shared",
+]
+
+[[package]]
+name = "phf_generator"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1181c94580fa345f50f19d738aaa39c0ed30a600d95cb2d3e23f94266f14fbf"
+dependencies = [
+ "phf_shared",
+ "rand 0.8.5",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1fb5f6f826b772a8d4c0394209441e7d37cbbb967ae9c7e0e8134365c9ee676"
+dependencies = [
+ "siphasher",
+]
+
+[[package]]
 name = "pin-project"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2781,6 +3221,12 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "pinyin"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bd12336e3afa34152e002f57df37a7056778daa59ea542b3473b87f5fb260c4"
 
 [[package]]
 name = "pkg-config"
@@ -2947,7 +3393,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_xorshift",
- "regex-syntax",
+ "regex-syntax 0.6.28",
  "rusty-fork",
  "tempfile",
  "unarray",
@@ -3038,6 +3484,7 @@ dependencies = [
  "anyhow",
  "api",
  "atty",
+ "charabia",
  "chrono",
  "clap",
  "collection",
@@ -3290,13 +3737,13 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.7.0"
+version = "1.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e076559ef8e241f2ae3479e36f97bd5741c0330689e217ad51ce2c76808b868a"
+checksum = "d0ab3ca65655bb1e41f2a8c8cd662eb4fb035e67c3f78da1d61dffe89d07300f"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax",
+ "regex-syntax 0.7.2",
 ]
 
 [[package]]
@@ -3305,7 +3752,7 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
 dependencies = [
- "regex-syntax",
+ "regex-syntax 0.6.28",
 ]
 
 [[package]]
@@ -3313,6 +3760,12 @@ name = "regex-syntax"
 version = "0.6.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "456c603be3e8d448b072f410900c09faf164fbce2d480456f50eea6e25f9c848"
+
+[[package]]
+name = "regex-syntax"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "436b050e76ed2903236f032a59761c1eb99e1b0aead2c257922771dab1fc8c78"
 
 [[package]]
 name = "reqwest"
@@ -3731,6 +4184,7 @@ dependencies = [
  "bincode",
  "bitvec",
  "cgroups-rs",
+ "charabia",
  "chrono",
  "criterion",
  "fs_extra",
@@ -3934,6 +4388,12 @@ checksum = "4614a76b2a8be0058caa9dbbaf66d988527d86d003c11a94fbd335d7661edcef"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "slice-group-by"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "826167069c09b99d56f31e9ae5c99049e932a98c9dc2dac47645b08dbbf76ba7"
 
 [[package]]
 name = "slog"
@@ -4615,6 +5075,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92888ba5573ff080736b3648696b70cafad7d250551175acbaa4e0385b3e1460"
 
 [[package]]
+name = "unicode-blocks"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "943e3f1f50cc455d072e0801ccb71ff893b0c88060b1169f92e35fb5bb881cc6"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4628,6 +5094,12 @@ checksum = "5c5713f0fc4b5db668a2ac63cdb7bb4469d8c9fed047b1d0292cc7b0ce2ba921"
 dependencies = [
  "tinyvec",
 ]
+
+[[package]]
+name = "unicode-segmentation"
+version = "1.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dd624098567895118886609431a7c3b8f516e41d30e0643f03d94592a147e36"
 
 [[package]]
 name = "unicode-width"
@@ -4904,6 +5376,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "whatlang"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c531a2dc4c462b833788be2c07eef4e621d0e9edbd55bf280cc164c1c1aa043"
+dependencies = [
+ "hashbrown",
+ "once_cell",
+]
+
+[[package]]
 name = "which"
 version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5127,6 +5609,12 @@ checksum = "6d1526bbe5aaeb5eb06885f4d987bcdfa5e23187055de9b83fe00156a821fabc"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "yada"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6d12cb7a57bbf2ab670ed9545bae3648048547f9039279a89ce000208e585c1"
 
 [[package]]
 name = "yaml-rust"
