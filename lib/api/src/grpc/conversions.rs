@@ -8,8 +8,7 @@ use segment::types::{default_quantization_ignore_value, default_quantization_res
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::point_group::GroupId;
-use super::qdrant::CompressionRatio;
+use super::qdrant::{CompressionRatio, GroupId};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -428,13 +427,13 @@ impl From<segment::data_types::groups::GroupId> for GroupId {
     fn from(key: segment::data_types::groups::GroupId) -> Self {
         match key {
             segment::data_types::groups::GroupId::String(str) => Self {
-                kind: Some(crate::grpc::qdrant::point_group::group_id::Kind::StringValue(str)),
+                kind: Some(crate::grpc::qdrant::group_id::Kind::StringValue(str)),
             },
             segment::data_types::groups::GroupId::NumberU64(n) => Self {
-                kind: Some(crate::grpc::qdrant::point_group::group_id::Kind::UnsignedValue(n)),
+                kind: Some(crate::grpc::qdrant::group_id::Kind::UnsignedValue(n)),
             },
             segment::data_types::groups::GroupId::NumberI64(n) => Self {
-                kind: Some(crate::grpc::qdrant::point_group::group_id::Kind::IntegerValue(n)),
+                kind: Some(crate::grpc::qdrant::group_id::Kind::IntegerValue(n)),
             },
         }
     }

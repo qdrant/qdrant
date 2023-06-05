@@ -3162,41 +3162,38 @@ pub struct ScoredPoint {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GroupId {
+    #[prost(oneof = "group_id::Kind", tags = "1, 2, 3")]
+    pub kind: ::core::option::Option<group_id::Kind>,
+}
+/// Nested message and enum types in `GroupId`.
+pub mod group_id {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Kind {
+        /// Represents a double value.
+        #[prost(uint64, tag = "1")]
+        UnsignedValue(u64),
+        /// Represents an integer value
+        #[prost(int64, tag = "2")]
+        IntegerValue(i64),
+        /// Represents a string value.
+        #[prost(string, tag = "3")]
+        StringValue(::prost::alloc::string::String),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointGroup {
     /// Group id
     #[prost(message, optional, tag = "1")]
-    pub id: ::core::option::Option<point_group::GroupId>,
+    pub id: ::core::option::Option<GroupId>,
     /// Points in the group
     #[prost(message, repeated, tag = "2")]
     pub hits: ::prost::alloc::vec::Vec<ScoredPoint>,
     /// Point(s) from the lookup collection that matches the group id
     #[prost(message, repeated, tag = "3")]
     pub lookups: ::prost::alloc::vec::Vec<RetrievedPoint>,
-}
-/// Nested message and enum types in `PointGroup`.
-pub mod point_group {
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GroupId {
-        #[prost(oneof = "group_id::Kind", tags = "1, 2, 3")]
-        pub kind: ::core::option::Option<group_id::Kind>,
-    }
-    /// Nested message and enum types in `GroupId`.
-    pub mod group_id {
-        #[allow(clippy::derive_partial_eq_without_eq)]
-        #[derive(Clone, PartialEq, ::prost::Oneof)]
-        pub enum Kind {
-            /// Represents a double value.
-            #[prost(uint64, tag = "1")]
-            UnsignedValue(u64),
-            /// Represents an integer value
-            #[prost(int64, tag = "2")]
-            IntegerValue(i64),
-            /// Represents a string value.
-            #[prost(string, tag = "3")]
-            StringValue(::prost::alloc::string::String),
-        }
-    }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
