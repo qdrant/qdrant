@@ -105,7 +105,7 @@ impl Segment {
     /// - existing named vectors are replaced
     /// - existing named vectors not specified are deleted
     ///
-    /// This differs with [`update_vectors`], because this deletes unspecified vectors.
+    /// This differs with [`Segment::update_vectors`], because this deletes unspecified vectors.
     ///
     /// # Warning
     ///
@@ -142,7 +142,7 @@ impl Segment {
     /// - existing named vectors are replaced
     /// - existing named vectors not specified are untouched and kept as-is
     ///
-    /// This differs with [`replace_all_vectors`], because this keeps unspecified vectors as-is.
+    /// This differs with [`Segment::replace_all_vectors`], because this keeps unspecified vectors as-is.
     ///
     /// # Warning
     ///
