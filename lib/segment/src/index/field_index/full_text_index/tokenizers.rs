@@ -62,9 +62,9 @@ impl PrefixTokenizer {
     }
 }
 
-struct CharabiaTokenizer;
+struct MultilingualTokenizer;
 
-impl CharabiaTokenizer {
+impl MultilingualTokenizer {
     fn tokenize<C: FnMut(&str)>(text: &str, mut callback: C) {
         text.tokenize().for_each(|token| {
             callback(token.lemma());
@@ -107,7 +107,7 @@ impl Tokenizer {
         match config.tokenizer {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, token_filter),
             TokenizerType::Word => WordTokenizer::tokenize(text, token_filter),
-            TokenizerType::Charabia => CharabiaTokenizer::tokenize(text, token_filter),
+            TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, token_filter),
             TokenizerType::Prefix => PrefixTokenizer::tokenize(
                 text,
                 config.min_token_len.unwrap_or(1),
@@ -122,7 +122,7 @@ impl Tokenizer {
         match config.tokenizer {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, token_filter),
             TokenizerType::Word => WordTokenizer::tokenize(text, token_filter),
-            TokenizerType::Charabia => CharabiaTokenizer::tokenize(text, token_filter),
+            TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, token_filter),
             TokenizerType::Prefix => PrefixTokenizer::tokenize_query(
                 text,
                 config.max_token_len.unwrap_or(usize::MAX),
@@ -187,10 +187,10 @@ mod tests {
     }
 
     #[test]
-    fn test_charabia_tokenizer() {
+    fn test_multilingual_tokenizer() {
         let text = "本日の日付は";
         let mut tokens = Vec::new();
-        CharabiaTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        MultilingualTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.get(0), Some(&"本日".to_owned()));

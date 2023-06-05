@@ -1073,7 +1073,7 @@ Note: 1kB = 1 vector of size 256. |
 | Prefix | 1 |  |
 | Whitespace | 2 |  |
 | Word | 3 |  |
-| Charabia | 4 |  |
+| Multilingual | 4 |  |
 
 
  
