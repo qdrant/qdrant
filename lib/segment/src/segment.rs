@@ -12,9 +12,8 @@ use tar::Builder;
 use uuid::Uuid;
 
 use crate::common::file_operations::{atomic_save_json, read_json};
-use crate::common::mmap_ops::PrefaultMmapPages;
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{check_vector_name, check_vectors_set};
+use crate::common::{check_vector_name, check_vectors_set, mmap_ops};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationError::TypeInferenceError;
@@ -93,6 +92,20 @@ impl VectorData {
     /// This requires an index and storage type that both support appending.
     pub fn is_appendable(&self) -> bool {
         self.vector_index.borrow().is_appendable() && self.vector_storage.borrow().is_appendable()
+    }
+
+    pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> {
+        let index_task = match &*self.vector_index.borrow() {
+            VectorIndexEnum::HnswMmap(index) => index.prefault_mmap_pages(),
+            _ => None,
+        };
+
+        let storage_task = match &*self.vector_storage.borrow() {
+            VectorStorageEnum::Memmap(storage) => storage.prefault_mmap_pages(),
+            _ => None,
+        };
+
+        index_task.into_iter().chain(storage_task)
     }
 }
 
@@ -665,13 +678,15 @@ impl Segment {
         let tasks: Vec<_> = self
             .vector_data
             .values()
-            .filter_map(|storage| match &*storage.vector_storage.borrow() {
-                VectorStorageEnum::Memmap(storage) => storage.prefault_mmap_pages(),
-                _ => None,
-            })
+            .flat_map(|data| data.prefault_mmap_pages())
             .collect();
 
-        let _ = thread::spawn(move || tasks.iter().for_each(PrefaultMmapPages::exec));
+        let _ = thread::Builder::new()
+            .name(format!(
+                "segment-{:?}-prefault-mmap-pages",
+                self.current_path,
+            ))
+            .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
     }
 }
 
