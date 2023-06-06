@@ -1,4 +1,5 @@
 pub mod appendable_mmap_vector_storage;
+#[cfg(target_os = "linux")]
 pub mod async_raw_scorer;
 mod chunked_mmap_vectors;
 mod chunked_utils;
