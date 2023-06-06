@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 
@@ -47,6 +48,16 @@ pub struct RawScorerImpl<'a, TMetric: Metric, TVectorStorage: VectorStorage> {
     pub metric: PhantomData<TMetric>,
 }
 
+static ASYNC_SCORER: AtomicBool = AtomicBool::new(false);
+
+pub fn set_async_scorer(async_scorer: bool) {
+    ASYNC_SCORER.store(async_scorer, Ordering::Relaxed);
+}
+
+pub fn get_async_scorer() -> bool {
+    ASYNC_SCORER.load(Ordering::Relaxed)
+}
+
 pub fn new_raw_scorer<'a>(
     vector: Vec<VectorElementType>,
     vector_storage: &'a VectorStorageEnum,
@@ -54,7 +65,22 @@ pub fn new_raw_scorer<'a>(
 ) -> Box<dyn RawScorer + 'a> {
     match vector_storage {
         VectorStorageEnum::Simple(vs) => raw_scorer_impl(vector, vs, point_deleted),
-        VectorStorageEnum::Memmap(vs) => raw_scorer_impl(vector, vs.as_ref(), point_deleted),
+
+        VectorStorageEnum::Memmap(vs) => {
+            if get_async_scorer() {
+                #[cfg(target_os = "linux")]
+                match super::async_raw_scorer::new(vector.clone(), vs, point_deleted) {
+                    Ok(raw_scorer) => return raw_scorer,
+                    Err(err) => log::error!("failed to initialize async raw scorer: {err}"),
+                }
+
+                #[cfg(not(target_os = "linux"))]
+                log::warn!("async raw scorer is only supported on Linux");
+            }
+
+            raw_scorer_impl(vector, vs.as_ref(), point_deleted)
+        }
+
         VectorStorageEnum::AppendableMemmap(vs) => {
             raw_scorer_impl(vector, vs.as_ref(), point_deleted)
         }
