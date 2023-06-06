@@ -1,8 +1,9 @@
 use std::env;
 
-use api::grpc::models::VersionInfo;
 use atty::Stream;
 use colored::{Color, ColoredString, Colorize};
+
+use crate::settings::Settings;
 
 fn paint(text: &str, true_color: bool) -> ColoredString {
     if true_color {
@@ -14,7 +15,7 @@ fn paint(text: &str, true_color: bool) -> ColoredString {
 
 /// Prints welcome message
 #[rustfmt::skip]
-pub fn welcome() {
+pub fn welcome(settings: &Settings) {
     if !atty::is(Stream::Stdout) {
         colored::control::set_override(false);
     }
@@ -35,7 +36,11 @@ pub fn welcome() {
     println!("{}", paint(r#" \__, |\__,_|_|  \__,_|_| |_|\__| "#, true_color));
     println!("{}", paint(r#"    |_|                           "#, true_color));
     println!();
-    let ui_link = format!("https://ui.qdrant.tech/?v=v{}", VersionInfo::default().minor_version());
+    let ui_link = format!(
+        "http{}://localhost:{}/dashboard",
+        if settings.service.enable_tls { "s" } else { "" },
+        settings.service.http_port
+    );
 
     println!("{} {}",
              "Access web UI at".truecolor(134, 186, 144),
@@ -49,6 +54,6 @@ mod tests {
 
     #[test]
     fn test_welcome() {
-        welcome()
+        welcome(&Settings::new(None).unwrap());
     }
 }

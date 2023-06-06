@@ -27,6 +27,15 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub verify_https_client_certificate: bool,
     pub api_key: Option<String>,
+    /// Directory where static files are served from.
+    /// For example, the Web-UI should be placed here.
+    #[serde(default)]
+    pub static_content_dir: Option<String>,
+
+    /// If serving of the static content is enabled.
+    /// This includes the Web-UI. True by default.
+    #[serde(default)]
+    pub enable_static_content: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default, Validate)]

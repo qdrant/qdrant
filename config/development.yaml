@@ -6,6 +6,7 @@ service:
   http_port: 6333
   # Uncomment to enable gRPC:
   #grpc_port: 6334
+  #api_key: your_secret_api_key_here
 
 
 storage:
