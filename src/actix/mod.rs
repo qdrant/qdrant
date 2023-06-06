@@ -31,6 +31,9 @@ use crate::actix::api_key::ApiKey;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
+const DEFAULT_STATIC_DIR: &str = "./static";
+const WEB_UI_PATH: &str = "/dashboard";
+
 #[get("/")]
 pub async fn index() -> impl Responder {
     HttpResponse::Ok().json(VersionInfo::default())
@@ -52,6 +55,19 @@ pub fn init(
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let api_key = settings.service.api_key.clone();
+        let static_folder = settings
+            .service
+            .static_content_dir
+            .clone()
+            .unwrap_or(DEFAULT_STATIC_DIR.to_string());
+
+        let web_ui_enabled = settings.service.enable_static_content.unwrap_or(true);
+        let skip_api_key_prefixes = if web_ui_enabled {
+            vec![WEB_UI_PATH.to_string()]
+        } else {
+            vec![]
+        };
+
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -65,13 +81,16 @@ pub fn init(
                 .limit(settings.service.max_request_size_mb * 1024 * 1024)
                 .error_handler(|err, rec| validation_error_handler("JSON body", err, rec));
 
-            App::new()
+            let mut app = App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(Condition::new(
                     api_key.is_some(),
-                    ApiKey::new(&api_key.clone().unwrap_or_default()),
+                    ApiKey::new(
+                        &api_key.clone().unwrap_or_default(),
+                        skip_api_key_prefixes.clone(),
+                    ),
                 ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default().exclude("/")) // Avoid logging healthcheck requests
@@ -97,7 +116,14 @@ pub fn init(
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)
-                .service(count_points)
+                .service(count_points);
+
+            if web_ui_enabled {
+                app = app.service(
+                    actix_files::Files::new(WEB_UI_PATH, &static_folder).index_file("index.html"),
+                )
+            }
+            app
         })
         .workers(max_web_workers(&settings));
 
