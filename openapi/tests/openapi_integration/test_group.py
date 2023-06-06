@@ -325,9 +325,9 @@ lookup_params = [
 ]
 
 
-def assert_group_with_full_lookup(group):
+def assert_group_with_default_lookup(group, group_size=3):
     assert group["hits"]
-    assert len(group["hits"]) == 3
+    assert len(group["hits"]) == group_size
 
     assert group["lookup"]
     assert group["id"] == group["lookup"]["id"]
@@ -359,7 +359,7 @@ def test_search_groups_with_lookup(with_lookup):
 
     assert len(groups) == 10
     for group in groups:
-        assert_group_with_full_lookup(group)
+        assert_group_with_default_lookup(group, 3)
 
 
 @pytest.mark.parametrize("with_lookup", lookup_params)
@@ -385,26 +385,29 @@ def test_recommend_groups_with_lookup(with_lookup):
 
     assert len(groups) == 10
     for group in groups:
-        assert_group_with_full_lookup(group)
+        assert_group_with_default_lookup(group, 3)
 
-@pytest.mark.parametrize("with_lookup", [
-    pytest.param(
-        {
-            "collection": lookup_collection_name,
-            "with_payload": False,
-            "with_vectors": False,
-        },
-        id="with_payload and with_vectors",
-    ),
-    pytest.param(
-        {
-            "collection": lookup_collection_name,
-            "with_payload": False,
-            "with_vector": False,
-        },
-        id="with_vector is alias of with_vectors",
-    ),
-])
+@pytest.mark.parametrize(
+    "with_lookup", 
+    [
+        pytest.param(
+            {
+                "collection": lookup_collection_name,
+                "with_payload": False,
+                "with_vectors": False,
+            },
+            id="with_payload and with_vectors",
+        ),
+        pytest.param(
+            {
+                "collection": lookup_collection_name,
+                "with_payload": False,
+                "with_vector": False,
+            },
+            id="with_vector is alias of with_vectors",
+        ),
+    ]
+)
 def test_search_groups_with_lookup_without_payload_nor_vectors(with_lookup):
     response = request_with_validation(
         api=SEARCH_GROUPS_API,
@@ -463,3 +466,38 @@ def test_search_groups_lookup_with_non_existing_collection():
         f"Collection {non_existing_collection} not found"
         in response.json()["status"]["error"]
     )
+
+def test_search_groups_with_full_lookup():
+    response = request_with_validation(
+        api=SEARCH_GROUPS_API,
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+            "with_lookup": {
+                "collection": lookup_collection_name,
+                "with_payload": True,
+                "with_vector": True,
+            },
+        },
+    )
+
+    assert response.ok
+
+    groups = response.json()["result"]["groups"]
+
+    assert len(groups) == 10
+    for group in groups:
+        assert group["hits"]
+        assert len(group["hits"]) == 3
+
+        assert group["lookup"]
+        assert group["id"] == group["lookup"]["id"]
+
+        lookup = group["lookup"]
+        assert lookup["payload"]
+        assert lookup["vector"]
