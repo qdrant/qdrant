@@ -11,76 +11,50 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{Distance, PointOffsetType, ScoreType};
+use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage as _};
 
 const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
+
+pub fn new<'a>(
+    vector: Vec<VectorElementType>,
+    storage: &'a MemmapVectorStorage,
+    point_deleted: &'a BitSlice,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    Ok(AsyncRawScorerBuilder::new(vector, storage, point_deleted)?.build())
+}
 
 pub struct AsyncRawScorerImpl<'a, TMetric: Metric> {
     points_count: PointOffsetType,
     query: Vec<VectorElementType>,
+    storage: &'a MmapVectors,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
-    metric: PhantomData<TMetric>,
     uring_file: UringFile,
-    storage: &'a MmapVectors,
+    metric: PhantomData<TMetric>,
 }
 
 impl<'a, TMetric> AsyncRawScorerImpl<'a, TMetric>
 where
     TMetric: Metric,
 {
-    pub fn new_raw_scorer(
+    fn new(
+        points_count: PointOffsetType,
         vector: Vec<VectorElementType>,
-        vector_storage: &'a VectorStorageEnum,
+        storage: &'a MmapVectors,
         point_deleted: &'a BitSlice,
-    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-        let points_count = vector_storage.total_vector_count() as PointOffsetType;
-        let vec_deleted = vector_storage.deleted_vector_bitslice();
-
-        match vector_storage {
-            VectorStorageEnum::Simple(_vs) => {
-                unreachable!("Simple vector storage is not supported for async raw scorer")
-            }
-            VectorStorageEnum::AppendableMemmap(_vs) => unreachable!(
-                "Appendable memmap vector storage is not supported for async raw scorer"
-            ),
-            VectorStorageEnum::Memmap(vs) => {
-                let uring_file =
-                    tokio_uring::start(async { UringFile::open(vs.vector_path()).await })?;
-
-                let storage = vs.get_mmap_vectors();
-
-                match vs.distance() {
-                    Distance::Cosine => Ok(Box::new(AsyncRawScorerImpl::<'a, CosineMetric> {
-                        points_count,
-                        query: CosineMetric::preprocess(&vector).unwrap_or(vector),
-                        point_deleted,
-                        vec_deleted,
-                        metric: PhantomData,
-                        uring_file,
-                        storage,
-                    })),
-                    Distance::Euclid => Ok(Box::new(AsyncRawScorerImpl::<'a, EuclidMetric> {
-                        points_count,
-                        query: EuclidMetric::preprocess(&vector).unwrap_or(vector),
-                        point_deleted,
-                        vec_deleted,
-                        metric: PhantomData,
-                        uring_file,
-                        storage,
-                    })),
-                    Distance::Dot => Ok(Box::new(AsyncRawScorerImpl::<'a, DotProductMetric> {
-                        points_count,
-                        query: DotProductMetric::preprocess(&vector).unwrap_or(vector),
-                        point_deleted,
-                        vec_deleted,
-                        metric: PhantomData,
-                        uring_file,
-                        storage,
-                    })),
-                }
-            }
+        vec_deleted: &'a BitSlice,
+        uring_file: UringFile,
+    ) -> Self {
+        Self {
+            points_count,
+            query: TMetric::preprocess(&vector).unwrap_or(vector),
+            storage,
+            point_deleted,
+            vec_deleted,
+            uring_file,
+            metric: PhantomData,
         }
     }
 
@@ -209,5 +183,63 @@ where
             }
             pq.into_vec()
         })
+    }
+}
+
+struct AsyncRawScorerBuilder<'a> {
+    points_count: PointOffsetType,
+    vector: Vec<VectorElementType>,
+    storage: &'a MmapVectors,
+    point_deleted: &'a BitSlice,
+    vec_deleted: &'a BitSlice,
+    uring_file: UringFile,
+    distance: Distance,
+}
+
+impl<'a> AsyncRawScorerBuilder<'a> {
+    pub fn new(
+        vector: Vec<VectorElementType>,
+        storage: &'a MemmapVectorStorage,
+        point_deleted: &'a BitSlice,
+    ) -> OperationResult<Self> {
+        let uring_file =
+            tokio_uring::start(async { UringFile::open(storage.vector_path()).await })?;
+
+        let points_count = storage.total_vector_count() as _;
+        let vec_deleted = storage.deleted_vector_bitslice();
+
+        let distance = storage.distance();
+        let storage = storage.get_mmap_vectors();
+
+        let builder = Self {
+            points_count,
+            vector,
+            point_deleted,
+            vec_deleted,
+            storage,
+            uring_file,
+            distance,
+        };
+
+        Ok(builder)
+    }
+
+    pub fn build(self) -> Box<dyn RawScorer + 'a> {
+        match self.distance {
+            Distance::Cosine => Box::new(self.with_metric::<CosineMetric>()),
+            Distance::Euclid => Box::new(self.with_metric::<EuclidMetric>()),
+            Distance::Dot => Box::new(self.with_metric::<DotProductMetric>()),
+        }
+    }
+
+    fn with_metric<TMetric: Metric>(self) -> AsyncRawScorerImpl<'a, TMetric> {
+        AsyncRawScorerImpl::new(
+            self.points_count,
+            self.vector,
+            self.storage,
+            self.point_deleted,
+            self.vec_deleted,
+            self.uring_file,
+        )
     }
 }
