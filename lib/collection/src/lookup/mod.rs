@@ -27,12 +27,8 @@ pub struct WithLookup {
 
     /// Options for specifying which vectors to include (or not)
     #[serde(alias = "with_vector")]
-    #[serde(default = "default_with_vectors")]
+    #[serde(default)]
     pub with_vectors: Option<WithVector>,
-}
-
-const fn default_with_vectors() -> Option<WithVector> {
-    Some(WithVector::Bool(true))
 }
 
 const fn default_with_payload() -> Option<WithPayloadInterface> {

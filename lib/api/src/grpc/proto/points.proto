@@ -231,18 +231,10 @@ message SearchBatchPoints {
 
 message WithLookup {
   string collection = 1; // Name of the collection to use for points lookup
-  WithPayloadSelector with_payload = 2; // Options for specifying which payload to include (or not)
-  WithVectorsSelector with_vectors = 3; // Options for specifying which vectors to include (or not)
+  optional WithPayloadSelector with_payload = 2; // Options for specifying which payload to include (or not)
+  optional WithVectorsSelector with_vectors = 3; // Options for specifying which vectors to include (or not)
 }
 
-// Interface for specifying lookup collection, intended for groups API only.
-// This allows specifying the collection name only, or the collection name and payload/vectors options.
-message WithLookupInterface {
-  oneof with_lookup_interface {
-    WithLookup with_lookup = 1;
-    string collection = 2;
-  }
-}
 
 message SearchPointGroups {
   string collection_name = 1; // Name of the collection
@@ -257,7 +249,7 @@ message SearchPointGroups {
   string group_by = 10; // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
   uint32 group_size = 11; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
-  optional WithLookupInterface with_lookup = 13; // Options for specifying how to use the group id to lookup points in another collection
+  optional WithLookup with_lookup = 13; // Options for specifying how to use the group id to lookup points in another collection
 }
 
 message ScrollPoints {
@@ -314,7 +306,7 @@ message RecommendPointGroups {
   string group_by = 12; // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
   uint32 group_size = 13; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
-  optional WithLookupInterface with_lookup = 15; // Options for specifying how to use the group id to lookup points in another collection
+  optional WithLookup with_lookup = 15; // Options for specifying how to use the group id to lookup points in another collection
 }
 
 message CountPoints {

@@ -318,7 +318,7 @@ lookup_params = [
         {
             "collection": lookup_collection_name,
             "with_payload": True,
-            "with_vectors": True,
+            "with_vectors": False,
         },
         id="explicit with_payload and with_vectors",
     )
@@ -334,7 +334,7 @@ def assert_group_with_full_lookup(group):
 
     lookup = group["lookup"]
     assert lookup["payload"]
-    assert lookup["vector"]
+    assert not lookup["vector"]
 
 
 @pytest.mark.parametrize("with_lookup", lookup_params)

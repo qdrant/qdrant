@@ -699,29 +699,25 @@ impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookup {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::WithLookup) -> Result<Self, Self::Error> {
+        let with_default_payload = || Some(segment::types::WithPayloadInterface::Bool(true));
+
         Ok(Self {
             collection_name: value.collection,
-            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_payload: value
+                .with_payload
+                .map(|wp| wp.try_into())
+                .transpose()?
+                .or_else(with_default_payload),
             with_vectors: value.with_vectors.map(|wv| wv.into()),
         })
     }
 }
 
-impl TryFrom<api::grpc::qdrant::WithLookupInterface> for WithLookupInterface {
+impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookupInterface {
     type Error = Status;
 
-    fn try_from(value: api::grpc::qdrant::WithLookupInterface) -> Result<Self, Self::Error> {
-        match value.with_lookup_interface {
-            Some(api::grpc::qdrant::with_lookup_interface::WithLookupInterface::Collection(
-                name,
-            )) => Ok(Self::Collection(name)),
-            Some(api::grpc::qdrant::with_lookup_interface::WithLookupInterface::WithLookup(
-                with_lookup,
-            )) => Ok(Self::WithLookup(with_lookup.try_into()?)),
-            None => Err(Status::invalid_argument(
-                "Malformed WithLookupInterface type",
-            )),
-        }
+    fn try_from(value: api::grpc::qdrant::WithLookup) -> Result<Self, Self::Error> {
+        Ok(Self::WithLookup(value.try_into()?))
     }
 }
 

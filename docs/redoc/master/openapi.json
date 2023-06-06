@@ -7981,7 +7981,7 @@
           },
           "with_vectors": {
             "description": "Options for specifying which vectors to include (or not)",
-            "default": true,
+            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"

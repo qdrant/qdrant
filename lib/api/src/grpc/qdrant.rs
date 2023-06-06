@@ -2887,27 +2887,6 @@ pub struct WithLookup {
     #[prost(message, optional, tag = "3")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
-/// Interface for specifying lookup collection, intended for groups API only.
-/// This allows specifying the collection name only, or the collection name and payload/vectors options.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WithLookupInterface {
-    #[prost(oneof = "with_lookup_interface::WithLookupInterface", tags = "1, 2")]
-    pub with_lookup_interface: ::core::option::Option<
-        with_lookup_interface::WithLookupInterface,
-    >,
-}
-/// Nested message and enum types in `WithLookupInterface`.
-pub mod with_lookup_interface {
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum WithLookupInterface {
-        #[prost(message, tag = "1")]
-        WithLookup(super::WithLookup),
-        #[prost(string, tag = "2")]
-        Collection(::prost::alloc::string::String),
-    }
-}
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2955,7 +2934,7 @@ pub struct SearchPointGroups {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// Options for specifying how to use the group id to lookup points in another collection
     #[prost(message, optional, tag = "13")]
-    pub with_lookup: ::core::option::Option<WithLookupInterface>,
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3105,7 +3084,7 @@ pub struct RecommendPointGroups {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// Options for specifying how to use the group id to lookup points in another collection
     #[prost(message, optional, tag = "15")]
-    pub with_lookup: ::core::option::Option<WithLookupInterface>,
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]

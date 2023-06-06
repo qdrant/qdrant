@@ -21,7 +21,7 @@ impl From<WithLookupInterface> for WithLookup {
             WithLookupInterface::Collection(collection_name) => Self {
                 collection_name,
                 with_payload: Some(true.into()),
-                with_vectors: Some(true.into()),
+                with_vectors: Some(false.into()),
             },
             WithLookupInterface::WithLookup(with_lookup) => with_lookup,
         }
