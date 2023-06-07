@@ -19,8 +19,6 @@ use crate::common::{
     dummy_on_replica_failure, dummy_request_shard_transfer, TEST_OPTIMIZERS_CONFIG,
 };
 
-mod common;
-
 async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
