@@ -11,4 +11,4 @@ docker run --rm \
             --network=host \
             -e OPENAPI_FILE='openapi.json' \
             -v "${PWD}"/openapi/tests:/code \
-            "$(docker buildx build --load -q ./openapi/tests)" sh -c /code/run_docker.sh
+            "$(docker build --load -q ./openapi/tests)" sh -c /code/run_docker.sh
