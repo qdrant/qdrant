@@ -61,7 +61,6 @@ impl<'a> UringBufferedReader<'a> {
             if unused_buffer_ids.is_empty() {
                 // Wait for at least one buffer to become available
                 self.io_uring.submit_and_wait(buffers_count)?;
-                log::warn!("Waiting for {} buffers", buffers_count);
 
                 let mut cqe = self.io_uring.completion();
                 cqe.sync();
@@ -75,10 +74,6 @@ impl<'a> UringBufferedReader<'a> {
                     callback(idx, point_id, vector);
                     unused_buffer_ids.push(buffer_id);
                 }
-
-                // Sync submission queue with completion queue
-                drop(cqe);
-                self.io_uring.submission().sync();
             }
             // Assume there is at least one buffer available at this point
             let buffer_id = unused_buffer_ids.pop().unwrap();
@@ -99,6 +94,7 @@ impl<'a> UringBufferedReader<'a> {
             .user_data(user_data);
 
             unsafe {
+                // self.io_uring.submission().push(&read_e).unwrap();
                 self.io_uring.submission().push(&read_e).map_err(|err| {
                     OperationError::service_error(format!("Failed using io-uring: {}", err))
                 })?;

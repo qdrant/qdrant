@@ -209,7 +209,7 @@ impl MmapVectors {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        let mut ring = io_uring::IoUring::new(8).unwrap();
+        let mut ring = io_uring::IoUring::new(DISK_PARALLELISM as u32).unwrap();
         let mut buffers = self.buffers.lock();
 
         let mut uring_reader = UringBufferedReader::new(
