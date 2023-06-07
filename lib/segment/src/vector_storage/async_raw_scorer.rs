@@ -1,10 +1,6 @@
 use std::marker::PhantomData;
 
 use bitvec::prelude::BitSlice;
-use futures::StreamExt;
-use tokio_uring::fs::File as UringFile;
-
-use crate::common::mmap_ops::transmute_from_u8_to_slice;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
@@ -14,8 +10,6 @@ use crate::types::{Distance, PointOffsetType, ScoreType};
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage as _};
-
-const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
 
 pub fn new<'a>(
     vector: Vec<VectorElementType>,
@@ -31,7 +25,6 @@ pub struct AsyncRawScorerImpl<'a, TMetric: Metric> {
     storage: &'a MmapVectors,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
-    uring_file: UringFile,
     metric: PhantomData<TMetric>,
 }
 
@@ -45,7 +38,6 @@ where
         storage: &'a MmapVectors,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
-        uring_file: UringFile,
     ) -> Self {
         Self {
             points_count,
@@ -53,39 +45,7 @@ where
             storage,
             point_deleted,
             vec_deleted,
-            uring_file,
             metric: PhantomData,
-        }
-    }
-
-    async fn score_point(&self, point_id: PointOffsetType) -> ScoredPointOffset {
-        let offset = self.storage.data_offset(point_id).unwrap(); // this is fine
-        let raw_size = self.storage.raw_size();
-
-        let buff = vec![0u8; raw_size];
-
-        let (res, buff) = self.uring_file.read_at(buff, offset as u64).await;
-
-        match res {
-            Ok(sz) => {
-                debug_assert_eq!(sz, raw_size);
-                // Convert bytes vector into VectorElementType vector
-                let other_vector = transmute_from_u8_to_slice(&buff);
-                ScoredPointOffset {
-                    idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
-                }
-            }
-            Err(err) => {
-                debug_assert!(false, "Failed to read with uring: {:?}", err);
-                // Fall back to mmap, if for some reason we can't read with uring
-                // It might happen if we allowed to use uring on the old kernels
-                let other_vector = self.storage.get_vector(point_id);
-                ScoredPointOffset {
-                    idx: point_id,
-                    score: TMetric::similarity(&self.query, other_vector),
-                }
-            }
         }
     }
 }
@@ -95,21 +55,27 @@ where
     TMetric: Metric,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
-        tokio_uring::start(async {
-            let points_stream = points
-                .iter()
-                .copied()
-                .filter(|point_id| self.check_vector(*point_id))
-                .map(|point_id| self.score_point(point_id));
+        let points_stream = points
+            .iter()
+            .copied()
+            .filter(|point_id| self.check_vector(*point_id));
 
-            let mut scored_stream = futures::stream::iter(points_stream).buffered(DISK_PARALLELISM);
-            let mut n: usize = 0;
-            while let Some(result) = scored_stream.next().await {
-                scores[n] = result;
-                n += 1;
-            }
-            n
-        })
+        let mut processed = 0;
+        let process_result =
+            self.storage
+                .process_points(points_stream, |idx, point_id, other_vector| {
+                    scores[idx] = ScoredPointOffset {
+                        idx: point_id,
+                        score: TMetric::similarity(&self.query, other_vector),
+                    };
+                    processed += 1;
+                });
+
+        if process_result.is_ok() {
+            return processed;
+        }
+
+        todo!("Fallback to mmap read")
     }
 
     fn check_vector(&self, point: PointOffsetType) -> bool {
@@ -148,20 +114,24 @@ where
             return vec![];
         }
 
-        tokio_uring::start(async {
-            let points_stream = points
-                .filter(|point_id| self.check_vector(*point_id))
-                .map(|point_id| self.score_point(point_id));
+        let mut pq = FixedLengthPriorityQueue::new(top);
+        let points_stream = points.filter(|point_id| self.check_vector(*point_id));
 
-            let mut scored_stream = futures::stream::iter(points_stream).buffered(DISK_PARALLELISM);
+        let process_result =
+            self.storage
+                .process_points(points_stream, |_, point_id, other_vector| {
+                    let scored_point_offset = ScoredPointOffset {
+                        idx: point_id,
+                        score: TMetric::similarity(&self.query, other_vector),
+                    };
+                    pq.push(scored_point_offset);
+                });
 
-            // Implement peek_top_iter, but with async streams
-            let mut pq = FixedLengthPriorityQueue::new(top);
-            while let Some(scored_point_offset) = scored_stream.next().await {
-                pq.push(scored_point_offset);
-            }
-            pq.into_vec()
-        })
+        if process_result.is_ok() {
+            return pq.into_vec();
+        }
+
+        todo!("Fallback to mmap read")
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
@@ -169,20 +139,24 @@ where
             return vec![];
         }
 
-        tokio_uring::start(async {
-            let points_stream = (0..self.points_count)
-                .filter(|point_id| self.check_vector(*point_id))
-                .map(|point_id| self.score_point(point_id));
+        let points_stream = (0..self.points_count).filter(|point_id| self.check_vector(*point_id));
 
-            let mut scored_stream = futures::stream::iter(points_stream).buffered(DISK_PARALLELISM);
+        let mut pq = FixedLengthPriorityQueue::new(top);
+        let process_result =
+            self.storage
+                .process_points(points_stream, |_, point_id, other_vector| {
+                    let scored_point_offset = ScoredPointOffset {
+                        idx: point_id,
+                        score: TMetric::similarity(&self.query, other_vector),
+                    };
+                    pq.push(scored_point_offset);
+                });
 
-            // Implement peek_top_iter, but with async streams
-            let mut pq = FixedLengthPriorityQueue::new(top);
-            while let Some(scored_point_offset) = scored_stream.next().await {
-                pq.push(scored_point_offset);
-            }
-            pq.into_vec()
-        })
+        if process_result.is_ok() {
+            return pq.into_vec();
+        }
+
+        todo!("Fallback to mmap read")
     }
 }
 
@@ -192,7 +166,6 @@ struct AsyncRawScorerBuilder<'a> {
     storage: &'a MmapVectors,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
-    uring_file: UringFile,
     distance: Distance,
 }
 
@@ -202,8 +175,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         storage: &'a MemmapVectorStorage,
         point_deleted: &'a BitSlice,
     ) -> OperationResult<Self> {
-        let uring_file =
-            tokio_uring::start(async { UringFile::open(storage.vector_path()).await })?;
 
         let points_count = storage.total_vector_count() as _;
         let vec_deleted = storage.deleted_vector_bitslice();
@@ -217,7 +188,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             point_deleted,
             vec_deleted,
             storage,
-            uring_file,
             distance,
         };
 
@@ -239,7 +209,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             self.storage,
             self.point_deleted,
             self.vec_deleted,
-            self.uring_file,
         )
     }
 }

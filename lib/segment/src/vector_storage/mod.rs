@@ -15,6 +15,10 @@ mod vector_storage_base;
 #[cfg(test)]
 mod tests;
 
+#[cfg(target_os = "linux")]
+mod async_io;
+mod async_io_common;
+
 pub use raw_scorer::*;
 pub use vector_storage_base::*;
 

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use memmap2::Mmap;
+use parking_lot::Mutex;
 
 use super::div_ceil;
 use crate::common::error_logging::LogError;
@@ -15,6 +16,8 @@ use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+use crate::vector_storage::async_io::UringBufferedReader;
+use crate::vector_storage::async_io_common::{BufferStore, DISK_PARALLELISM};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
@@ -29,6 +32,10 @@ pub struct MmapVectors {
     ///
     /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Arc<Mmap>,
+    /// File handle for vector data
+    vectors_file: File,
+    /// Read buffers for vector data
+    buffers: Mutex<BufferStore>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -61,10 +68,27 @@ impl MmapVectors {
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
+        let buffers;
+        #[cfg(target_os = "linux")]
+        {
+            let raw_size = dim * size_of::<VectorElementType>();
+            buffers = BufferStore::new(DISK_PARALLELISM, raw_size);
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            buffers = BufferStore::new_empty();
+        }
+
+        // Keep file handle open for async IO
+        let vectors_file = File::open(vectors_path)?;
+
         Ok(MmapVectors {
             dim,
             num_vectors,
             mmap: mmap.into(),
+            vectors_file,
+            buffers: Mutex::new(buffers),
             deleted,
             deleted_count,
             quantized_vectors: None,
@@ -177,6 +201,46 @@ impl MmapVectors {
 
     pub fn prefault_mmap_pages(&self, path: &Path) -> mmap_ops::PrefaultMmapPages {
         mmap_ops::PrefaultMmapPages::new(self.mmap.clone(), Some(path))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn process_points_uring(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+    ) -> OperationResult<()> {
+        let mut ring = io_uring::IoUring::new(8).unwrap();
+        let mut buffers = self.buffers.lock();
+
+        let mut uring_reader = UringBufferedReader::new(
+            &self.vectors_file,
+            &mut ring,
+            &mut buffers,
+            self.raw_size(),
+            HEADER_SIZE,
+        );
+
+        uring_reader.read_stream(points, callback)
+    }
+
+    pub fn process_points(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+    ) -> OperationResult<()> {
+        #[cfg(target_os = "linux")]
+        {
+            self.process_points_uring(points, callback)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            for (idx, point) in points.enumerate() {
+                let vector = self.get_vector(point);
+                callback(idx, point, vector);
+            }
+            Ok(())
+        }
     }
 }
 
