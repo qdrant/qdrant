@@ -51,25 +51,35 @@ impl<'a> UringBufferedReader<'a> {
         points: impl IntoIterator<Item = PointOffsetType>,
         mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        let mut unused_buffer_ids = (0..self.buffers.buffers.len()).collect::<Vec<_>>();
+        let buffers_count = self.buffers.buffers.len();
+
+        let mut unused_buffer_ids = (0..buffers_count).collect::<Vec<_>>();
 
         for item in points.into_iter().enumerate() {
             let (idx, point): (usize, PointOffsetType) = item;
 
             if unused_buffer_ids.is_empty() {
                 // Wait for at least one buffer to become available
-                self.io_uring.submit_and_wait(1)?;
+                self.io_uring.submit_and_wait(buffers_count)?;
+                log::warn!("Waiting for {} buffers", buffers_count);
 
                 let mut cqe = self.io_uring.completion();
                 cqe.sync();
-                let entry = cqe.next().expect("uring completion queue is not empty");
 
-                let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
-                let point_id = self.buffers.processing_ids[buffer_id];
-                let buffer = &self.buffers.buffers[buffer_id];
-                let vector = transmute_from_u8_to_slice(buffer);
-                callback(idx, point_id, vector);
-                unused_buffer_ids.push(buffer_id);
+                for _ in 0..buffers_count {
+                    let entry = cqe.next().expect("uring completion queue is not empty");
+                    let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
+                    let point_id = self.buffers.processing_ids[buffer_id];
+                    let buffer = &self.buffers.buffers[buffer_id];
+                    let vector = transmute_from_u8_to_slice(buffer);
+                    callback(idx, point_id, vector);
+                    unused_buffer_ids.push(buffer_id);
+                }
+
+                // Sync submission queue with completion queue
+                drop(cqe);
+                self.io_uring.submission().sync();
+
             }
             // Assume there is at least one buffer available at this point
             let buffer_id = unused_buffer_ids.pop().unwrap();
@@ -94,8 +104,6 @@ impl<'a> UringBufferedReader<'a> {
                     OperationError::service_error(format!("Failed using io-uring: {}", err))
                 })?;
             }
-
-            self.io_uring.submit()?;
         }
 
         let operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();

@@ -76,6 +76,8 @@ where
             return processed;
         }
 
+        log::warn!("{:?}", process_result);
+
         todo!("Fallback to mmap read")
     }
 
@@ -132,6 +134,7 @@ where
             return pq.into_vec();
         }
 
+        log::warn!("{:?}", process_result);
         todo!("Fallback to mmap read")
     }
 
@@ -157,6 +160,7 @@ where
             return pq.into_vec();
         }
 
+        log::warn!("{:?}", process_result);
         todo!("Fallback to mmap read")
     }
 }
