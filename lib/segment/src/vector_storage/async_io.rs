@@ -65,6 +65,12 @@ impl<'a> UringBufferedReader<'a> {
                 let mut cqe = self.io_uring.completion();
                 cqe.sync();
 
+                let overflow = cqe.overflow();
+
+                if overflow > 0 {
+                    log::error!("Overflowed {} entries", overflow)
+                }
+
                 for _ in 0..buffers_count {
                     let entry = cqe.next().expect("uring completion queue is not empty");
                     let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
