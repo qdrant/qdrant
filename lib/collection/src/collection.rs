@@ -935,6 +935,20 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
+        // short-circuit if not needed
+        if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
+            (&with_payload, &with_vector)
+        {
+            return Ok(search_result
+                .into_iter()
+                .map(|point| ScoredPoint {
+                    payload: None,
+                    vector: None,
+                    ..point
+                })
+                .collect());
+        };
+
         let retrieve_request = PointRequest {
             ids: search_result.iter().map(|x| x.id).collect(),
             with_payload,

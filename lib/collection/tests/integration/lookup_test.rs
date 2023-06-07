@@ -29,8 +29,8 @@ struct Resources {
 async fn setup() -> Resources {
     let request = WithLookup {
         collection_name: "test".to_string(),
-        with_payload: Some(false.into()),
-        with_vectors: Some(false.into()),
+        with_payload: None,
+        with_vectors: None,
     };
 
     let collection_dir = Builder::new().prefix("storage").tempdir().unwrap();

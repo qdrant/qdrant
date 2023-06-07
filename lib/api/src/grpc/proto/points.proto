@@ -229,6 +229,13 @@ message SearchBatchPoints {
   optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
 }
 
+message WithLookup {
+  string collection = 1; // Name of the collection to use for points lookup
+  optional WithPayloadSelector with_payload = 2; // Options for specifying which payload to include (or not)
+  optional WithVectorsSelector with_vectors = 3; // Options for specifying which vectors to include (or not)
+}
+
+
 message SearchPointGroups {
   string collection_name = 1; // Name of the collection
   repeated float vector = 2; // Vector to compare against
@@ -242,6 +249,7 @@ message SearchPointGroups {
   string group_by = 10; // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
   uint32 group_size = 11; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees
+  optional WithLookup with_lookup = 13; // Options for specifying how to use the group id to lookup points in another collection
 }
 
 message ScrollPoints {
@@ -298,6 +306,7 @@ message RecommendPointGroups {
   string group_by = 12; // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
   uint32 group_size = 13; // Maximum amount of points to return per group
   optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
+  optional WithLookup with_lookup = 15; // Options for specifying how to use the group id to lookup points in another collection
 }
 
 message CountPoints {
@@ -348,7 +357,8 @@ message GroupId {
 
 message PointGroup {
   GroupId id = 1; // Group id
-  repeated ScoredPoint hits = 2; // Points in the group
+  repeated ScoredPoint hits = 2; // Points in the group 
+  RetrievedPoint lookup = 3; // Point(s) from the lookup collection that matches the group id
 }
 
 message GroupsResult {

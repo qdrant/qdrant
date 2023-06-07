@@ -186,6 +186,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
                     group_by,
                     group_size,
                     limit,
+                    with_lookup: with_lookup_interface,
                 },
         } = request;
 
@@ -205,7 +206,7 @@ impl From<SearchGroupsRequest> for GroupRequest {
             group_by,
             group_size: group_size as usize,
             limit: limit as usize,
-            with_lookup: None, // TODO: update when ui is updated
+            with_lookup: with_lookup_interface.map(Into::into),
         }
     }
 }
@@ -227,6 +228,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
                     group_by,
                     group_size,
                     limit,
+                    with_lookup: with_lookup_interface,
                 },
         } = request;
 
@@ -249,7 +251,7 @@ impl From<RecommendGroupsRequest> for GroupRequest {
             group_by,
             group_size: group_size as usize,
             limit: limit as usize,
-            with_lookup: None, // TODO: update when ui is updated
+            with_lookup: with_lookup_interface.map(Into::into),
         }
     }
 }

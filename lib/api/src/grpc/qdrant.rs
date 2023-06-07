@@ -2874,6 +2874,19 @@ pub struct SearchBatchPoints {
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WithLookup {
+    /// Name of the collection to use for points lookup
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    /// Options for specifying which payload to include (or not)
+    #[prost(message, optional, tag = "2")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Options for specifying which vectors to include (or not)
+    #[prost(message, optional, tag = "3")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+}
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2919,6 +2932,9 @@ pub struct SearchPointGroups {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Options for specifying how to use the group id to lookup points in another collection
+    #[prost(message, optional, tag = "13")]
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3066,6 +3082,9 @@ pub struct RecommendPointGroups {
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Options for specifying how to use the group id to lookup points in another collection
+    #[prost(message, optional, tag = "15")]
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3151,6 +3170,9 @@ pub struct PointGroup {
     /// Points in the group
     #[prost(message, repeated, tag = "2")]
     pub hits: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Point(s) from the lookup collection that matches the group id
+    #[prost(message, optional, tag = "3")]
+    pub lookup: ::core::option::Option<RetrievedPoint>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
