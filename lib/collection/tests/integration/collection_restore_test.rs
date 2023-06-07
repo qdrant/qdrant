@@ -10,8 +10,6 @@ use tempfile::Builder;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
-mod common;
-
 #[tokio::test]
 async fn test_collection_reloading() {
     test_collection_reloading_with_shards(1).await;

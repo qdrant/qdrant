@@ -4,7 +4,6 @@ use collection::lookup::{lookup_ids, WithLookup};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::{Batch, WriteOrdering};
 use collection::shards::shard::ShardId;
-use common::simple_collection_fixture;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, Rng, SeedableRng};
@@ -16,7 +15,7 @@ use tempfile::Builder;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-mod common;
+use crate::common::simple_collection_fixture;
 
 const SEED: u64 = 42;
 

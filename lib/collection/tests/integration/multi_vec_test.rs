@@ -19,8 +19,6 @@ use tempfile::Builder;
 
 use crate::common::{new_local_collection, N_SHARDS, TEST_OPTIMIZERS_CONFIG};
 
-mod common;
-
 const VEC_NAME1: &str = "vec1";
 const VEC_NAME2: &str = "vec2";
 

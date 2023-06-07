@@ -1,5 +1,3 @@
-mod common;
-
 use collection::collection::Collection;
 use collection::grouping::group_by::{group_by, GroupRequest, SourceRequest};
 use collection::operations::consistency_params::ReadConsistency;
