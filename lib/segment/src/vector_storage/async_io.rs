@@ -53,9 +53,9 @@ impl<'a> UringBufferedReader<'a> {
     ) -> OperationResult<()> {
         let mut unused_buffer_ids = (0..self.buffers.buffers.len()).collect::<Vec<_>>();
 
-        self.io_uring.split();
+        for item in points.into_iter().enumerate() {
+            let (idx, point): (usize, PointOffsetType) = item;
 
-        for (idx, point) in points.into_iter().enumerate() {
             if unused_buffer_ids.is_empty() {
                 // Wait for at least one buffer to become available
                 self.io_uring.submit_and_wait(1)?;
@@ -63,7 +63,7 @@ impl<'a> UringBufferedReader<'a> {
                     .io_uring
                     .completion()
                     .next()
-                    .expect("completion queue is empty");
+                    .expect("uring completion queue is not empty");
 
                 let (buffer_id, idx) = Self::decode_user_data(cqe.user_data());
                 let point_id = self.buffers.processing_ids[buffer_id];
@@ -92,7 +92,7 @@ impl<'a> UringBufferedReader<'a> {
 
             unsafe {
                 self.io_uring.submission().push(&read_e).map_err(|err| {
-                    OperationError::service_error(format!("Failed use uring: {}", err))
+                    OperationError::service_error(format!("Failed using io-uring: {}", err))
                 })?;
             }
 
@@ -102,14 +102,14 @@ impl<'a> UringBufferedReader<'a> {
         let operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
 
         if operations_to_wait_for > 0 {
-            self.io_uring.submit_and_wait(operations_to_wait_for as _)?;
+            self.io_uring.submit_and_wait(operations_to_wait_for)?;
 
             for _ in 0..operations_to_wait_for {
                 let cqe = self
                     .io_uring
                     .completion()
                     .next()
-                    .expect("completion queue is empty");
+                    .expect("uring completion queue is not empty");
                 let (buffer_id, idx) = Self::decode_user_data(cqe.user_data());
                 let point = self.buffers.processing_ids[buffer_id];
                 let buffer = &self.buffers.buffers[buffer_id];
