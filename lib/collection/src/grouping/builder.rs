@@ -1,5 +1,3 @@
-#![allow(dead_code)] // TODO: remove
-
 use futures::Future;
 use itertools::Itertools;
 use tokio::sync::RwLockReadGuard;

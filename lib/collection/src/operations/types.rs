@@ -31,6 +31,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationErrors};
 
 use crate::config::CollectionConfig;
+use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
@@ -896,4 +897,7 @@ pub struct BaseGroupRequest {
     /// Maximum amount of groups to return
     #[validate(range(min = 1))]
     pub limit: u32,
+
+    /// Look for points in another collection using the group ids
+    pub with_lookup: Option<WithLookupInterface>,
 }

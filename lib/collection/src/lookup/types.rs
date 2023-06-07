@@ -1,8 +1,32 @@
 use std::fmt::Display;
 
+use schemars::JsonSchema;
 use segment::data_types::groups::GroupId;
 use segment::types::PointIdType;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use super::WithLookup;
+
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
+#[serde(untagged)]
+pub enum WithLookupInterface {
+    Collection(String),
+    WithLookup(WithLookup),
+}
+
+impl From<WithLookupInterface> for WithLookup {
+    fn from(with_lookup: WithLookupInterface) -> Self {
+        match with_lookup {
+            WithLookupInterface::Collection(collection_name) => Self {
+                collection_name,
+                with_payload: Some(true.into()),
+                with_vectors: Some(false.into()),
+            },
+            WithLookupInterface::WithLookup(with_lookup) => with_lookup,
+        }
+    }
+}
 
 /// A value that can be used as a temporary ID
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
