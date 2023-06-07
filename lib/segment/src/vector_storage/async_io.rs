@@ -7,31 +7,53 @@ use crate::common::mmap_ops::transmute_from_u8_to_slice;
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
-use crate::vector_storage::async_io_common::BufferStore;
 
-pub struct UringBufferedReader<'a> {
-    file: &'a File,
-    buffers: &'a mut BufferStore,
-    io_uring: &'a mut IoUring,
+const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
+
+struct BufferStore {
+    /// Stores the buffer for the point vectors
+    pub buffers: Vec<Vec<u8>>,
+    /// Stores the point ids that are currently being processed in each buffer.
+    pub processing_ids: Vec<PointOffsetType>,
+}
+
+impl BufferStore {
+    pub fn new(num_buffers: usize, buffer_raw_size: usize) -> Self {
+        Self {
+            buffers: (0..num_buffers).map(|_| vec![0; buffer_raw_size]).collect(),
+            processing_ids: vec![0; num_buffers],
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn new_empty() -> Self {
+        Self {
+            buffers: vec![],
+            processing_ids: vec![],
+        }
+    }
+}
+
+pub struct UringBufferedReader {
+    file: File,
+    buffers: BufferStore,
+    io_uring: IoUring,
     raw_size: usize,
     header_size: usize,
 }
 
-impl<'a> UringBufferedReader<'a> {
-    pub fn new(
-        file: &'a File,
-        io_uring: &'a mut IoUring,
-        buffers: &'a mut BufferStore,
-        raw_size: usize,
-        header_size: usize,
-    ) -> Self {
-        Self {
+impl UringBufferedReader {
+    pub fn new(file: File, raw_size: usize, header_size: usize) -> OperationResult<Self> {
+        let buffers = BufferStore::new(DISK_PARALLELISM, raw_size);
+        let io_uring = IoUring::new(DISK_PARALLELISM as _)?;
+
+        Ok(Self {
             file,
             buffers,
             io_uring,
             raw_size,
             header_size,
-        }
+        })
     }
 
     fn encode_user_data(buffer_id: usize, entry_num: usize) -> u64 {

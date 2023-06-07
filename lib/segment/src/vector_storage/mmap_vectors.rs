@@ -16,8 +16,10 @@ use crate::common::{mmap_ops, Flusher};
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
+#[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringBufferedReader;
-use crate::vector_storage::async_io_common::{BufferStore, DISK_PARALLELISM};
+#[cfg(not(target_os = "linux"))]
+use crate::vector_storage::async_io_mock::UringBufferedReader;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
@@ -32,10 +34,8 @@ pub struct MmapVectors {
     ///
     /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Arc<Mmap>,
-    /// File handle for vector data
-    vectors_file: File,
-    /// Read buffers for vector data
-    buffers: Mutex<BufferStore>,
+    /// Context for io_uring-base async IO
+    uring_reader: Mutex<UringBufferedReader>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -68,27 +68,16 @@ impl MmapVectors {
         let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
         let deleted_count = deleted.count_ones();
 
-        let buffers;
-        #[cfg(target_os = "linux")]
-        {
-            let raw_size = dim * size_of::<VectorElementType>();
-            buffers = BufferStore::new(DISK_PARALLELISM, raw_size);
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            buffers = BufferStore::new_empty();
-        }
-
         // Keep file handle open for async IO
         let vectors_file = File::open(vectors_path)?;
+        let raw_size = dim * size_of::<VectorElementType>();
+        let uring_reader = UringBufferedReader::new(vectors_file, raw_size, HEADER_SIZE)?;
 
         Ok(MmapVectors {
             dim,
             num_vectors,
             mmap: mmap.into(),
-            vectors_file,
-            buffers: Mutex::new(buffers),
+            uring_reader: Mutex::new(uring_reader),
             deleted,
             deleted_count,
             quantized_vectors: None,
@@ -209,16 +198,7 @@ impl MmapVectors {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        let mut ring = io_uring::IoUring::new(2 * DISK_PARALLELISM as u32).unwrap();
-        let mut buffers = self.buffers.lock();
-
-        let mut uring_reader = UringBufferedReader::new(
-            &self.vectors_file,
-            &mut ring,
-            &mut buffers,
-            self.raw_size(),
-            HEADER_SIZE,
-        );
+        let mut uring_reader = self.uring_reader.lock();
 
         uring_reader.read_stream(points, callback)
     }
