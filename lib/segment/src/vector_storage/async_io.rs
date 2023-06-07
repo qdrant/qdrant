@@ -65,14 +65,7 @@ impl<'a> UringBufferedReader<'a> {
                 let mut cqe = self.io_uring.completion();
                 cqe.sync();
 
-                let overflow = cqe.overflow();
-
-                if overflow > 0 {
-                    log::error!("Overflowed {} entries", overflow)
-                }
-
-                for _ in 0..buffers_count {
-                    let entry = cqe.next().expect("uring completion queue is not empty");
+                for entry in cqe {
                     let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
                     let point_id = self.buffers.processing_ids[buffer_id];
                     let buffer = &self.buffers.buffers[buffer_id];
@@ -107,14 +100,13 @@ impl<'a> UringBufferedReader<'a> {
             }
         }
 
-        let operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
+        let mut operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
 
-        if operations_to_wait_for > 0 {
+        while operations_to_wait_for > 0 {
             self.io_uring.submit_and_wait(operations_to_wait_for)?;
             let mut cqe = self.io_uring.completion();
             cqe.sync();
-            for _ in 0..operations_to_wait_for {
-                let entry = cqe.next().expect("uring completion queue is not empty");
+            for entry in cqe {
                 let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
                 let point = self.buffers.processing_ids[buffer_id];
                 let buffer = &self.buffers.buffers[buffer_id];
@@ -122,6 +114,8 @@ impl<'a> UringBufferedReader<'a> {
                 callback(idx, point, vector);
                 unused_buffer_ids.push(buffer_id);
             }
+
+            operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
         }
         Ok(())
     }
