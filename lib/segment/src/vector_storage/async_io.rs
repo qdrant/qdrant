@@ -79,7 +79,6 @@ impl<'a> UringBufferedReader<'a> {
                 // Sync submission queue with completion queue
                 drop(cqe);
                 self.io_uring.submission().sync();
-
             }
             // Assume there is at least one buffer available at this point
             let buffer_id = unused_buffer_ids.pop().unwrap();
