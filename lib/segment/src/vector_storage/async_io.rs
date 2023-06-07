@@ -59,13 +59,12 @@ impl<'a> UringBufferedReader<'a> {
             if unused_buffer_ids.is_empty() {
                 // Wait for at least one buffer to become available
                 self.io_uring.submit_and_wait(1)?;
-                let cqe = self
-                    .io_uring
-                    .completion()
-                    .next()
-                    .expect("uring completion queue is not empty");
 
-                let (buffer_id, idx) = Self::decode_user_data(cqe.user_data());
+                let mut cqe = self.io_uring.completion();
+                cqe.sync();
+                let entry = cqe.next().expect("uring completion queue is not empty");
+
+                let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
                 let point_id = self.buffers.processing_ids[buffer_id];
                 let buffer = &self.buffers.buffers[buffer_id];
                 let vector = transmute_from_u8_to_slice(buffer);
@@ -103,14 +102,11 @@ impl<'a> UringBufferedReader<'a> {
 
         if operations_to_wait_for > 0 {
             self.io_uring.submit_and_wait(operations_to_wait_for)?;
-
+            let mut cqe = self.io_uring.completion();
+            cqe.sync();
             for _ in 0..operations_to_wait_for {
-                let cqe = self
-                    .io_uring
-                    .completion()
-                    .next()
-                    .expect("uring completion queue is not empty");
-                let (buffer_id, idx) = Self::decode_user_data(cqe.user_data());
+                let entry = cqe.next().expect("uring completion queue is not empty");
+                let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
                 let point = self.buffers.processing_ids[buffer_id];
                 let buffer = &self.buffers.buffers[buffer_id];
                 let vector = transmute_from_u8_to_slice(buffer);
