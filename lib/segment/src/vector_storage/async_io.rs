@@ -8,7 +8,7 @@ use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::PointOffsetType;
 
-const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
+const DISK_PARALLELISM: usize = 32; // TODO: benchmark it better, or make it configurable
 
 struct BufferStore {
     /// Stores the buffer for the point vectors
