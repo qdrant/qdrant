@@ -3171,8 +3171,8 @@ pub struct PointGroup {
     #[prost(message, repeated, tag = "2")]
     pub hits: ::prost::alloc::vec::Vec<ScoredPoint>,
     /// Point(s) from the lookup collection that matches the group id
-    #[prost(message, repeated, tag = "3")]
-    pub lookups: ::prost::alloc::vec::Vec<RetrievedPoint>,
+    #[prost(message, optional, tag = "3")]
+    pub lookup: ::core::option::Option<RetrievedPoint>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

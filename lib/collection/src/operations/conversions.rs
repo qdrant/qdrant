@@ -801,7 +801,7 @@ impl From<PointGroup> for api::grpc::qdrant::PointGroup {
         Self {
             hits: group.hits.into_iter().map_into().collect(),
             id: Some(group.id.into()),
-            lookups: group.lookup.into_iter().map_into().collect(),
+            lookup: group.lookup.map(|record| record.into()),
         }
     }
 }

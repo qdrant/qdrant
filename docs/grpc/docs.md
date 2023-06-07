@@ -1753,7 +1753,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | id | [GroupId](#qdrant-GroupId) |  | Group id |
 | hits | [ScoredPoint](#qdrant-ScoredPoint) | repeated | Points in the group |
-| lookups | [RetrievedPoint](#qdrant-RetrievedPoint) | repeated | Point(s) from the lookup collection that matches the group id |
+| lookup | [RetrievedPoint](#qdrant-RetrievedPoint) |  | Point(s) from the lookup collection that matches the group id |
 
 
 
