@@ -8,8 +8,6 @@ use tempfile::Builder;
 
 use crate::common::{simple_collection_fixture, N_SHARDS};
 
-mod common;
-
 #[tokio::test]
 async fn test_collection_paginated_search() {
     test_collection_paginated_search_with_shards(1).await;
