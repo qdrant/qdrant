@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use bitvec::prelude::BitSlice;
+
 use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
@@ -175,7 +176,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         storage: &'a MemmapVectorStorage,
         point_deleted: &'a BitSlice,
     ) -> OperationResult<Self> {
-
         let points_count = storage.total_vector_count() as _;
         let vec_deleted = storage.deleted_vector_bitslice();
 
