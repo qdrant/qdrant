@@ -7,6 +7,7 @@ mod certificate_helpers;
 pub mod helpers;
 
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
@@ -62,7 +63,25 @@ pub fn init(
             .unwrap_or(DEFAULT_STATIC_DIR.to_string());
 
         let web_ui_enabled = settings.service.enable_static_content.unwrap_or(true);
-        let skip_api_key_prefixes = if web_ui_enabled {
+        // validate that the static folder exists IF the web UI is enabled
+        let web_ui_available = if web_ui_enabled {
+            let static_folder = Path::new(&static_folder);
+            if !static_folder.exists() || !static_folder.is_dir() {
+                // enabled BUT folder does not exist
+                log::error!(
+                    "Static content folder for Web UI '{}' does not exist",
+                    static_folder.display()
+                );
+                false
+            } else {
+                // enabled AND folder exists
+                true
+            }
+        } else {
+            // not enabled
+            false
+        };
+        let skip_api_key_prefixes = if web_ui_available {
             vec![WEB_UI_PATH.to_string()]
         } else {
             vec![]
@@ -118,7 +137,7 @@ pub fn init(
                 .service(scroll_points)
                 .service(count_points);
 
-            if web_ui_enabled {
+            if web_ui_available {
                 app = app.service(
                     actix_files::Files::new(WEB_UI_PATH, &static_folder).index_file("index.html"),
                 )
