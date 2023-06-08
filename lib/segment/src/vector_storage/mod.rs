@@ -17,7 +17,6 @@ mod tests;
 
 #[cfg(target_os = "linux")]
 mod async_io;
-#[cfg(not(target_os = "linux"))]
 mod async_io_mock;
 
 pub use raw_scorer::*;
