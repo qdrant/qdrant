@@ -585,6 +585,7 @@ impl Segment {
 
         let ids_iterator = payload_index
             .query_points(condition)
+            .into_iter()
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {

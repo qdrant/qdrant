@@ -303,7 +303,7 @@ impl SegmentsSearcher {
     }
 }
 
-#[derive(PartialEq, Default)]
+#[derive(PartialEq, Default, Debug)]
 struct BatchSearchParams<'a> {
     pub vector_name: &'a str,
     pub filter: Option<&'a Filter>,

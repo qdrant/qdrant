@@ -8,7 +8,6 @@ use atomic_refcell::AtomicRefCell;
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
-use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -124,19 +123,13 @@ impl PayloadIndex for PlainPayloadIndex {
         self.estimate_cardinality(query)
     }
 
-    fn query_points<'a>(
-        &'a self,
-        query: &'a Filter,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    fn query_points(&self, query: &Filter) -> Vec<PointOffsetType> {
         let filter_context = self.filter_context(query);
-        Box::new(ArcAtomicRefCellIterator::new(
-            self.id_tracker.clone(),
-            move |points_iterator| {
-                points_iterator
-                    .iter_ids()
-                    .filter(move |id| filter_context.check(*id))
-            },
-        ))
+        self.id_tracker
+            .borrow()
+            .iter_ids()
+            .filter(|id| filter_context.check(*id))
+            .collect()
     }
 
     fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {
@@ -241,7 +234,7 @@ impl VectorIndex for PlainIndex {
                 let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let filtered_ids_vec: Vec<_> = payload_index.query_points(filter).collect();
+                let filtered_ids_vec = payload_index.query_points(filter);
                 vectors
                     .iter()
                     .map(|vector| {
