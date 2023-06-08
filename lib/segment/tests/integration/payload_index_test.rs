@@ -274,7 +274,7 @@ fn test_is_empty_conditions() {
         .payload_index
         .borrow()
         .query_points(&filter)
-        .count();
+        .len();
 
     eprintln!("estimation_plain = {estimation_plain:#?}");
     eprintln!("estimation_struct = {estimation_struct:#?}");
