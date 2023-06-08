@@ -2129,9 +2129,9 @@ dependencies = [
 
 [[package]]
 name = "io-uring"
-version = "0.5.13"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd1e1a01cfb924fd8c5c43b6827965db394f5a3a16c599ce03452266e1cf984c"
+checksum = "8b7b36074613a723279637061b40db993208908a94f10ccb14436ce735bc0f57"
 dependencies = [
  "bitflags",
  "libc",
@@ -3744,6 +3744,7 @@ dependencies = [
  "futures",
  "geo",
  "geohash",
+ "io-uring",
  "itertools",
  "log",
  "memmap2 0.6.2",
@@ -3772,7 +3773,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tinyvec",
- "tokio-uring",
  "uuid",
  "validator",
  "walkdir",
@@ -4383,20 +4383,6 @@ checksum = "d660770404473ccd7bc9f8b28494a811bc18542b915c0855c51e8f419d5223ce"
 dependencies = [
  "futures-core",
  "pin-project-lite",
- "tokio",
-]
-
-[[package]]
-name = "tokio-uring"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d5e02bb137e030b3a547c65a3bd2f1836d66a97369fdcc69034002b10e155ef"
-dependencies = [
- "io-uring",
- "libc",
- "scoped-tls",
- "slab",
- "socket2",
  "tokio",
 ]
 
