@@ -4,7 +4,7 @@ set -ex
 
 QDRANT_HOST="localhost:6333"
 
-SCRIPT_DIR=$(pwd)
+SCRIPT_DIR=$(realpath "$(dirname "$0")")
 
 # Ensure current path is project root
 cd "$(dirname "$0")/../../"

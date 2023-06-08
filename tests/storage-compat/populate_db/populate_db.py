@@ -16,7 +16,7 @@ def create_collection(name: str, quantization_config: dict = None):
         f"http://{QDRANT_HOST}/collections/{name}",
         headers={"Content-Type": "application/json"},
         json={
-            "vectors": {"size": 50, "distance": "Dot"},
+            "vectors": {"size": 256, "distance": "Dot"},
             "optimizers_config": {
                 "default_segment_number": 2,
                 "indexing_threshold_kb": 10,
@@ -42,8 +42,8 @@ def create_payload_indexes(name: str):
     assert response.ok
 
 
-def rand_vec(dims: int = 50):
-    return [random.random() for _ in range(dims)]
+def rand_vec(dims: int = 256):
+    return [(random.random() * 20) - 10 for _ in range(dims)]
 
 
 def upload_points(name: str):
