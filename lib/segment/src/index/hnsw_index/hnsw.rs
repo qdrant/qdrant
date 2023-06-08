@@ -157,6 +157,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let points_to_index: Vec<_> = payload_index
             .query_points(&filter)
+            .into_iter()
             .filter(|&point_id| {
                 !deleted_bitslice
                     .get(point_id as usize)
@@ -313,7 +314,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
-        let mut filtered_iter = payload_index.query_points(filter);
+        let filtered_points = payload_index.query_points(filter);
         let ignore_quantization = params
             .and_then(|p| p.quantization)
             .map(|q| q.ignore)
@@ -327,7 +328,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                         &vector_storage,
                         id_tracker.deleted_point_bitslice(),
                     )
-                    .peek_top_iter(filtered_iter.as_mut(), top)
+                    .peek_top_iter(&mut filtered_points.iter().copied(), top)
                 })
                 .collect()
         } else {
@@ -341,14 +342,14 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                                 id_tracker.deleted_point_bitslice(),
                                 vector_storage.deleted_vector_bitslice(),
                             )
-                            .peek_top_iter(filtered_iter.as_mut(), top)
+                            .peek_top_iter(&mut filtered_points.iter().copied(), top)
                     } else {
                         new_raw_scorer(
                             vector.to_vec(),
                             &vector_storage,
                             id_tracker.deleted_point_bitslice(),
                         )
-                        .peek_top_iter(filtered_iter.as_mut(), top)
+                        .peek_top_iter(&mut filtered_points.iter().copied(), top)
                     }
                 })
                 .collect()

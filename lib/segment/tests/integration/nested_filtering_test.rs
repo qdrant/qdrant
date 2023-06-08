@@ -114,7 +114,7 @@ fn test_filtering_context_consistency() {
         );
 
         let nested_filter_0 = Filter::new_must(nested_condition_0);
-        let res0: Vec<_> = index.query_points(&nested_filter_0).collect();
+        let res0 = index.query_points(&nested_filter_0);
 
         let filter_context = index.filter_context(&nested_filter_0);
 
@@ -151,7 +151,7 @@ fn test_filtering_context_consistency() {
 
         let nested_filter_1 = Filter::new_must(nested_condition_1);
 
-        let res1: Vec<_> = index.query_points(&nested_filter_1).collect();
+        let res1 = index.query_points(&nested_filter_1);
 
         let filter_context = index.filter_context(&nested_filter_1);
 
@@ -185,7 +185,7 @@ fn test_filtering_context_consistency() {
 
         let nested_filter_2 = Filter::new_must(nested_condition_2);
 
-        let res2: Vec<_> = index.query_points(&nested_filter_2).collect();
+        let res2 = index.query_points(&nested_filter_2);
 
         let filter_context = index.filter_context(&nested_filter_2);
 
@@ -236,7 +236,7 @@ fn test_filtering_context_consistency() {
             must_not: None,
         };
 
-        let res3: Vec<_> = index.query_points(&nested_filter_3).collect();
+        let res3 = index.query_points(&nested_filter_3);
 
         let filter_context = index.filter_context(&nested_filter_3);
 
