@@ -1,10 +1,10 @@
 import http from "k6/http";
-import { check, group } from 'k6';
+import { check } from 'k6';
 import { Counter } from 'k6/metrics';
 import { random_city, random_vector } from '/code/utils.js';
 
 // test system parameters
-let host = 'http://localhost:6333'
+let host = __ENV.QDRANT_HOST || "http://localhost:6333";
 let collection_name = 'rest_stress';
 let shard_count = 1; // increase in distributed mode
 let replica_count = 1; // increase in distributed mode
@@ -37,7 +37,7 @@ export const options = {
 
 const pointsCount = new Counter('points_count');
 
-var create_collection_payload = JSON.stringify(
+let create_collection_payload = JSON.stringify(
     {
         "vectors": {
             "size": vector_length,
@@ -48,14 +48,14 @@ var create_collection_payload = JSON.stringify(
     }
 );
 
-var create_payload_index_payload = JSON.stringify(
+let create_payload_index_payload = JSON.stringify(
     {
         "field_name": "city",
         "field_schema": "keyword"
     }
 );
 
-var params = {
+let params = {
     headers: {
         'Content-Type': 'application/json',
         'Accept-Encoding': 'gzip',
@@ -63,10 +63,10 @@ var params = {
 };
 
 function generate_point() {
-    var idx = Math.floor(Math.random() * 1000000000);
-    var count = Math.floor(Math.random() * 100);
-    var vector = random_vector(vector_length);
-    var city = random_city();
+    let idx = Math.floor(Math.random() * 1000000000);
+    let count = Math.floor(Math.random() * 100);
+    let vector = random_vector(vector_length);
+    let city = random_city();
 
     return {
         "id": idx,
@@ -100,7 +100,7 @@ export function setup() {
 
 export function upsert_points() {
     // points payload
-    var payload = JSON.stringify({
+    let payload = JSON.stringify({
         "points": Array.from({ length: points_per_batch }, () => generate_point()),
     });
     // run upsert

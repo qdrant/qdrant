@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # This runs all integration test in isolation
 
 set -ex
@@ -20,19 +20,10 @@ else
   ./target/debug/qdrant &
 fi
 
-
-
-# Sleep to make sure the process has started (workaround for empty pidof)
-sleep 5
-
-## Capture PID of the run
-PID=$(pidof "./target/debug/qdrant")
-echo $PID
-
 function clear_after_tests()
 {
   echo "server is going down"
-  kill -9 $PID
+  pidof qdrant | xargs kill -9 
   echo "END"
 }
 

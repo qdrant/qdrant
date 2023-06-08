@@ -1,11 +1,11 @@
 import grpc from 'k6/net/grpc';
-import { check, group } from 'k6';
+import { check } from 'k6';
 import exec from 'k6/execution';
 
 import { random_city, random_vector } from '/code/utils.js';
 
 // test system parameters
-let host = 'localhost:6334'
+let host = __ENV.QDRANT_HOST || 'localhost:6334'
 let collection_name = 'grpc_stress';
 
 // test payload parameters
@@ -37,7 +37,7 @@ export function search_points() {
      }
 
     // generate random search query
-    var filter_payload =
+    let filter_payload =
         {
             collection_name: collection_name,
             vector: random_vector(vector_length),

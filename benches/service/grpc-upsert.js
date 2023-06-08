@@ -1,12 +1,12 @@
 import grpc from 'k6/net/grpc';
-import { check, group } from 'k6';
+import { check } from 'k6';
 import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
 
 import { random_city, random_vector } from '/code/utils.js';
 
 // test system parameters
-let host = 'localhost:6334'
+let host = __ENV.QDRANT_HOST || "localhost:6334";
 let collection_name = 'grpc_stress';
 let shard_count = 1; // increase in distributed mode
 let replica_count = 1; // increase in distributed mode
@@ -72,7 +72,7 @@ export function upsert_points() {
     }
 
     // points payload
-    var payload = {
+    let payload = {
         collection_name: collection_name,
         points: Array.from({ length: points_per_batch }, () => generate_point()),
     }
@@ -87,10 +87,10 @@ export function upsert_points() {
 }
 
 function generate_point() {
-    var idx = Math.floor(Math.random() * 1000000000);
-    var count = Math.floor(Math.random() * 100);
-    var vector = random_vector(vector_length);
-    var city = random_city();
+    let idx = Math.floor(Math.random() * 1000000000);
+    let count = Math.floor(Math.random() * 100);
+    let vector = random_vector(vector_length);
+    let city = random_city();
 
     return {
         id: { num: idx },
@@ -102,7 +102,7 @@ function generate_point() {
     }
 }
 
-var create_collection_payload =
+let create_collection_payload =
     {
         collection_name: collection_name,
         vectors_config: {
@@ -115,7 +115,7 @@ var create_collection_payload =
         replication_factor: replica_count,
     }
 
-var create_payload_index_payload =
+let create_payload_index_payload =
     {
         collection_name: collection_name,
         field_name: "city",

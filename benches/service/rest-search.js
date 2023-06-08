@@ -1,9 +1,9 @@
 import http from "k6/http";
-import { check, group } from 'k6';
+import { check } from 'k6';
 import { random_city, random_vector } from '/code/utils.js';
 
 // test system parameters
-let host = 'http://localhost:6333'
+let host = __ENV.QDRANT_HOST || 'http://localhost:6333'
 let collection_name = 'rest_stress';
 
 // urls
@@ -27,7 +27,7 @@ export const options = {
     },
 };
 
-var params = {
+let params = {
     headers: {
         'Content-Type': 'application/json',
         'Accept-Encoding': 'gzip',
@@ -36,7 +36,7 @@ var params = {
 
 export function search_points() {
     // generate random search query
-    var filter_payload =
+    let filter_payload =
         {
             "filter": {
                 "must": [
