@@ -1,121 +1,64 @@
-use std::fs::File;
-use std::os::fd::AsRawFd;
-
-use io_uring::{opcode, types, IoUring};
+use std::os::fd::AsRawFd as _;
+use std::{fs, io};
 
 use crate::common::mmap_ops::transmute_from_u8_to_slice;
 use crate::data_types::vectors::VectorElementType;
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::entry::entry_point::OperationResult;
 use crate::types::PointOffsetType;
 
-const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
-
-struct BufferMeta {
-    /// Sequential index of the processing point
-    pub index: usize,
-    /// Id of the point that is currently being processed
-    pub point_id: PointOffsetType,
+pub struct UringReader {
+    io_uring: Option<io_uring::IoUring>,
+    buffers: Vec<Buffer>,
+    file: fs::File,
+    header_size_bytes: usize,
+    vector_size_bytes: usize,
+    disk_parallelism: usize,
 }
 
+#[derive(Clone, Debug)]
 struct Buffer {
-    /// Stores the buffer for the point vectors
-    pub buffer: Vec<u8>,
-    /// Stores the point ids that are currently being processed in each buffer.
-    pub meta: Option<BufferMeta>,
+    buffer: Vec<u8>,
+    point: Option<Point>,
 }
 
-struct BufferStore {
-    /// Stores the buffer for the point vectors
-    pub buffers: Vec<Buffer>,
-}
-
-impl BufferStore {
-    pub fn new(num_buffers: usize, buffer_raw_size: usize) -> Self {
+impl Buffer {
+    pub fn new(len: usize) -> Self {
         Self {
-            buffers: (0..num_buffers)
-                .map(|_| Buffer {
-                    buffer: vec![0; buffer_raw_size],
-                    meta: None,
-                })
-                .collect(),
+            buffer: vec![0; len],
+            point: None,
         }
     }
-
-    #[allow(dead_code)]
-    pub fn new_empty() -> Self {
-        Self { buffers: vec![] }
-    }
 }
 
-pub struct UringReader {
-    file: File,
-    buffers: BufferStore,
-    io_uring: Option<IoUring>,
-    raw_size: usize,
-    header_size: usize,
+#[derive(Copy, Clone, Debug)]
+struct Point {
+    index: usize,
+    offset: PointOffsetType,
+}
+
+impl Point {
+    pub fn new(index: usize, offset: PointOffsetType) -> Self {
+        Self { index, offset }
+    }
 }
 
 impl UringReader {
-    pub fn new(file: File, raw_size: usize, header_size: usize) -> OperationResult<Self> {
-        let buffers = BufferStore::new(DISK_PARALLELISM, raw_size);
-        let io_uring = IoUring::new(DISK_PARALLELISM as _)?;
-
-        Ok(Self {
+    pub fn new(
+        file: fs::File,
+        header_size_bytes: usize,
+        vector_size_bytes: usize,
+        disk_parallelism: usize,
+    ) -> OperationResult<Self> {
+        let reader = Self {
+            io_uring: Some(io_uring::IoUring::new(disk_parallelism as _)?),
+            buffers: Vec::new(),
             file,
-            buffers,
-            io_uring: Some(io_uring),
-            raw_size,
-            header_size,
-        })
-    }
+            header_size_bytes,
+            vector_size_bytes,
+            disk_parallelism,
+        };
 
-    pub fn drop_io_uring(&mut self) {
-        self.io_uring = None;
-    }
-
-    fn ensure_io_uring(&mut self) -> OperationResult<()> {
-        if self.io_uring.is_none() {
-            self.io_uring = Some(IoUring::new(DISK_PARALLELISM as _)?);
-        }
-        Ok(())
-    }
-
-    fn submit_and_read(
-        &mut self,
-        mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
-        unused_buffer_ids: &mut Vec<usize>,
-    ) -> OperationResult<()> {
-        let buffers_count = self.buffers.buffers.len();
-        let used_buffers_count = buffers_count - unused_buffer_ids.len();
-        let io_uring = self.io_uring.as_mut().unwrap();
-
-        // Wait for at least one buffer to become available
-        io_uring.submit_and_wait(used_buffers_count)?;
-
-        let cqe = io_uring.completion();
-        for entry in cqe {
-            let result = entry.result();
-            if result < 0 {
-                return Err(OperationError::service_error(format!(
-                    "io_uring operation failed with {} error",
-                    result
-                )));
-            } else if (result as usize) != self.raw_size {
-                return Err(OperationError::service_error(format!(
-                    "io_uring operation returned {} bytes instead of {}",
-                    result, self.raw_size
-                )));
-            }
-
-            let buffer_id = entry.user_data() as usize;
-            let meta = self.buffers.buffers[buffer_id].meta.take().unwrap();
-            let buffer = &self.buffers.buffers[buffer_id].buffer;
-            let vector = transmute_from_u8_to_slice(buffer);
-            callback(meta.index, meta.point_id, vector);
-            unused_buffer_ids.push(buffer_id);
-        }
-
-        Ok(())
+        Ok(reader)
     }
 
     /// Takes in iterator of point offsets, reads it, and yields a callback with the read data.
@@ -124,58 +67,266 @@ impl UringReader {
         points: impl IntoIterator<Item = PointOffsetType>,
         mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        let buffers_count = self.buffers.buffers.len();
-        self.ensure_io_uring()?;
+        let mut io_uring = match self.io_uring.take() {
+            Some(io_uring) => io_uring,
+            None => io_uring::IoUring::new(self.disk_parallelism as _)?,
+        };
 
-        let mut unused_buffer_ids = (0..buffers_count).collect::<Vec<_>>();
+        let mut uring = IoUringView::from_io_uring(&mut io_uring);
 
-        for item in points.into_iter().enumerate() {
-            let (idx, point): (usize, PointOffsetType) = item;
+        let mut points = points
+            .into_iter()
+            .enumerate()
+            .map(|(index, offset)| Point::new(index, offset));
 
-            if unused_buffer_ids.is_empty() {
-                self.submit_and_read(&mut callback, &mut unused_buffer_ids)?;
+        let mut submitted = 0;
+
+        let cq_capacity = uring.cq.capacity();
+
+        while submitted < self.disk_parallelism.min(cq_capacity) {
+            while uring.sq.len() < self.disk_parallelism.min(cq_capacity) && !uring.sq.is_full() {
+                let Some(point) = points.next() else {
+                    break;
+                };
+
+                let sq_len = uring.sq.len();
+
+                push_sqe(
+                    &mut uring.sq,
+                    &mut self.buffers,
+                    submitted + sq_len,
+                    &self.file,
+                    self.header_size_bytes,
+                    self.vector_size_bytes,
+                    point,
+                );
             }
-            // Assume there is at least one buffer available at this point
-            let buffer_id = unused_buffer_ids.pop().unwrap();
 
-            self.buffers.buffers[buffer_id].meta = Some(BufferMeta {
-                index: idx,
-                point_id: point,
-            });
+            submitted += uring.submit_sq()?;
+        }
 
-            let buffer = &mut self.buffers.buffers[buffer_id].buffer;
-            let offset = self.header_size + self.raw_size * point as usize;
+        uring.probe_cq_or_wait_cq()?;
 
-            let user_data = buffer_id;
+        while submitted > 0 {
+            let mut submit_sq = false;
 
-            let read_e = opcode::Read::new(
-                types::Fd(self.file.as_raw_fd()),
-                buffer.as_mut_ptr(),
-                buffer.len() as _,
-            )
-            .offset(offset as _)
-            .build()
-            .user_data(user_data as _);
+            for cqe in (&mut uring.cq).filter(|cqe| cqe.user_data() != u64::MAX) {
+                submitted -= 1;
 
-            unsafe {
-                // self.io_uring.submission().push(&read_e).unwrap();
-                self.io_uring
-                    .as_mut()
-                    .unwrap()
-                    .submission()
-                    .push(&read_e)
-                    .map_err(|err| {
-                        OperationError::service_error(format!("Failed using io-uring: {}", err))
-                    })?;
+                let (buffer_index, point, vector) = consume_cqe(&mut self.buffers, cqe)?;
+
+                callback(point.index, point.offset, vector);
+
+                let Some(point) = points.next() else {
+                    continue;
+                };
+
+                push_sqe(
+                    &mut uring.sq,
+                    &mut self.buffers,
+                    buffer_index,
+                    &self.file,
+                    self.header_size_bytes,
+                    self.vector_size_bytes,
+                    point,
+                );
+
+                submit_sq =
+                    uring.sq.len() >= self.disk_parallelism.min(cq_capacity) || uring.sq.is_full();
+
+                if submit_sq {
+                    break;
+                }
+            }
+
+            if !submit_sq {
+                submitted += uring.probe_cq_or_wait_cq_and_maybe_submit_sq()?;
+            } else {
+                submitted += uring.submit_sq_and_maybe_wait_cq()?;
             }
         }
 
-        let mut operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
+        drop(uring);
 
-        while operations_to_wait_for > 0 {
-            self.submit_and_read(&mut callback, &mut unused_buffer_ids)?;
-            operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
-        }
+        self.io_uring = Some(io_uring);
+
         Ok(())
     }
+}
+
+struct IoUringView<'a> {
+    submitter: io_uring::Submitter<'a>,
+    sq: io_uring::SubmissionQueue<'a>,
+    cq: io_uring::CompletionQueue<'a>,
+}
+
+impl<'a> IoUringView<'a> {
+    pub fn from_io_uring(io_uring: &'a mut io_uring::IoUring) -> Self {
+        let (submitter, sq, cq) = io_uring.split();
+        Self { submitter, sq, cq }
+    }
+
+    pub fn submit_sq(&mut self) -> io::Result<usize> {
+        self.submit_sq_and_wait_cq(0)
+    }
+
+    pub fn probe_cq_or_wait_cq(&mut self) -> io::Result<()> {
+        let submitted = self.probe_cq_or_wait_cq_and_maybe_submit_sq()?;
+
+        // Assert that no SQEs have been submitted
+        debug_assert_eq!(
+            submitted, 0,
+            "{submitted} SQEs have been submitted during `probe_cq_or_wait_cq`!",
+        );
+
+        Ok(())
+    }
+
+    pub fn probe_cq_or_wait_cq_and_maybe_submit_sq(&mut self) -> io::Result<usize> {
+        if self.probe_cq_is_empty() {
+            self.submit_sq_and_wait_cq(1)
+        } else {
+            Ok(0)
+        }
+    }
+
+    pub fn submit_sq_and_maybe_wait_cq(&mut self) -> io::Result<usize> {
+        let want = if self.probe_cq_is_empty() { 1 } else { 0 };
+        self.submit_sq_and_wait_cq(want)
+    }
+
+    fn check_cq_is_empty(&mut self) -> bool {
+        self.cq.sync();
+        self.cq.is_empty()
+    }
+
+    fn probe_cq_is_empty(&mut self) -> bool {
+        for _ in 0..3 {
+            if !self.check_cq_is_empty() {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn submit_sq_and_wait_cq(&mut self, want: usize) -> io::Result<usize> {
+        // Sync SQ (so that kernel will see pushed SQEs)
+        self.sq.sync();
+
+        let submit_nop = want > 0 && self.sq.is_empty();
+
+        if submit_nop {
+            let sqe = io_uring::opcode::Nop::new().build().user_data(u64::MAX);
+            unsafe { self.sq.push(&sqe).expect("SQ is not full") };
+            self.sq.sync();
+        }
+
+        // Submit SQEs (if any) and wait for `want` CQEs
+        let mut submitted = self.submitter.submit_and_wait(want)?;
+
+        // Assert that all (and no more than expected) SQEs have been submitted.
+        //
+        // Kernel should consume SQEs from SQ during submit, but `self.sq` state is not updated
+        // until `sync` call, so `self.sq` should still hold pre-`submit` state at this point.
+        debug_assert_eq!(
+            submitted,
+            self.sq.len(),
+            "Not all (or more than expected) SQEs have been submitted!",
+        );
+
+        if submitted > 0 {
+            // Sync SQ (so that we will see SQEs consumed by the kernel)
+            self.sq.sync();
+
+            // Assert that all SQEs have been consumed during submit (SQ is empty)
+            debug_assert!(
+                self.sq.is_empty(),
+                "Not all SQEs have been consumed during submit (SQ is not empty)!",
+            );
+        }
+
+        if want > 0 {
+            // Sync CQ (so that we will see CQEs pushed by the kernel).
+            self.cq.sync();
+
+            // Assert that CQ is not empty after `submit_and_wait`.
+            debug_assert!(!self.cq.is_empty(), "CQ is empty after `submit_and_wait`!");
+        }
+
+        if submit_nop {
+            submitted = submitted.saturating_sub(1);
+        }
+
+        Ok(submitted)
+    }
+}
+
+fn push_sqe(
+    sq: &mut io_uring::SubmissionQueue,
+    buffers: &mut Vec<Buffer>,
+    buffer_index: usize,
+    file: &fs::File,
+    header_size_bytes: usize,
+    vector_size_bytes: usize,
+    point: Point,
+) {
+    debug_assert!(buffers.len() >= buffer_index); // TODO!
+
+    if buffers.len() == buffer_index {
+        buffers.push(Buffer::new(vector_size_bytes));
+    }
+
+    let buffer = &mut buffers[buffer_index];
+
+    let vector_offset_bytes = header_size_bytes + vector_size_bytes * point.offset as usize;
+
+    let sqe = io_uring::opcode::Read::new(
+        io_uring::types::Fd(file.as_raw_fd()),
+        buffer.buffer.as_mut_ptr(),
+        buffer.buffer.len() as _,
+    )
+    .offset(vector_offset_bytes as _)
+    .build()
+    .user_data(buffer_index as _);
+
+    buffer.point = Some(point);
+
+    unsafe {
+        sq.push(&sqe).expect("SQ is not full");
+    }
+}
+
+fn consume_cqe(
+    buffers: &mut [Buffer],
+    cqe: io_uring::cqueue::Entry,
+) -> io::Result<(usize, Point, &[f32])> {
+    let buffer_index = cqe.user_data() as usize;
+
+    let buffer = &mut buffers[buffer_index];
+    let point = buffer.point.take().expect("point data is associated with the buffer");
+
+    let result = cqe.result();
+    let expected = buffer.buffer.len();
+
+    if result < 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("io_uring operation failed with {} error", -result),
+        ));
+    } else if (result as usize) != expected {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "io_uring operation read {} bytes, which is {} than expected {} bytes",
+                result,
+                if (result as usize) < expected { "less" } else { "more" },
+                buffer.buffer.len(),
+            ),
+        ));
+    }
+
+    let vector = transmute_from_u8_to_slice(&buffer.buffer);
+
+    Ok((buffer_index, point, vector))
 }

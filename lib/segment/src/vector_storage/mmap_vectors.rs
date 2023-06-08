@@ -35,6 +35,7 @@ pub struct MmapVectors {
     /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Arc<Mmap>,
     /// Context for io_uring-base async IO
+    #[allow(dead_code)]
     uring_reader: Mutex<UringReader>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
@@ -71,7 +72,7 @@ impl MmapVectors {
         // Keep file handle open for async IO
         let vectors_file = File::open(vectors_path)?;
         let raw_size = dim * size_of::<VectorElementType>();
-        let uring_reader = UringReader::new(vectors_file, raw_size, HEADER_SIZE)?;
+        let uring_reader = UringReader::new(vectors_file, raw_size, HEADER_SIZE, 16)?;
 
         Ok(MmapVectors {
             dim,
@@ -198,16 +199,7 @@ impl MmapVectors {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        let mut uring_reader = self.uring_reader.lock();
-
-        let res = uring_reader.read_stream(points, callback);
-        if res.is_err() {
-            // If we failed to read with uring, we should drop current uring instance
-            // cause it may contain unfinished requests, which should not leak into
-            // next search requests.
-            uring_reader.drop_io_uring();
-        }
-        res
+        self.uring_reader.lock().read_stream(points, callback)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -229,7 +221,7 @@ impl MmapVectors {
     pub fn read_vectors_async(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+        #[allow(unused_mut)] mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
         #[cfg(target_os = "linux")]
         {
