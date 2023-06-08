@@ -14,16 +14,16 @@ MODE=$1
 if [ $MODE == "distributed" ]; then
   export QDRANT__CLUSTER__ENABLED="true"
   # Run in background
-  ./target/debug/qdrant --uri "http://127.0.0.1:6335" &
+  ./target/debug/qdrant --uri "http://127.0.0.1:6335" & PID=$!
 else
   # Run in background
-  ./target/debug/qdrant &
+  ./target/debug/qdrant & PID=$!
 fi
 
 function clear_after_tests()
 {
   echo "server is going down"
-  pidof qdrant | xargs kill -9 
+  kill -9 $PID
   echo "END"
 }
 
