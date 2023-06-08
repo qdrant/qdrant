@@ -14,7 +14,16 @@ rm -rf ./storage
 
 # Run qdrant
 cargo build
-./target/debug/qdrant & sleep 1
+./target/debug/qdrant & PID=$!
+
+function teardown()
+{
+  echo "server is going down"
+  kill -9 $PID
+  echo "END"
+}
+
+trap teardown EXIT
 
 declare retry=0
 until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections; do
@@ -52,8 +61,3 @@ gzip "${SCRIPT_DIR}/full-snapshot.snapshot"
 
 # Save current storage folder
 tar -cjvf "${SCRIPT_DIR}/storage.tar.bz2" ./storage
-
-# Teardown
-echo "server is going down"
-pidof qdrant | xargs kill -9
-echo "END"
