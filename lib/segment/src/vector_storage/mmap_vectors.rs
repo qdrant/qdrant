@@ -203,7 +203,23 @@ impl MmapVectors {
         uring_reader.read_stream(points, callback)
     }
 
-    pub fn process_points(
+    #[cfg(not(target_os = "linux"))]
+    fn process_points_simple(
+        &self,
+        points: impl Iterator<Item = PointOffsetType>,
+        mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+    ) -> OperationResult<()> {
+        for (idx, point) in points.enumerate() {
+            let vector = self.get_vector(point);
+            callback(idx, point, vector);
+        }
+        Ok(())
+    }
+
+    /// Reads vectors for the given ids and calls the callback for each vector.
+    /// Tries to utilize asyncronous IO if possible.
+    /// In particular, uses io_uring on Linux and simple synchronous IO otherwise.
+    pub fn read_vectors_async(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
@@ -215,11 +231,7 @@ impl MmapVectors {
 
         #[cfg(not(target_os = "linux"))]
         {
-            for (idx, point) in points.enumerate() {
-                let vector = self.get_vector(point);
-                callback(idx, point, vector);
-            }
-            Ok(())
+            self.process_points_simple(points, callback)
         }
     }
 }

@@ -63,7 +63,7 @@ where
 
         let mut processed = 0;
         self.storage
-            .process_points(points_stream, |idx, point_id, other_vector| {
+            .read_vectors_async(points_stream, |idx, point_id, other_vector| {
                 scores[idx] = ScoredPointOffset {
                     idx: point_id,
                     score: TMetric::similarity(&self.query, other_vector),
@@ -119,7 +119,7 @@ where
         let points_stream = points.filter(|point_id| self.check_vector(*point_id));
 
         self.storage
-            .process_points(points_stream, |_, point_id, other_vector| {
+            .read_vectors_async(points_stream, |_, point_id, other_vector| {
                 let scored_point_offset = ScoredPointOffset {
                     idx: point_id,
                     score: TMetric::similarity(&self.query, other_vector),
@@ -144,7 +144,7 @@ where
 
         let mut pq = FixedLengthPriorityQueue::new(top);
         self.storage
-            .process_points(points_stream, |_, point_id, other_vector| {
+            .read_vectors_async(points_stream, |_, point_id, other_vector| {
                 let scored_point_offset = ScoredPointOffset {
                     idx: point_id,
                     score: TMetric::similarity(&self.query, other_vector),
