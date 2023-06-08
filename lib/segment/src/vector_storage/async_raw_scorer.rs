@@ -62,23 +62,21 @@ where
             .filter(|point_id| self.check_vector(*point_id));
 
         let mut processed = 0;
-        let process_result =
-            self.storage
-                .process_points(points_stream, |idx, point_id, other_vector| {
-                    scores[idx] = ScoredPointOffset {
-                        idx: point_id,
-                        score: TMetric::similarity(&self.query, other_vector),
-                    };
-                    processed += 1;
-                });
+        self.storage
+            .process_points(points_stream, |idx, point_id, other_vector| {
+                scores[idx] = ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&self.query, other_vector),
+                };
+                processed += 1;
+            })
+            .unwrap();
 
-        if process_result.is_ok() {
-            return processed;
-        }
+        // ToDo: io_uring is experimental, it can fail if it is not supported.
+        // Instead of silently falling back to the sync implementation, we prefer to panic
+        // and notify the user that they better use the default IO implementation.
 
-        log::warn!("{:?}", process_result);
-
-        todo!("Fallback to mmap read")
+        processed
     }
 
     fn check_vector(&self, point: PointOffsetType) -> bool {
@@ -120,22 +118,21 @@ where
         let mut pq = FixedLengthPriorityQueue::new(top);
         let points_stream = points.filter(|point_id| self.check_vector(*point_id));
 
-        let process_result =
-            self.storage
-                .process_points(points_stream, |_, point_id, other_vector| {
-                    let scored_point_offset = ScoredPointOffset {
-                        idx: point_id,
-                        score: TMetric::similarity(&self.query, other_vector),
-                    };
-                    pq.push(scored_point_offset);
-                });
+        self.storage
+            .process_points(points_stream, |_, point_id, other_vector| {
+                let scored_point_offset = ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&self.query, other_vector),
+                };
+                pq.push(scored_point_offset);
+            })
+            .unwrap();
 
-        if process_result.is_ok() {
-            return pq.into_vec();
-        }
+        // ToDo: io_uring is experimental, it can fail if it is not supported.
+        // Instead of silently falling back to the sync implementation, we prefer to panic
+        // and notify the user that they better use the default IO implementation.
 
-        log::warn!("{:?}", process_result);
-        todo!("Fallback to mmap read")
+        pq.into_vec()
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
@@ -146,22 +143,21 @@ where
         let points_stream = (0..self.points_count).filter(|point_id| self.check_vector(*point_id));
 
         let mut pq = FixedLengthPriorityQueue::new(top);
-        let process_result =
-            self.storage
-                .process_points(points_stream, |_, point_id, other_vector| {
-                    let scored_point_offset = ScoredPointOffset {
-                        idx: point_id,
-                        score: TMetric::similarity(&self.query, other_vector),
-                    };
-                    pq.push(scored_point_offset);
-                });
+        self.storage
+            .process_points(points_stream, |_, point_id, other_vector| {
+                let scored_point_offset = ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&self.query, other_vector),
+                };
+                pq.push(scored_point_offset);
+            })
+            .unwrap();
 
-        if process_result.is_ok() {
-            return pq.into_vec();
-        }
+        // ToDo: io_uring is experimental, it can fail if it is not supported.
+        // Instead of silently falling back to the sync implementation, we prefer to panic
+        // and notify the user that they better use the default IO implementation.
 
-        log::warn!("{:?}", process_result);
-        todo!("Fallback to mmap read")
+        pq.into_vec()
     }
 }
 
