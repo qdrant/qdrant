@@ -529,6 +529,9 @@ pub trait SegmentOptimizer {
                 )?;
             }
 
+            // Explicitly flush any optimized segment changes
+            optimized_segment.flush(true)?;
+
             let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
 
             let has_appendable_segments =
@@ -561,6 +564,7 @@ pub trait SegmentOptimizer {
                 tmp_segment.drop_data()?;
             }
         }
+
         timer.set_success(true);
         Ok(true)
     }
