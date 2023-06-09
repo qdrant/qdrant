@@ -112,7 +112,14 @@ fn estimate_build_time(segment: &Segment, stop_timeout_millis: u64) -> (u64, boo
 
     let is_cancelled = match res {
         Ok(_) => false,
-        Err(err) => matches!(err, OperationError::Cancelled { .. }),
+        Err(OperationError::Cancelled { .. }) => true,
+        Err(err) => {
+            eprintln!(
+                "Was expecting cancellation signal but got unexpected error: {:?}",
+                err
+            );
+            false
+        }
     };
 
     (now.elapsed().as_millis() as u64, is_cancelled)
@@ -132,9 +139,15 @@ fn test_building_cancellation() {
 
     // Checks that optimization with longed cancellation timeout will also finishes fast
     let (time_fast, is_stopped_fast) = estimate_build_time(&segment, 20);
-    let (time_long, _is_stopped_long) = estimate_build_time(&segment, 200);
+    let (time_long, is_stopped_long) = estimate_build_time(&segment, 200);
 
     assert!(is_stopped_fast);
 
-    assert!(time_fast < time_long);
+    assert!(
+        time_fast < time_long,
+        "time_fast: {}, time_long: {}, is_stopped_long: {}",
+        time_fast,
+        time_long,
+        is_stopped_long
+    );
 }
