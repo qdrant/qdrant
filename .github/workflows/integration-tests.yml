@@ -26,6 +26,27 @@ jobs:
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
+
+  test-api-key:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang protobuf-compiler
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests
+        run: ./tests/integration-tests-api-key.sh
+        shell: bash
+
   test-consensus:
 
     runs-on: ubuntu-latest

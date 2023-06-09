@@ -1,0 +1,7 @@
+
+debug: false
+log_level: INFO
+
+service:
+  api_key: my-secret
+  api_key_read_only: my-ro-secret

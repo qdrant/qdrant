@@ -1,6 +1,5 @@
 use std::task::{Context, Poll};
 
-use constant_time_eq::constant_time_eq;
 use futures_util::future::BoxFuture;
 use reqwest::header::HeaderValue;
 use reqwest::StatusCode;
@@ -9,15 +8,18 @@ use tonic::Code;
 use tower::Service;
 use tower_layer::Layer;
 
+use crate::common::auth::AuthScheme;
+use crate::common::strings::ct_eq;
+
 #[derive(Clone)]
 pub struct ApiKeyMiddleware<T> {
     service: T,
-    api_key: String,
+    auth_scheme: AuthScheme,
 }
 
 #[derive(Clone)]
 pub struct ApiKeyMiddlewareLayer {
-    api_key: String,
+    auth_scheme: AuthScheme,
 }
 
 impl<S> Service<tonic::codegen::http::Request<tonic::transport::Body>> for ApiKeyMiddleware<S>
@@ -42,13 +44,20 @@ where
     ) -> Self::Future {
         if let Some(key) = request.headers().get("api-key") {
             if let Ok(key) = key.to_str() {
-                if constant_time_eq(self.api_key.as_bytes(), key.as_bytes()) {
-                    let future = self.service.call(request);
-
-                    return Box::pin(async move {
-                        let response = future.await?;
-                        Ok(response)
-                    });
+                let is_allowed = match self.auth_scheme {
+                    AuthScheme::SeparateReadAndReadWrite {
+                        read_write: ref rw_key,
+                        read_only: ref ro_key,
+                    } => ct_eq(rw_key, key) || (is_read_only(&request) && ct_eq(ro_key, key)),
+                    AuthScheme::ReadWrite {
+                        read_write: ref rw_key,
+                    } => ct_eq(rw_key, key),
+                    AuthScheme::ReadOnly {
+                        read_only: ref ro_key,
+                    } => is_read_only(&request) && ct_eq(ro_key, key),
+                };
+                if is_allowed {
+                    return Box::pin(self.service.call(request));
                 }
             }
         }
@@ -68,8 +77,8 @@ where
 }
 
 impl ApiKeyMiddlewareLayer {
-    pub fn new(api_key: String) -> Self {
-        Self { api_key }
+    pub fn new(auth_scheme: AuthScheme) -> Self {
+        Self { auth_scheme }
     }
 }
 
@@ -79,7 +88,23 @@ impl<S> Layer<S> for ApiKeyMiddlewareLayer {
     fn layer(&self, service: S) -> Self::Service {
         ApiKeyMiddleware {
             service,
-            api_key: self.api_key.clone(),
+            auth_scheme: self.auth_scheme.clone(),
         }
+    }
+}
+
+fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {
+    // Assuming gRPC over HTTP2
+    // https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md
+    if let Some(rpc_name) = req.uri().path().split('/').nth(2) {
+        rpc_name.starts_with("Search")
+            || rpc_name.starts_with("Scroll")
+            || rpc_name.starts_with("List")
+            || rpc_name.starts_with("Get")
+            || rpc_name.starts_with("Count")
+            || rpc_name.starts_with("Recommend")
+    } else {
+        log::warn!("Received a malformed gRPC request that has no name");
+        false
     }
 }
