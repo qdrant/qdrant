@@ -508,14 +508,10 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn available_point_count(&self) -> usize {
-        let mut count = 0;
         let deleted_points_count = self.deleted_points.read().len();
         let wrapped_segment_count = self.wrapped_segment.get().read().available_point_count();
         let write_segment_count = self.write_segment.get().read().available_point_count();
-        count += wrapped_segment_count;
-        count += write_segment_count;
-        count = count.saturating_sub(deleted_points_count);
-        count
+        (wrapped_segment_count + write_segment_count).saturating_sub(deleted_points_count)
     }
 
     fn deleted_point_count(&self) -> usize {
