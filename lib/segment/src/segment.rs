@@ -1112,10 +1112,20 @@ impl SegmentEntry for Segment {
                 (key, PayloadIndexInfo::new(index_schema, points_count))
             })
             .collect();
+        let num_vectors = self
+            .vector_data
+            .values()
+            .map(|data| {
+                data.vector_storage
+                    // .as_ref()
+                    .borrow()
+                    .available_vector_count()
+            })
+            .sum();
 
         SegmentInfo {
             segment_type: self.segment_type,
-            num_vectors: self.available_point_count() * self.vector_data.len(),
+            num_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
