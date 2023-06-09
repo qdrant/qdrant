@@ -60,15 +60,14 @@ def test_write_ordering(tmp_path: pathlib.Path):
                     "id": 1,
                     "vector": [0.05, 0.61, 0.76, 0.74],
                     "payload": {
-                        "city": "Dresden",
+                        "city": "Munich",
                         "country": "Germany",
                     }
                 }
             ]
         })
-
-    # fails as highest peer is dead
-    assert r.status_code == 500
+    # succeeds as Medium selects an Alive peer
+    assert_http_ok(r)
 
     # write ordering strong
     r = requests.put(
@@ -78,14 +77,15 @@ def test_write_ordering(tmp_path: pathlib.Path):
                     "id": 1,
                     "vector": [0.05, 0.61, 0.76, 0.74],
                     "payload": {
-                        "city": "Munich",
+                        "city": "Dresden",
                         "country": "Germany",
                     }
                 }
             ]
         })
-    # succeeds as Strong selects an Alive peer
-    assert_http_ok(r)
+
+    # fails as highest peer is dead
+    assert r.status_code == 500
 
     # Restart peer
     new_url = start_peer(peer_dirs[url_index], f"peer_{url_index}_restarted.log", bootstrap_uri)
