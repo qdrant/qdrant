@@ -68,9 +68,9 @@ pub fn init(
             let static_folder = Path::new(&static_folder);
             if !static_folder.exists() || !static_folder.is_dir() {
                 // enabled BUT folder does not exist
-                log::error!(
+                log::warn!(
                     "Static content folder for Web UI '{}' does not exist",
-                    static_folder.display()
+                    static_folder.display(),
                 );
                 false
             } else {
