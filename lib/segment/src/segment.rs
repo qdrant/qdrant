@@ -1115,12 +1115,7 @@ impl SegmentEntry for Segment {
         let num_vectors = self
             .vector_data
             .values()
-            .map(|data| {
-                data.vector_storage
-                    // .as_ref()
-                    .borrow()
-                    .available_vector_count()
-            })
+            .map(|data| data.vector_storage.borrow().available_vector_count())
             .sum();
 
         SegmentInfo {
