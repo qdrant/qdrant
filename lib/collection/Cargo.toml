@@ -10,7 +10,7 @@ edition = "2021"
 
 [dev-dependencies]
 tempfile = "3.6.0"
-criterion = "0.5"
+criterion = { version = "0.5", features = ["async_tokio"] }
 rstest = "0.17.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
@@ -64,4 +64,9 @@ harness = false
 
 [[bench]]
 name = "batch_search_bench"
+harness = false
+
+
+[[bench]]
+name = "search_groups"
 harness = false
