@@ -38,14 +38,23 @@ pub fn condition_converter<'a>(
                     })
                 })
             }),
-        // ToDo: It might be possible to make this condition faster by using index to check
-        //       if there is any value. But if value if not found,
-        //       it does not mean that there are no values in payload
-        Condition::IsEmpty(is_empty) => Box::new(move |point_id| {
-            payload_provider.with_payload(point_id, |payload| {
-                check_is_empty_condition(is_empty, &payload)
-            })
-        }),
+        Condition::IsEmpty(is_empty) => {
+            let fallback = Box::new(move |point_id| {
+                payload_provider.with_payload(point_id, |payload| {
+                    check_is_empty_condition(is_empty, &payload)
+                })
+            });
+            field_indexes
+                .get(&is_empty.is_empty.key)
+                .and_then(|indexes| {
+                    indexes
+                        .iter()
+                        .find_map(|index| get_is_empty_checkers(index, fallback.clone()))
+                })
+                .unwrap_or(fallback)
+        }
+
+        // TODO: apply same logic as in IsEmpty
         Condition::IsNull(is_null) => Box::new(move |point_id| {
             payload_provider.with_payload(point_id, |payload| {
                 check_is_null_condition(is_null, &payload)
@@ -273,4 +282,62 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             })),
         },
     }
+}
+
+/// Returns a checker that checks if the field is empty
+///
+/// IsEmpty has a special case because when the index does not have any value for a point,
+/// it does not mean it is actually empty, it can just mean that an index with the correct type
+/// has not been created for it. We still need to check if the field is really empty with a fallback.
+fn get_is_empty_checkers<'a>(
+    index: &'a FieldIndex,
+    fallback: Box<(dyn std::ops::Fn(u32) -> bool + 'a)>,
+) -> Option<ConditionCheckerFn<'a>> {
+    match index {
+        FieldIndex::KeywordIndex(index) => Some(Box::new(move |point_id: PointOffsetType| {
+            check_is_empty(index.get_values(point_id), point_id, &fallback)
+        })),
+        FieldIndex::IntMapIndex(index) => Some(Box::new(move |point_id: PointOffsetType| {
+            check_is_empty(index.get_values(point_id), point_id, &fallback)
+        })),
+        FieldIndex::FullTextIndex(index) => Some(Box::new(move |point_id: PointOffsetType| {
+            index.get_doc(point_id).map_or_else(
+                || fallback(point_id),
+                |values| {
+                    values
+                        .is_empty()
+                        .then(|| fallback(point_id))
+                        .unwrap_or(false)
+                },
+            )
+        })),
+        FieldIndex::GeoIndex(index) => Some(Box::new(move |point_id: PointOffsetType| {
+            check_is_empty(index.get_values(point_id), point_id, &fallback)
+        })),
+        FieldIndex::IntIndex(index) => Some(Box::new(move |point_id: PointOffsetType| {
+            check_is_empty(index.get_values(point_id), point_id, &fallback)
+        })),
+        FieldIndex::FloatIndex(index) => Some(Box::new(move |point_id: PointOffsetType| {
+            check_is_empty(index.get_values(point_id), point_id, &fallback)
+        })),
+    }
+}
+
+#[inline]
+fn check_is_empty<T>(
+    values: Option<&Vec<T>>,
+    point_id: u32,
+    fallback: &ConditionCheckerFn,
+) -> bool {
+    values.map_or_else(
+        // if there is no value in index, use fallback
+        || fallback(point_id), 
+        |values| {
+            values
+                .is_empty()
+                // if there is an "empty" value, we still need to make sure with the fallback
+                .then(|| fallback(point_id))
+                .unwrap_or(false)
+        },
+    )
 }
