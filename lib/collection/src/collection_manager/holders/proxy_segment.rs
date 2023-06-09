@@ -567,11 +567,14 @@ impl SegmentEntry for ProxySegment {
     fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
-        let num_vectors = self.wrapped_segment.get().read().config().vector_data.len();
+        let num_vectors = {
+            let deleted_points_count = self.deleted_points.read().len();
+            (wrapped_info.num_vectors + write_info.num_vectors).saturating_sub(deleted_points_count)
+        };
 
         SegmentInfo {
             segment_type: SegmentType::Special,
-            num_vectors: self.available_point_count() * num_vectors, // TODO: account number of vector storages
+            num_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
