@@ -71,6 +71,7 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - Community: [PHP](https://github.com/hkulekci/qdrant-php)
 - Community: [Ruby](https://github.com/andreibondarev/qdrant-ruby)
 - Community: [Java](https://github.com/metaloom/qdrant-java-client)
+- Community: [.NET](https://github.com/SciSharp/qdrant-csharp)
 
 ### Where do I go from here?
 
