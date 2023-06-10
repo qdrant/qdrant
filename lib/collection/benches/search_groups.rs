@@ -147,7 +147,7 @@ async fn search_groups(limit: u32, group_size: u32, collection: &Collection) {
 
 criterion_group!{
     name = benches;
-    config = Criterion::default().measurement_time(core::time::Duration::from_secs(20));
+    config = Criterion::default().measurement_time(core::time::Duration::from_secs(30));
     targets = search_groups_bench
 }
 
