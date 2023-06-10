@@ -183,6 +183,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
     }
 
+    pub fn values_is_none(&self, point_id: PointOffsetType) -> bool {
+        self.get_values(point_id).is_none()
+    }
+
     /// Estimates cardinality for `except` clause
     ///
     /// # Arguments
