@@ -79,6 +79,28 @@ where
         processed
     }
 
+    fn score_points_unfiltered(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+    ) -> Vec<ScoredPointOffset> {
+        let mut scores = vec![];
+
+        self.storage
+            .read_vectors_async(points, |_idx, point_id, other_vector| {
+                scores.push(ScoredPointOffset {
+                    idx: point_id,
+                    score: TMetric::similarity(&self.query, other_vector),
+                });
+            })
+            .unwrap();
+
+        // ToDo: io_uring is experimental, it can fail if it is not supported.
+        // Instead of silently falling back to the sync implementation, we prefer to panic
+        // and notify the user that they better use the default IO implementation.
+
+        scores
+    }
+
     fn check_vector(&self, point: PointOffsetType) -> bool {
         point < self.points_count
             // Deleted points propagate to vectors; check vector deletion for possible early return

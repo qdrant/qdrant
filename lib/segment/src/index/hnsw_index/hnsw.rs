@@ -278,10 +278,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     &vector_storage,
                     id_tracker.deleted_point_bitslice(),
                 );
-                search_result.iter_mut().for_each(|scored_point| {
-                    scored_point.score = raw_scorer.score_point(scored_point.idx);
-                });
-                search_result
+                let mut ids_iterator = search_result.iter_mut().map(|x| x.idx);
+                let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
+                re_scored.sort_unstable();
+                re_scored
             } else {
                 search_result
             }

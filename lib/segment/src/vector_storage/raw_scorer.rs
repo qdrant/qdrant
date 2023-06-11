@@ -15,6 +15,20 @@ use crate::types::{Distance, PointOffsetType, ScoreType};
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize;
 
+    /// Score points without excluding deleted and filtered points
+    ///
+    /// # Arguments
+    ///
+    /// * `points` - points to score
+    ///
+    /// # Returns
+    ///
+    /// Vector of scored points
+    fn score_points_unfiltered(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+    ) -> Vec<ScoredPointOffset>;
+
     /// Return true if vector satisfies current search context for given point (exists and not deleted)
     fn check_vector(&self, point: PointOffsetType) -> bool;
 
@@ -145,6 +159,21 @@ where
             }
         }
         size
+    }
+
+    fn score_points_unfiltered(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+    ) -> Vec<ScoredPointOffset> {
+        let mut scores = vec![];
+        for point_id in points {
+            let other_vector = self.vector_storage.get_vector(point_id);
+            scores.push(ScoredPointOffset {
+                idx: point_id,
+                score: TMetric::similarity(&self.query, other_vector),
+            });
+        }
+        scores
     }
 
     fn check_vector(&self, point: PointOffsetType) -> bool {
