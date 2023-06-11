@@ -1,4 +1,5 @@
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParams {
@@ -22,6 +23,7 @@ pub struct VectorParams {
     pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsDiff {
@@ -46,6 +48,7 @@ pub struct VectorParamsMap {
     pub map: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsDiffMap {
@@ -66,6 +69,7 @@ pub struct VectorsConfig {
 }
 /// Nested message and enum types in `VectorsConfig`.
 pub mod vectors_config {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Config {
@@ -76,6 +80,7 @@ pub mod vectors_config {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsConfigDiff {
@@ -104,9 +109,11 @@ pub struct GetCollectionInfoRequest {
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionsRequest {}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionDescription {
@@ -114,6 +121,7 @@ pub struct CollectionDescription {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoResponse {
@@ -123,6 +131,7 @@ pub struct GetCollectionInfoResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionsResponse {
@@ -132,6 +141,7 @@ pub struct ListCollectionsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OptimizerStatus {
@@ -141,39 +151,35 @@ pub struct OptimizerStatus {
     pub error: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HnswConfigDiff {
-    ///
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     #[prost(uint64, optional, tag = "1")]
     pub m: ::core::option::Option<u64>,
-    ///
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
     #[prost(uint64, optional, tag = "2")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_4")]
     pub ef_construct: ::core::option::Option<u64>,
-    ///
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     /// If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
     /// Note: 1 Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
-    ///
     /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[prost(uint64, optional, tag = "4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
-    ///
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM.
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
-    ///
     /// Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
     #[prost(uint64, optional, tag = "6")]
     pub payload_m: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WalConfigDiff {
@@ -186,31 +192,28 @@ pub struct WalConfigDiff {
     pub wal_segments_ahead: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OptimizersConfigDiff {
-    ///
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[prost(double, optional, tag = "1")]
     #[validate(custom = "crate::grpc::validate::validate_f64_range_1")]
     pub deleted_threshold: ::core::option::Option<f64>,
-    ///
     /// The minimal number of vectors in a segment, required to perform segment optimization
     #[prost(uint64, optional, tag = "2")]
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_100")]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
-    ///
     /// Target amount of segments the optimizer will try to keep.
     /// Real amount of segments may vary depending on multiple parameters:
     ///
-    /// - Amount of stored points.
-    /// - Current write RPS.
+    /// * Amount of stored points.
+    /// * Current write RPS.
     ///
     /// It is recommended to select the default number of segments as a factor of the number of search threads,
     /// so that each segment would be handled evenly by one of the threads.
     #[prost(uint64, optional, tag = "3")]
     pub default_segment_number: ::core::option::Option<u64>,
-    ///
     /// Do not create segments larger this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
@@ -221,7 +224,6 @@ pub struct OptimizersConfigDiff {
     /// If not set, will be automatically selected considering the number of available CPUs.
     #[prost(uint64, optional, tag = "4")]
     pub max_segment_size: ::core::option::Option<u64>,
-    ///
     /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
     ///
@@ -232,7 +234,6 @@ pub struct OptimizersConfigDiff {
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "5")]
     pub memmap_threshold: ::core::option::Option<u64>,
-    ///
     /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
     ///
     /// Default value is 20,000, based on <<https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.>
@@ -242,16 +243,15 @@ pub struct OptimizersConfigDiff {
     /// Note: 1kB = 1 vector of size 256.
     #[prost(uint64, optional, tag = "6")]
     pub indexing_threshold: ::core::option::Option<u64>,
-    ///
     /// Interval between forced flushes.
     #[prost(uint64, optional, tag = "7")]
     pub flush_interval_sec: ::core::option::Option<u64>,
-    ///
     /// Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
     #[prost(uint64, optional, tag = "8")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScalarQuantization {
@@ -267,6 +267,7 @@ pub struct ScalarQuantization {
     pub always_ram: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProductQuantization {
@@ -278,6 +279,7 @@ pub struct ProductQuantization {
     pub always_ram: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
@@ -287,6 +289,7 @@ pub struct QuantizationConfig {
 }
 /// Nested message and enum types in `QuantizationConfig`.
 pub mod quantization_config {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Quantization {
@@ -297,6 +300,7 @@ pub mod quantization_config {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Disabled {}
@@ -372,6 +376,7 @@ pub struct CreateCollection {
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
@@ -405,6 +410,7 @@ pub struct UpdateCollection {
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteCollection {
@@ -417,6 +423,7 @@ pub struct DeleteCollection {
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOperationResponse {
@@ -428,6 +435,7 @@ pub struct CollectionOperationResponse {
     pub time: f64,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
@@ -449,6 +457,7 @@ pub struct CollectionParams {
     pub write_consistency_factor: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParamsDiff {
@@ -463,6 +472,7 @@ pub struct CollectionParamsDiff {
     pub on_disk_payload: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
@@ -485,6 +495,7 @@ pub struct CollectionConfig {
     #[validate]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TextIndexParams {
@@ -501,6 +512,7 @@ pub struct TextIndexParams {
     #[prost(uint64, optional, tag = "4")]
     pub max_token_len: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIndexParams {
@@ -509,6 +521,7 @@ pub struct PayloadIndexParams {
 }
 /// Nested message and enum types in `PayloadIndexParams`.
 pub mod payload_index_params {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum IndexParams {
@@ -517,6 +530,7 @@ pub mod payload_index_params {
         TextIndexParams(super::TextIndexParams),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadSchemaInfo {
@@ -530,6 +544,7 @@ pub struct PayloadSchemaInfo {
     #[prost(uint64, optional, tag = "3")]
     pub points: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
@@ -562,6 +577,7 @@ pub struct CollectionInfo {
     pub indexed_vectors_count: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChangeAliases {
@@ -573,6 +589,7 @@ pub struct ChangeAliases {
     #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AliasOperations {
@@ -581,6 +598,7 @@ pub struct AliasOperations {
 }
 /// Nested message and enum types in `AliasOperations`.
 pub mod alias_operations {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Action {
@@ -592,6 +610,7 @@ pub mod alias_operations {
         DeleteAlias(super::DeleteAlias),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateAlias {
@@ -602,6 +621,7 @@ pub struct CreateAlias {
     #[prost(string, tag = "2")]
     pub alias_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RenameAlias {
@@ -612,6 +632,7 @@ pub struct RenameAlias {
     #[prost(string, tag = "2")]
     pub new_alias_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteAlias {
@@ -620,10 +641,12 @@ pub struct DeleteAlias {
     pub alias_name: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAliasesRequest {}
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionAliasesRequest {
@@ -632,6 +655,7 @@ pub struct ListCollectionAliasesRequest {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AliasDescription {
@@ -642,6 +666,7 @@ pub struct AliasDescription {
     #[prost(string, tag = "2")]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAliasesResponse {
@@ -652,6 +677,7 @@ pub struct ListAliasesResponse {
     pub time: f64,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionClusterInfoRequest {
@@ -659,6 +685,7 @@ pub struct CollectionClusterInfoRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LocalShardInfo {
@@ -672,6 +699,7 @@ pub struct LocalShardInfo {
     #[prost(enumeration = "ReplicaState", tag = "3")]
     pub state: i32,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RemoteShardInfo {
@@ -685,6 +713,7 @@ pub struct RemoteShardInfo {
     #[prost(enumeration = "ReplicaState", tag = "3")]
     pub state: i32,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ShardTransferInfo {
@@ -699,6 +728,7 @@ pub struct ShardTransferInfo {
     #[prost(bool, tag = "4")]
     pub sync: bool,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionClusterInfoResponse {
@@ -718,6 +748,7 @@ pub struct CollectionClusterInfoResponse {
     #[prost(message, repeated, tag = "5")]
     pub shard_transfers: ::prost::alloc::vec::Vec<ShardTransferInfo>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MoveShard {
@@ -729,6 +760,7 @@ pub struct MoveShard {
     #[prost(uint64, tag = "3")]
     pub to_peer_id: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Replica {
@@ -738,6 +770,7 @@ pub struct Replica {
     pub peer_id: u64,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionClusterSetupRequest {
@@ -757,6 +790,7 @@ pub struct UpdateCollectionClusterSetupRequest {
 }
 /// Nested message and enum types in `UpdateCollectionClusterSetupRequest`.
 pub mod update_collection_cluster_setup_request {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Operation {
@@ -770,12 +804,14 @@ pub mod update_collection_cluster_setup_request {
         DropReplica(super::Replica),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionClusterSetupResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Distance {
@@ -808,6 +844,7 @@ impl Distance {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CollectionStatus {
@@ -843,6 +880,7 @@ impl CollectionStatus {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PayloadSchemaType {
@@ -884,6 +922,7 @@ impl PayloadSchemaType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum QuantizationType {
@@ -910,6 +949,7 @@ impl QuantizationType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CompressionRatio {
@@ -945,6 +985,7 @@ impl CompressionRatio {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum TokenizerType {
@@ -980,6 +1021,7 @@ impl TokenizerType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ReplicaState {
@@ -1105,7 +1147,6 @@ pub mod collections_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        ///
         /// Get detailed information about specified existing collection
         pub async fn get(
             &mut self,
@@ -1129,7 +1170,6 @@ pub mod collections_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Get"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Get list name of all existing collections
         pub async fn list(
             &mut self,
@@ -1153,7 +1193,6 @@ pub mod collections_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "List"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Create new collection with given parameters
         pub async fn create(
             &mut self,
@@ -1179,7 +1218,6 @@ pub mod collections_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Create"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Update parameters of the existing collection
         pub async fn update(
             &mut self,
@@ -1205,7 +1243,6 @@ pub mod collections_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Update"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Drop collection and all associated data
         pub async fn delete(
             &mut self,
@@ -1231,7 +1268,6 @@ pub mod collections_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Delete"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Update Aliases of the existing collection
         pub async fn update_aliases(
             &mut self,
@@ -1258,7 +1294,6 @@ pub mod collections_client {
                 .insert(GrpcMethod::new("qdrant.Collections", "UpdateAliases"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Get list of all aliases for a collection
         pub async fn list_collection_aliases(
             &mut self,
@@ -1285,7 +1320,6 @@ pub mod collections_client {
                 .insert(GrpcMethod::new("qdrant.Collections", "ListCollectionAliases"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Get list of all aliases for all existing collections
         pub async fn list_aliases(
             &mut self,
@@ -1312,7 +1346,6 @@ pub mod collections_client {
                 .insert(GrpcMethod::new("qdrant.Collections", "ListAliases"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Get cluster information for a collection
         pub async fn collection_cluster_info(
             &mut self,
@@ -1339,7 +1372,6 @@ pub mod collections_client {
                 .insert(GrpcMethod::new("qdrant.Collections", "CollectionClusterInfo"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Update cluster setup for a collection
         pub async fn update_collection_cluster_setup(
             &mut self,
@@ -1377,7 +1409,6 @@ pub mod collections_server {
     /// Generated trait containing gRPC methods that should be implemented for use with CollectionsServer.
     #[async_trait]
     pub trait Collections: Send + Sync + 'static {
-        ///
         /// Get detailed information about specified existing collection
         async fn get(
             &self,
@@ -1386,7 +1417,6 @@ pub mod collections_server {
             tonic::Response<super::GetCollectionInfoResponse>,
             tonic::Status,
         >;
-        ///
         /// Get list name of all existing collections
         async fn list(
             &self,
@@ -1395,7 +1425,6 @@ pub mod collections_server {
             tonic::Response<super::ListCollectionsResponse>,
             tonic::Status,
         >;
-        ///
         /// Create new collection with given parameters
         async fn create(
             &self,
@@ -1404,7 +1433,6 @@ pub mod collections_server {
             tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Update parameters of the existing collection
         async fn update(
             &self,
@@ -1413,7 +1441,6 @@ pub mod collections_server {
             tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Drop collection and all associated data
         async fn delete(
             &self,
@@ -1422,7 +1449,6 @@ pub mod collections_server {
             tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Update Aliases of the existing collection
         async fn update_aliases(
             &self,
@@ -1431,7 +1457,6 @@ pub mod collections_server {
             tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Get list of all aliases for a collection
         async fn list_collection_aliases(
             &self,
@@ -1440,7 +1465,6 @@ pub mod collections_server {
             tonic::Response<super::ListAliasesResponse>,
             tonic::Status,
         >;
-        ///
         /// Get list of all aliases for all existing collections
         async fn list_aliases(
             &self,
@@ -1449,7 +1473,6 @@ pub mod collections_server {
             tonic::Response<super::ListAliasesResponse>,
             tonic::Status,
         >;
-        ///
         /// Get cluster information for a collection
         async fn collection_cluster_info(
             &self,
@@ -1458,7 +1481,6 @@ pub mod collections_server {
             tonic::Response<super::CollectionClusterInfoResponse>,
             tonic::Status,
         >;
-        ///
         /// Update cluster setup for a collection
         async fn update_collection_cluster_setup(
             &self,
@@ -2042,6 +2064,7 @@ pub mod collections_server {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoRequestInternal {
@@ -2051,6 +2074,7 @@ pub struct GetCollectionInfoRequestInternal {
     pub shard_id: u32,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InitiateShardTransferRequest {
@@ -2147,7 +2171,6 @@ pub mod collections_internal_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        ///
         /// Get collection info
         pub async fn get(
             &mut self,
@@ -2174,7 +2197,6 @@ pub mod collections_internal_client {
                 .insert(GrpcMethod::new("qdrant.CollectionsInternal", "Get"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Initiate shard transfer
         pub async fn initiate(
             &mut self,
@@ -2210,7 +2232,6 @@ pub mod collections_internal_server {
     /// Generated trait containing gRPC methods that should be implemented for use with CollectionsInternalServer.
     #[async_trait]
     pub trait CollectionsInternal: Send + Sync + 'static {
-        ///
         /// Get collection info
         async fn get(
             &self,
@@ -2219,7 +2240,6 @@ pub mod collections_internal_server {
             tonic::Response<super::GetCollectionInfoResponse>,
             tonic::Status,
         >;
-        ///
         /// Initiate shard transfer
         async fn initiate(
             &self,
@@ -2449,6 +2469,7 @@ pub mod collections_internal_server {
 /// with the proto support for the language.
 ///
 /// The JSON representation for `Struct` is a JSON object.
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Struct {
@@ -2462,6 +2483,7 @@ pub struct Struct {
 /// variants, absence of any variant indicates an error.
 ///
 /// The JSON representation for `Value` is a JSON value.
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Value {
@@ -2472,6 +2494,7 @@ pub struct Value {
 /// Nested message and enum types in `Value`.
 pub mod value {
     /// The kind of value.
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
@@ -2501,6 +2524,7 @@ pub mod value {
 /// `ListValue` is a wrapper around a repeated field of values.
 ///
 /// The JSON representation for `ListValue` is a JSON array.
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListValue {
@@ -2511,7 +2535,8 @@ pub struct ListValue {
 /// `NullValue` is a singleton enumeration to represent the null value for the
 /// `Value` type union.
 ///
-///   The JSON representation for `NullValue` is JSON `null`.
+/// The JSON representation for `NullValue` is JSON `null`.
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum NullValue {
@@ -2536,6 +2561,7 @@ impl NullValue {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WriteOrdering {
@@ -2543,6 +2569,7 @@ pub struct WriteOrdering {
     #[prost(enumeration = "WriteOrderingType", tag = "1")]
     pub r#type: i32,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadConsistency {
@@ -2551,6 +2578,7 @@ pub struct ReadConsistency {
 }
 /// Nested message and enum types in `ReadConsistency`.
 pub mod read_consistency {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
@@ -2562,6 +2590,7 @@ pub mod read_consistency {
         Factor(u64),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointId {
@@ -2570,6 +2599,7 @@ pub struct PointId {
 }
 /// Nested message and enum types in `PointId`.
 pub mod point_id {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PointIdOptions {
@@ -2581,6 +2611,7 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
@@ -2588,6 +2619,7 @@ pub struct Vector {
     pub data: ::prost::alloc::vec::Vec<f32>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPoints {
@@ -2605,6 +2637,7 @@ pub struct UpsertPoints {
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePoints {
@@ -2623,6 +2656,7 @@ pub struct DeletePoints {
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPoints {
@@ -2644,6 +2678,7 @@ pub struct GetPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdatePointVectors {
@@ -2661,6 +2696,7 @@ pub struct UpdatePointVectors {
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointVectors {
@@ -2672,6 +2708,7 @@ pub struct PointVectors {
     pub vectors: ::core::option::Option<Vectors>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePointVectors {
@@ -2693,6 +2730,7 @@ pub struct DeletePointVectors {
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPoints {
@@ -2714,6 +2752,7 @@ pub struct SetPayloadPoints {
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPoints {
@@ -2735,6 +2774,7 @@ pub struct DeletePayloadPoints {
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClearPayloadPoints {
@@ -2753,6 +2793,7 @@ pub struct ClearPayloadPoints {
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFieldIndexCollection {
@@ -2778,6 +2819,7 @@ pub struct CreateFieldIndexCollection {
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteFieldIndexCollection {
@@ -2796,6 +2838,7 @@ pub struct DeleteFieldIndexCollection {
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIncludeSelector {
@@ -2803,6 +2846,7 @@ pub struct PayloadIncludeSelector {
     #[prost(string, repeated, tag = "1")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadExcludeSelector {
@@ -2810,6 +2854,7 @@ pub struct PayloadExcludeSelector {
     #[prost(string, repeated, tag = "1")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WithPayloadSelector {
@@ -2818,6 +2863,7 @@ pub struct WithPayloadSelector {
 }
 /// Nested message and enum types in `WithPayloadSelector`.
 pub mod with_payload_selector {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SelectorOptions {
@@ -2830,12 +2876,14 @@ pub mod with_payload_selector {
         Exclude(super::PayloadExcludeSelector),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectors {
     #[prost(map = "string, message", tag = "1")]
     pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vectors {
@@ -2844,6 +2892,7 @@ pub struct Vectors {
 }
 /// Nested message and enum types in `Vectors`.
 pub mod vectors {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum VectorsOptions {
@@ -2853,6 +2902,7 @@ pub mod vectors {
         Vectors(super::NamedVectors),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsSelector {
@@ -2860,6 +2910,7 @@ pub struct VectorsSelector {
     #[prost(string, repeated, tag = "1")]
     pub names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WithVectorsSelector {
@@ -2868,6 +2919,7 @@ pub struct WithVectorsSelector {
 }
 /// Nested message and enum types in `WithVectorsSelector`.
 pub mod with_vectors_selector {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SelectorOptions {
@@ -2880,18 +2932,16 @@ pub mod with_vectors_selector {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationSearchParams {
-    ///
     /// If set to true, search will ignore quantized vector data
     #[prost(bool, optional, tag = "1")]
     pub ignore: ::core::option::Option<bool>,
-    ///
     /// If true, use original vectors to re-score top-k results. Default is true.
     #[prost(bool, optional, tag = "2")]
     pub rescore: ::core::option::Option<bool>,
-    ///
     /// Oversampling factor for quantization.
     ///
     /// Defines how many extra vectors should be pre-selected using quantized index,
@@ -2904,25 +2954,24 @@ pub struct QuantizationSearchParams {
     pub oversampling: ::core::option::Option<f64>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
-    ///
     /// Params relevant to HNSW index. Size of the beam in a beam-search.
     /// Larger the value - more accurate the result, more time required for search.
     #[prost(uint64, optional, tag = "1")]
     pub hnsw_ef: ::core::option::Option<u64>,
-    ///
     /// Search without approximation. If set to true, search may run long but with exact results.
     #[prost(bool, optional, tag = "2")]
     pub exact: ::core::option::Option<bool>,
-    ///
     /// If set to true, search will ignore quantized vector data
     #[prost(message, optional, tag = "3")]
     #[validate]
     pub quantization: ::core::option::Option<QuantizationSearchParams>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPoints {
@@ -2965,6 +3014,7 @@ pub struct SearchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchPoints {
@@ -2979,6 +3029,7 @@ pub struct SearchBatchPoints {
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WithLookup {
@@ -2993,6 +3044,7 @@ pub struct WithLookup {
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPointGroups {
@@ -3043,6 +3095,7 @@ pub struct SearchPointGroups {
     pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {
@@ -3069,6 +3122,7 @@ pub struct ScrollPoints {
     #[prost(message, optional, tag = "8")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LookupLocation {
@@ -3079,6 +3133,7 @@ pub struct LookupLocation {
     pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPoints {
@@ -3125,6 +3180,7 @@ pub struct RecommendPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchPoints {
@@ -3140,6 +3196,7 @@ pub struct RecommendBatchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPointGroups {
@@ -3195,6 +3252,7 @@ pub struct RecommendPointGroups {
     pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPoints {
@@ -3209,6 +3267,7 @@ pub struct CountPoints {
     #[prost(bool, optional, tag = "3")]
     pub exact: ::core::option::Option<bool>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsUpdateOperation {
@@ -3217,6 +3276,7 @@ pub struct PointsUpdateOperation {
 }
 /// Nested message and enum types in `PointsUpdateOperation`.
 pub mod points_update_operation {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SetPayload {
@@ -3228,6 +3288,7 @@ pub mod points_update_operation {
         #[prost(message, optional, tag = "2")]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
     }
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DeletePayload {
@@ -3236,12 +3297,14 @@ pub mod points_update_operation {
         #[prost(message, optional, tag = "2")]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
     }
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PointStructList {
         #[prost(message, repeated, tag = "1")]
         pub points: ::prost::alloc::vec::Vec<super::PointStruct>,
     }
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Operation {
@@ -3260,6 +3323,7 @@ pub mod points_update_operation {
     }
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateBatchPoints {
@@ -3271,11 +3335,13 @@ pub struct UpdateBatchPoints {
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
     #[prost(message, repeated, tag = "3")]
+    #[validate(length(min = 1))]
     pub operations: ::prost::alloc::vec::Vec<PointsUpdateOperation>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsOperationResponse {
@@ -3285,6 +3351,7 @@ pub struct PointsOperationResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateResult {
@@ -3295,6 +3362,7 @@ pub struct UpdateResult {
     #[prost(enumeration = "UpdateStatus", tag = "2")]
     pub status: i32,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScoredPoint {
@@ -3314,6 +3382,7 @@ pub struct ScoredPoint {
     #[prost(message, optional, tag = "6")]
     pub vectors: ::core::option::Option<Vectors>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GroupId {
@@ -3322,6 +3391,7 @@ pub struct GroupId {
 }
 /// Nested message and enum types in `GroupId`.
 pub mod group_id {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
@@ -3336,6 +3406,7 @@ pub mod group_id {
         StringValue(::prost::alloc::string::String),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointGroup {
@@ -3349,6 +3420,7 @@ pub struct PointGroup {
     #[prost(message, optional, tag = "3")]
     pub lookup: ::core::option::Option<RetrievedPoint>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GroupsResult {
@@ -3356,6 +3428,7 @@ pub struct GroupsResult {
     #[prost(message, repeated, tag = "1")]
     pub groups: ::prost::alloc::vec::Vec<PointGroup>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
@@ -3365,12 +3438,14 @@ pub struct SearchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BatchResult {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchResponse {
@@ -3380,6 +3455,7 @@ pub struct SearchBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchGroupsResponse {
@@ -3389,6 +3465,7 @@ pub struct SearchGroupsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountResponse {
@@ -3398,6 +3475,7 @@ pub struct CountResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollResponse {
@@ -3410,12 +3488,14 @@ pub struct ScrollResponse {
     #[prost(double, tag = "3")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountResult {
     #[prost(uint64, tag = "1")]
     pub count: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetrievedPoint {
@@ -3426,6 +3506,7 @@ pub struct RetrievedPoint {
     #[prost(message, optional, tag = "4")]
     pub vectors: ::core::option::Option<Vectors>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResponse {
@@ -3435,6 +3516,7 @@ pub struct GetResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendResponse {
@@ -3444,6 +3526,7 @@ pub struct RecommendResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchResponse {
@@ -3453,6 +3536,7 @@ pub struct RecommendBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendGroupsResponse {
@@ -3462,6 +3546,7 @@ pub struct RecommendGroupsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateBatchResponse {
@@ -3471,6 +3556,7 @@ pub struct UpdateBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Filter {
@@ -3484,6 +3570,7 @@ pub struct Filter {
     #[prost(message, repeated, tag = "3")]
     pub must_not: ::prost::alloc::vec::Vec<Condition>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
@@ -3492,6 +3579,7 @@ pub struct Condition {
 }
 /// Nested message and enum types in `Condition`.
 pub mod condition {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum ConditionOneOf {
@@ -3509,24 +3597,28 @@ pub mod condition {
         Nested(super::NestedCondition),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IsEmptyCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IsNullCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HasIdCondition {
     #[prost(message, repeated, tag = "1")]
     pub has_id: ::prost::alloc::vec::Vec<PointId>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NestedCondition {
@@ -3537,6 +3629,7 @@ pub struct NestedCondition {
     #[prost(message, optional, tag = "2")]
     pub filter: ::core::option::Option<Filter>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FieldCondition {
@@ -3558,6 +3651,7 @@ pub struct FieldCondition {
     #[prost(message, optional, tag = "6")]
     pub values_count: ::core::option::Option<ValuesCount>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
@@ -3566,6 +3660,7 @@ pub struct Match {
 }
 /// Nested message and enum types in `Match`.
 pub mod r#match {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum MatchValue {
@@ -3595,18 +3690,21 @@ pub mod r#match {
         ExceptKeywords(super::RepeatedStrings),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RepeatedStrings {
     #[prost(string, repeated, tag = "1")]
     pub strings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RepeatedIntegers {
     #[prost(int64, repeated, tag = "1")]
     pub integers: ::prost::alloc::vec::Vec<i64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Range {
@@ -3619,6 +3717,7 @@ pub struct Range {
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoBoundingBox {
@@ -3629,6 +3728,7 @@ pub struct GeoBoundingBox {
     #[prost(message, optional, tag = "2")]
     pub bottom_right: ::core::option::Option<GeoPoint>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoRadius {
@@ -3640,6 +3740,7 @@ pub struct GeoRadius {
     pub radius: f32,
 }
 #[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPolygon {
@@ -3650,6 +3751,7 @@ pub struct GeoPolygon {
     #[validate(custom = "crate::grpc::validate::validate_geo_polygon")]
     pub points: ::prost::alloc::vec::Vec<GeoPoint>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ValuesCount {
@@ -3662,6 +3764,7 @@ pub struct ValuesCount {
     #[prost(uint64, optional, tag = "4")]
     pub lte: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsSelector {
@@ -3672,6 +3775,7 @@ pub struct PointsSelector {
 }
 /// Nested message and enum types in `PointsSelector`.
 pub mod points_selector {
+    #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PointsSelectorOneOf {
@@ -3681,12 +3785,14 @@ pub mod points_selector {
         Filter(super::Filter),
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsIdsList {
     #[prost(message, repeated, tag = "1")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointStruct {
@@ -3706,6 +3812,7 @@ pub struct GeoPoint {
     #[prost(double, tag = "2")]
     pub lat: f64,
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum WriteOrderingType {
@@ -3738,6 +3845,7 @@ impl WriteOrderingType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ReadConsistencyType {
@@ -3770,6 +3878,7 @@ impl ReadConsistencyType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum FieldType {
@@ -3808,6 +3917,7 @@ impl FieldType {
         }
     }
 }
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum UpdateStatus {
@@ -3924,7 +4034,6 @@ pub mod points_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        ///
         /// Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
         pub async fn upsert(
             &mut self,
@@ -3948,7 +4057,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Upsert"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Delete points
         pub async fn delete(
             &mut self,
@@ -3972,7 +4080,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Delete"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Retrieve points
         pub async fn get(
             &mut self,
@@ -3993,7 +4100,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Get"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Update named vectors for point
         pub async fn update_vectors(
             &mut self,
@@ -4020,7 +4126,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "UpdateVectors"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Delete named vectors for points
         pub async fn delete_vectors(
             &mut self,
@@ -4047,7 +4152,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "DeleteVectors"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Set payload for points
         pub async fn set_payload(
             &mut self,
@@ -4071,7 +4175,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "SetPayload"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Overwrite payload for points
         pub async fn overwrite_payload(
             &mut self,
@@ -4098,7 +4201,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "OverwritePayload"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Delete specified key payload for points
         pub async fn delete_payload(
             &mut self,
@@ -4125,7 +4227,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "DeletePayload"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Remove all payload for specified points
         pub async fn clear_payload(
             &mut self,
@@ -4152,7 +4253,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "ClearPayload"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Create index for field in collection
         pub async fn create_field_index(
             &mut self,
@@ -4179,7 +4279,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "CreateFieldIndex"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Delete field index for collection
         pub async fn delete_field_index(
             &mut self,
@@ -4206,7 +4305,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "DeleteFieldIndex"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Retrieve closest points based on vector similarity and given filtering conditions
         pub async fn search(
             &mut self,
@@ -4227,7 +4325,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Search"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Retrieve closest points based on vector similarity and given filtering conditions
         pub async fn search_batch(
             &mut self,
@@ -4253,7 +4350,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "SearchBatch"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
         pub async fn search_groups(
             &mut self,
@@ -4280,7 +4376,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "SearchGroups"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Iterate over all or filtered points points
         pub async fn scroll(
             &mut self,
@@ -4301,7 +4396,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Scroll"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         pub async fn recommend(
             &mut self,
@@ -4325,7 +4419,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Recommend"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         pub async fn recommend_batch(
             &mut self,
@@ -4352,7 +4445,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "RecommendBatch"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
         pub async fn recommend_groups(
             &mut self,
@@ -4379,7 +4471,6 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "RecommendGroups"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Count points in collection with given filtering conditions
         pub async fn count(
             &mut self,
@@ -4400,7 +4491,6 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Count"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Perform multiple update operations in one request
         pub async fn update_batch(
             &mut self,
@@ -4435,7 +4525,6 @@ pub mod points_server {
     /// Generated trait containing gRPC methods that should be implemented for use with PointsServer.
     #[async_trait]
     pub trait Points: Send + Sync + 'static {
-        ///
         /// Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
         async fn upsert(
             &self,
@@ -4444,7 +4533,6 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Delete points
         async fn delete(
             &self,
@@ -4453,13 +4541,11 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Retrieve points
         async fn get(
             &self,
             request: tonic::Request<super::GetPoints>,
         ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status>;
-        ///
         /// Update named vectors for point
         async fn update_vectors(
             &self,
@@ -4468,7 +4554,6 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Delete named vectors for points
         async fn delete_vectors(
             &self,
@@ -4477,7 +4562,6 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Set payload for points
         async fn set_payload(
             &self,
@@ -4486,7 +4570,6 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Overwrite payload for points
         async fn overwrite_payload(
             &self,
@@ -4495,7 +4578,6 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Delete specified key payload for points
         async fn delete_payload(
             &self,
@@ -4504,7 +4586,6 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Remove all payload for specified points
         async fn clear_payload(
             &self,
@@ -4513,7 +4594,6 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Create index for field in collection
         async fn create_field_index(
             &self,
@@ -4522,7 +4602,6 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Delete field index for collection
         async fn delete_field_index(
             &self,
@@ -4531,13 +4610,11 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        ///
         /// Retrieve closest points based on vector similarity and given filtering conditions
         async fn search(
             &self,
             request: tonic::Request<super::SearchPoints>,
         ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
-        ///
         /// Retrieve closest points based on vector similarity and given filtering conditions
         async fn search_batch(
             &self,
@@ -4546,7 +4623,6 @@ pub mod points_server {
             tonic::Response<super::SearchBatchResponse>,
             tonic::Status,
         >;
-        ///
         /// Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
         async fn search_groups(
             &self,
@@ -4555,13 +4631,11 @@ pub mod points_server {
             tonic::Response<super::SearchGroupsResponse>,
             tonic::Status,
         >;
-        ///
         /// Iterate over all or filtered points points
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPoints>,
         ) -> std::result::Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
-        ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         async fn recommend(
             &self,
@@ -4570,7 +4644,6 @@ pub mod points_server {
             tonic::Response<super::RecommendResponse>,
             tonic::Status,
         >;
-        ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         async fn recommend_batch(
             &self,
@@ -4579,7 +4652,6 @@ pub mod points_server {
             tonic::Response<super::RecommendBatchResponse>,
             tonic::Status,
         >;
-        ///
         /// Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
         async fn recommend_groups(
             &self,
@@ -4588,13 +4660,11 @@ pub mod points_server {
             tonic::Response<super::RecommendGroupsResponse>,
             tonic::Status,
         >;
-        ///
         /// Count points in collection with given filtering conditions
         async fn count(
             &self,
             request: tonic::Request<super::CountPoints>,
         ) -> std::result::Result<tonic::Response<super::CountResponse>, tonic::Status>;
-        ///
         /// Perform multiple update operations in one request
         async fn update_batch(
             &self,
@@ -5604,6 +5674,7 @@ pub mod points_server {
         const NAME: &'static str = "qdrant.Points";
     }
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5626,6 +5697,7 @@ pub struct SyncPoints {
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5636,6 +5708,7 @@ pub struct SyncPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5646,6 +5719,7 @@ pub struct UpsertPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5656,6 +5730,7 @@ pub struct DeletePointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5666,6 +5741,7 @@ pub struct UpdateVectorsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5676,6 +5752,7 @@ pub struct DeleteVectorsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5686,6 +5763,7 @@ pub struct SetPayloadPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5696,6 +5774,7 @@ pub struct DeletePayloadPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5706,6 +5785,7 @@ pub struct ClearPayloadPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5718,6 +5798,7 @@ pub struct CreateFieldIndexCollectionInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5730,6 +5811,7 @@ pub struct DeleteFieldIndexCollectionInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5740,6 +5822,7 @@ pub struct SearchPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5753,6 +5836,7 @@ pub struct SearchBatchPointsInternal {
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5763,6 +5847,7 @@ pub struct ScrollPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5773,6 +5858,7 @@ pub struct RecommendPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5783,6 +5869,7 @@ pub struct GetPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7297,12 +7384,14 @@ pub mod points_internal_server {
         const NAME: &'static str = "qdrant.PointsInternal";
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RaftMessage {
     #[prost(bytes = "vec", tag = "1")]
     pub message: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AllPeers {
@@ -7311,6 +7400,7 @@ pub struct AllPeers {
     #[prost(uint64, tag = "2")]
     pub first_peer_id: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Peer {
@@ -7319,6 +7409,7 @@ pub struct Peer {
     #[prost(uint64, tag = "2")]
     pub id: u64,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7332,12 +7423,14 @@ pub struct AddPeerToKnownMessage {
     #[prost(uint64, tag = "3")]
     pub id: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PeerId {
     #[prost(uint64, tag = "1")]
     pub id: u64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Uri {
@@ -7853,14 +7946,17 @@ pub mod raft_server {
         const NAME: &'static str = "qdrant.Raft";
     }
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFullSnapshotRequest {}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFullSnapshotsRequest {}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7870,6 +7966,7 @@ pub struct DeleteFullSnapshotRequest {
     #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7879,6 +7976,7 @@ pub struct CreateSnapshotRequest {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7888,6 +7986,7 @@ pub struct ListSnapshotsRequest {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7901,6 +8000,7 @@ pub struct DeleteSnapshotRequest {
     #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotDescription {
@@ -7909,11 +8009,12 @@ pub struct SnapshotDescription {
     pub name: ::prost::alloc::string::String,
     /// Creation time of the snapshot
     #[prost(message, optional, tag = "2")]
-    pub creation_time: ::core::option::Option<::prost_types::Timestamp>,
+    pub creation_time: ::core::option::Option<super::google::protobuf::Timestamp>,
     /// Size of the snapshot in bytes
     #[prost(int64, tag = "3")]
     pub size: i64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateSnapshotResponse {
@@ -7923,6 +8024,7 @@ pub struct CreateSnapshotResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSnapshotsResponse {
@@ -7932,6 +8034,7 @@ pub struct ListSnapshotsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSnapshotResponse {
@@ -8024,7 +8127,6 @@ pub mod snapshots_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        ///
         /// Create collection snapshot
         pub async fn create(
             &mut self,
@@ -8048,7 +8150,6 @@ pub mod snapshots_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Snapshots", "Create"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// List collection snapshots
         pub async fn list(
             &mut self,
@@ -8072,7 +8173,6 @@ pub mod snapshots_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Snapshots", "List"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Delete collection snapshots
         pub async fn delete(
             &mut self,
@@ -8096,7 +8196,6 @@ pub mod snapshots_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Snapshots", "Delete"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// Create full storage snapshot
         pub async fn create_full(
             &mut self,
@@ -8123,7 +8222,6 @@ pub mod snapshots_client {
                 .insert(GrpcMethod::new("qdrant.Snapshots", "CreateFull"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// List full storage snapshots
         pub async fn list_full(
             &mut self,
@@ -8149,7 +8247,6 @@ pub mod snapshots_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Snapshots", "ListFull"));
             self.inner.unary(req, path, codec).await
         }
-        ///
         /// List full storage snapshots
         pub async fn delete_full(
             &mut self,
@@ -8185,7 +8282,6 @@ pub mod snapshots_server {
     /// Generated trait containing gRPC methods that should be implemented for use with SnapshotsServer.
     #[async_trait]
     pub trait Snapshots: Send + Sync + 'static {
-        ///
         /// Create collection snapshot
         async fn create(
             &self,
@@ -8194,7 +8290,6 @@ pub mod snapshots_server {
             tonic::Response<super::CreateSnapshotResponse>,
             tonic::Status,
         >;
-        ///
         /// List collection snapshots
         async fn list(
             &self,
@@ -8203,7 +8298,6 @@ pub mod snapshots_server {
             tonic::Response<super::ListSnapshotsResponse>,
             tonic::Status,
         >;
-        ///
         /// Delete collection snapshots
         async fn delete(
             &self,
@@ -8212,7 +8306,6 @@ pub mod snapshots_server {
             tonic::Response<super::DeleteSnapshotResponse>,
             tonic::Status,
         >;
-        ///
         /// Create full storage snapshot
         async fn create_full(
             &self,
@@ -8221,7 +8314,6 @@ pub mod snapshots_server {
             tonic::Response<super::CreateSnapshotResponse>,
             tonic::Status,
         >;
-        ///
         /// List full storage snapshots
         async fn list_full(
             &self,
@@ -8230,7 +8322,6 @@ pub mod snapshots_server {
             tonic::Response<super::ListSnapshotsResponse>,
             tonic::Status,
         >;
-        ///
         /// List full storage snapshots
         async fn delete_full(
             &self,
@@ -8624,9 +8715,11 @@ pub mod snapshots_server {
         const NAME: &'static str = "qdrant.Snapshots";
     }
 }
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HealthCheckRequest {}
+#[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HealthCheckReply {
