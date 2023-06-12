@@ -123,9 +123,8 @@ service:
 
   # gRPC port to bind the service on.
   # If `null` - gRPC is disabled. Default: null
+  # Comment to disable gRPC:
   grpc_port: 6334
-  # Uncomment to enable gRPC:
-  # grpc_port: 6334
 
   # Enable CORS headers in REST API.
   # If enabled, browsers would be allowed to query REST endpoints regardless of query origin.
