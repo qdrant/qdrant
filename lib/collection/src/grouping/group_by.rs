@@ -371,7 +371,7 @@ where
             }
 
             aggregator.add_points(&points);
-            
+
             if aggregator.len_of_filled_best_groups() >= request.limit {
                 break;
             }

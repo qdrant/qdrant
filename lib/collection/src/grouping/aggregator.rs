@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 
+use ahash::{AHashMap, AHashSet};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use segment::data_types::groups::GroupId;
@@ -9,7 +10,6 @@ use segment::types::{
     ExtendedPointId, Order, PayloadContainer, PointIdType, ScoreType, ScoredPoint,
 };
 use serde_json::Value;
-use ahash::{AHashMap, AHashSet};
 
 use super::types::AggregatorError::{self, *};
 use super::types::Group;

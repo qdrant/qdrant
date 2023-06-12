@@ -7,7 +7,7 @@ use collection::grouping::GroupBy;
 use collection::operations::point_ops::{PointOperations, PointStruct};
 use collection::operations::types::{BaseGroupRequest, SearchGroupsRequest};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
 use rand::thread_rng;
 use segment::fixtures::payload_fixtures::random_vector;
@@ -74,11 +74,11 @@ fn search_groups_bench(c: &mut Criterion) {
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
-    
+
     let group_sizes = [1, 10, 100].into_iter().map(|x| x as u32);
-    
+
     let limits = [1, 10, 100, 1000].into_iter().map(|x| x as u32);
-    
+
     #[derive(Clone, Copy)]
     struct Params {
         group_size: u32,
@@ -89,15 +89,18 @@ fn search_groups_bench(c: &mut Criterion) {
             write!(f, "group_size={}, limit={}", self.group_size, self.limit)
         }
     }
-    
-    let param_combinations = group_sizes.cartesian_product(limits).map(|(group_size, limit)| Params{group_size, limit}).collect_vec();
-    
+
+    let param_combinations = group_sizes
+        .cartesian_product(limits)
+        .map(|(group_size, limit)| Params { group_size, limit })
+        .collect_vec();
+
     let mut group = c.benchmark_group("unindexed-search-groups");
     for params in param_combinations.clone() {
         group.bench_with_input(
             BenchmarkId::from_parameter(params),
             &params,
-            |bencher, Params { group_size, limit}| {
+            |bencher, Params { group_size, limit }| {
                 bencher
                     .to_async(&runtime)
                     .iter(|| search_groups(*limit, *group_size, &collection))
@@ -131,7 +134,7 @@ fn search_groups_bench(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::from_parameter(params),
             &params,
-            |bencher, Params { group_size, limit } | {
+            |bencher, Params { group_size, limit }| {
                 bencher
                     .to_async(&runtime)
                     .iter(|| search_groups(*limit, *group_size, &collection))
@@ -167,7 +170,7 @@ async fn search_groups(limit: u32, group_size: u32, collection: &Collection) {
     assert!(!result.is_empty());
 }
 
-criterion_group!{
+criterion_group! {
     name = benches;
     config = Criterion::default()
         .measurement_time(core::time::Duration::from_secs(30))
