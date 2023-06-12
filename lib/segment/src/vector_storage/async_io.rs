@@ -34,7 +34,7 @@ impl BufferStore {
     }
 }
 
-pub struct UringBufferedReader {
+pub struct UringReader {
     file: File,
     buffers: BufferStore,
     io_uring: IoUring,
@@ -42,7 +42,7 @@ pub struct UringBufferedReader {
     header_size: usize,
 }
 
-impl UringBufferedReader {
+impl UringReader {
     pub fn new(file: File, raw_size: usize, header_size: usize) -> OperationResult<Self> {
         let buffers = BufferStore::new(DISK_PARALLELISM, raw_size);
         let io_uring = IoUring::new(DISK_PARALLELISM as _)?;

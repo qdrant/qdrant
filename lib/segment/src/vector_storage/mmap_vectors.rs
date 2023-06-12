@@ -17,7 +17,7 @@ use crate::data_types::vectors::VectorElementType;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 #[cfg(target_os = "linux")]
-use crate::vector_storage::async_io::UringBufferedReader;
+use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringBufferedReader;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -35,7 +35,7 @@ pub struct MmapVectors {
     /// Has an exact size to fit a header and `num_vectors` of vectors.
     mmap: Arc<Mmap>,
     /// Context for io_uring-base async IO
-    uring_reader: Mutex<UringBufferedReader>,
+    uring_reader: Mutex<UringReader>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -71,7 +71,7 @@ impl MmapVectors {
         // Keep file handle open for async IO
         let vectors_file = File::open(vectors_path)?;
         let raw_size = dim * size_of::<VectorElementType>();
-        let uring_reader = UringBufferedReader::new(vectors_file, raw_size, HEADER_SIZE)?;
+        let uring_reader = UringReader::new(vectors_file, raw_size, HEADER_SIZE)?;
 
         Ok(MmapVectors {
             dim,
