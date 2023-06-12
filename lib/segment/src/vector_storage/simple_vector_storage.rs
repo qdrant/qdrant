@@ -58,13 +58,17 @@ pub fn open_simple_vector_storage(
         let stored_record: StoredRecord = bincode::deserialize(&value)
             .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
 
+        vectors.insert(point_id, &stored_record.vector)?;
+
         // Propagate deleted flag
         if stored_record.deleted {
+            bitvec_grow_deleted_and_delete(&mut deleted, point_id);
             deleted_count += 1;
-            bitvec_set_deleted(&mut deleted, point_id, true);
         }
-        vectors.insert(point_id, &stored_record.vector)?;
     }
+
+    // Have enough deleted flags for all vectors
+    bitvec_grow_deleted_to(&mut deleted, vectors.len());
 
     debug!("Segment vectors: {}", vectors.len());
     debug!(
@@ -93,16 +97,32 @@ impl SimpleVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
-        if self.vectors.len() <= key as usize {
-            return false;
-        }
-        let previous = bitvec_set_deleted(&mut self.deleted, key, deleted);
-        if !previous && deleted {
+        let was_deleted = self.deleted.replace(key as usize, deleted);
+        if !was_deleted && deleted {
             self.deleted_count += 1;
-        } else if previous && !deleted {
+        } else if was_deleted && !deleted {
             self.deleted_count -= 1;
         }
-        previous
+        was_deleted
+    }
+
+    /// Grow deleted flags to number of vectors.
+    ///
+    /// New flags are `false`, meaning their vectors are considered not deleted.
+    #[inline]
+    fn grow_deleted(&mut self) {
+        bitvec_grow_deleted_to(&mut self.deleted, self.vectors.len());
+    }
+
+    /// Grow the deleted flags to fit the given `key` offset, and mark it as deleted.
+    ///
+    /// New flags added as a result of growing are `false`, meaning their vectors are considered not deleted.
+    fn grow_deleted_and_delete(&mut self, key: PointOffsetType) -> bool {
+        let was_deleted = bitvec_grow_deleted_and_delete(&mut self.deleted, key);
+        if !was_deleted {
+            self.deleted_count += 1;
+        }
+        was_deleted
     }
 
     fn update_stored(
@@ -151,7 +171,7 @@ impl VectorStorage for SimpleVectorStorage {
         vector: &[VectorElementType],
     ) -> OperationResult<()> {
         self.vectors.insert(key, vector)?;
-        self.set_deleted(key, false);
+        self.grow_deleted();
         self.update_stored(key, false, Some(vector))?;
         Ok(())
     }
@@ -166,13 +186,19 @@ impl VectorStorage for SimpleVectorStorage {
         for point_id in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_deleted = other.is_deleted_vector(point_id);
             let other_vector = other.get_vector(point_id);
+            let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector)?;
-            self.set_deleted(new_id, other_deleted);
+            if other_deleted {
+                self.grow_deleted_and_delete(new_id);
+            }
             self.update_stored(new_id, other_deleted, Some(other_vector))?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
+
+        // Have enough deleted flags for all vectors
+        self.grow_deleted();
+
         Ok(start_index..end_index)
     }
 
@@ -246,22 +272,23 @@ impl VectorStorage for SimpleVectorStorage {
     }
 }
 
-/// Set deleted state in given bitvec.
+/// Grow deleted flags to given `new_len`.
 ///
-/// Grows bitvec automatically if it is not big enough.
+/// New flags are `false`, meaning their vectors are considered not deleted.
 ///
-/// Returns previous deleted state of the given point.
+/// This does nothing if `new_len <= current_len`.
 #[inline]
-fn bitvec_set_deleted(bitvec: &mut BitVec, point_id: PointOffsetType, deleted: bool) -> bool {
-    // Set deleted flag if bitvec is large enough, no need to check bounds
-    if (point_id as usize) < bitvec.len() {
-        return unsafe { bitvec.replace_unchecked(point_id as usize, deleted) };
+fn bitvec_grow_deleted_to(deleted: &mut BitVec, new_len: usize) {
+    if new_len <= deleted.len() {
+        return;
     }
+    deleted.resize(new_len, false);
+}
 
-    // Bitvec is too small; grow and set the deletion flag, no need to check bounds
-    if deleted {
-        bitvec.resize(point_id as usize + 1, false);
-        unsafe { bitvec.set_unchecked(point_id as usize, true) };
-    }
-    false
+/// Grow the deleted flags to fit the given `key` offset, and mark it as deleted.
+///
+/// New flags added as a result of growing are `false`, meaning their vectors are considered not deleted.
+fn bitvec_grow_deleted_and_delete(deleted: &mut BitVec, key: PointOffsetType) -> bool {
+    bitvec_grow_deleted_to(deleted, key as usize + 1);
+    unsafe { deleted.replace_unchecked(key as usize, true) }
 }
