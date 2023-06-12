@@ -69,6 +69,41 @@ impl UringReader {
         })
     }
 
+    fn submit_and_read(
+        &mut self,
+        mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+        unseen_buffer_ids: &mut Vec<usize>,
+    ) -> OperationResult<()> {
+        let buffers_count = self.buffers.buffers.len();
+        // Wait for at least one buffer to become available
+        self.io_uring.submit_and_wait(buffers_count)?;
+
+        let cqe = self.io_uring.completion();
+        for entry in cqe {
+            let result = entry.result();
+            if result < 0 {
+                return Err(OperationError::service_error(format!(
+                    "io_uring operation failed with {} error",
+                    result
+                )));
+            } else if (result as usize) != self.raw_size {
+                return Err(OperationError::service_error(format!(
+                    "io_uring operation returned {} bytes instead of {}",
+                    result, self.raw_size
+                )));
+            }
+
+            let buffer_id = entry.user_data() as usize;
+            let meta = self.buffers.buffers[buffer_id].meta.take().unwrap();
+            let buffer = &self.buffers.buffers[buffer_id].buffer;
+            let vector = transmute_from_u8_to_slice(buffer);
+            callback(meta.index, meta.point_id, vector);
+            unseen_buffer_ids.push(buffer_id);
+        }
+
+        Ok(())
+    }
+
     /// Takes in iterator of point offsets, reads it, and yields a callback with the read data.
     pub fn read_stream(
         &mut self,
@@ -77,27 +112,16 @@ impl UringReader {
     ) -> OperationResult<()> {
         let buffers_count = self.buffers.buffers.len();
 
-        let mut unused_buffer_ids = (0..buffers_count).collect::<Vec<_>>();
+        let mut unseen_buffer_ids = (0..buffers_count).collect::<Vec<_>>();
 
         for item in points.into_iter().enumerate() {
             let (idx, point): (usize, PointOffsetType) = item;
 
-            if unused_buffer_ids.is_empty() {
-                // Wait for at least one buffer to become available
-                self.io_uring.submit_and_wait(buffers_count)?;
-
-                let cqe = self.io_uring.completion();
-                for entry in cqe {
-                    let buffer_id = entry.user_data() as usize;
-                    let meta = self.buffers.buffers[buffer_id].meta.take().unwrap();
-                    let buffer = &self.buffers.buffers[buffer_id].buffer;
-                    let vector = transmute_from_u8_to_slice(buffer);
-                    callback(meta.index, meta.point_id, vector);
-                    unused_buffer_ids.push(buffer_id);
-                }
+            if unseen_buffer_ids.is_empty() {
+                self.submit_and_read(&mut callback, &mut unseen_buffer_ids)?;
             }
             // Assume there is at least one buffer available at this point
-            let buffer_id = unused_buffer_ids.pop().unwrap();
+            let buffer_id = unseen_buffer_ids.pop().unwrap();
 
             self.buffers.buffers[buffer_id].meta = Some(BufferMeta {
                 index: idx,
@@ -126,21 +150,11 @@ impl UringReader {
             }
         }
 
-        let mut operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
+        let mut operations_to_wait_for = self.buffers.buffers.len() - unseen_buffer_ids.len();
 
         while operations_to_wait_for > 0 {
-            self.io_uring.submit_and_wait(operations_to_wait_for)?;
-            let cqe = self.io_uring.completion();
-            for entry in cqe {
-                let buffer_id = entry.user_data() as usize;
-                let meta = self.buffers.buffers[buffer_id].meta.take().unwrap();
-                let buffer = &self.buffers.buffers[buffer_id].buffer;
-                let vector = transmute_from_u8_to_slice(buffer);
-                callback(meta.index, meta.point_id, vector);
-                unused_buffer_ids.push(buffer_id);
-            }
-
-            operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
+            self.submit_and_read(&mut callback, &mut unseen_buffer_ids)?;
+            operations_to_wait_for = self.buffers.buffers.len() - unseen_buffer_ids.len();
         }
         Ok(())
     }
