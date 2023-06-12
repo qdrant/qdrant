@@ -17,10 +17,11 @@ use tempfile::Builder;
 use tokio::runtime::Runtime;
 
 const VECTOR_SIZE: usize = 256;
+const NUM_POINTS: usize = 200000;
 
 fn create_rnd_batch() -> CollectionUpdateOperations {
     let mut rng: rand::rngs::SmallRng = rand::SeedableRng::seed_from_u64(42);
-    let num_points = 200000;
+    let num_points = NUM_POINTS as u64;
     let dim = VECTOR_SIZE;
     let mut points = Vec::new();
     for i in 0..num_points {
@@ -63,6 +64,16 @@ fn search_groups_bench(c: &mut Criterion) {
         .block_on(collection.update_from_client(rnd_batch, true, Default::default()))
         .unwrap();
 
+    for i in 0..30 {
+        if i == 30 {
+            panic!("Indexing timed out");
+        }
+        let info = handle.block_on(collection.info(None)).unwrap();
+        if info.indexed_vectors_count == NUM_POINTS {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
     
     let group_sizes = [1, 10, 100].into_iter().map(|x| x as u32);
     
@@ -103,6 +114,17 @@ fn search_groups_bench(c: &mut Criterion) {
             Default::default(),
         ))
         .unwrap();
+
+    for i in 0..=30 {
+        if i == 30 {
+            panic!("Payload indexing timed out");
+        }
+        let info = handle.block_on(collection.info(None)).unwrap();
+        if info.payload_schema.get("group_id").unwrap().points == NUM_POINTS {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 
     let mut group = c.benchmark_group("indexed-search-groups");
     for params in param_combinations {
@@ -147,7 +169,9 @@ async fn search_groups(limit: u32, group_size: u32, collection: &Collection) {
 
 criterion_group!{
     name = benches;
-    config = Criterion::default().measurement_time(core::time::Duration::from_secs(30));
+    config = Criterion::default()
+        .measurement_time(core::time::Duration::from_secs(30))
+        .warm_up_time(core::time::Duration::from_secs(10));
     targets = search_groups_bench
 }
 
