@@ -300,7 +300,7 @@ fn get_is_empty_checker<'a>(
     fallback: ConditionCheckerFn<'a>,
 ) -> ConditionCheckerFn<'a> {
     Box::new(move |point_id: PointOffsetType| {
-        index.values_count(point_id) == 0 && fallback(point_id)
+        index.values_is_empty(point_id).then(|| fallback(point_id)).unwrap_or(false)
     })
 }
 
@@ -309,6 +309,6 @@ fn get_is_null_checker<'a>( index: &'a FieldIndex,
     fallback: Box<(dyn std::ops::Fn(u32) -> bool + 'a)>,
 ) -> ConditionCheckerFn<'a> {
     Box::new(move |point_id: PointOffsetType| {
-        index.values_is_none(point_id) && fallback(point_id)
+        index.values_is_none(point_id).then(|| fallback(point_id)).unwrap_or(false)
     })
 }
