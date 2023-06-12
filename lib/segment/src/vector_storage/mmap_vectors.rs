@@ -19,7 +19,7 @@ use crate::types::{Distance, PointOffsetType, QuantizationConfig};
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
-use crate::vector_storage::async_io_mock::UringBufferedReader;
+use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 const HEADER_SIZE: usize = 4;
