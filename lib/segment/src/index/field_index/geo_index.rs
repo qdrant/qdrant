@@ -469,6 +469,10 @@ impl GeoMapIndex {
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
     }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_values(point_id).map(|x| x.is_empty()).unwrap_or(true)
+    }
     
     pub fn values_is_none(&self, point_id: PointOffsetType) -> bool {
         self.get_values(point_id).is_none()
