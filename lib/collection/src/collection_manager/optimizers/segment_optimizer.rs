@@ -437,16 +437,6 @@ pub trait SegmentOptimizer {
             proxies.push(proxy);
         }
 
-        // Save segment version once all payload indices have been converted
-        // If this ends up not being saved due to a crash, the segment will not be used
-        match &tmp_segment {
-            LockedSegment::Original(segment) => {
-                let segment_path = &segment.read().current_path;
-                SegmentVersion::save(segment_path)?;
-            }
-            LockedSegment::Proxy(_) => unreachable!(),
-        }
-
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segment_lock);
@@ -531,6 +521,16 @@ pub trait SegmentOptimizer {
 
             // Explicitly flush any optimized segment changes
             optimized_segment.flush(true)?;
+
+            // Save segment version once all has been written to disk
+            // If this ends up not being saved due to a crash, the segment will not be used
+            match &tmp_segment {
+                LockedSegment::Original(segment) => {
+                    let segment_path = &segment.read().current_path;
+                    SegmentVersion::save(segment_path)?;
+                }
+                LockedSegment::Proxy(_) => unreachable!(),
+            }
 
             let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
 
