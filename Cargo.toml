@@ -122,3 +122,10 @@ lto = "fat"
 inherits = "release"
 lto = false
 opt-level = 0
+
+# Used for end-to-end benchmarks
+[profile.benchmark]
+inherits = "release"
+lto = false
+opt-level = 3
+
