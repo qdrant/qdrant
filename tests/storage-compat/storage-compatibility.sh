@@ -18,7 +18,7 @@ git lfs pull
 tar -xvjf ./tests/storage-compat/storage.tar.bz2
 
 # Test it boots up fine with the old storage
-./target/debug/qdrant &
+./target/debug/qdrant & PID=$!
 
 sleep 1
 
@@ -28,7 +28,7 @@ until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collecti
       printf 'waiting for server to start...'
       sleep 1
   else
-      echo "Collection failed to load in ~30 seconds" >&2
+      echo "Collections failed to load in ~30 seconds" >&2
       exit 2
   fi
 done
@@ -36,7 +36,7 @@ done
 echo "server ready to serve traffic"
 
 echo "server is going down"
-pidof qdrant | xargs kill -9
+kill -9 $PID
 echo "END"
 
 
@@ -45,7 +45,8 @@ gzip -d --keep ./tests/storage-compat/full-snapshot.snapshot.gz
 
 rm -rf ./storage
 ./target/debug/qdrant \
-  --storage-snapshot ./tests/storage-compat/full-snapshot.snapshot &
+  --storage-snapshot ./tests/storage-compat/full-snapshot.snapshot \
+  & PID=$!
 
 declare retry=0
 until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections/test_collection; do
@@ -61,7 +62,7 @@ done
 echo "server ready to serve traffic"
 
 echo "server is going down"
-pidof qdrant | xargs kill -9
+kill -9 $PID
 
 rm tests/storage-compat/full-snapshot.snapshot
 
