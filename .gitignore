@@ -10,3 +10,5 @@
 /static
 *.log
 .qdrant-initialized
+flamegraph.svg
+.DS_Store
