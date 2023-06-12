@@ -18,7 +18,7 @@ git lfs pull
 tar -xvjf ./tests/storage-compat/storage.tar.bz2
 
 # Test it boots up fine with the old storage
-./target/debug/qdrant & 
+./target/debug/qdrant &
 
 sleep 1
 
