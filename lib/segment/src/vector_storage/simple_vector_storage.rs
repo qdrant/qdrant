@@ -256,7 +256,7 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+        self.deleted[key as usize]
     }
 
     fn deleted_vector_count(&self) -> usize {

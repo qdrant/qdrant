@@ -205,7 +205,7 @@ impl DynamicMmapFlags {
     {
         let key: usize = key.as_();
         if key >= self.status.len {
-            return false;
+            return true;
         }
         self.flags[key]
     }
