@@ -2128,6 +2128,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-uring"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b7b36074613a723279637061b40db993208908a94f10ccb14436ce735bc0f57"
+dependencies = [
+ "bitflags",
+ "libc",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3740,8 +3750,10 @@ dependencies = [
  "chrono",
  "criterion",
  "fs_extra",
+ "futures",
  "geo",
  "geohash",
+ "io-uring",
  "itertools",
  "log",
  "memmap2 0.7.0",

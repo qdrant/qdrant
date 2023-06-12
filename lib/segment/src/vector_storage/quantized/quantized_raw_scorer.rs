@@ -39,6 +39,20 @@ where
         size
     }
 
+    fn score_points_unfiltered(
+        &self,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+    ) -> Vec<ScoredPointOffset> {
+        let mut scores = vec![];
+        for point in points {
+            scores.push(ScoredPointOffset {
+                idx: point,
+                score: self.quantized_data.score_point(&self.query, point),
+            });
+        }
+        scores
+    }
+
     fn check_vector(&self, point: PointOffsetType) -> bool {
         // Deleted points propagate to vectors; check vector deletion for possible early return
         !self

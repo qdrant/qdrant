@@ -1,4 +1,6 @@
 pub mod appendable_mmap_vector_storage;
+#[cfg(target_os = "linux")]
+pub mod async_raw_scorer;
 mod chunked_mmap_vectors;
 mod chunked_utils;
 pub mod chunked_vectors;
@@ -12,6 +14,10 @@ mod vector_storage_base;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(target_os = "linux")]
+mod async_io;
+mod async_io_mock;
 
 pub use raw_scorer::*;
 pub use vector_storage_base::*;
