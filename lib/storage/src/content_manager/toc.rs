@@ -216,11 +216,18 @@ impl TableOfContent {
         snapshots_path.join(collection_name)
     }
 
-    async fn create_snapshots_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
-        let snapshots_path = Self::collection_snapshots_path(
+    pub fn snapshots_path_for_collection(&self, collection_name: &str) -> PathBuf {
+        Self::collection_snapshots_path(
             Path::new(&self.storage_config.snapshots_path),
             collection_name,
-        );
+        )
+    }
+
+    pub async fn create_snapshots_path(
+        &self,
+        collection_name: &str,
+    ) -> Result<PathBuf, StorageError> {
+        let snapshots_path = self.snapshots_path_for_collection(collection_name);
         tokio::fs::create_dir_all(&snapshots_path)
             .await
             .map_err(|err| {
