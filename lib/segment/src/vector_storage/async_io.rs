@@ -84,9 +84,7 @@ impl UringBufferedReader {
                 // Wait for at least one buffer to become available
                 self.io_uring.submit_and_wait(buffers_count)?;
 
-                let mut cqe = self.io_uring.completion();
-                cqe.sync();
-
+                let cqe = self.io_uring.completion();
                 for entry in cqe {
                     let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
                     let point_id = self.buffers.processing_ids[buffer_id];
@@ -126,8 +124,7 @@ impl UringBufferedReader {
 
         while operations_to_wait_for > 0 {
             self.io_uring.submit_and_wait(operations_to_wait_for)?;
-            let mut cqe = self.io_uring.completion();
-            cqe.sync();
+            let cqe = self.io_uring.completion();
             for entry in cqe {
                 let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
                 let point = self.buffers.processing_ids[buffer_id];

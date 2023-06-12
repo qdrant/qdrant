@@ -267,7 +267,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
         if let Some(graph) = &self.graph {
-            let mut search_result = graph.search(top, ef, points_scorer);
+            let search_result = graph.search(top, ef, points_scorer);
             let if_rescore = params
                 .and_then(|p| p.quantization)
                 .map(|q| q.rescore)
@@ -278,7 +278,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     &vector_storage,
                     id_tracker.deleted_point_bitslice(),
                 );
-                let mut ids_iterator = search_result.iter_mut().map(|x| x.idx);
+                let mut ids_iterator = search_result.iter().map(|x| x.idx);
                 let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
                 re_scored.sort_unstable();
                 re_scored
