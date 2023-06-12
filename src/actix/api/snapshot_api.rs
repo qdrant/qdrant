@@ -1,5 +1,3 @@
-use std::path::Path as StdPath;
-
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
@@ -59,7 +57,7 @@ pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> 
     Ok(NamedFile::open(file_name)?)
 }
 
-pub fn do_save_uploaded_snapshot(
+pub async fn do_save_uploaded_snapshot(
     toc: &TableOfContent,
     collection_name: &str,
     snapshot: TempFile,
@@ -67,9 +65,16 @@ pub fn do_save_uploaded_snapshot(
     let filename = snapshot
         .file_name
         .unwrap_or_else(|| Uuid::new_v4().to_string());
-    let path = StdPath::new(toc.snapshots_path())
-        .join(collection_name)
-        .join(filename);
+    let collection_snapshot_path = toc.snapshots_path_for_collection(collection_name);
+    if !collection_snapshot_path.exists() {
+        log::debug!(
+            "Creating missing collection snapshots directory for {}",
+            collection_name
+        );
+        toc.create_snapshots_path(collection_name).await?;
+    }
+
+    let path = collection_snapshot_path.join(filename);
 
     snapshot.file.persist(&path)?;
 
@@ -143,7 +148,7 @@ async fn upload_snapshot(
     let wait = params.wait.unwrap_or(true);
 
     let snapshot_location =
-        match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection.name, snapshot) {
+        match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection.name, snapshot).await {
             Ok(location) => location,
             Err(err) => return process_response::<()>(Err(err), timing),
         };
