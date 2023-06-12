@@ -94,3 +94,6 @@ harness = false
 name = "map_benchmark"
 harness = false
 
+[[bench]]
+name = "io_uring"
+harness = false

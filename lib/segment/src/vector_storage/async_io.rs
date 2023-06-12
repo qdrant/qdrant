@@ -304,7 +304,10 @@ fn consume_cqe(
     let buffer_index = cqe.user_data() as usize;
 
     let buffer = &mut buffers[buffer_index];
-    let point = buffer.point.take().expect("point data is associated with the buffer");
+    let point = buffer
+        .point
+        .take()
+        .expect("point data is associated with the buffer");
 
     let result = cqe.result();
     let expected = buffer.buffer.len();
@@ -320,7 +323,11 @@ fn consume_cqe(
             format!(
                 "io_uring operation read {} bytes, which is {} than expected {} bytes",
                 result,
-                if (result as usize) < expected { "less" } else { "more" },
+                if (result as usize) < expected {
+                    "less"
+                } else {
+                    "more"
+                },
                 buffer.buffer.len(),
             ),
         ));

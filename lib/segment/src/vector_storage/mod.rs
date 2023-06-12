@@ -16,7 +16,7 @@ mod vector_storage_base;
 mod tests;
 
 #[cfg(target_os = "linux")]
-mod async_io;
+pub mod async_io;
 mod async_io_mock;
 
 pub use raw_scorer::*;
