@@ -55,10 +55,12 @@ validator = { version = "0.16", features = ["derive"] }
 chrono = { version = "0.4.26", features = ["serde"] }
 
 sysinfo = "0.29"
+futures = "0.3.28"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
 procfs = { version = "0.15", default-features = false }
+io-uring = "0.6.0"
 
 [[bench]]
 name = "vector_search"
