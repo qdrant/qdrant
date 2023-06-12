@@ -200,7 +200,14 @@ impl MmapVectors {
     ) -> OperationResult<()> {
         let mut uring_reader = self.uring_reader.lock();
 
-        uring_reader.read_stream(points, callback)
+        let res = uring_reader.read_stream(points, callback);
+        if res.is_err() {
+            // If we failed to read with uring, we should drop current uring instance
+            // cause it may contain unfinished requests, which should not leak into
+            // next search requests.
+            uring_reader.drop_io_uring();
+        }
+        res
     }
 
     #[cfg(not(target_os = "linux"))]

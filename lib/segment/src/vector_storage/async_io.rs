@@ -50,7 +50,7 @@ impl BufferStore {
 pub struct UringReader {
     file: File,
     buffers: BufferStore,
-    io_uring: IoUring,
+    io_uring: Option<IoUring>,
     raw_size: usize,
     header_size: usize,
 }
@@ -63,10 +63,21 @@ impl UringReader {
         Ok(Self {
             file,
             buffers,
-            io_uring,
+            io_uring: Some(io_uring),
             raw_size,
             header_size,
         })
+    }
+
+    pub fn drop_io_uring(&mut self) {
+        self.io_uring = None;
+    }
+
+    fn ensure_io_uring(&mut self) -> OperationResult<()> {
+        if self.io_uring.is_none() {
+            self.io_uring = Some(IoUring::new(DISK_PARALLELISM as _)?);
+        }
+        Ok(())
     }
 
     fn submit_and_read(
@@ -76,11 +87,12 @@ impl UringReader {
     ) -> OperationResult<()> {
         let buffers_count = self.buffers.buffers.len();
         let used_buffers_count = buffers_count - unused_buffer_ids.len();
+        let io_uring = self.io_uring.as_mut().unwrap();
 
         // Wait for at least one buffer to become available
-        self.io_uring.submit_and_wait(used_buffers_count)?;
+        io_uring.submit_and_wait(used_buffers_count)?;
 
-        let cqe = self.io_uring.completion();
+        let cqe = io_uring.completion();
         for entry in cqe {
             let result = entry.result();
             if result < 0 {
@@ -113,6 +125,7 @@ impl UringReader {
         mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
         let buffers_count = self.buffers.buffers.len();
+        self.ensure_io_uring()?;
 
         let mut unused_buffer_ids = (0..buffers_count).collect::<Vec<_>>();
 
@@ -146,7 +159,7 @@ impl UringReader {
 
             unsafe {
                 // self.io_uring.submission().push(&read_e).unwrap();
-                self.io_uring.submission().push(&read_e).map_err(|err| {
+                self.io_uring.as_mut().unwrap().submission().push(&read_e).map_err(|err| {
                     OperationError::service_error(format!("Failed using io-uring: {}", err))
                 })?;
             }
