@@ -123,9 +123,5 @@ inherits = "release"
 lto = false
 opt-level = 0
 
-# Used for end-to-end benchmarks
-[profile.benchmark]
-inherits = "release"
+[profile.bench]
 lto = false
-opt-level = 3
-
