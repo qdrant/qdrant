@@ -128,13 +128,13 @@ where
                 .vec_deleted
                 .get(point as usize)
                 .map(|x| *x)
-                .unwrap_or(false)
+                .unwrap_or(true)
             // Additionally check point deletion for integrity if delete propagation to vector failed
             && !self
                 .point_deleted
                 .get(point as usize)
                 .map(|x| *x)
-                .unwrap_or(false)
+                .unwrap_or(true)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
