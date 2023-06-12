@@ -156,6 +156,7 @@ async fn search_groups(limit: u32, group_size: u32, collection: &Collection) {
             limit,
             group_size,
             group_by: "group_id".to_string(),
+            with_lookup: None,
         },
         with_payload: None,
         with_vector: None,
