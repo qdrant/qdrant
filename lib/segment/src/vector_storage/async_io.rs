@@ -10,27 +10,40 @@ use crate::types::PointOffsetType;
 
 const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
 
+struct BufferMeta {
+    /// Sequential index of the processing point
+    pub index: usize,
+    /// Id of the point that is currently being processed
+    pub point_id: PointOffsetType,
+}
+
+struct Buffer {
+    /// Stores the buffer for the point vectors
+    pub buffer: Vec<u8>,
+    /// Stores the point ids that are currently being processed in each buffer.
+    pub meta: Option<BufferMeta>,
+}
+
 struct BufferStore {
     /// Stores the buffer for the point vectors
-    pub buffers: Vec<Vec<u8>>,
-    /// Stores the point ids that are currently being processed in each buffer.
-    pub processing_ids: Vec<PointOffsetType>,
+    pub buffers: Vec<Buffer>,
 }
 
 impl BufferStore {
     pub fn new(num_buffers: usize, buffer_raw_size: usize) -> Self {
         Self {
-            buffers: (0..num_buffers).map(|_| vec![0; buffer_raw_size]).collect(),
-            processing_ids: vec![0; num_buffers],
+            buffers: (0..num_buffers)
+                .map(|_| Buffer {
+                    buffer: vec![0; buffer_raw_size],
+                    meta: None,
+                })
+                .collect(),
         }
     }
 
     #[allow(dead_code)]
     pub fn new_empty() -> Self {
-        Self {
-            buffers: vec![],
-            processing_ids: vec![],
-        }
+        Self { buffers: vec![] }
     }
 }
 
@@ -56,17 +69,6 @@ impl UringReader {
         })
     }
 
-    fn encode_user_data(buffer_id: usize, entry_num: usize) -> u64 {
-        ((buffer_id as u64) << 32) | (entry_num as u64)
-    }
-
-    fn decode_user_data(user_data: u64) -> (usize, usize) {
-        (
-            (user_data >> 32) as usize,
-            (user_data & 0xFFFFFFFF) as usize,
-        )
-    }
-
     /// Takes in iterator of point offsets, reads it, and yields a callback with the read data.
     pub fn read_stream(
         &mut self,
@@ -86,22 +88,26 @@ impl UringReader {
 
                 let cqe = self.io_uring.completion();
                 for entry in cqe {
-                    let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
-                    let point_id = self.buffers.processing_ids[buffer_id];
-                    let buffer = &self.buffers.buffers[buffer_id];
+                    let buffer_id = entry.user_data() as usize;
+                    let meta = self.buffers.buffers[buffer_id].meta.take().unwrap();
+                    let buffer = &self.buffers.buffers[buffer_id].buffer;
                     let vector = transmute_from_u8_to_slice(buffer);
-                    callback(idx, point_id, vector);
+                    callback(meta.index, meta.point_id, vector);
                     unused_buffer_ids.push(buffer_id);
                 }
             }
             // Assume there is at least one buffer available at this point
             let buffer_id = unused_buffer_ids.pop().unwrap();
 
-            self.buffers.processing_ids[buffer_id] = point;
-            let buffer = &mut self.buffers.buffers[buffer_id];
+            self.buffers.buffers[buffer_id].meta = Some(BufferMeta {
+                index: idx,
+                point_id: point,
+            });
+
+            let buffer = &mut self.buffers.buffers[buffer_id].buffer;
             let offset = self.header_size + self.raw_size * point as usize;
 
-            let user_data = Self::encode_user_data(buffer_id, idx);
+            let user_data = buffer_id;
 
             let read_e = opcode::Read::new(
                 types::Fd(self.file.as_raw_fd()),
@@ -110,7 +116,7 @@ impl UringReader {
             )
             .offset(offset as _)
             .build()
-            .user_data(user_data);
+            .user_data(user_data as _);
 
             unsafe {
                 // self.io_uring.submission().push(&read_e).unwrap();
@@ -126,11 +132,11 @@ impl UringReader {
             self.io_uring.submit_and_wait(operations_to_wait_for)?;
             let cqe = self.io_uring.completion();
             for entry in cqe {
-                let (buffer_id, idx) = Self::decode_user_data(entry.user_data());
-                let point = self.buffers.processing_ids[buffer_id];
-                let buffer = &self.buffers.buffers[buffer_id];
+                let buffer_id = entry.user_data() as usize;
+                let meta = self.buffers.buffers[buffer_id].meta.take().unwrap();
+                let buffer = &self.buffers.buffers[buffer_id].buffer;
                 let vector = transmute_from_u8_to_slice(buffer);
-                callback(idx, point, vector);
+                callback(meta.index, meta.point_id, vector);
                 unused_buffer_ids.push(buffer_id);
             }
 
