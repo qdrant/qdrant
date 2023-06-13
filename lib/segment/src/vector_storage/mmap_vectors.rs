@@ -198,9 +198,7 @@ impl MmapVectors {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        let mut uring_reader = self.uring_reader.lock();
-
-        uring_reader.read_stream(points, callback)
+        self.uring_reader.lock().read_stream(points, callback)
     }
 
     #[cfg(not(target_os = "linux"))]
