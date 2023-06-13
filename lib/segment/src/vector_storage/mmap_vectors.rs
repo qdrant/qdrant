@@ -198,16 +198,7 @@ impl MmapVectors {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        let mut uring_reader = self.uring_reader.lock();
-
-        let res = uring_reader.read_stream(points, callback);
-        if res.is_err() {
-            // If we failed to read with uring, we should drop current uring instance
-            // cause it may contain unfinished requests, which should not leak into
-            // next search requests.
-            uring_reader.drop_io_uring();
-        }
-        res
+        self.uring_reader.lock().read_stream(points, callback)
     }
 
     #[cfg(not(target_os = "linux"))]
