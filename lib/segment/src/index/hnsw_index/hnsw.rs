@@ -292,7 +292,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
 
             re_scored.sort_unstable();
-            re_scored.shrink_to(top);
+            re_scored.truncate(top);
             re_scored
         } else {
             graph.search(top, ef, points_scorer)
