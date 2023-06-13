@@ -276,7 +276,7 @@ pub struct QuantizationSearchParams {
     ///
     /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
     /// and then top-100 will be returned after re-scoring.
-    #[serde(default)]
+    #[serde(default = "default_quantization_oversampling_value")]
     pub oversampling: Option<f32>,
 }
 
@@ -286,6 +286,10 @@ pub const fn default_quantization_ignore_value() -> bool {
 
 pub const fn default_quantization_rescore_value() -> bool {
     false
+}
+
+pub const fn default_quantization_oversampling_value() -> Option<f32> {
+    None
 }
 
 /// Additional parameters of the search

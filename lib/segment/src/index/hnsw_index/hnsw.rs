@@ -35,7 +35,8 @@ use crate::types::Condition::Field;
 #[cfg(debug_assertions)]
 use crate::types::PointOffsetType;
 use crate::types::{
-    default_quantization_ignore_value, FieldCondition, Filter, HnswConfig,
+    default_quantization_ignore_value, default_quantization_oversampling_value,
+    default_quantization_rescore_value, FieldCondition, Filter, HnswConfig,
     QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum};
@@ -234,24 +235,36 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         // - `params` is `Some`
         // - `params.quantization` is `Some`
         // - and `params.quantization.ignore` is `false`
-        let quantization_params = params
-            .and_then(|p| p.quantization.as_ref())
-            .filter(|q| !q.ignore);
+        let quantization_params =
+            params
+                .and_then(|p| p.quantization)
+                .unwrap_or_else(|| QuantizationSearchParams {
+                    ignore: default_quantization_ignore_value(),
+                    rescore: default_quantization_rescore_value(),
+                    oversampling: default_quantization_oversampling_value(),
+                });
 
-        let raw_scorer = match quantized_storage {
+        let (raw_scorer, quantized) = match quantized_storage {
             // If `quantization_params` is `Some`, then quantization is *not* ignored
-            Some(quantized_storage) if quantization_params.is_some() => quantized_storage
-                .raw_scorer(
+            Some(quantized_storage) if !quantization_params.ignore => {
+                let scorer = quantized_storage.raw_scorer(
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     vector_storage.deleted_vector_bitslice(),
-                ),
+                );
 
-            _ => new_raw_scorer(
-                vector.to_owned(),
-                &vector_storage,
-                id_tracker.deleted_point_bitslice(),
-            ),
+                (scorer, true)
+            }
+
+            _ => {
+                let scorer = new_raw_scorer(
+                    vector.to_owned(),
+                    &vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                );
+
+                (scorer, false)
+            }
         };
 
         let payload_index = self.payload_index.borrow();
@@ -262,29 +275,27 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             return Vec::new();
         };
 
-        match quantization_params {
-            Some(quantization_params) if quantization_params.rescore => {
-                // TODO: Figure a way to make this calculation without `as` conversions? 🤔
-                let oversampled_top =
-                    (top as f64 * quantization_params.oversampling.unwrap_or(1.0) as f64) as usize;
+        if quantized && quantization_params.rescore {
+            // TODO: Figure a way to make this calculation without `as` conversions? 🤔
+            let oversampled_top =
+                (top as f64 * quantization_params.oversampling.unwrap_or(1.0) as f64) as usize;
 
-                let search_result = graph.search(oversampled_top, ef, points_scorer);
+            let search_result = graph.search(oversampled_top, ef, points_scorer);
 
-                let raw_scorer = new_raw_scorer(
-                    vector.to_owned(),
-                    &vector_storage,
-                    id_tracker.deleted_point_bitslice(),
-                );
+            let raw_scorer = new_raw_scorer(
+                vector.to_owned(),
+                &vector_storage,
+                id_tracker.deleted_point_bitslice(),
+            );
 
-                let mut ids_iterator = search_result.iter().map(|x| x.idx);
-                let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
+            let mut ids_iterator = search_result.iter().map(|x| x.idx);
+            let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
 
-                re_scored.sort_unstable();
-                re_scored.shrink_to(top);
-                re_scored
-            }
-
-            _ => graph.search(top, ef, points_scorer),
+            re_scored.sort_unstable();
+            re_scored.shrink_to(top);
+            re_scored
+        } else {
+            graph.search(top, ef, points_scorer)
         }
     }
 
