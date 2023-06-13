@@ -563,9 +563,13 @@ impl SegmentEntry for ProxySegment {
     fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
+
+        // This is a best estimate
         let num_vectors = {
+            let vector_name_count = self.config().vector_data.len();
             let deleted_points_count = self.deleted_points.read().len();
-            (wrapped_info.num_vectors + write_info.num_vectors).saturating_sub(deleted_points_count)
+            (wrapped_info.num_vectors + write_info.num_vectors)
+                .saturating_sub(deleted_points_count * vector_name_count)
         };
 
         SegmentInfo {
