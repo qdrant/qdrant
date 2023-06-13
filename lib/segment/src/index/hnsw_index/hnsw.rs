@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -220,12 +219,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         top: usize,
         params: Option<&SearchParams>,
     ) -> Vec<ScoredPointOffset> {
-        let req_ef = params
+        let ef = params
             .and_then(|params| params.hnsw_ef)
             .unwrap_or(self.config.ef);
-
-        // ef should always be bigger that required top
-        let ef = max(req_ef, top);
 
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
@@ -276,9 +272,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         };
 
         if quantized && quantization_params.rescore {
-            // TODO: Figure a way to make this calculation without `as` conversions? 🤔
-            let oversampled_top =
-                (top as f64 * quantization_params.oversampling.unwrap_or(1.0) as f64) as usize;
+            let oversampled_top = quantization_params
+                .oversampling
+                .map(|x| (top as f64 * x.max(1.0)) as usize)
+                .unwrap_or(top);
 
             let search_result = graph.search(oversampled_top, ef, points_scorer);
 
