@@ -731,8 +731,7 @@ mod tests {
         for idx in 0..builder_len {
             let links_orig = &graph_layers_orig.links.links(idx as PointOffsetType, 0);
             let links_builder = graph_layers_builder.links_layers[idx][0].read();
-            let link_container_from_builder =
-                links_builder.links.iter().copied().collect::<Vec<_>>();
+            let link_container_from_builder = links_builder.links.clone();
             assert_eq!(links_orig, &link_container_from_builder);
         }
 
