@@ -1203,4 +1203,191 @@ mod tests {
             assert_eq!(archive_extension, "tar");
         }
     }
+
+    #[test]
+    fn test_point_vector_count() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
+        ));
+
+        let mut proxy_segment = ProxySegment::new(
+            original_segment,
+            write_segment,
+            deleted_points,
+            created_indexes,
+            deleted_indexes,
+        );
+
+        // We have 5 points by default, assert counts
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 5);
+        assert_eq!(segment_info.num_vectors, 5);
+
+        // Delete non-existant point, counts should remain the same
+        proxy_segment.delete_point(101, 99999.into()).unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 5);
+        assert_eq!(segment_info.num_vectors, 5);
+
+        // Delete point 1, counts should derease by 1
+        proxy_segment.delete_point(102, 4.into()).unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 4);
+        assert_eq!(segment_info.num_vectors, 4);
+
+        // Delete vector of point 2, vector count should now be zero
+        proxy_segment
+            .delete_vector(103, 2.into(), DEFAULT_VECTOR_NAME)
+            .unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 4);
+        assert_eq!(segment_info.num_vectors, 3);
+    }
+
+    #[test]
+    fn test_point_vector_count_multivec() {
+        use segment::segment_constructor::build_segment;
+        use segment::types::{Distance, Indexes, VectorDataConfig, VectorStorageType};
+
+        // Create proxyied multivec segment
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 1;
+        let config = SegmentConfig {
+            vector_data: HashMap::from([
+                (
+                    "a".into(),
+                    VectorDataConfig {
+                        size: dim,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+                (
+                    "b".into(),
+                    VectorDataConfig {
+                        size: dim,
+                        distance: Distance::Dot,
+                        storage_type: VectorStorageType::Memory,
+                        index: Indexes::Plain {},
+                        quantization_config: None,
+                    },
+                ),
+            ]),
+            payload_storage_type: Default::default(),
+        };
+        let mut original_segment = build_segment(dir.path(), &config, true).unwrap();
+        let write_segment = build_segment(dir.path(), &config, true).unwrap();
+
+        original_segment
+            .upsert_point(
+                100,
+                4.into(),
+                &NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+            )
+            .unwrap();
+        original_segment
+            .upsert_point(
+                101,
+                6.into(),
+                &NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+            )
+            .unwrap();
+
+        let original_segment = LockedSegment::new(original_segment);
+        let write_segment = LockedSegment::new(write_segment);
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
+        ));
+
+        let mut proxy_segment = ProxySegment::new(
+            original_segment,
+            write_segment,
+            deleted_points,
+            created_indexes,
+            deleted_indexes,
+        );
+
+        // Assert counts from original segment
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 2);
+        assert_eq!(segment_info.num_vectors, 4);
+
+        // Insert point ID 8 and 10 partially, assert counts
+        proxy_segment
+            .upsert_point(
+                102,
+                8.into(),
+                &NamedVectors::from([("a".into(), vec![0.0])]),
+            )
+            .unwrap();
+        proxy_segment
+            .upsert_point(
+                103,
+                10.into(),
+                &NamedVectors::from([("b".into(), vec![1.0])]),
+            )
+            .unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 4);
+        assert_eq!(segment_info.num_vectors, 6);
+
+        // Delete non-existant point, counts should remain the same
+        proxy_segment.delete_point(104, 1.into()).unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 4);
+        assert_eq!(segment_info.num_vectors, 6);
+
+        // Delete point 4, counts should derease by 1
+        proxy_segment.delete_point(105, 4.into()).unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 4);
+
+        // Delete vector 'a' of point 6, vector count should decrease by 1
+        proxy_segment.delete_vector(106, 6.into(), "a").unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Deleting it again shouldn't chain anything
+        proxy_segment.delete_vector(107, 6.into(), "a").unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Replace vector 'a' for point 8, counts should remain the same
+        proxy_segment
+            .upsert_point(
+                108,
+                8.into(),
+                &NamedVectors::from([("a".into(), vec![0.0])]),
+            )
+            .unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 3);
+
+        // Replace both vectors for point 8, adding a new vector
+        proxy_segment
+            .upsert_point(
+                109,
+                8.into(),
+                &NamedVectors::from([("a".into(), vec![0.0]), ("b".into(), vec![0.0])]),
+            )
+            .unwrap();
+        let segment_info = proxy_segment.info();
+        assert_eq!(segment_info.num_points, 3);
+        assert_eq!(segment_info.num_vectors, 4);
+    }
 }
