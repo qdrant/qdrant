@@ -72,7 +72,7 @@ impl MmapVectors {
         // Keep file handle open for async IO
         let vectors_file = File::open(vectors_path)?;
         let raw_size = dim * size_of::<VectorElementType>();
-        let uring_reader = UringReader::new(vectors_file, raw_size, HEADER_SIZE, 16)?;
+        let uring_reader = UringReader::new(vectors_file, HEADER_SIZE, raw_size, 16)?;
 
         Ok(MmapVectors {
             dim,

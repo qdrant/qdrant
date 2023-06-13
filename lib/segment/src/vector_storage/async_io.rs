@@ -67,8 +67,13 @@ impl UringReader {
         points: impl IntoIterator<Item = PointOffsetType>,
         mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
+        // Take `UringReader::io_uring`, so that if we return an error or panic during `read_stream`,
+        // `IoUring` would be transparently dropped.
         let mut io_uring = match self.io_uring.take() {
+            // Use existing `IoUring` if there's one...
             Some(io_uring) => io_uring,
+
+            // ...or create a new one if not
             None => io_uring::IoUring::new(self.disk_parallelism as _)?,
         };
 
@@ -81,31 +86,26 @@ impl UringReader {
 
         let mut submitted = 0;
 
-        let cq_capacity = uring.cq.capacity();
+        let disk_parallelism = self.disk_parallelism.min(uring.cq.capacity());
+        let max_sq_len = disk_parallelism.min(uring.sq.len());
 
-        while submitted < self.disk_parallelism.min(cq_capacity) {
-            while uring.sq.len() < self.disk_parallelism.min(cq_capacity) && !uring.sq.is_full() {
-                let Some(point) = points.next() else {
-                    break;
-                };
+        for (buffer_index, point) in (&mut points).enumerate().take(disk_parallelism) {
+            push_sqe(
+                &mut uring.sq,
+                &mut self.buffers,
+                buffer_index,
+                &self.file,
+                self.header_size_bytes,
+                self.vector_size_bytes,
+                point,
+            );
 
-                let sq_len = uring.sq.len();
-
-                push_sqe(
-                    &mut uring.sq,
-                    &mut self.buffers,
-                    submitted + sq_len,
-                    &self.file,
-                    self.header_size_bytes,
-                    self.vector_size_bytes,
-                    point,
-                );
+            if uring.sq.is_full() {
+                submitted += uring.submit_sq()?;
             }
-
-            submitted += uring.submit_sq()?;
         }
 
-        uring.probe_cq_or_wait_cq()?;
+        submitted += uring.maybe_submit_sq_and_maybe_wait_cq()?;
 
         while submitted > 0 {
             let mut submit_sq = false;
@@ -118,7 +118,12 @@ impl UringReader {
                 callback(point.index, point.offset, vector);
 
                 let Some(point) = points.next() else {
-                    continue;
+                    if uring.sq.is_empty() {
+                        continue;
+                    } else {
+                        submit_sq = true;
+                        break;
+                    }
                 };
 
                 push_sqe(
@@ -131,18 +136,16 @@ impl UringReader {
                     point,
                 );
 
-                submit_sq =
-                    uring.sq.len() >= self.disk_parallelism.min(cq_capacity) || uring.sq.is_full();
-
-                if submit_sq {
+                if uring.sq.len() >= max_sq_len || uring.sq.is_full() {
+                    submit_sq = true;
                     break;
                 }
             }
 
-            if !submit_sq {
-                submitted += uring.probe_cq_or_wait_cq_and_maybe_submit_sq()?;
-            } else {
+            if submit_sq {
                 submitted += uring.submit_sq_and_maybe_wait_cq()?;
+            } else {
+                submitted += uring.maybe_submit_sq_and_wait_cq()?;
             }
         }
 
@@ -170,29 +173,39 @@ impl<'a> IoUringView<'a> {
         self.submit_sq_and_wait_cq(0)
     }
 
-    pub fn probe_cq_or_wait_cq(&mut self) -> io::Result<()> {
-        let submitted = self.probe_cq_or_wait_cq_and_maybe_submit_sq()?;
-
-        // Assert that no SQEs have been submitted
-        debug_assert_eq!(
-            submitted, 0,
-            "{submitted} SQEs have been submitted during `probe_cq_or_wait_cq`!",
-        );
-
-        Ok(())
-    }
-
-    pub fn probe_cq_or_wait_cq_and_maybe_submit_sq(&mut self) -> io::Result<usize> {
-        if self.probe_cq_is_empty() {
-            self.submit_sq_and_wait_cq(1)
+    pub fn maybe_submit_sq_and_maybe_wait_cq(&mut self) -> io::Result<usize> {
+        if !self.sq.is_empty() {
+            self.submit_sq_and_maybe_wait_cq()
         } else {
-            Ok(0)
+            self.maybe_submit_sq_and_wait_cq()
         }
     }
 
     pub fn submit_sq_and_maybe_wait_cq(&mut self) -> io::Result<usize> {
         let want = if self.probe_cq_is_empty() { 1 } else { 0 };
         self.submit_sq_and_wait_cq(want)
+    }
+
+    pub fn maybe_submit_sq_and_wait_cq(&mut self) -> io::Result<usize> {
+        if self.probe_cq_is_empty() {
+            let submit_nop = self.sq.is_empty();
+
+            if submit_nop {
+                let sqe = io_uring::opcode::Nop::new().build().user_data(u64::MAX);
+                unsafe { self.sq.push(&sqe).expect("SQ is not full") };
+                self.sq.sync();
+            }
+
+            let mut submitted = self.submit_sq_and_wait_cq(1)?;
+
+            if submit_nop {
+                submitted -= 1;
+            }
+
+            Ok(submitted)
+        } else {
+            Ok(0)
+        }
     }
 
     fn check_cq_is_empty(&mut self) -> bool {
@@ -214,16 +227,8 @@ impl<'a> IoUringView<'a> {
         // Sync SQ (so that kernel will see pushed SQEs)
         self.sq.sync();
 
-        let submit_nop = want > 0 && self.sq.is_empty();
-
-        if submit_nop {
-            let sqe = io_uring::opcode::Nop::new().build().user_data(u64::MAX);
-            unsafe { self.sq.push(&sqe).expect("SQ is not full") };
-            self.sq.sync();
-        }
-
-        // Submit SQEs (if any) and wait for `want` CQEs
-        let mut submitted = self.submitter.submit_and_wait(want)?;
+        // Submit SQEs (if any) and wait for `want` CQEs (if requested)
+        let submitted = self.submitter.submit_and_wait(want)?;
 
         // Assert that all (and no more than expected) SQEs have been submitted.
         //
@@ -252,10 +257,6 @@ impl<'a> IoUringView<'a> {
 
             // Assert that CQ is not empty after `submit_and_wait`.
             debug_assert!(!self.cq.is_empty(), "CQ is empty after `submit_and_wait`!");
-        }
-
-        if submit_nop {
-            submitted = submitted.saturating_sub(1);
         }
 
         Ok(submitted)

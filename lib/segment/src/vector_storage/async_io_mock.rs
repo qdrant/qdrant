@@ -8,7 +8,12 @@ pub struct UringReader;
 
 #[allow(dead_code)]
 impl UringReader {
-    pub fn new(_file: File, _raw_size: usize, _header_size: usize) -> OperationResult<Self> {
+    pub fn new(
+        _file: File,
+        _header_size: usize,
+        _raw_size: usize,
+        _disk_parallelism: usize,
+    ) -> OperationResult<Self> {
         Ok(Self {})
     }
 }
