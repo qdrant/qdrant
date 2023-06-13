@@ -1,4 +1,5 @@
 use std::fs::OpenOptions;
+use std::hint::black_box;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -83,6 +84,8 @@ where
     for chunk in mmap.chunks(dst.len()) {
         dst[..chunk.len()].copy_from_slice(chunk);
     }
+
+    black_box(dst);
 
     log::trace!(
         "Reading mmap{separator}{path:?} to populate cache took {:?}",
