@@ -125,3 +125,9 @@ opt-level = 0
 
 [profile.bench]
 lto = false
+
+# Profile for performance testing, which is faster to build than release.
+[profile.perf]
+inherits = "release"
+lto = false
+opt-level = 3
