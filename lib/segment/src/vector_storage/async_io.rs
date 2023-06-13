@@ -50,7 +50,7 @@ impl BufferStore {
 pub struct UringReader {
     file: File,
     buffers: BufferStore,
-    io_uring: IoUring,
+    io_uring: Option<IoUring>,
     raw_size: usize,
     header_size: usize,
 }
@@ -63,47 +63,10 @@ impl UringReader {
         Ok(Self {
             file,
             buffers,
-            io_uring,
+            io_uring: Some(io_uring),
             raw_size,
             header_size,
         })
-    }
-
-    fn submit_and_read(
-        &mut self,
-        mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
-        unused_buffer_ids: &mut Vec<usize>,
-    ) -> OperationResult<()> {
-        let buffers_count = self.buffers.buffers.len();
-        let used_buffers_count = buffers_count - unused_buffer_ids.len();
-
-        // Wait for at least one buffer to become available
-        self.io_uring.submit_and_wait(used_buffers_count)?;
-
-        let cqe = self.io_uring.completion();
-        for entry in cqe {
-            let result = entry.result();
-            if result < 0 {
-                return Err(OperationError::service_error(format!(
-                    "io_uring operation failed with {} error",
-                    result
-                )));
-            } else if (result as usize) != self.raw_size {
-                return Err(OperationError::service_error(format!(
-                    "io_uring operation returned {} bytes instead of {}",
-                    result, self.raw_size
-                )));
-            }
-
-            let buffer_id = entry.user_data() as usize;
-            let meta = self.buffers.buffers[buffer_id].meta.take().unwrap();
-            let buffer = &self.buffers.buffers[buffer_id].buffer;
-            let vector = transmute_from_u8_to_slice(buffer);
-            callback(meta.index, meta.point_id, vector);
-            unused_buffer_ids.push(buffer_id);
-        }
-
-        Ok(())
     }
 
     /// Takes in iterator of point offsets, reads it, and yields a callback with the read data.
@@ -112,15 +75,29 @@ impl UringReader {
         points: impl IntoIterator<Item = PointOffsetType>,
         mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
     ) -> OperationResult<()> {
-        let buffers_count = self.buffers.buffers.len();
+        // Take `UringReader::io_uring`, so that if we return an error or panic during `read_stream`,
+        // `IoUring` would be transparently dropped.
+        let mut io_uring = match self.io_uring.take() {
+            // Use existing `IoUring` if there's one...
+            Some(io_uring) => io_uring,
+            // ...or create a new one if not
+            None => IoUring::new(DISK_PARALLELISM as _)?,
+        };
 
+        let buffers_count = self.buffers.buffers.len();
         let mut unused_buffer_ids = (0..buffers_count).collect::<Vec<_>>();
 
         for item in points.into_iter().enumerate() {
             let (idx, point): (usize, PointOffsetType) = item;
 
             if unused_buffer_ids.is_empty() {
-                self.submit_and_read(&mut callback, &mut unused_buffer_ids)?;
+                submit_and_read(
+                    &mut io_uring,
+                    &mut self.buffers,
+                    &mut unused_buffer_ids,
+                    &mut callback,
+                    self.raw_size,
+                )?;
             }
             // Assume there is at least one buffer available at this point
             let buffer_id = unused_buffer_ids.pop().unwrap();
@@ -146,7 +123,7 @@ impl UringReader {
 
             unsafe {
                 // self.io_uring.submission().push(&read_e).unwrap();
-                self.io_uring.submission().push(&read_e).map_err(|err| {
+                io_uring.submission().push(&read_e).map_err(|err| {
                     OperationError::service_error(format!("Failed using io-uring: {}", err))
                 })?;
             }
@@ -155,9 +132,58 @@ impl UringReader {
         let mut operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
 
         while operations_to_wait_for > 0 {
-            self.submit_and_read(&mut callback, &mut unused_buffer_ids)?;
+            submit_and_read(
+                &mut io_uring,
+                &mut self.buffers,
+                &mut unused_buffer_ids,
+                &mut callback,
+                self.raw_size,
+            )?;
+
             operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
         }
+
+        self.io_uring = Some(io_uring);
+
         Ok(())
     }
+}
+
+fn submit_and_read(
+    io_uring: &mut IoUring,
+    buffers: &mut BufferStore,
+    unused_buffer_ids: &mut Vec<usize>,
+    mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+    raw_size: usize,
+) -> OperationResult<()> {
+    let buffers_count = buffers.buffers.len();
+    let used_buffers_count = buffers_count - unused_buffer_ids.len();
+
+    // Wait for at least one buffer to become available
+    io_uring.submit_and_wait(used_buffers_count)?;
+
+    let cqe = io_uring.completion();
+    for entry in cqe {
+        let result = entry.result();
+        if result < 0 {
+            return Err(OperationError::service_error(format!(
+                "io_uring operation failed with {} error",
+                result
+            )));
+        } else if (result as usize) != raw_size {
+            return Err(OperationError::service_error(format!(
+                "io_uring operation returned {} bytes instead of {}",
+                result, raw_size
+            )));
+        }
+
+        let buffer_id = entry.user_data() as usize;
+        let meta = buffers.buffers[buffer_id].meta.take().unwrap();
+        let buffer = &buffers.buffers[buffer_id].buffer;
+        let vector = transmute_from_u8_to_slice(buffer);
+        callback(meta.index, meta.point_id, vector);
+        unused_buffer_ids.push(buffer_id);
+    }
+
+    Ok(())
 }
