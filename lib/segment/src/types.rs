@@ -256,7 +256,7 @@ pub struct SegmentInfo {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct QuantizationSearchParams {
     /// If true, quantized vectors are ignored. Default is false.
@@ -289,7 +289,7 @@ pub const fn default_quantization_rescore_value() -> bool {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
